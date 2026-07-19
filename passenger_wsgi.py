@@ -17,6 +17,7 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 os.chdir(PROJECT_DIR)
+os.makedirs(os.path.join(PROJECT_DIR, "tmp"), exist_ok=True)
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
 from config.wsgi import application  # noqa: E402
