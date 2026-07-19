@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block body_class %}site-page site-page--firm site-page--blog{% endblock %}
+{% block extra_head %}
+<link rel="canonical" href="{{ request.build_absolute_uri }}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ page_title }} — {{ firm_name }}">
+<meta property="og:description" content="{{ meta_description }}">
+<meta property="og:url" content="{{ request.build_absolute_uri }}">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/firm_site.css' %}">
+{% endblock %}
+
+{% block content %}
+<main class="firm-site firm-site--blog">
+  <header class="firm-nav firm-nav--solid">
+    <a class="firm-nav__brand firm-nav__brand--dark" href="{% url 'accounts:home' %}">
+      <span class="firm-nav__name">{{ firm_name }}</span>
+    </a>
+    <nav class="firm-nav__actions" aria-label="Site">
+      <a class="firm-nav__link firm-nav__link--dark" href="{% url 'accounts:home' %}">Home</a>
+      <a class="firm-nav__link firm-nav__link--dark" href="{% url 'accounts:blog_list' %}" aria-current="page">Blog</a>
+      <a class="firm-nav__link firm-nav__link--dark" href="{% url 'accounts:login' %}">Employee login</a>
+      <a class="firm-nav__cta" href="{% url 'accounts:client_login' %}">Client login</a>
+    </nav>
+  </header>
+
+  <section class="firm-blog-hero">
+    <div class="firm-blog-hero__inner">
+      <p class="firm-section__eyebrow">Insights</p>
+      <h1>{{ page_title }}</h1>
+      <p class="firm-section__lede">
+        Practical articles from {{ firm_name }} — written to answer the questions people search for.
+      </p>
+    </div>
+  </section>
+
+  <section class="firm-section firm-section--blog-list">
+    {% if blog_posts %}
+    <div class="firm-blog-grid">
+      {% for post in blog_posts %}
+      <article class="firm-blog-card">
+        <a class="firm-blog-card__link" href="{{ post.get_absolute_url }}">
+          {% if post.cover_image %}
+          <img
+            class="firm-blog-card__image"
+            src="{{ post.cover_image.url }}"
+            alt=""
+            width="640"
+            height="360"
+            loading="lazy"
+          >
+          {% else %}
+          <div class="firm-blog-card__image firm-blog-card__image--placeholder" aria-hidden="true"></div>
+          {% endif %}
+          <div class="firm-blog-card__body">
+            <p class="firm-blog-card__meta">
+              {% if post.published_at %}{{ post.published_at|date:"j M Y" }}{% else %}{{ post.updated_at|date:"j M Y" }}{% endif %}
+              · {{ post.author.get_full_name }}
+            </p>
+            <h2>{{ post.title }}</h2>
+            <p class="firm-blog-card__excerpt">
+              {% if post.excerpt %}{{ post.excerpt }}{% else %}{{ post.body|truncatewords:36 }}{% endif %}
+            </p>
+            {% if post.tag_list %}
+            <p class="firm-blog-card__tags">
+              {% for tag in post.tag_list %}<span>{{ tag }}</span>{% endfor %}
+            </p>
+            {% endif %}
+            <span class="firm-blog-card__cta">Read article</span>
+          </div>
+        </a>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="firm-blog-empty">
+      <p>No published articles yet. Check back soon for insights from {{ firm_name }}.</p>
+    </div>
+    {% endif %}
+  </section>
+</main>
+
+<footer class="firm-footer">
+  <div class="firm-footer__brand">
+    <span class="firm-footer__name">{{ firm_name }}</span>
+    {% if company.tagline %}
+    <span class="firm-footer__tag">{{ company.tagline }}</span>
+    {% endif %}
+  </div>
+  <p class="firm-footer__copy">
+    © {% now "Y" %} {{ firm_name }}.
+  </p>
+</footer>
+{% endblock %}

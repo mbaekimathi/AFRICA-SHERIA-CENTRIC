@@ -1,0 +1,122 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page settings-page" id="review-company-blog-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company Blogs</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Check SEO readiness, then approve the post to publish it on the website — or return it to the author as a draft.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ company_blogs_url }}" class="btn btn--quiet btn--inline">Back to Company Blogs</a>
+      {% if public_post_url %}
+      <a href="{{ public_post_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">View on website</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="blog-editor">
+    <section class="panel blog-editor__main">
+      <div class="panel__head">
+        <h3>{{ blog_post.title }}</h3>
+        <p class="panel__hint">
+          <span class="status-pill status-pill--{{ blog_post.status }}">{{ blog_post.get_status_display }}</span>
+          · {{ blog_post.author.get_full_name }}
+        </p>
+      </div>
+      <div class="panel__body">
+        <dl class="blog-review-meta">
+          <div>
+            <dt>URL slug</dt>
+            <dd>/blog/{{ blog_post.slug }}/</dd>
+          </div>
+          <div>
+            <dt>Focus keyword</dt>
+            <dd>{{ blog_post.focus_keyword|default:"—" }}</dd>
+          </div>
+          <div>
+            <dt>SEO title</dt>
+            <dd>{{ blog_post.effective_meta_title }}</dd>
+          </div>
+          <div>
+            <dt>Meta description</dt>
+            <dd>{{ blog_post.effective_meta_description|default:"—" }}</dd>
+          </div>
+          {% if blog_post.tag_list %}
+          <div>
+            <dt>Tags</dt>
+            <dd>{{ blog_post.tags }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+
+        {% if blog_post.cover_image %}
+        <div class="blog-cover-preview">
+          <img src="{{ blog_post.cover_image.url }}" alt="" width="320" height="180">
+        </div>
+        {% endif %}
+
+        {% if blog_post.excerpt %}
+        <p class="blog-review-excerpt">{{ blog_post.excerpt }}</p>
+        {% endif %}
+
+        <div class="blog-review-body">
+          {{ blog_post.body|linebreaks }}
+        </div>
+
+        <form method="post" class="blog-form__actions form-actions form-actions--start">
+          {% csrf_token %}
+          {% if blog_post.status == "submitted" %}
+          <button type="submit" name="blog_review_action" value="approve" class="btn btn--primary btn--inline">
+            Approve &amp; publish
+          </button>
+          <button type="submit" name="blog_review_action" value="return_draft" class="btn btn--quiet btn--inline">
+            Return to draft
+          </button>
+          {% elif blog_post.status == "published" %}
+          <button
+            type="submit"
+            name="blog_review_action"
+            value="unpublish"
+            class="btn btn--quiet btn--inline"
+            onclick="return confirm('Unpublish this post and return it to draft?');"
+          >
+            Unpublish
+          </button>
+          {% else %}
+          <p class="field-hint">This post is not awaiting approval.</p>
+          {% endif %}
+        </form>
+      </div>
+    </section>
+
+    <aside class="blog-seo-coach" aria-label="SEO readiness">
+      <div class="blog-seo-coach__card">
+        <div class="blog-seo-coach__score">
+          <p class="blog-seo-coach__score-label">SEO readiness</p>
+          <p class="blog-seo-coach__score-value">{{ seo_checklist.score }}%</p>
+          <p class="blog-seo-coach__score-meta">
+            {{ seo_checklist.passed }} of {{ seo_checklist.total }} checks passed
+          </p>
+        </div>
+        <ul class="blog-seo-checklist">
+          {% for check in seo_checklist.checks %}
+          <li class="blog-seo-check {% if check.ok %}is-ok{% else %}is-todo{% endif %}">
+            <span class="blog-seo-check__mark" aria-hidden="true"></span>
+            <span class="blog-seo-check__copy">
+              <strong>{{ check.label }}</strong>
+              <span>{{ check.hint }}</span>
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </aside>
+  </div>
+</section>
+{% endblock %}

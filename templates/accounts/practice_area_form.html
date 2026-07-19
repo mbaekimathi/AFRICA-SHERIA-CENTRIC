@@ -1,0 +1,142 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="practice-area-form-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Practice areas</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        {% if practice_area %}
+        Update this practice area. Reorder images so the first one is the main image.
+        {% else %}
+        Add a practice area for the firm website. Upload images in the order you want —
+        the first image becomes the main image.
+        {% endif %}
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>{% if practice_area %}Edit practice area{% else %}New practice area{% endif %}</h3>
+      <p class="panel__hint">
+        <a href="{{ practice_areas_url }}">Back to practice areas</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <form
+        method="post"
+        class="workspace-form"
+        enctype="multipart/form-data"
+        id="practice-area-form"
+        novalidate
+      >
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.name.id_for_label }}">
+            {{ form.name.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.name }}
+          {% if form.name.errors %}<span class="field-error">{{ form.name.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.summary.id_for_label }}">
+            {{ form.summary.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.summary }}
+          <span class="field-hint">What the firm does in this practice area.</span>
+          {% if form.summary.errors %}<span class="field-error">{{ form.summary.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.details.id_for_label }}">{{ form.details.label }}</label>
+          {{ form.details }}
+          <span class="field-hint">Longer detail visitors can read on the website.</span>
+          {% if form.details.errors %}<span class="field-error">{{ form.details.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.rank.id_for_label }}">
+            {{ form.rank.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.rank }}
+          <span class="field-hint">Lower numbers appear first (1 is highest priority).</span>
+          {% if form.rank.errors %}<span class="field-error">{{ form.rank.errors.0 }}</span>{% endif %}
+        </div>
+
+        {% if practice_area and existing_images %}
+        <div class="form-field">
+          <span class="form-label">Current images</span>
+          <span class="field-hint">The first image is the main image. Change order or remove images below.</span>
+          <ul class="practice-image-list">
+            {% for image in existing_images %}
+            <li class="practice-image-item">
+              <img src="{{ image.image.url }}" alt="" width="120" height="90">
+              <div class="practice-image-item__controls">
+                <label>
+                  Order
+                  <input
+                    type="number"
+                    class="form-input"
+                    name="image_order_{{ image.pk }}"
+                    value="{{ image.sort_order }}"
+                    min="0"
+                    step="1"
+                  >
+                </label>
+                <label class="practice-image-item__delete">
+                  <input type="checkbox" name="delete_images" value="{{ image.pk }}">
+                  Remove
+                </label>
+                {% if forloop.first %}
+                <span class="status-pill status-pill--active">Main</span>
+                {% endif %}
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.images.id_for_label }}">
+            {% if practice_area %}Add more images{% else %}{{ form.images.label }}{% endif %}
+          </label>
+          {{ form.images }}
+          <span class="field-hint">{{ form.images.help_text }}</span>
+          {% if form.images.errors %}<span class="field-error">{{ form.images.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <a href="{{ practice_areas_url }}" class="btn btn--quiet btn--inline">Cancel</a>
+          {% if practice_area %}
+          <button
+            type="submit"
+            name="practice_area_delete"
+            value="1"
+            class="btn btn--quiet btn--inline"
+            onclick="return confirm('Delete this practice area and its images?');"
+          >
+            Delete
+          </button>
+          {% endif %}
+          <button type="submit" class="btn btn--primary btn--inline">
+            {% if practice_area %}Save practice area{% else %}Add practice area{% endif %}
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

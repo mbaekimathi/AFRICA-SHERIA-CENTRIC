@@ -1,0 +1,82 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page settings-page settings-page--profile" id="settings-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Write SEO-ready posts for the firm website. Drafts stay private; submit for approval so the firm can publish them at
+        <a href="{{ public_blog_list_url }}">/blog/</a>.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ public_blog_list_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">Open website blogs</a>
+      <a href="{{ my_blogs_new_url }}" class="btn btn--primary btn--inline">New post</a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Your posts</h3>
+      <p class="panel__hint">
+        {% if blog_posts %}
+        {{ blog_posts|length }} post{{ blog_posts|length|pluralize }}
+        {% else %}
+        No posts yet
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if blog_posts %}
+      <ul class="blog-post-list">
+        {% for post in blog_posts %}
+        <li class="blog-post-item">
+          <div class="blog-post-item__main">
+            <p class="blog-post-item__title">{{ post.title }}</p>
+            <p class="blog-post-item__meta">
+              <span class="status-pill status-pill--{{ post.status }}">{{ post.get_status_display }}</span>
+              {% if post.focus_keyword %}
+              <span>Keyword: {{ post.focus_keyword }}</span>
+              {% endif %}
+              <span>Updated {{ post.updated_at|date:"j M Y, H:i" }}</span>
+              {% with seo=post.seo_checklist %}
+              <span class="blog-post-item__seo">SEO {{ seo.score }}%</span>
+              {% endwith %}
+            </p>
+            <p class="blog-post-item__excerpt">
+              {% if post.excerpt %}{{ post.excerpt|truncatewords:28 }}{% else %}{{ post.body|truncatewords:28 }}{% endif %}
+            </p>
+            {% if post.is_public %}
+            <p class="blog-post-item__public">
+              Live at <a href="{{ post.get_absolute_url }}" target="_blank" rel="noopener">/blog/{{ post.slug }}/</a>
+            </p>
+            {% elif post.status == "submitted" %}
+            <p class="blog-post-item__public">Awaiting approval in Company Blogs</p>
+            {% endif %}
+          </div>
+          <div class="blog-post-item__actions">
+            {% if post.is_public %}
+            <a href="{{ post.get_absolute_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">View</a>
+            {% endif %}
+            <a href="{% url 'accounts:edit_my_blog' role=role_slug post_id=post.pk %}" class="btn btn--quiet btn--inline">Edit</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No blog posts yet</p>
+        <p class="empty-state__copy">
+          Start with a helpful article on a question clients search for — then submit it for approval.
+        </p>
+        <a href="{{ my_blogs_new_url }}" class="btn btn--primary btn--inline">Write your first post</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

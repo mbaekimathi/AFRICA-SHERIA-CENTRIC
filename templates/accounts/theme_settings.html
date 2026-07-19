@@ -14,28 +14,37 @@
 >
   <header class="page-intro">
     <div class="page-intro__copy">
-      <p class="page-kicker">System settings</p>
+      <p class="page-kicker">My profile</p>
       <h2>Theme settings</h2>
       <p class="page-lead">
-        Choose a balanced workspace palette. Sidebar, top bar, accents, type, density,
-        and notification badges stay in sync — preview live, then save when it feels right.
+        Personal to your account — other users keep their own themes. Sidebar, top bar,
+        accents, type, and density update for you only. Preview live, then save when it feels right.
       </p>
     </div>
   </header>
+
+  <div class="theme-studio__current" aria-label="Your current theme">
+    <p class="theme-studio__current-kicker">Your current theme</p>
+    <p class="theme-studio__current-name" id="chip-theme">{{ current_theme_label }}</p>
+    <p class="theme-studio__current-meta">
+      <span>Type <strong id="chip-font">{{ current_font_label }}</strong></span>
+      <span>Density <strong id="chip-density">{{ current_density_label }}</strong></span>
+      <span>{{ theme_count }} themes · {{ font_count }} typefaces</span>
+    </p>
+  </div>
+
+  <p class="theme-studio__scope" role="note">
+    Changes apply only to <strong>{{ user.get_full_name|default:user.login_code }}</strong>
+    ({{ role_label }}). Firm System settings and other accounts are not affected.
+  </p>
 
   <div class="theme-studio__hero">
     <div>
       <h2>Appearance studio</h2>
       <p>
-        Start from Black & White for a clean baseline, or explore role, studio, and accent
-        collections. Every option keeps contrast readable for daily practice work.
+        Your active theme stays pinned at the top. Explore role, studio, and accent
+        collections below — every option keeps contrast readable for daily practice work.
       </p>
-    </div>
-    <div class="theme-studio__stats" aria-label="Current appearance">
-      <span class="theme-studio__stat">Theme <strong id="chip-theme">{{ current_theme_label }}</strong></span>
-      <span class="theme-studio__stat">Type <strong id="chip-font">{{ current_font_label }}</strong></span>
-      <span class="theme-studio__stat">Density <strong id="chip-density">{{ current_density_label }}</strong></span>
-      <span class="theme-studio__stat">{{ theme_count }} themes · {{ font_count }} typefaces</span>
     </div>
   </div>
 
@@ -61,7 +70,7 @@
             <p class="theme-group__label">{{ group.label }}</p>
             <div class="theme-grid" role="radiogroup" aria-label="{{ group.label }}">
               {% for option in group.options %}
-              <label class="theme-card theme-card--{{ option.preview }}{% if option.featured %} theme-card--featured{% endif %}{% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %} is-selected{% endif %}">
+              <label class="theme-card theme-card--{{ option.preview }}{% if option.featured %} theme-card--featured{% endif %}{% if option.is_current %} theme-card--current{% endif %}{% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %} is-selected{% endif %}">
                 <input
                   type="radio"
                   name="{{ appearance_form.ui_theme.name }}"
@@ -70,6 +79,9 @@
                   data-theme-preview="{{ option.preview }}"
                   data-theme-label="{{ option.label }}"
                 >
+                {% if option.is_current %}
+                <span class="theme-card__badge">Active</span>
+                {% endif %}
                 <span class="theme-card__stage" aria-hidden="true">
                   <span class="theme-card__rail"></span>
                   <span class="theme-card__canvas">

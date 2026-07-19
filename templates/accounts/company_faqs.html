@@ -1,0 +1,64 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="company-faqs-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Register frequently asked questions for the firm website. Rank them so
+        the most helpful answers appear first.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ company_faqs_new_url }}" class="btn btn--primary btn--inline">Add FAQ</a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Company FAQs</h3>
+      <p class="panel__hint">
+        {% if faqs %}
+        {{ faqs|length }} question{{ faqs|length|pluralize }}
+        {% else %}
+        None registered
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if faqs %}
+      <ul class="faq-list">
+        {% for faq in faqs %}
+        <li class="faq-item">
+          <div class="faq-item__main">
+            <p class="faq-item__title">
+              <span class="faq-item__rank">#{{ faq.rank }}</span>
+              {{ faq.question }}
+            </p>
+            <p class="faq-item__answer">{{ faq.answer|truncatewords:28 }}</p>
+            <p class="faq-item__meta">Updated {{ faq.updated_at|date:"j M Y" }}</p>
+          </div>
+          <div class="faq-item__actions">
+            <a href="{% url 'accounts:edit_faq' role=role_slug faq_id=faq.pk %}" class="btn btn--quiet btn--inline">Edit</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No FAQs yet</p>
+        <p class="empty-state__copy">
+          Add your first question and answer for visitors on the firm website.
+        </p>
+        <a href="{{ company_faqs_new_url }}" class="btn btn--primary btn--inline">Add FAQ</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}
+

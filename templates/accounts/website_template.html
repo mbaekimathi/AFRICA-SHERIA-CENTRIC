@@ -1,0 +1,131 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="website-template-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">System settings</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Choose which website visitors see first at
+        <a href="{% url 'accounts:home' %}" target="_blank" rel="noopener noreferrer">your public homepage</a>.
+        Employee and client login remain available from both options.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Active homepage</h3>
+      <p class="panel__hint">
+        {% if website_setting.uses_company_website %}
+        <span class="status-pill status-pill--active">Company website</span>
+        {% else %}
+        <span class="status-pill status-pill--active">Sheria Centric</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="workspace-form website-template-form" id="website-template-form" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="website-template-grid" role="radiogroup" aria-label="Homepage website">
+          <label class="website-template-card{% if form.active_template.value == 'sheria_centric' %} is-selected{% endif %}">
+            <input
+              type="radio"
+              name="{{ form.active_template.name }}"
+              value="sheria_centric"
+              {% if form.active_template.value == 'sheria_centric' %}checked{% endif %}
+            >
+            <span class="website-template-card__preview website-template-card__preview--product" aria-hidden="true">
+              <span class="website-template-card__mark">SC</span>
+              <span class="website-template-card__lines">
+                <i></i><i></i><i></i>
+              </span>
+            </span>
+            <span class="website-template-card__body">
+              <strong>Sheria Centric website</strong>
+              <span>Product landing page for the practice ERP platform.</span>
+            </span>
+          </label>
+
+          <label class="website-template-card{% if form.active_template.value == 'company' %} is-selected{% endif %}">
+            <input
+              type="radio"
+              name="{{ form.active_template.name }}"
+              value="company"
+              {% if form.active_template.value == 'company' %}checked{% endif %}
+            >
+            <span class="website-template-card__preview website-template-card__preview--firm" aria-hidden="true">
+              <span class="website-template-card__mark">{{ firm_name|slice:":1"|upper }}</span>
+              <span class="website-template-card__lines">
+                <i></i><i></i><i></i>
+              </span>
+            </span>
+            <span class="website-template-card__body">
+              <strong>Company website</strong>
+              <span>
+                Public firm site for
+                <em>{{ firm_name }}</em>
+                using Company Information details.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        {% if form.active_template.errors %}
+        <p class="field-error">{{ form.active_template.errors.0 }}</p>
+        {% endif %}
+
+        <p class="field-hint website-template-hint">
+          Company website content comes from
+          <a href="{{ company_information_url }}">Company Information</a>.
+          Keep profile and contacts registered so the firm homepage looks complete.
+        </p>
+
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">
+            Save website template
+          </button>
+          <a class="btn btn--quiet btn--inline" href="{% url 'accounts:home' %}" target="_blank" rel="noopener noreferrer">
+            Preview homepage
+          </a>
+        </div>
+      </form>
+
+      {% if website_setting.updated_at %}
+      <p class="website-template-meta">
+        Last updated {{ website_setting.updated_at|date:"j M Y, H:i" }}
+        {% if website_setting.updated_by %}
+        by {{ website_setting.updated_by.get_full_name|default:website_setting.updated_by.login_code }}
+        {% endif %}
+      </p>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var form = document.getElementById("website-template-form");
+    if (!form) return;
+    form.querySelectorAll(".website-template-card input[type='radio']").forEach(function (input) {
+      input.addEventListener("change", function () {
+        form.querySelectorAll(".website-template-card").forEach(function (card) {
+          card.classList.toggle("is-selected", card.querySelector("input").checked);
+        });
+      });
+    });
+  })();
+</script>
+{% endblock %}

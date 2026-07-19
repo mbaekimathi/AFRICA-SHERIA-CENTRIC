@@ -13,6 +13,11 @@ from .models import (
     DocumentContentSnapshot,
     DocumentOpenSession,
     Employee,
+    EmployeeBlogPost,
+    FirmCompanyInformation,
+    FirmFAQ,
+    FirmPracticeArea,
+    FirmPracticeAreaImage,
     GoogleDriveConnection,
     LitigationCase,
     MatterAttendance,
@@ -20,6 +25,7 @@ from .models import (
     MatterTask,
     NonLitigationMatter,
     Notification,
+    WebsiteTemplateSetting,
 )
 
 
@@ -71,7 +77,7 @@ class EmployeeAdmin(UserAdmin):
         ("Role & status", {"fields": ("role", "status")}),
         (
             "Workspace preferences",
-            {"fields": ("ui_theme", "ui_font", "ui_density", "notification_sound")},
+            {"fields": ("ui_theme", "ui_font", "ui_density", "notification_sound", "about_me")},
         ),
         (
             "Payroll & compensation",
@@ -480,6 +486,44 @@ class MatterTaskAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at", "responded_at")
 
 
+@admin.register(EmployeeBlogPost)
+class EmployeeBlogPostAdmin(admin.ModelAdmin):
+    list_display = (
+        "title",
+        "slug",
+        "author",
+        "status",
+        "focus_keyword",
+        "submitted_at",
+        "approved_by",
+        "updated_at",
+        "published_at",
+    )
+    list_filter = ("status", "updated_at")
+    search_fields = (
+        "title",
+        "slug",
+        "body",
+        "excerpt",
+        "meta_title",
+        "meta_description",
+        "focus_keyword",
+        "tags",
+        "author__first_name",
+        "author__last_name",
+        "author__login_code",
+    )
+    prepopulated_fields = {"slug": ("title",)}
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "submitted_at",
+        "published_at",
+        "approved_at",
+    )
+    raw_id_fields = ("author", "approved_by")
+
+
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
     list_display = (
@@ -500,6 +544,96 @@ class NotificationAdmin(admin.ModelAdmin):
         "recipient__login_code",
     )
     readonly_fields = ("created_at", "read_at")
+
+
+@admin.register(FirmPracticeArea)
+class FirmPracticeAreaAdmin(admin.ModelAdmin):
+    list_display = ("name", "rank", "updated_at", "updated_by")
+    list_editable = ("rank",)
+    search_fields = ("name", "summary", "details")
+    readonly_fields = ("created_at", "updated_at", "updated_by")
+
+
+@admin.register(FirmPracticeAreaImage)
+class FirmPracticeAreaImageAdmin(admin.ModelAdmin):
+    list_display = ("practice_area", "sort_order", "created_at")
+    list_filter = ("practice_area",)
+    list_editable = ("sort_order",)
+
+
+@admin.register(FirmFAQ)
+class FirmFAQAdmin(admin.ModelAdmin):
+    list_display = ("question", "rank", "updated_at", "updated_by")
+    list_editable = ("rank",)
+    search_fields = ("question", "answer")
+    readonly_fields = ("created_at", "updated_at", "updated_by")
+
+
+@admin.register(WebsiteTemplateSetting)
+class WebsiteTemplateSettingAdmin(admin.ModelAdmin):
+    list_display = ("active_template", "updated_at", "updated_by")
+    readonly_fields = ("updated_at", "updated_by")
+
+
+@admin.register(FirmCompanyInformation)
+class FirmCompanyInformationAdmin(admin.ModelAdmin):
+    list_display = (
+        "legal_name",
+        "trading_name",
+        "email",
+        "phone",
+        "city",
+        "country",
+        "updated_at",
+        "updated_by",
+    )
+    readonly_fields = ("updated_at", "updated_by")
+    fieldsets = (
+        (
+            "Identity",
+            {
+                "fields": (
+                    "legal_name",
+                    "trading_name",
+                    "tagline",
+                    "registration_number",
+                    "tax_pin",
+                )
+            },
+        ),
+        (
+            "Contact",
+            {"fields": ("email", "phone", "website")},
+        ),
+        (
+            "Address",
+            {
+                "fields": (
+                    "physical_address",
+                    "postal_address",
+                    "city",
+                    "country",
+                )
+            },
+        ),
+        (
+            "About company",
+            {
+                "fields": (
+                    "visitor_feeling",
+                    "founded_year",
+                    "founded_by",
+                    "market_gap",
+                    "milestone",
+                    "service_areas",
+                    "value_proposition",
+                    "future_vision",
+                    "core_values",
+                )
+            },
+        ),
+        ("Meta", {"fields": ("updated_by", "updated_at")}),
+    )
 
 
 @admin.register(GoogleDriveConnection)

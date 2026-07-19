@@ -1,0 +1,153 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--dashboard" id="research-blogs-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        All employee blog posts that have been submitted or published. Drafts stay private to each author.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ my_blogs_new_url }}" class="btn btn--primary btn--inline">New post</a>
+      <a href="{{ my_blogs_url }}" class="btn btn--quiet btn--inline">My blogs</a>
+    </div>
+  </header>
+
+  <div class="metrics metrics--dash">
+    <div class="metric metric--glass">
+      <div>
+        <p class="metric__label">Firm posts</p>
+        <p class="metric__value">{{ firm_blog_count }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass">
+      <div>
+        <p class="metric__label">Awaiting approval</p>
+        <p class="metric__value">{{ pending_blog_count }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass">
+      <div>
+        <p class="metric__label">Live on website</p>
+        <p class="metric__value">{{ published_blog_count }}</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employee blogs</h3>
+      <p class="panel__hint">
+        {% if firm_blog_count %}
+        {{ firm_blog_count }} submitted or published
+        {% else %}
+        No submitted or published posts yet
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if firm_blog_posts %}
+      <ul class="blog-post-list">
+        {% for post in firm_blog_posts %}
+        <li class="blog-post-item">
+          <div class="blog-post-item__main">
+            <p class="blog-post-item__title">{{ post.title }}</p>
+            <p class="blog-post-item__meta">
+              <span class="status-pill status-pill--{{ post.status }}">{{ post.get_status_display }}</span>
+              <span>{{ post.author.get_full_name }}</span>
+              {% if post.focus_keyword %}
+              <span>Keyword: {{ post.focus_keyword }}</span>
+              {% endif %}
+              {% if post.status == "submitted" and post.submitted_at %}
+              <span>Submitted {{ post.submitted_at|date:"j M Y, H:i" }}</span>
+              {% elif post.status == "published" and post.published_at %}
+              <span>Published {{ post.published_at|date:"j M Y" }}</span>
+              {% else %}
+              <span>Updated {{ post.updated_at|date:"j M Y, H:i" }}</span>
+              {% endif %}
+              {% with seo=post.seo_checklist %}
+              <span class="blog-post-item__seo">SEO {{ seo.score }}%</span>
+              {% endwith %}
+            </p>
+            <p class="blog-post-item__excerpt">
+              {% if post.excerpt %}{{ post.excerpt|truncatewords:28 }}{% else %}{{ post.body|truncatewords:28 }}{% endif %}
+            </p>
+            {% if post.is_public %}
+            <p class="blog-post-item__public">
+              Live at <a href="{{ post.get_absolute_url }}" target="_blank" rel="noopener">/blog/{{ post.slug }}/</a>
+            </p>
+            {% endif %}
+          </div>
+          <div class="blog-post-item__actions">
+            {% if post.status == "submitted" or post.status == "published" %}
+            <a
+              href="{% url 'accounts:review_company_blog' role=role_slug post_id=post.pk %}"
+              class="btn btn--{% if post.status == 'submitted' %}primary{% else %}quiet{% endif %} btn--inline"
+            >
+              {% if post.status == "submitted" %}Review{% else %}Manage{% endif %}
+            </a>
+            {% endif %}
+            {% if post.is_public %}
+            <a href="{{ post.get_absolute_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">View</a>
+            {% endif %}
+            {% if post.author_id == user.id %}
+            <a href="{% url 'accounts:edit_my_blog' role=role_slug post_id=post.pk %}" class="btn btn--quiet btn--inline">Edit</a>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No submitted or published blogs yet</p>
+        <p class="empty-state__copy">
+          When employees submit posts for approval, they will appear here. Drafts remain private to each author.
+        </p>
+        <a href="{{ my_blogs_new_url }}" class="btn btn--primary btn--inline">Write a post</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="dash-section">
+    <div class="dash-section__head">
+      <div>
+        <p class="dash-section__eyebrow">Shortcuts</p>
+        <h3>Quick links</h3>
+      </div>
+    </div>
+    <div class="module-grid module-grid--dash">
+      <a href="{{ my_blogs_url }}" class="module-card module-card--pro" data-magnetic>
+        <span class="module-card__body">
+          <span class="module-card__label">My blogs</span>
+          <span class="module-card__hint">
+            {{ my_draft_count }} draft{{ my_draft_count|pluralize }} ·
+            {{ my_submitted_count }} submitted ·
+            {{ my_published_count }} published
+          </span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true"><span>Open</span></span>
+      </a>
+      <a href="{{ company_blogs_url }}" class="module-card module-card--pro" data-magnetic>
+        <span class="module-card__body">
+          <span class="module-card__label">Company blogs</span>
+          <span class="module-card__hint">Approve submitted posts for the website</span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true"><span>Review</span></span>
+      </a>
+      <a href="{{ public_blog_list_url }}" class="module-card module-card--pro" data-magnetic target="_blank" rel="noopener">
+        <span class="module-card__body">
+          <span class="module-card__label">Website blog</span>
+          <span class="module-card__hint">View live articles on the public site</span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true"><span>Visit</span></span>
+      </a>
+    </div>
+  </section>
+</section>
+{% endblock %}

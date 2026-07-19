@@ -1,10 +1,9 @@
 """Client portal layout context helpers."""
 
-from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Client
+from .models import Client, get_firm_display_name
 from .workspace import (
     ICON_BELL,
     ICON_BRIEF,
@@ -138,5 +137,5 @@ def client_portal_context(request, client, *, page_title="My profile", active="p
             if client.password
             else "Not set"
         ),
-        "firm_name": getattr(settings, "FIRM_DISPLAY_NAME", "Sheria Law Firm"),
+        "firm_name": get_firm_display_name(),
     }

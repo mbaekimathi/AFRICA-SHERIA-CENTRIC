@@ -1,0 +1,56 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page settings-page settings-page--profile" id="settings-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Write a short note about yourself for colleagues who work with you.
+        This stays on your account only.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel about-me-panel">
+    <div class="panel__head">
+      <h3>Your story</h3>
+      <p class="panel__hint">Up to 2,000 characters</p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="workspace-form about-me-form" id="about-me-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="settings_action" value="about_me">
+
+        {% if about_me_form.non_field_errors %}
+        <div class="form-errors" role="alert">
+          {% for error in about_me_form.non_field_errors %}
+          <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ about_me_form.about_me.id_for_label }}">{{ about_me_form.about_me.label }}</label>
+          {{ about_me_form.about_me }}
+          {% if about_me_form.about_me.errors %}
+          <p class="field-error">{{ about_me_form.about_me.errors.0 }}</p>
+          {% endif %}
+          <p class="field-hint">
+            Mention your practice focus, languages, or how teammates can reach you.
+          </p>
+        </div>
+
+        <div class="form-actions form-actions--start about-me-actions">
+          <a href="{{ settings_url }}" class="btn btn--quiet btn--inline">Back to profile</a>
+          <button type="submit" class="btn btn--primary btn--inline">Save about me</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

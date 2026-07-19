@@ -8,6 +8,9 @@ app_name = "accounts"
 urlpatterns = [
     # Public site
     path("", views.HomeView.as_view(), name="home"),
+    path("blog/", views.BlogListView.as_view(), name="blog_list"),
+    path("blog/<slug:slug>/", views.BlogDetailView.as_view(), name="blog_detail"),
+    path("blog-sitemap.xml", views.BlogSitemapView.as_view(), name="blog_sitemap"),
     # Employee auth
     path("employee/login/", views.AdvocateLoginView.as_view(), name="login"),
     path("login/", views.AdvocateLoginView.as_view(), name="login-alt"),
@@ -288,6 +291,26 @@ urlpatterns = [
         "approve-registered-matters/approve/<int:matter_id>/edit/",
         views.EditNonLitigationMatterView.as_view(),
         name="edit_non_litigation_matter",
+    ),
+    path(
+        "<slug:role>/dashboard/my-blogs/<int:post_id>/edit/",
+        views.EditMyBlogView.as_view(),
+        name="edit_my_blog",
+    ),
+    path(
+        "<slug:role>/dashboard/company-blogs/<int:post_id>/review/",
+        views.ReviewCompanyBlogView.as_view(),
+        name="review_company_blog",
+    ),
+    path(
+        "<slug:role>/dashboard/practice-areas/<int:area_id>/edit/",
+        views.EditPracticeAreaView.as_view(),
+        name="edit_practice_area",
+    ),
+    path(
+        "<slug:role>/dashboard/company-faqs/<int:faq_id>/edit/",
+        views.EditFAQView.as_view(),
+        name="edit_faq",
     ),
     # Task accept / reject / view (assignee only)
     path(

@@ -1,0 +1,162 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="company-information-hub">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">System settings</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Analysis of whether {{ analysis.display_name }} details are fully
+        registered for the website and firm records.
+      </p>
+    </div>
+  </header>
+
+  <div class="metrics metrics--dash" data-reveal>
+    <div class="metric metric--glass" style="--stagger: 0">
+      <div>
+        <p class="metric__label">Readiness</p>
+        <p class="metric__value">{{ analysis.overall_percent }}%</p>
+      </div>
+    </div>
+    <div class="metric metric--glass" style="--stagger: 1">
+      <div>
+        <p class="metric__label">Registered</p>
+        <p class="metric__value">{{ analysis.complete_count }}/{{ analysis.section_count }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass" style="--stagger: 2">
+      <div>
+        <p class="metric__label">Incomplete</p>
+        <p class="metric__value">{{ analysis.partial_count }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass" style="--stagger: 3">
+      <div>
+        <p class="metric__label">Missing</p>
+        <p class="metric__value">{{ analysis.missing_count }}</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel company-readiness">
+    <div class="panel__head">
+      <h3>Registration analysis</h3>
+      <p class="panel__hint">
+        <span class="status-pill status-pill--{{ analysis.readiness_tone }}">
+          {{ analysis.readiness_label }}
+        </span>
+      </p>
+    </div>
+    <div class="panel__body">
+      <div class="company-readiness__bar" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ analysis.overall_percent }}" aria-label="Company registration readiness">
+        <span class="company-readiness__fill" style="width: {{ analysis.overall_percent }}%"></span>
+      </div>
+      <p class="company-readiness__copy">
+        {% if analysis.required_action_count %}
+        {{ analysis.required_action_count }} required detail{{ analysis.required_action_count|pluralize }} still need{{ analysis.required_action_count|pluralize:"s," }} registering before this firm looks complete on the website.
+        {% elif analysis.action_items %}
+        Required details look registered. Optional fields and content sections can still be improved.
+        {% else %}
+        All tracked company sections are fully registered.
+        {% endif %}
+      </p>
+      {% if analysis.updated_at %}
+      <p class="company-readiness__meta">
+        Profile last updated
+        {{ analysis.updated_at|date:"j M Y, H:i" }}
+        {% if analysis.updated_by %}
+        by {{ analysis.updated_by.get_full_name|default:analysis.updated_by.login_code }}
+        {% endif %}
+      </p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if analysis.action_items %}
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Gaps to fix</h3>
+      <p class="panel__hint">{{ analysis.action_items|length }} item{{ analysis.action_items|length|pluralize }}</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Section</th>
+              <th scope="col">Detail</th>
+              <th scope="col">Priority</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for gap in analysis.action_items %}
+            <tr>
+              <td>{{ gap.section }}</td>
+              <td>{{ gap.item }}</td>
+              <td>
+                {% if gap.priority == "required" %}
+                <span class="status-pill status-pill--pending">Required</span>
+                {% else %}
+                <span class="status-pill status-pill--partial">Optional</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if gap.url %}
+                <a href="{{ gap.url }}">Complete</a>
+                {% else %}
+                —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="dash-section">
+    <div class="dash-section__head">
+      <div>
+        <p class="dash-section__eyebrow">Sections</p>
+        <h3>Section registration status</h3>
+        <p>Open a section to register or update company details.</p>
+      </div>
+    </div>
+    <div class="module-grid module-grid--dash">
+      {% for section in analysis.sections %}
+      <a
+        href="{{ section.url }}"
+        class="module-card module-card--pro company-section-card company-section-card--{{ section.status }}"
+        style="--stagger: {{ forloop.counter0 }}"
+      >
+        <span class="icon-orb icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
+          <span class="icon-orb__shine"></span>
+          <span class="icon-orb__core">{{ section.icon|safe }}</span>
+        </span>
+        <span class="module-card__body">
+          <span class="module-card__label">{{ section.label }}</span>
+          <span class="module-card__hint">{{ section.summary }}</span>
+          <span class="company-section-card__meta">
+            <span class="status-pill status-pill--{% if section.status == 'complete' %}active{% elif section.status == 'partial' %}partial{% elif section.status == 'missing' %}pending{% else %}suspended{% endif %}">
+              {{ section.status_label }}
+            </span>
+            <span class="company-section-card__pct">{{ section.percent }}%</span>
+          </span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true">
+          <span>{% if section.status == "complete" %}Review{% else %}Fix{% endif %}</span>
+          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+{% endblock %}

@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ firm_name }}{% if company.tagline %} — {{ company.tagline }}{% endif %}{% endblock %}
+{% block body_class %}site-page site-page--firm{% endblock %}
+{% block extra_head %}
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/firm_site.css' %}">
+{% endblock %}
+
+{% block content %}
+<main class="firm-site">
+  <header class="firm-nav">
+    <a class="firm-nav__brand" href="{% url 'accounts:home' %}">
+      <span class="firm-nav__name">{{ firm_name }}</span>
+    </a>
+    <nav class="firm-nav__actions" aria-label="Account access">
+      <a class="firm-nav__link" href="{% url 'accounts:blog_list' %}">Blog</a>
+      <a class="firm-nav__link" href="{% url 'accounts:login' %}">Employee login</a>
+      <a class="firm-nav__cta" href="{% url 'accounts:client_login' %}">Client login</a>
+    </nav>
+  </header>
+
+  <section class="firm-hero" aria-label="{{ firm_name }}">
+    <div class="firm-hero__veil" aria-hidden="true"></div>
+    <div class="firm-hero__inner">
+      <p class="firm-hero__brand">{{ firm_name }}</p>
+      {% if company.visitor_feeling %}
+      <h1 class="firm-hero__title">{{ company.visitor_feeling }}</h1>
+      {% elif company.tagline %}
+      <h1 class="firm-hero__title">{{ company.tagline }}</h1>
+      {% else %}
+      <h1 class="firm-hero__title">Counsel with clarity and care</h1>
+      {% endif %}
+      <p class="firm-hero__lede">
+        {% if company.value_proposition %}
+        {{ company.value_proposition }}
+        {% elif company.service_areas %}
+        Serving clients in {{ company.service_areas }}.
+        {% elif company.city or company.country %}
+        Serving clients
+        {% if company.city %}in {{ company.city }}{% endif %}
+        {% if company.city and company.country %},{% endif %}
+        {% if company.country %} {{ company.country }}{% endif %}.
+        {% else %}
+        Professional legal counsel for individuals and organisations.
+        {% endif %}
+      </p>
+      <div class="firm-hero__ctas">
+        {% if company.email %}
+        <a class="firm-btn firm-btn--primary" href="mailto:{{ company.email }}">Contact the firm</a>
+        {% elif company.phone %}
+        <a class="firm-btn firm-btn--primary" href="tel:{{ company.phone }}">Call {{ company.phone }}</a>
+        {% else %}
+        <a class="firm-btn firm-btn--primary" href="{% url 'accounts:client_login' %}">Client portal</a>
+        {% endif %}
+        <a class="firm-btn firm-btn--ghost" href="#about">About the firm</a>
+      </div>
+    </div>
+  </section>
+
+  {% if company.visitor_feeling or company.market_gap or company.value_proposition or company.core_values or company.founded_year or company.milestone or company.future_vision or company.service_areas %}
+  <section class="firm-section" id="about">
+    <div class="firm-section__head">
+      <p class="firm-section__eyebrow">About</p>
+      <h2>Our story</h2>
+      {% if company.value_proposition %}
+      <p class="firm-section__lede">{{ company.value_proposition }}</p>
+      {% endif %}
+    </div>
+    <div class="firm-about">
+      {% if company.founded_year or company.founded_by %}
+      <div class="firm-about__item">
+        <p class="firm-about__label">Founded</p>
+        <p>
+          {% if company.founded_year %}{{ company.founded_year }}{% endif %}
+          {% if company.founded_year and company.founded_by %} · {% endif %}
+          {% if company.founded_by %}{{ company.founded_by }}{% endif %}
+        </p>
+      </div>
+      {% endif %}
+      {% if company.market_gap %}
+      <div class="firm-about__item">
+        <p class="firm-about__label">Why we started</p>
+        <p>{{ company.market_gap }}</p>
+      </div>
+      {% endif %}
+      {% if company.milestone %}
+      <div class="firm-about__item">
+        <p class="firm-about__label">Milestone</p>
+        <p>{{ company.milestone }}</p>
+      </div>
+      {% endif %}
+      {% if company.service_areas %}
+      <div class="firm-about__item">
+        <p class="firm-about__label">Where we serve</p>
+        <p>{{ company.service_areas }}</p>
+      </div>
+      {% endif %}
+      {% if company.future_vision %}
+      <div class="firm-about__item">
+        <p class="firm-about__label">Looking ahead</p>
+        <p>{{ company.future_vision }}</p>
+      </div>
+      {% endif %}
+    </div>
+    {% if company.core_values %}
+    <div class="firm-values">
+      <h3>Our values</h3>
+      <ul class="firm-values__list">
+        {% for value in company.core_values %}
+        <li>
+          <strong>{{ value.name }}</strong>
+          {% if value.how %}<span>{{ value.how }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section class="firm-section" id="contact">
+    <div class="firm-section__head">
+      <p class="firm-section__eyebrow">Contact</p>
+      <h2>Reach {{ firm_name }}</h2>
+      <p class="firm-section__lede">
+        Use the details below for enquiries, appointments, and client access.
+      </p>
+    </div>
+    <div class="firm-contact">
+      {% if company.email %}
+      <div class="firm-contact__item">
+        <p class="firm-contact__label">Email</p>
+        <a href="mailto:{{ company.email }}">{{ company.email }}</a>
+      </div>
+      {% endif %}
+      {% if company.phone %}
+      <div class="firm-contact__item">
+        <p class="firm-contact__label">Phone</p>
+        <a href="tel:{{ company.phone }}">{{ company.phone }}</a>
+      </div>
+      {% endif %}
+      {% if company.physical_address or company.city or company.country %}
+      <div class="firm-contact__item">
+        <p class="firm-contact__label">Address</p>
+        <p>
+          {% if company.physical_address %}{{ company.physical_address }}<br>{% endif %}
+          {% if company.city %}{{ company.city }}{% endif %}
+          {% if company.city and company.country %}, {% endif %}
+          {% if company.country %}{{ company.country }}{% endif %}
+        </p>
+      </div>
+      {% endif %}
+      {% if company.postal_address %}
+      <div class="firm-contact__item">
+        <p class="firm-contact__label">Postal</p>
+        <p>{{ company.postal_address }}</p>
+      </div>
+      {% endif %}
+      {% if not company.email and not company.phone and not company.physical_address %}
+      <p class="firm-contact__empty">
+        Contact details will appear here once they are registered in Company Information.
+      </p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if practice_areas %}
+  <section class="firm-section" id="practice-areas">
+    <div class="firm-section__head">
+      <p class="firm-section__eyebrow">Practice</p>
+      <h2>Practice areas</h2>
+      <p class="firm-section__lede">
+        How {{ firm_name }} supports clients across key areas of law.
+      </p>
+    </div>
+    <div class="firm-practice-grid">
+      {% for area in practice_areas %}
+      <article class="firm-practice-card">
+        {% if area.main_image %}
+        <img
+          class="firm-practice-card__image"
+          src="{{ area.main_image.image.url }}"
+          alt="{{ area.name }}"
+          width="640"
+          height="360"
+        >
+        {% endif %}
+        <div class="firm-practice-card__body">
+          <p class="firm-practice-card__rank">Area {{ area.rank }}</p>
+          <h3>{{ area.name }}</h3>
+          {% if area.summary %}
+          <p class="firm-practice-card__summary">{{ area.summary }}</p>
+          {% endif %}
+          {% if area.details %}
+          <p class="firm-practice-card__details">{{ area.details|truncatewords:40 }}</p>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if faqs %}
+  <section class="firm-section" id="faqs">
+    <div class="firm-section__head">
+      <p class="firm-section__eyebrow">Help</p>
+      <h2>Frequently asked questions</h2>
+      <p class="firm-section__lede">
+        Quick answers about working with {{ firm_name }}.
+      </p>
+    </div>
+    <div class="firm-faq-list">
+      {% for faq in faqs %}
+      <details class="firm-faq-item">
+        <summary>{{ faq.question }}</summary>
+        <p>{{ faq.answer }}</p>
+      </details>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if blog_posts %}
+  <section class="firm-section" id="blog">
+    <div class="firm-section__head">
+      <p class="firm-section__eyebrow">Insights</p>
+      <h2>From our blog</h2>
+      <p class="firm-section__lede">
+        Articles and guidance from {{ firm_name }}. Click any post to open the full article.
+      </p>
+    </div>
+    <div class="firm-blog-grid">
+      {% for post in blog_posts %}
+      <article class="firm-blog-card">
+        <a class="firm-blog-card__link" href="{{ post.get_absolute_url }}">
+          {% if post.cover_image %}
+          <img
+            class="firm-blog-card__image"
+            src="{{ post.cover_image.url }}"
+            alt=""
+            width="640"
+            height="360"
+            loading="lazy"
+          >
+          {% endif %}
+          <div class="firm-blog-card__body">
+            <p class="firm-blog-card__meta">
+              {% if post.published_at %}{{ post.published_at|date:"j M Y" }}{% endif %}
+            </p>
+            <h3>{{ post.title }}</h3>
+            <p class="firm-blog-card__excerpt">
+              {% if post.excerpt %}{{ post.excerpt|truncatewords:28 }}{% else %}{{ post.body|truncatewords:28 }}{% endif %}
+            </p>
+            <span class="firm-blog-card__cta">Read on the blog</span>
+          </div>
+        </a>
+      </article>
+      {% endfor %}
+    </div>
+    <p class="firm-blog-more">
+      <a class="firm-btn firm-btn--ghost firm-btn--dark" href="{% url 'accounts:blog_list' %}">View all articles</a>
+    </p>
+  </section>
+  {% endif %}
+
+  <section class="firm-section firm-section--portals">
+    <div class="firm-section__head">
+      <p class="firm-section__eyebrow">Portals</p>
+      <h2>Secure access</h2>
+    </div>
+    <div class="firm-portals">
+      <a class="firm-portal" href="{% url 'accounts:login' %}">
+        <span class="firm-portal__label">Employees</span>
+        <span class="firm-portal__title">Firm workspace</span>
+        <span class="firm-portal__text">Sign in with your login code to manage matters and firm work.</span>
+      </a>
+      <a class="firm-portal" href="{% url 'accounts:client_login' %}">
+        <span class="firm-portal__label">Clients</span>
+        <span class="firm-portal__title">Client portal</span>
+        <span class="firm-portal__text">Follow your matters with secure client access.</span>
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer class="firm-footer">
+  <div class="firm-footer__brand">
+    <span class="firm-footer__name">{{ firm_name }}</span>
+    {% if company.tagline %}
+    <span class="firm-footer__tag">{{ company.tagline }}</span>
+    {% endif %}
+  </div>
+  <p class="firm-footer__copy">
+    © {% now "Y" %} {{ firm_name }}.
+    {% if company.registration_number %}Reg. {{ company.registration_number }}.{% endif %}
+  </p>
+</footer>
+{% endblock %}

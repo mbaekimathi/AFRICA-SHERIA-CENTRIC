@@ -1,24 +1,17 @@
 {% extends "layouts/workspace.html" %}
 {% load static %}
 
-{% block title %}My settings — Sheria-Centric{% endblock %}
+{% block title %}My profile — Sheria-Centric{% endblock %}
 
 {% block content %}
-<section
-  class="page settings-page"
-  id="settings-page"
-  data-role-theme="{{ user.role }}"
-  data-saved-theme="{% if appearance_form.ui_theme.value == 'product' %}default{% else %}{{ appearance_form.ui_theme.value|default:'default' }}{% endif %}"
-  data-saved-font="{{ appearance_form.ui_font.value|default:'plex' }}"
-  data-saved-density="{{ appearance_form.ui_density.value|default:'comfortable' }}"
->
+<section class="page settings-page settings-page--profile" id="settings-page">
   <header class="page-intro">
     <div class="page-intro__copy">
-      <p class="page-kicker">Account studio</p>
-      <h2>My settings</h2>
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>My profile</h2>
       <p class="page-lead">
-        Keep your profile lean, then open details when you need them. Shape your workspace with themes, type, and density.
-        Manage alert sounds from Notifications in the sidebar.
+        Your account details for this workspace. Use the sidebar for Notifications
+        and Theme settings when you want to change alerts or appearance.
       </p>
     </div>
   </header>
@@ -43,227 +36,338 @@
           <p class="settings-hero__email">{{ user.personal_email }}</p>
         </div>
       </div>
-      <div class="settings-hero__actions">
-        <button
-          type="button"
-          class="btn btn--quiet btn--inline"
-          id="open-view-profile"
-          aria-haspopup="dialog"
-          aria-controls="view-profile-modal"
-        >
-          View details
-        </button>
-        <button
-          type="button"
-          class="btn btn--primary btn--inline"
-          id="open-edit-profile"
-          aria-haspopup="dialog"
-          aria-controls="edit-profile-modal"
-        >
-          Edit profile
-        </button>
-      </div>
     </div>
   </section>
 
-  <div class="settings-chips" aria-label="Current appearance">
-    <span class="settings-chip">Theme <strong id="chip-theme">{{ current_theme_label }}</strong></span>
-    <span class="settings-chip">Type <strong id="chip-font">{{ current_font_label }}</strong></span>
-    <span class="settings-chip">Density <strong id="chip-density">{{ current_density_label }}</strong></span>
-  </div>
+  <details
+    class="settings-edit-drop"
+    id="edit-profile-drop"
+    {% if open_edit_modal %}open{% endif %}
+  >
+    <summary class="settings-edit-drop__summary">
+      <span class="settings-edit-drop__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18">
+          <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="settings-edit-drop__copy">
+        <span class="settings-edit-drop__label">Edit profile</span>
+        <span class="settings-edit-drop__hint">Name, contact, identity, photo, and password</span>
+      </span>
+      <svg class="settings-edit-drop__chevron" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </summary>
 
-  <form method="post" class="settings-studio" id="appearance-form" novalidate>
-    {% csrf_token %}
-    <input type="hidden" name="settings_action" value="appearance">
+    <form
+      method="post"
+      enctype="multipart/form-data"
+      class="settings-edit-drop__panel workspace-form"
+      id="edit-profile-form"
+      novalidate
+    >
+      {% csrf_token %}
+      <input type="hidden" name="settings_action" value="profile">
 
-    <div class="settings-studio__main">
-      <div class="settings-tabs" role="tablist" aria-label="Appearance controls">
-        <button type="button" class="settings-tab is-active" role="tab" aria-selected="true" data-tab="themes" id="tab-themes">Themes</button>
-        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="fonts" id="tab-fonts">Typography</button>
-        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="density" id="tab-density">Density</button>
+      {% if profile_form.non_field_errors %}
+      <div class="form-errors" role="alert">
+        {% for error in profile_form.non_field_errors %}
+        <p>{{ error }}</p>
+        {% endfor %}
       </div>
+      {% endif %}
 
-      <div class="settings-panels">
-        <div class="settings-panel" id="panel-themes" role="tabpanel" aria-labelledby="tab-themes">
-          <div class="settings-panel__intro">
-            <h3>Color themes</h3>
-            <p>Balanced palettes — titles, icons, and text follow your theme. Preview updates instantly.</p>
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>Name</h3>
+          <p>How you appear across the workspace</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="form-row form-row--name">
+            <div class="form-field form-field--title">
+              <label for="{{ profile_form.courtesy_title.id_for_label }}">Title</label>
+              {{ profile_form.courtesy_title }}
+              {% if profile_form.courtesy_title.errors %}
+              <p class="field-error">{{ profile_form.courtesy_title.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-field">
+              <label for="{{ profile_form.first_name.id_for_label }}">First name</label>
+              {{ profile_form.first_name }}
+              {% if profile_form.first_name.errors %}
+              <p class="field-error">{{ profile_form.first_name.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-field">
+              <label for="{{ profile_form.last_name.id_for_label }}">Last name</label>
+              {{ profile_form.last_name }}
+              {% if profile_form.last_name.errors %}
+              <p class="field-error">{{ profile_form.last_name.errors.0 }}</p>
+              {% endif %}
+            </div>
           </div>
-          {% for group in theme_groups %}
-          <div class="theme-group">
-            <p class="theme-group__label">{{ group.label }}</p>
-            <div class="theme-grid" role="radiogroup" aria-label="{{ group.label }}">
-              {% for option in group.options %}
-              <label class="theme-card theme-card--{{ option.preview|default:option.value }}{% if option.featured %} theme-card--featured{% endif %}{% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %} is-selected{% endif %}">
-                <input
-                  type="radio"
-                  name="{{ appearance_form.ui_theme.name }}"
-                  value="{{ option.value }}"
-                  {% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %}checked{% endif %}
-                  data-theme-preview="{{ option.preview|default:option.value }}"
-                  data-theme-label="{{ option.label }}"
-                >
-                <span class="theme-card__stage" aria-hidden="true">
-                  <span class="theme-card__rail"></span>
-                  <span class="theme-card__canvas">
-                    <span class="theme-card__line"></span>
-                    <span class="theme-card__line theme-card__line--short"></span>
-                    <span class="theme-card__block"></span>
-                  </span>
-                </span>
-                <span class="theme-card__meta">
-                  <span class="theme-card__name">{{ option.label }}</span>
-                  <span class="theme-card__blurb">{{ option.blurb }}</span>
-                </span>
-              </label>
+        </div>
+      </section>
+
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>Contact</h3>
+          <p>Personal and work channels</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ profile_form.personal_email.id_for_label }}">Personal email</label>
+              {{ profile_form.personal_email }}
+              {% if profile_form.personal_email.errors %}
+              <p class="field-error">{{ profile_form.personal_email.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-field">
+              <label for="{{ profile_form.personal_phone.id_for_label }}">Personal phone</label>
+              {{ profile_form.personal_phone }}
+              {% if profile_form.personal_phone.errors %}
+              <p class="field-error">{{ profile_form.personal_phone.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ profile_form.work_email.id_for_label }}">Work email</label>
+              {{ profile_form.work_email }}
+              {% if profile_form.work_email.errors %}
+              <p class="field-error">{{ profile_form.work_email.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-field">
+              <label for="{{ profile_form.work_phone.id_for_label }}">Work phone</label>
+              {{ profile_form.work_phone }}
+              {% if profile_form.work_phone.errors %}
+              <p class="field-error">{{ profile_form.work_phone.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>Identity</h3>
+          <p>Nationality and identification</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ profile_form.id_country.id_for_label }}">Nationality</label>
+              {{ profile_form.id_country }}
+              {% if profile_form.id_country.errors %}
+              <p class="field-error">{{ profile_form.id_country.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-field">
+              <span class="form-label">ID type</span>
+              <div class="id-type-options">
+                {% for radio in profile_form.id_type %}
+                <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
+                {% endfor %}
+              </div>
+              {% if profile_form.id_type.errors %}
+              <p class="field-error">{{ profile_form.id_type.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="form-row" data-id-fields>
+            <div class="form-field" data-id-citizen>
+              <label for="{{ profile_form.identification_number.id_for_label }}">National ID</label>
+              {{ profile_form.identification_number }}
+              {% if profile_form.identification_number.errors %}
+              <p class="field-error">{{ profile_form.identification_number.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-field" data-id-non-citizen hidden>
+              <label for="{{ profile_form.alien_number.id_for_label }}">Alien / permit number</label>
+              {{ profile_form.alien_number }}
+              {% if profile_form.alien_number.errors %}
+              <p class="field-error">{{ profile_form.alien_number.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>About me</h3>
+          <p>Short bio on your profile</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="form-field">
+            <label for="{{ profile_form.about_me.id_for_label }}">About me</label>
+            {{ profile_form.about_me }}
+            {% if profile_form.about_me.errors %}
+            <p class="field-error">{{ profile_form.about_me.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>Payment details</h3>
+          <p>How you receive payouts</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="form-field">
+            <span class="form-label">Payment method</span>
+            <div class="id-type-options" data-payment-method>
+              {% for radio in profile_form.payment_method %}
+              <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
               {% endfor %}
             </div>
+            {% if profile_form.payment_method.errors %}
+            <p class="field-error">{{ profile_form.payment_method.errors.0 }}</p>
+            {% endif %}
           </div>
-          {% endfor %}
-          {% if appearance_form.ui_theme.errors %}
-          <p class="field-error">{{ appearance_form.ui_theme.errors.0 }}</p>
-          {% endif %}
-        </div>
-
-        <div class="settings-panel" id="panel-fonts" role="tabpanel" aria-labelledby="tab-fonts" hidden>
-          <div class="settings-panel__intro">
-            <h3>Typography</h3>
-            <p>{{ font_count }} curated pairings for body and headings across your role pages.</p>
-          </div>
-          <div class="font-grid" role="radiogroup" aria-label="Workspace fonts">
-            {% for font in font_catalog %}
-            <label class="font-card font-card--{{ font.value }}{% if appearance_form.ui_font.value == font.value %} is-selected{% endif %}">
-              <input
-                type="radio"
-                name="{{ appearance_form.ui_font.name }}"
-                value="{{ font.value }}"
-                {% if appearance_form.ui_font.value == font.value %}checked{% endif %}
-                data-font-preview="{{ font.value }}"
-                data-font-label="{{ font.label }}"
-              >
-              <span class="font-card__specimen" aria-hidden="true">Sheria</span>
-              <span class="font-card__body">Counsel that reads with clarity and presence.</span>
-              <span class="font-card__pair">
-                <span class="font-card__tag">{{ font.sans }}</span>
-                <span class="font-card__tag">{{ font.serif }}</span>
-              </span>
-              <span class="font-card__name">{{ font.label }}</span>
-              <span class="font-card__mood">{{ font.mood }}</span>
-            </label>
-            {% endfor %}
-          </div>
-          {% if appearance_form.ui_font.errors %}
-          <p class="field-error">{{ appearance_form.ui_font.errors.0 }}</p>
-          {% endif %}
-        </div>
-
-        <div class="settings-panel" id="panel-density" role="tabpanel" aria-labelledby="tab-density" hidden>
-          <div class="settings-panel__intro">
-            <h3>Spacing density</h3>
-            <p>Tune how compact or open your workspace chrome feels.</p>
-          </div>
-          <div class="density-grid" role="radiogroup" aria-label="Workspace density">
-            {% for option in density_catalog %}
-            <label class="density-card density-card--{{ option.value }}{% if appearance_form.ui_density.value == option.value %} is-selected{% endif %}">
-              <input
-                type="radio"
-                name="{{ appearance_form.ui_density.name }}"
-                value="{{ option.value }}"
-                {% if appearance_form.ui_density.value == option.value %}checked{% endif %}
-                data-density-preview="{{ option.value }}"
-                data-density-label="{{ option.label }}"
-              >
-              <span class="density-card__bars" aria-hidden="true">
-                <span></span><span></span><span></span>
-              </span>
-              <p class="density-card__name">{{ option.label }}</p>
-              <p class="density-card__blurb">{{ option.blurb }}</p>
-            </label>
-            {% endfor %}
-          </div>
-          {% if appearance_form.ui_density.errors %}
-          <p class="field-error">{{ appearance_form.ui_density.errors.0 }}</p>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-
-    <aside class="settings-studio__preview" aria-label="Live appearance preview">
-      <div class="settings-preview__head">
-        <h3>Live preview</h3>
-        <span class="settings-preview__badge">Realtime</span>
-      </div>
-      <div class="settings-preview__stage">
-        <div class="settings-preview__shell">
-          <div class="settings-preview__nav" aria-hidden="true">
-            <span></span><span></span><span></span><span></span>
-            <span class="settings-preview__nav-item">
-              <i></i>
-              <em class="settings-preview__dot"></em>
-            </span>
-          </div>
-          <div class="settings-preview__main">
-            <div class="settings-preview__topbar" aria-hidden="true">
-              <span class="settings-preview__crumb"></span>
-              <span class="settings-preview__bell">
-                <i></i>
-                <em class="settings-preview__dot">1</em>
-              </span>
+          <div class="form-row" data-payment-mobile>
+            <div class="form-field">
+              <label for="{{ profile_form.mobile_money_company.id_for_label }}">Mobile money provider</label>
+              {{ profile_form.mobile_money_company }}
+              {% if profile_form.mobile_money_company.errors %}
+              <p class="field-error">{{ profile_form.mobile_money_company.errors.0 }}</p>
+              {% endif %}
             </div>
-            <div class="settings-preview__content">
-              <p class="settings-preview__title" id="preview-title">Matter desk</p>
-              <p class="settings-preview__text" id="preview-text">
-                Your sidebar, surfaces, type, and notification badges update as you explore.
-              </p>
-              <div class="settings-preview__card">
-                <strong>Pending review</strong>
-                <span class="settings-preview__text">Allocate counsel and activate the matter task.</span>
-              </div>
+            <div class="form-field">
+              <label for="{{ profile_form.mobile_money_number.id_for_label }}">Mobile money number</label>
+              {{ profile_form.mobile_money_number }}
+              {% if profile_form.mobile_money_number.errors %}
+              <p class="field-error">{{ profile_form.mobile_money_number.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="form-row" data-payment-bank hidden>
+            <div class="form-field">
+              <label for="{{ profile_form.bank_name.id_for_label }}">Bank name</label>
+              {{ profile_form.bank_name }}
+              {% if profile_form.bank_name.errors %}
+              <p class="field-error">{{ profile_form.bank_name.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-field">
+              <label for="{{ profile_form.bank_account_number.id_for_label }}">Account number</label>
+              {{ profile_form.bank_account_number }}
+              {% if profile_form.bank_account_number.errors %}
+              <p class="field-error">{{ profile_form.bank_account_number.errors.0 }}</p>
+              {% endif %}
             </div>
           </div>
         </div>
-      </div>
-      <div class="settings-preview__meta">
-        <p><span>Theme</span> <strong id="preview-theme">{{ current_theme_label }}</strong></p>
-        <p><span>Typography</span> <strong id="preview-font">{{ current_font_label }}</strong></p>
-        <p><span>Density</span> <strong id="preview-density">{{ current_density_label }}</strong></p>
-      </div>
-    </aside>
+      </section>
 
-    <div class="settings-savebar" id="appearance-savebar" aria-live="polite">
-      <p class="settings-savebar__copy">
-        <strong>Unsaved appearance</strong> — previewing changes on this page only until you save.
-      </p>
-      <button type="submit" class="btn btn--primary btn--inline">Save appearance</button>
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>Profile photo</h3>
+          <p>Shown on your workspace and profile</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="edit-photo">
+            {% if user.profile_photo %}
+            <img class="avatar avatar--lg edit-photo__preview" src="{{ user.profile_photo.url }}" alt="">
+            {% else %}
+            <div class="avatar avatar--lg avatar--placeholder edit-photo__preview" aria-hidden="true">
+              {{ user.first_name|slice:":1"|upper }}{{ user.last_name|slice:":1"|upper }}
+            </div>
+            {% endif %}
+            <div class="form-field edit-photo__field">
+              <label for="{{ profile_form.profile_photo.id_for_label }}">Upload new photo</label>
+              {{ profile_form.profile_photo }}
+              {% if profile_form.profile_photo.errors %}
+              <p class="field-error">{{ profile_form.profile_photo.errors.0 }}</p>
+              {% endif %}
+              <p class="field-hint">Optional. Leave blank to keep your current photo.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="edit-block edit-block--secure">
+        <header class="edit-block__head">
+          <h3>Password</h3>
+          <p>
+            {% if profile_form.has_password %}
+            Password is set on this account — enter a new one below to change it
+            {% else %}
+            No usable password on this account yet
+            {% endif %}
+          </p>
+        </header>
+        <div class="edit-block__body">
+          <p class="field-hint edit-password-note">
+            For security, your current password is never shown. Leave these blank to keep it unchanged.
+          </p>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ profile_form.current_password.id_for_label }}">Current password</label>
+              {{ profile_form.current_password }}
+              {% if profile_form.current_password.errors %}
+              <p class="field-error">{{ profile_form.current_password.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ profile_form.new_password.id_for_label }}">New password</label>
+              {{ profile_form.new_password }}
+              {% if profile_form.new_password.errors %}
+              <p class="field-error">{{ profile_form.new_password.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-field">
+              <label for="{{ profile_form.confirm_password.id_for_label }}">Confirm new password</label>
+              {{ profile_form.confirm_password }}
+              {% if profile_form.confirm_password.errors %}
+              <p class="field-error">{{ profile_form.confirm_password.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="edit-block edit-block--muted">
+        <header class="edit-block__head">
+          <h3>Account (firm-managed)</h3>
+          <p>Loaded from your session — managed by administration</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ profile_form.login_code_display.id_for_label }}">Login code</label>
+              {{ profile_form.login_code_display }}
+            </div>
+            <div class="form-field">
+              <label for="{{ profile_form.role_display.id_for_label }}">Role</label>
+              {{ profile_form.role_display }}
+            </div>
+            <div class="form-field">
+              <label for="{{ profile_form.status_display.id_for_label }}">Status</label>
+              {{ profile_form.status_display }}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="settings-edit-drop__actions">
+        <button type="button" class="btn btn--quiet btn--inline" id="close-edit-profile">Cancel</button>
+        <button type="submit" class="btn btn--primary btn--inline">Save changes</button>
+      </div>
+    </form>
+  </details>
+
+  <section class="panel settings-profile-panel">
+    <div class="panel__head">
+      <h3>Profile details</h3>
+      <p class="panel__hint">Account, contact, and identity</p>
     </div>
-  </form>
-</section>
-
-<dialog
-  class="workspace-modal"
-  id="view-profile-modal"
-  aria-labelledby="view-profile-title"
-  {% if open_view_modal %}open{% endif %}
->
-  <div class="workspace-modal__card">
-    <header class="workspace-modal__head">
-      <h2 id="view-profile-title">Profile details</h2>
-      <p>Full account information — kept off the main page until you need it.</p>
-    </header>
-    <div class="workspace-modal__body">
-      <div class="profile-sheet__hero">
-        {% if user.profile_photo %}
-        <img class="avatar avatar--lg" src="{{ user.profile_photo.url }}" alt="">
-        {% else %}
-        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
-          {{ user.first_name|slice:":1"|upper }}{{ user.last_name|slice:":1"|upper }}
-        </div>
-        {% endif %}
-        <div>
-          <p class="identity-name">{{ user.get_full_name|default:user.login_code }}</p>
-          <p class="identity-meta">{{ role_label }} · {{ user.get_status_display }}</p>
-        </div>
-      </div>
+    <div class="panel__body">
       <div class="profile-sheet__sections">
         <section class="profile-sheet__section">
           <h3>Account</h3>
@@ -278,12 +382,8 @@
           <dl class="settings-grid">
             <div><dt>Personal email</dt><dd>{{ user.personal_email }}</dd></div>
             <div><dt>Personal phone</dt><dd>{{ user.personal_phone|default:"—" }}</dd></div>
-            {% if user.work_email %}
-            <div><dt>Work email</dt><dd>{{ user.work_email }}</dd></div>
-            {% endif %}
-            {% if user.work_phone %}
-            <div><dt>Work phone</dt><dd>{{ user.work_phone }}</dd></div>
-            {% endif %}
+            <div><dt>Work email</dt><dd>{{ user.work_email|default:"—" }}</dd></div>
+            <div><dt>Work phone</dt><dd>{{ user.work_phone|default:"—" }}</dd></div>
           </dl>
         </section>
         <section class="profile-sheet__section">
@@ -298,143 +398,56 @@
             {% endif %}
           </dl>
         </section>
-      </div>
-    </div>
-    <div class="workspace-modal__actions">
-      <button type="button" class="btn btn--quiet" id="close-view-profile">Close</button>
-      <button type="button" class="btn btn--primary" id="view-to-edit-profile">Edit</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog
-  class="workspace-modal"
-  id="edit-profile-modal"
-  aria-labelledby="edit-profile-title"
-  {% if open_edit_modal %}open{% endif %}
->
-  <form
-    method="post"
-    enctype="multipart/form-data"
-    class="workspace-modal__card workspace-form"
-    id="edit-profile-form"
-    novalidate
-  >
-    {% csrf_token %}
-    <input type="hidden" name="settings_action" value="profile">
-    <header class="workspace-modal__head">
-      <h2 id="edit-profile-title">Edit profile</h2>
-      <p>Update personal details. Role and login code stay firm-managed.</p>
-    </header>
-    <div class="workspace-modal__body">
-      {% if profile_form.non_field_errors %}
-      <div class="form-errors" role="alert">
-        {% for error in profile_form.non_field_errors %}
-        <p>{{ error }}</p>
-        {% endfor %}
-      </div>
-      {% endif %}
-
-      <div class="form-row form-row--name">
-        <div class="form-field form-field--title">
-          <label for="{{ profile_form.courtesy_title.id_for_label }}">Title</label>
-          {{ profile_form.courtesy_title }}
-          {% if profile_form.courtesy_title.errors %}
-          <p class="field-error">{{ profile_form.courtesy_title.errors.0 }}</p>
-          {% endif %}
-        </div>
-        <div class="form-field">
-          <label for="{{ profile_form.first_name.id_for_label }}">First name</label>
-          {{ profile_form.first_name }}
-          {% if profile_form.first_name.errors %}
-          <p class="field-error">{{ profile_form.first_name.errors.0 }}</p>
-          {% endif %}
-        </div>
-        <div class="form-field">
-          <label for="{{ profile_form.last_name.id_for_label }}">Last name</label>
-          {{ profile_form.last_name }}
-          {% if profile_form.last_name.errors %}
-          <p class="field-error">{{ profile_form.last_name.errors.0 }}</p>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-field">
-          <label for="{{ profile_form.personal_email.id_for_label }}">Personal email</label>
-          {{ profile_form.personal_email }}
-          {% if profile_form.personal_email.errors %}
-          <p class="field-error">{{ profile_form.personal_email.errors.0 }}</p>
-          {% endif %}
-        </div>
-        <div class="form-field">
-          <label for="{{ profile_form.personal_phone.id_for_label }}">Personal phone</label>
-          {{ profile_form.personal_phone }}
-          {% if profile_form.personal_phone.errors %}
-          <p class="field-error">{{ profile_form.personal_phone.errors.0 }}</p>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-field">
-          <label for="{{ profile_form.id_country.id_for_label }}">Nationality</label>
-          {{ profile_form.id_country }}
-          {% if profile_form.id_country.errors %}
-          <p class="field-error">{{ profile_form.id_country.errors.0 }}</p>
-          {% endif %}
-        </div>
-        <div class="form-field">
-          <span class="form-label">ID type</span>
-          <div class="id-type-options">
-            {% for radio in profile_form.id_type %}
-            <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
-            {% endfor %}
+        <section class="profile-sheet__section">
+          <h3>Payment</h3>
+          <dl class="settings-grid">
+            <div><dt>Method</dt><dd>{{ user.get_payment_method_display|default:"—" }}</dd></div>
+            {% if user.payment_method == "mobile" %}
+            <div><dt>Provider</dt><dd>{{ user.mobile_money_company|default:"—" }}</dd></div>
+            <div><dt>Number</dt><dd>{{ user.mobile_money_number|default:"—" }}</dd></div>
+            {% elif user.payment_method == "bank" %}
+            <div><dt>Bank</dt><dd>{{ user.bank_name|default:"—" }}</dd></div>
+            <div><dt>Account</dt><dd>{{ user.bank_account_number|default:"—" }}</dd></div>
+            {% endif %}
+          </dl>
+        </section>
+        <section class="profile-sheet__section">
+          <h3>Password</h3>
+          <dl class="settings-grid">
+            <div>
+              <dt>Sign-in password</dt>
+              <dd>{% if user.has_usable_password %}Set · change in Edit profile{% else %}Not set{% endif %}</dd>
+            </div>
+          </dl>
+        </section>
+        <section class="profile-sheet__section">
+          <div class="profile-sheet__section-head">
+            <h3>About me</h3>
+            <a href="{{ about_me_url }}" class="profile-sheet__link">Edit</a>
           </div>
-          {% if profile_form.id_type.errors %}
-          <p class="field-error">{{ profile_form.id_type.errors.0 }}</p>
+          {% if user.about_me %}
+          <p class="about-me-preview">{{ user.about_me }}</p>
+          {% else %}
+          <p class="about-me-empty">
+            No bio yet.
+            <a href="{{ about_me_url }}">Write about yourself</a>
+          </p>
           {% endif %}
-        </div>
-      </div>
-
-      <div class="form-row" data-id-fields>
-        <div class="form-field" data-id-citizen>
-          <label for="{{ profile_form.identification_number.id_for_label }}">National ID</label>
-          {{ profile_form.identification_number }}
-          {% if profile_form.identification_number.errors %}
-          <p class="field-error">{{ profile_form.identification_number.errors.0 }}</p>
-          {% endif %}
-        </div>
-        <div class="form-field" data-id-non-citizen hidden>
-          <label for="{{ profile_form.alien_number.id_for_label }}">Alien / permit number</label>
-          {{ profile_form.alien_number }}
-          {% if profile_form.alien_number.errors %}
-          <p class="field-error">{{ profile_form.alien_number.errors.0 }}</p>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="form-field">
-        <label for="{{ profile_form.profile_photo.id_for_label }}">Profile photo</label>
-        {{ profile_form.profile_photo }}
-        {% if profile_form.profile_photo.errors %}
-        <p class="field-error">{{ profile_form.profile_photo.errors.0 }}</p>
-        {% endif %}
-        <p class="field-hint">Optional. Leave blank to keep your current photo.</p>
-      </div>
-
-      <div class="settings-readonly">
-        <p><span>Login code</span> {{ user.login_code }}</p>
-        <p><span>Role</span> {{ role_label }}</p>
-        <p><span>Status</span> {{ user.get_status_display }}</p>
+        </section>
+        <section class="profile-sheet__section">
+          <div class="profile-sheet__section-head">
+            <h3>My blogs</h3>
+            <a href="{{ my_blogs_url }}" class="profile-sheet__link">Open</a>
+          </div>
+          <p class="about-me-empty">
+            Write and manage your personal posts.
+            <a href="{{ my_blogs_new_url }}">New post</a>
+          </p>
+        </section>
       </div>
     </div>
-    <div class="workspace-modal__actions">
-      <button type="button" class="btn btn--quiet" id="close-edit-profile">Cancel</button>
-      <button type="submit" class="btn btn--primary">Save changes</button>
-    </div>
-  </form>
-</dialog>
+  </section>
+</section>
 {% endblock %}
 
 {% block extra_js %}

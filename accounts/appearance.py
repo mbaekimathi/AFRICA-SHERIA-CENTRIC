@@ -92,12 +92,55 @@ FONT_CATALOG = (
 )
 
 
-def appearance_catalog(*, include_product_alias: bool = False):
+def normalize_theme_value(value: str | None) -> str:
+    """Map stored aliases to the picker value shown in the UI."""
+    if (value or "").strip() in {"", "product", "default"}:
+        return "default"
+    return (value or "").strip()
+
+
+def pin_current_theme(groups: list[dict], current_value: str | None) -> list[dict]:
+    """
+    Put the user's active theme in a leading "Current theme" group.
+
+    Removes the duplicate from later groups so radio values stay unique.
+    """
+    current = normalize_theme_value(current_value)
+    current_option = None
+    remaining: list[dict] = []
+    for group in groups:
+        options = []
+        for option in group["options"]:
+            if (
+                current_option is None
+                and normalize_theme_value(option["value"]) == current
+            ):
+                current_option = {
+                    **option,
+                    "featured": True,
+                    "is_current": True,
+                    "blurb": f"Your active workspace theme — {option['blurb']}",
+                }
+            else:
+                options.append(option)
+        if options:
+            remaining.append({**group, "options": options})
+    if not current_option:
+        return groups
+    return [{"label": "Current theme", "options": [current_option]}, *remaining]
+
+
+def appearance_catalog(
+    *,
+    include_product_alias: bool = False,
+    current_theme: str | None = None,
+):
     """
     Build picker catalogs.
 
     `product` is an alias of `default` (both resolve to theme-product).
     Hide the duplicate from the UI unless explicitly requested.
+    When `current_theme` is set, that option is pinned at the top.
     """
     theme_label = dict(Employee.UiTheme.choices)
     font_label = dict(Employee.UiFont.choices)
@@ -114,10 +157,13 @@ def appearance_catalog(*, include_product_alias: bool = False):
                     "blurb": blurb,
                     "preview": "product" if value in {"default", "product"} else value,
                     "featured": value in {"default", "product"},
+                    "is_current": False,
                 }
             )
         if visible:
             groups.append({"label": group_label, "options": visible})
+    if current_theme is not None:
+        groups = pin_current_theme(groups, current_theme)
     return {
         "theme_groups": groups,
         "font_catalog": [

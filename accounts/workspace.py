@@ -1,10 +1,9 @@
 """Workspace navigation helpers for role dashboards."""
 
-from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Employee
+from .models import Employee, get_firm_display_name
 
 SESSION_GREETING_KEY = "greeting_name_key"
 SESSION_STARTED_AT_KEY = "session_started_at"
@@ -316,6 +315,7 @@ DASHBOARD_PAGE_LINKS = [
     ("Matter Management", "matter-management", ICON_BRIEF),
     ("Document Management", "document-management", ICON_DOC),
     ("Finance & Billing", "finance-billing", ICON_FINANCE),
+    ("Research & Blogs", "research-blogs", ICON_LEARN),
 ]
 DASHBOARD_PAGE_SLUGS = {slug for _, slug, _ in DASHBOARD_PAGE_LINKS} | {"dashboard"}
 
@@ -366,7 +366,17 @@ SYSTEM_SETTINGS_PAGE_LINKS = [
     ("Website Template", "website-template", ICON_DOC),
     ("Company Information", "company-information", ICON_BRIEF),
     ("Document Settings", "document-settings", ICON_SETTINGS),
-    ("Theme Settings", "theme-settings", ICON_SETTINGS),
+]
+
+COMPANY_INFORMATION_PAGE_LINKS = [
+    ("Company Profile", "company-profile", ICON_BRIEF),
+    ("Company Contacts", "company-contacts", ICON_USERS),
+    ("About Company", "about-company", ICON_DOC),
+    ("Practice Areas", "practice-areas", ICON_SCALE),
+    ("Company Gallery", "company-gallery", ICON_DOC),
+    ("Company Blogs", "company-blogs", ICON_DOC),
+    ("Company FAQs", "company-faqs", ICON_BELL),
+    ("Terms and Conditions", "company-terms", ICON_SCALE),
 ]
 
 DOCUMENT_SETTINGS_PAGE_LINKS = [
@@ -384,15 +394,33 @@ PAGE_LOCAL_LINKS = {
     "litigation-matters": LITIGATION_MATTERS_PAGE_LINKS,
     "non-litigation-matters": NON_LITIGATION_MATTERS_PAGE_LINKS,
     "settings": [
-        ("Profile & appearance", "settings", ICON_SETTINGS),
+        ("My profile", "settings", ICON_SETTINGS),
+        ("About me", "about-me", ICON_DOC),
+        ("My blogs", "my-blogs", ICON_DOC),
         ("Notifications", "notification-settings", ICON_BELL),
+        ("Theme settings", "theme-settings", ICON_SETTINGS),
     ],
     "system-settings": SYSTEM_SETTINGS_PAGE_LINKS,
+    "company-information": COMPANY_INFORMATION_PAGE_LINKS,
     "document-settings": DOCUMENT_SETTINGS_PAGE_LINKS,
 }
 
-# Personal My settings / My profile sidebar group
-SETTINGS_AREA_SLUGS = {"settings", "notification-settings"}
+# Personal My profile sidebar group (theme is per-account, not firm-wide)
+SETTINGS_AREA_SLUGS = {
+    "settings",
+    "about-me",
+    "my-blogs",
+    "my-blogs-new",
+    "notification-settings",
+    "theme-settings",
+}
+
+# Company Information subtree (sidebar when drilled into Company Information)
+COMPANY_INFORMATION_AREA_SLUGS = {
+    "company-information",
+    "practice-areas-new",
+    "company-faqs-new",
+} | {slug for _, slug, _ in COMPANY_INFORMATION_PAGE_LINKS}
 
 # Document Settings subtree (sidebar when drilled into Document Settings)
 DOCUMENT_SETTINGS_AREA_SLUGS = {"document-settings"} | {
@@ -402,10 +430,16 @@ DOCUMENT_SETTINGS_AREA_SLUGS = {"document-settings"} | {
 # Firm System settings hub + children (footer "System settings" link)
 SYSTEM_SETTINGS_AREA_SLUGS = {"system-settings"} | {
     slug for _, slug, _ in SYSTEM_SETTINGS_PAGE_LINKS
-} | DOCUMENT_SETTINGS_AREA_SLUGS
+} | COMPANY_INFORMATION_AREA_SLUGS | DOCUMENT_SETTINGS_AREA_SLUGS
 
 # Pages reachable by deep link / action flows but not shown in page-local nav.
-EXTRA_PAGE_SLUGS = {"notification-settings", "system-settings"}
+EXTRA_PAGE_SLUGS = {
+    "notification-settings",
+    "system-settings",
+    "my-blogs-new",
+    "practice-areas-new",
+    "company-faqs-new",
+}
 
 
 # Litigation case detail sidebar actions
@@ -489,6 +523,8 @@ def page_local_links_for(active: str, trail: list[str] | None = None):
     """
     if active in SETTINGS_AREA_SLUGS:
         return PAGE_LOCAL_LINKS["settings"]
+    if active in COMPANY_INFORMATION_AREA_SLUGS:
+        return PAGE_LOCAL_LINKS["company-information"]
     if active in DOCUMENT_SETTINGS_AREA_SLUGS:
         return PAGE_LOCAL_LINKS["document-settings"]
     if active in SYSTEM_SETTINGS_AREA_SLUGS:
@@ -505,11 +541,25 @@ def page_local_links_for(active: str, trail: list[str] | None = None):
 
 PAGE_TITLES = {
     "dashboard": "Dashboard",
-    "settings": "My settings",
+    "research-blogs": "Research & Blogs",
+    "settings": "My profile",
+    "about-me": "About me",
+    "my-blogs": "My blogs",
+    "my-blogs-new": "New blog post",
     "notification-settings": "Notifications",
     "system-settings": "System Settings",
     "website-template": "Website Template",
     "company-information": "Company Information",
+    "company-profile": "Company Profile",
+    "company-contacts": "Company Contacts",
+    "about-company": "About Company",
+    "practice-areas": "Practice Areas",
+    "practice-areas-new": "Add practice area",
+    "company-gallery": "Company Gallery",
+    "company-blogs": "Company Blogs",
+    "company-faqs": "Company FAQs",
+    "company-faqs-new": "Add FAQ",
+    "company-terms": "Terms and Conditions",
     "document-settings": "Document Settings",
     "theme-settings": "Theme Settings",
     "letterhead": "Letterhead",
@@ -617,9 +667,22 @@ def resolve_workspace_page(role, pages: str):
         "is_settings": leaf == "settings",
         "is_theme_settings": leaf == "theme-settings",
         "is_notification_settings": leaf == "notification-settings",
+        "is_about_me": leaf == "about-me",
+        "is_my_blogs": leaf == "my-blogs",
+        "is_my_blogs_new": leaf == "my-blogs-new",
         "is_google_drive_settings": leaf == "google-drive-settings",
+        "is_company_information": leaf == "company-information",
+        "is_company_profile": leaf == "company-profile",
+        "is_website_template": leaf == "website-template",
+        "is_practice_areas": leaf == "practice-areas",
+        "is_practice_areas_new": leaf == "practice-areas-new",
+        "is_company_faqs": leaf == "company-faqs",
+        "is_company_faqs_new": leaf == "company-faqs-new",
+        "is_company_blogs": leaf == "company-blogs",
+        "is_research_blogs": leaf == "research-blogs",
         "is_settings_area": leaf in SETTINGS_AREA_SLUGS,
         "is_system_settings_area": leaf in SYSTEM_SETTINGS_AREA_SLUGS,
+        "is_company_information_area": leaf in COMPANY_INFORMATION_AREA_SLUGS,
         "is_dashboard": leaf == "dashboard",
     }
 
@@ -735,6 +798,21 @@ def workspace_context(
 
     # My profile / personal settings (header dropdown)
     settings_url = workspace_reverse(role_slug, *extend_page_trail(trail, "settings"))
+    notification_settings_url = workspace_reverse(
+        role_slug, *extend_page_trail(trail, "notification-settings")
+    )
+    about_me_url = workspace_reverse(
+        role_slug, *extend_page_trail(trail, "about-me")
+    )
+    my_blogs_url = workspace_reverse(
+        role_slug, *extend_page_trail(trail, "my-blogs")
+    )
+    my_blogs_new_url = workspace_reverse(
+        role_slug, *extend_page_trail(trail, "my-blogs-new")
+    )
+    theme_settings_url = workspace_reverse(
+        role_slug, *extend_page_trail(trail, "theme-settings")
+    )
     # Footer "System settings" → system-settings hub (Website Template, etc.)
     system_settings_url = workspace_reverse(
         role_slug, *extend_page_trail(trail, "system-settings")
@@ -805,6 +883,11 @@ def workspace_context(
         "dashboard_active": is_dashboard,
         "back_url": back_url_for_trail(role_slug, trail),
         "settings_url": settings_url,
+        "notification_settings_url": notification_settings_url,
+        "about_me_url": about_me_url,
+        "my_blogs_url": my_blogs_url,
+        "my_blogs_new_url": my_blogs_new_url,
+        "theme_settings_url": theme_settings_url,
         "system_settings_url": system_settings_url,
         "settings_active": is_system_settings,
         "settings_disabled": False,
@@ -821,7 +904,7 @@ def workspace_context(
         "session_greeting": f"{greeting_prefix}, {greeting_name}",
         "session_started_at": session_started_at,
         "server_now": timezone.localtime().isoformat(),
-        "firm_name": getattr(settings, "FIRM_DISPLAY_NAME", "Sheria Law Firm"),
+        "firm_name": get_firm_display_name(),
         "preactive_locked": False,
         "notifications_url": reverse("accounts:workspace_notifications"),
         "notifications_mark_all_url": reverse(
@@ -919,6 +1002,11 @@ def employee_preactive_context(request, user, *, page_title, active="onboarding"
         "dashboard_disabled": True,
         "back_url": None,
         "settings_url": "#",
+        "notification_settings_url": "#",
+        "about_me_url": "#",
+        "my_blogs_url": "#",
+        "my_blogs_new_url": "#",
+        "theme_settings_url": "#",
         "system_settings_url": "#",
         "settings_active": False,
         "settings_disabled": True,
@@ -934,7 +1022,7 @@ def employee_preactive_context(request, user, *, page_title, active="onboarding"
         "session_greeting": f"{greeting_prefix}, {greeting_name}",
         "session_started_at": session_started_at,
         "server_now": timezone.localtime().isoformat(),
-        "firm_name": getattr(settings, "FIRM_DISPLAY_NAME", "Sheria Law Firm"),
+        "firm_name": get_firm_display_name(),
         "preactive_locked": True,
         "lock_badge": "Locked",
         "status_label": status_label,

@@ -1,0 +1,122 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page settings-page" id="company-blogs-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Review submitted posts before they go live. Approved posts appear on the website at
+        <a href="{{ public_blog_list_url }}" target="_blank" rel="noopener">/blog/</a>.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ public_blog_list_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">Open website blogs</a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Awaiting approval</h3>
+      <p class="panel__hint">
+        {% if pending_blog_count %}
+        {{ pending_blog_count }} submitted
+        {% else %}
+        None waiting
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if pending_blog_posts %}
+      <ul class="blog-post-list">
+        {% for post in pending_blog_posts %}
+        <li class="blog-post-item">
+          <div class="blog-post-item__main">
+            <p class="blog-post-item__title">{{ post.title }}</p>
+            <p class="blog-post-item__meta">
+              <span class="status-pill status-pill--submitted">Submitted</span>
+              <span>{{ post.author.get_full_name }}</span>
+              {% if post.submitted_at %}
+              <span>Submitted {{ post.submitted_at|date:"j M Y, H:i" }}</span>
+              {% endif %}
+              {% with seo=post.seo_checklist %}
+              <span class="blog-post-item__seo">SEO {{ seo.score }}%</span>
+              {% endwith %}
+            </p>
+            <p class="blog-post-item__excerpt">
+              {% if post.excerpt %}{{ post.excerpt|truncatewords:28 }}{% else %}{{ post.body|truncatewords:28 }}{% endif %}
+            </p>
+          </div>
+          <div class="blog-post-item__actions">
+            <a
+              href="{% url 'accounts:review_company_blog' role=role_slug post_id=post.pk %}"
+              class="btn btn--primary btn--inline"
+            >Review</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No posts awaiting approval</p>
+        <p class="empty-state__copy">When employees submit blog posts, they will appear here for review.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Published on the website</h3>
+      <p class="panel__hint">
+        {% if published_blog_count %}
+        {{ published_blog_count }} live
+        {% else %}
+        None live yet
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if published_blog_posts %}
+      <ul class="blog-post-list">
+        {% for post in published_blog_posts %}
+        <li class="blog-post-item">
+          <div class="blog-post-item__main">
+            <p class="blog-post-item__title">{{ post.title }}</p>
+            <p class="blog-post-item__meta">
+              <span class="status-pill status-pill--published">Published</span>
+              <span>{{ post.author.get_full_name }}</span>
+              {% if post.published_at %}
+              <span>Live since {{ post.published_at|date:"j M Y" }}</span>
+              {% endif %}
+              {% if post.approved_by %}
+              <span>Approved by {{ post.approved_by.get_full_name }}</span>
+              {% endif %}
+            </p>
+            <p class="blog-post-item__public">
+              <a href="{{ post.get_absolute_url }}" target="_blank" rel="noopener">/blog/{{ post.slug }}/</a>
+            </p>
+          </div>
+          <div class="blog-post-item__actions">
+            <a href="{{ post.get_absolute_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">View</a>
+            <a
+              href="{% url 'accounts:review_company_blog' role=role_slug post_id=post.pk %}"
+              class="btn btn--quiet btn--inline"
+            >Manage</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No published blog posts</p>
+        <p class="empty-state__copy">Approve a submitted post to publish it on the firm website.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

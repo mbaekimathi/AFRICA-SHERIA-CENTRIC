@@ -242,31 +242,36 @@ class Employee(AbstractUser):
         null=True,
     )
 
-    # Personal workspace appearance (applies to this user's role pages)
+    # Personal workspace appearance (this employee only — not firm-wide)
     ui_theme = models.CharField(
         max_length=32,
         choices=UiTheme.choices,
         default=UiTheme.DEFAULT,
         blank=True,
-        help_text="Color theme for this user's workspace pages.",
+        help_text="Color theme for this user's workspace only.",
     )
     ui_font = models.CharField(
         max_length=32,
         choices=UiFont.choices,
         default=UiFont.PLEX,
         blank=True,
-        help_text="Font pairing for this user's workspace pages.",
+        help_text="Font pairing for this user's workspace only.",
     )
     ui_density = models.CharField(
         max_length=16,
         choices=UiDensity.choices,
         default=UiDensity.COMFORTABLE,
         blank=True,
-        help_text="Spacing density for this user's workspace pages.",
+        help_text="Spacing density for this user's workspace only.",
     )
     notification_sound = models.BooleanField(
         default=True,
         help_text="Play a sound when new unread notifications arrive.",
+    )
+    about_me = models.TextField(
+        blank=True,
+        default="",
+        help_text="Short personal bio shown on this user's profile.",
     )
 
     USERNAME_FIELD = "login_code"
@@ -377,6 +382,257 @@ class Employee(AbstractUser):
     def dashboard_url_name(self):
         """Backward-compatible alias — prefer dashboard_url for redirects."""
         return self.dashboard_url
+
+
+def blog_cover_upload_to(instance, filename):
+    return f"blogs/covers/{instance.author_id or 'new'}/{filename}"
+
+
+class EmployeeBlogPost(models.Model):
+    """Employee-authored blog post that can be published to the public website."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SUBMITTED = "submitted", "Submitted"
+        PUBLISHED = "published", "Published"
+
+    author = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="blog_posts",
+    )
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(
+        max_length=220,
+        unique=True,
+        blank=True,
+        help_text="URL path under /blog/. Auto-generated from the title if left blank.",
+    )
+    excerpt = models.CharField(
+        max_length=320,
+        blank=True,
+        default="",
+        help_text="Short summary shown on the blog list and used as a fallback meta description.",
+    )
+    body = models.TextField()
+    cover_image = models.ImageField(
+        upload_to=blog_cover_upload_to,
+        blank=True,
+        null=True,
+        help_text="Optional cover image for social sharing and the blog list.",
+    )
+    meta_title = models.CharField(
+        max_length=70,
+        blank=True,
+        default="",
+        help_text="SEO title (about 50–60 characters). Falls back to the post title.",
+    )
+    meta_description = models.CharField(
+        max_length=160,
+        blank=True,
+        default="",
+        help_text="SEO description (about 120–160 characters) for Google snippets.",
+    )
+    focus_keyword = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text="Primary phrase you want this post to rank for.",
+    )
+    tags = models.CharField(
+        max_length=240,
+        blank=True,
+        default="",
+        help_text="Comma-separated topics, e.g. employment law, contracts, Kenya.",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DRAFT,
+    )
+    submitted_at = models.DateTimeField(blank=True, null=True)
+    published_at = models.DateTimeField(blank=True, null=True)
+    approved_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="approved_blog_posts",
+    )
+    approved_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-created_at"]
+        verbose_name = "Employee blog post"
+        verbose_name_plural = "Employee blog posts"
+        indexes = [
+            models.Index(fields=["status", "-published_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title} — {self.author.get_full_name()}"
+
+    def save(self, *args, **kwargs):
+        from django.utils.text import slugify
+
+        if not self.slug:
+            base = slugify(self.title)[:200] or "post"
+            candidate = base
+            n = 2
+            while (
+                EmployeeBlogPost.objects.filter(slug=candidate)
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                suffix = f"-{n}"
+                candidate = f"{base[: 220 - len(suffix)]}{suffix}"
+                n += 1
+            self.slug = candidate
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("accounts:blog_detail", kwargs={"slug": self.slug})
+
+    @property
+    def tag_list(self):
+        return [t.strip() for t in (self.tags or "").split(",") if t.strip()]
+
+    @property
+    def word_count(self):
+        return len((self.body or "").split())
+
+    @property
+    def reading_time_minutes(self):
+        return max(1, round(self.word_count / 200))
+
+    @property
+    def author_initials(self):
+        name = (self.author.get_full_name() if self.author_id else "") or ""
+        parts = [p for p in name.replace(".", " ").split() if p]
+        if len(parts) >= 2:
+            return f"{parts[0][0]}{parts[-1][0]}".upper()
+        if parts:
+            return parts[0][:2].upper()
+        return "SC"
+
+    @property
+    def effective_meta_title(self):
+        return (self.meta_title or self.title or "").strip()
+
+    @property
+    def effective_meta_description(self):
+        text = (self.meta_description or self.excerpt or self.body or "").strip()
+        if len(text) <= 160:
+            return text
+        return text[:157].rsplit(" ", 1)[0] + "…"
+
+    @property
+    def is_public(self):
+        return self.status == self.Status.PUBLISHED and bool(self.slug)
+
+    def seo_checklist(self):
+        """Return checklist items that guide authors toward Google-friendly posts."""
+        title = (self.title or "").strip()
+        meta_title = (self.meta_title or title).strip()
+        meta_desc = (self.meta_description or "").strip()
+        excerpt = (self.excerpt or "").strip()
+        keyword = (self.focus_keyword or "").strip().lower()
+        body = (self.body or "").strip()
+        body_lower = body.lower()
+        words = self.word_count
+        slug = (self.slug or "").strip()
+
+        def has_keyword(haystack: str) -> bool:
+            return bool(keyword) and keyword in (haystack or "").lower()
+
+        checks = [
+            {
+                "id": "title_length",
+                "label": "Title is 30–60 characters",
+                "ok": 30 <= len(title) <= 60,
+                "hint": f"{len(title)} characters — aim for a clear, specific title.",
+            },
+            {
+                "id": "meta_title",
+                "label": "SEO title is 50–60 characters",
+                "ok": 50 <= len(meta_title) <= 60,
+                "hint": f"{len(meta_title)} characters — this appears in the browser tab and Google.",
+            },
+            {
+                "id": "meta_description",
+                "label": "Meta description is 120–160 characters",
+                "ok": 120 <= len(meta_desc) <= 160,
+                "hint": f"{len(meta_desc)} characters — write a compelling snippet for search results.",
+            },
+            {
+                "id": "excerpt",
+                "label": "Excerpt / summary added",
+                "ok": 40 <= len(excerpt) <= 320,
+                "hint": "A short summary helps the blog list and social previews.",
+            },
+            {
+                "id": "focus_keyword",
+                "label": "Focus keyword set",
+                "ok": bool(keyword),
+                "hint": "Pick one primary phrase readers would search for.",
+            },
+            {
+                "id": "keyword_in_title",
+                "label": "Focus keyword appears in the title",
+                "ok": has_keyword(title),
+                "hint": "Include the keyword naturally in the title.",
+            },
+            {
+                "id": "keyword_in_meta",
+                "label": "Focus keyword appears in the meta description",
+                "ok": has_keyword(meta_desc),
+                "hint": "Mention the keyword once in the meta description.",
+            },
+            {
+                "id": "keyword_in_body",
+                "label": "Focus keyword appears in the body",
+                "ok": has_keyword(body_lower),
+                "hint": "Use the keyword early, then write naturally.",
+            },
+            {
+                "id": "body_length",
+                "label": "Body has at least 300 words",
+                "ok": words >= 300,
+                "hint": f"{words} words — longer, helpful posts tend to rank better.",
+            },
+            {
+                "id": "slug",
+                "label": "URL slug is set",
+                "ok": bool(slug),
+                "hint": "Use a short, readable slug with your keyword if it fits.",
+            },
+            {
+                "id": "keyword_in_slug",
+                "label": "Focus keyword appears in the URL slug",
+                "ok": bool(keyword)
+                and keyword.replace(" ", "-") in slug.lower().replace("_", "-"),
+                "hint": "A keyword-rich slug helps Google understand the page.",
+            },
+            {
+                "id": "cover",
+                "label": "Cover image uploaded",
+                "ok": bool(self.cover_image),
+                "hint": "Images improve sharing and make the post stand out.",
+            },
+            {
+                "id": "tags",
+                "label": "At least one topic tag",
+                "ok": len(self.tag_list) >= 1,
+                "hint": "Tags help group related posts on the website.",
+            },
+        ]
+        passed = sum(1 for c in checks if c["ok"])
+        score = int(round((passed / len(checks)) * 100)) if checks else 0
+        return {"checks": checks, "score": score, "passed": passed, "total": len(checks)}
 
 
 class Client(models.Model):
@@ -1215,6 +1471,274 @@ class Notification(models.Model):
         self.is_read = True
         self.read_at = timezone.now()
         self.save(update_fields=["is_read", "read_at"])
+
+
+class FirmCompanyInformation(models.Model):
+    """
+    Firm-wide company profile (singleton row, pk=1).
+
+    Edited under System Settings → Company Information. Display name falls back
+    to settings.FIRM_DISPLAY_NAME when legal/trading names are empty.
+    """
+
+    legal_name = models.CharField(max_length=255, blank=True, default="")
+    trading_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Public / brand name if different from the legal name.",
+    )
+    registration_number = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Business or company registration number.",
+    )
+    tax_pin = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="Tax PIN",
+        help_text="KRA PIN or equivalent tax identifier.",
+    )
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    website = models.URLField(blank=True, default="")
+    physical_address = models.TextField(blank=True, default="")
+    postal_address = models.CharField(max_length=255, blank=True, default="")
+    city = models.CharField(max_length=120, blank=True, default="")
+    country = models.CharField(max_length=120, blank=True, default="Kenya")
+    tagline = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Short line used under the firm name where needed.",
+    )
+    # —— About company (website story) ——
+    visitor_feeling = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="One sentence: what a visitor should know or feel on landing.",
+    )
+    founded_year = models.CharField(max_length=20, blank=True, default="")
+    founded_by = models.CharField(max_length=255, blank=True, default="")
+    market_gap = models.TextField(
+        blank=True,
+        default="",
+        help_text="Gap or need in the market that inspired the firm.",
+    )
+    milestone = models.TextField(
+        blank=True,
+        default="",
+        help_text="One milestone worth mentioning.",
+    )
+    service_areas = models.TextField(
+        blank=True,
+        default="",
+        help_text="Towns and cities the firm currently serves.",
+    )
+    value_proposition = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="One sentence: what you do, for whom, and the outcome.",
+    )
+    future_vision = models.TextField(
+        blank=True,
+        default="",
+        help_text="Where the firm wants to be in 5–10 years.",
+    )
+    core_values = models.JSONField(
+        blank=True,
+        default=list,
+        help_text='List of {"name": "...", "how": "..."} core value entries.',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_information_updates",
+    )
+
+    class Meta:
+        verbose_name = "Company information"
+        verbose_name_plural = "Company information"
+
+    def __str__(self):
+        return self.display_name
+
+    @classmethod
+    def get_solo(cls):
+        from django.conf import settings
+
+        default_name = (
+            getattr(settings, "FIRM_DISPLAY_NAME", "") or ""
+        ).strip() or "Sheria Law Firm"
+        obj, _ = cls.objects.get_or_create(
+            pk=1,
+            defaults={"legal_name": default_name},
+        )
+        return obj
+
+    @property
+    def display_name(self) -> str:
+        from django.conf import settings
+
+        name = (self.trading_name or self.legal_name or "").strip()
+        if name:
+            return name
+        return (
+            getattr(settings, "FIRM_DISPLAY_NAME", "") or ""
+        ).strip() or "Sheria Law Firm"
+
+
+def get_firm_display_name() -> str:
+    """Resolved firm name for workspace chrome and portals."""
+    return FirmCompanyInformation.get_solo().display_name
+
+
+def practice_area_image_upload_to(instance, filename):
+    return f"company/practice-areas/{instance.practice_area_id or 'new'}/{filename}"
+
+
+class FirmPracticeArea(models.Model):
+    """A ranked practice area for the firm website."""
+
+    name = models.CharField(max_length=160, verbose_name="Practice area")
+    summary = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="What we do in this area",
+        help_text="Short description of the work in this practice area.",
+    )
+    details = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Detailed information",
+        help_text="Longer copy for the practice area page.",
+    )
+    rank = models.PositiveIntegerField(
+        default=1,
+        help_text="Lower numbers appear first (1 = highest priority).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="practice_area_updates",
+    )
+
+    class Meta:
+        ordering = ["rank", "name"]
+        verbose_name = "Practice area"
+        verbose_name_plural = "Practice areas"
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def main_image(self):
+        return self.images.order_by("sort_order", "id").first()
+
+
+class FirmPracticeAreaImage(models.Model):
+    """Image for a practice area. Lowest sort_order is the main image."""
+
+    practice_area = models.ForeignKey(
+        FirmPracticeArea,
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    image = models.ImageField(upload_to=practice_area_image_upload_to)
+    sort_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        verbose_name = "Practice area image"
+        verbose_name_plural = "Practice area images"
+
+    def __str__(self):
+        return f"{self.practice_area.name} image #{self.sort_order}"
+
+    @property
+    def is_main(self) -> bool:
+        main = self.practice_area.main_image
+        return bool(main and main.pk == self.pk)
+
+
+class FirmFAQ(models.Model):
+    """A ranked FAQ entry for the firm website."""
+
+    question = models.CharField(max_length=255, verbose_name="Question")
+    answer = models.TextField(verbose_name="Answer")
+    rank = models.PositiveIntegerField(
+        default=1,
+        help_text="Lower numbers appear first (1 = highest priority).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="faq_updates",
+    )
+
+    class Meta:
+        ordering = ["rank", "question"]
+        verbose_name = "Company FAQ"
+        verbose_name_plural = "Company FAQs"
+
+    def __str__(self):
+        return self.question
+
+
+class WebsiteTemplateSetting(models.Model):
+    """
+    Firm-wide choice for which public homepage appears at `/` (singleton, pk=1).
+    """
+
+    class TemplateChoice(models.TextChoices):
+        SHERIA_CENTRIC = "sheria_centric", "Sheria Centric website"
+        COMPANY = "company", "Company website"
+
+    active_template = models.CharField(
+        max_length=32,
+        choices=TemplateChoice.choices,
+        default=TemplateChoice.SHERIA_CENTRIC,
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="website_template_updates",
+    )
+
+    class Meta:
+        verbose_name = "Website template setting"
+        verbose_name_plural = "Website template setting"
+
+    def __str__(self):
+        return self.get_active_template_display()
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @property
+    def uses_company_website(self) -> bool:
+        return self.active_template == self.TemplateChoice.COMPANY
 
 
 class GoogleDriveConnection(models.Model):

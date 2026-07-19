@@ -1,0 +1,220 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-wide" id="about-company-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Answer these prompts to shape the firm’s public story. Your replies power
+        the company website About section.
+      </p>
+    </div>
+  </header>
+
+  <form method="post" class="workspace-form about-company-form" id="about-company-form" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="form-alert" role="alert">
+      {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>First impression</h3>
+        <p class="panel__hint">Question 1 of 8</p>
+      </div>
+      <div class="panel__body">
+        <div class="form-field">
+          <label for="{{ form.visitor_feeling.id_for_label }}">{{ form.visitor_feeling.label }}</label>
+          {{ form.visitor_feeling }}
+          <span class="field-hint">Keep it to one clear sentence visitors can feel immediately.</span>
+          {% if form.visitor_feeling.errors %}<span class="field-error">{{ form.visitor_feeling.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Founding</h3>
+        <p class="panel__hint">Question 2 of 8</p>
+      </div>
+      <div class="panel__body">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.founded_year.id_for_label }}">{{ form.founded_year.label }}</label>
+            {{ form.founded_year }}
+            {% if form.founded_year.errors %}<span class="field-error">{{ form.founded_year.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.founded_by.id_for_label }}">{{ form.founded_by.label }}</label>
+            {{ form.founded_by }}
+            {% if form.founded_by.errors %}<span class="field-error">{{ form.founded_by.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Why the firm exists</h3>
+        <p class="panel__hint">Question 3 of 8</p>
+      </div>
+      <div class="panel__body">
+        <div class="form-field">
+          <label for="{{ form.market_gap.id_for_label }}">{{ form.market_gap.label }}</label>
+          {{ form.market_gap }}
+          {% if form.market_gap.errors %}<span class="field-error">{{ form.market_gap.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Milestone</h3>
+        <p class="panel__hint">Question 4 of 8</p>
+      </div>
+      <div class="panel__body">
+        <div class="form-field">
+          <label for="{{ form.milestone.id_for_label }}">{{ form.milestone.label }}</label>
+          {{ form.milestone }}
+          {% if form.milestone.errors %}<span class="field-error">{{ form.milestone.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Service footprint</h3>
+        <p class="panel__hint">Question 5 of 8</p>
+      </div>
+      <div class="panel__body">
+        <div class="form-field">
+          <label for="{{ form.service_areas.id_for_label }}">{{ form.service_areas.label }}</label>
+          {{ form.service_areas }}
+          <span class="field-hint">List towns or cities, separated by commas.</span>
+          {% if form.service_areas.errors %}<span class="field-error">{{ form.service_areas.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>What you deliver</h3>
+        <p class="panel__hint">Question 6 of 8</p>
+      </div>
+      <div class="panel__body">
+        <div class="form-field">
+          <label for="{{ form.value_proposition.id_for_label }}">{{ form.value_proposition.label }}</label>
+          {{ form.value_proposition }}
+          {% if form.value_proposition.errors %}<span class="field-error">{{ form.value_proposition.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Future vision</h3>
+        <p class="panel__hint">Question 7 of 8</p>
+      </div>
+      <div class="panel__body">
+        <div class="form-field">
+          <label for="{{ form.future_vision.id_for_label }}">{{ form.future_vision.label }}</label>
+          {{ form.future_vision }}
+          {% if form.future_vision.errors %}<span class="field-error">{{ form.future_vision.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Core values</h3>
+        <p class="panel__hint">Question 8 of 8 · pick 3–5</p>
+      </div>
+      <div class="panel__body">
+        <p class="field-hint about-values-intro">
+          Choose 3–5 values from the list, or add your own. For each selected value,
+          add one sentence on how it shows up in your work.
+        </p>
+        {% if form.selected_values.errors %}
+        <span class="field-error">{{ form.selected_values.errors.0 }}</span>
+        {% endif %}
+
+        <div class="about-values-grid">
+          {% for row in value_rows %}
+          <div class="about-value-card{% if row.checked %} is-selected{% endif %}" data-value-card="{{ row.label }}">
+            <label class="about-value-card__check">
+              <input
+                type="checkbox"
+                name="selected_values"
+                value="{{ row.label }}"
+                {% if row.checked %}checked{% endif %}
+                data-value-toggle="{{ row.label }}"
+              >
+              <strong>{{ row.label }}</strong>
+            </label>
+            <div class="about-value-card__how"{% if not row.checked %} hidden{% endif %}>
+              <label for="{{ row.field.id_for_label }}">How it shows up in your work</label>
+              {{ row.field }}
+              {% if row.field.errors %}<span class="field-error">{{ row.field.errors.0 }}</span>{% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="about-custom-values">
+          <h4>Add your own</h4>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ form.custom_value_1.id_for_label }}">{{ form.custom_value_1.label }}</label>
+              {{ form.custom_value_1 }}
+            </div>
+            <div class="form-field">
+              <label for="{{ form.how_custom_1.id_for_label }}">{{ form.how_custom_1.label }}</label>
+              {{ form.how_custom_1 }}
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ form.custom_value_2.id_for_label }}">{{ form.custom_value_2.label }}</label>
+              {{ form.custom_value_2 }}
+            </div>
+            <div class="form-field">
+              <label for="{{ form.how_custom_2.id_for_label }}">{{ form.how_custom_2.label }}</label>
+              {{ form.how_custom_2 }}
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">Save about company</button>
+        </div>
+      </div>
+    </section>
+  </form>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var cards = document.querySelectorAll("[data-value-card]");
+    cards.forEach(function (card) {
+      var toggle = card.querySelector("[data-value-toggle]");
+      var how = card.querySelector(".about-value-card__how");
+      if (!toggle || !how) return;
+      function sync() {
+        how.hidden = !toggle.checked;
+        card.classList.toggle("is-selected", toggle.checked);
+      }
+      toggle.addEventListener("change", sync);
+      sync();
+    });
+  })();
+</script>
+{% endblock %}

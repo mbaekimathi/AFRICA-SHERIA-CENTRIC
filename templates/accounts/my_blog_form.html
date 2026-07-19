@@ -1,0 +1,237 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page settings-page settings-page--profile blog-editor-page" id="settings-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">My blogs</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        {% if blog_post %}
+        Update this post. Save as draft, or submit for approval before it can go live on the website.
+        {% else %}
+        Write an SEO-ready post, then submit it for approval. Approved posts appear under
+        <a href="{{ public_blog_list_url }}">/blog/</a>.
+        {% endif %}
+      </p>
+    </div>
+    {% if public_post_url %}
+    <div class="page-intro__actions">
+      <a href="{{ public_post_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">
+        View on website
+      </a>
+    </div>
+    {% endif %}
+  </header>
+
+  <div class="blog-editor">
+    <section class="panel blog-editor__main">
+      <div class="panel__head">
+        <h3>{% if blog_post %}Edit post{% else %}New post{% endif %}</h3>
+        <p class="panel__hint">Draft privately, then submit for firm approval</p>
+      </div>
+      <div class="panel__body">
+        <form
+          method="post"
+          class="workspace-form blog-form"
+          enctype="multipart/form-data"
+          id="blog-editor-form"
+          novalidate
+        >
+          {% csrf_token %}
+          <input type="hidden" name="settings_action" value="blog">
+
+          {% if blog_form.non_field_errors %}
+          <div class="form-errors" role="alert">
+            {% for error in blog_form.non_field_errors %}
+            <p>{{ error }}</p>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="blog-form__section">
+            <h4 class="blog-form__section-title">Content</h4>
+
+            <div class="form-field">
+              <label for="{{ blog_form.title.id_for_label }}">{{ blog_form.title.label }}</label>
+              {{ blog_form.title }}
+              <span class="field-hint" id="blog-title-count">Aim for 30–60 characters.</span>
+              {% if blog_form.title.errors %}
+              <p class="field-error">{{ blog_form.title.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-field">
+              <label for="{{ blog_form.slug.id_for_label }}">{{ blog_form.slug.label }}</label>
+              {{ blog_form.slug }}
+              <span class="field-hint">{{ blog_form.slug.help_text }} Preview: /blog/<span id="blog-slug-preview">{{ blog_form.slug.value|default:"your-slug" }}</span>/</span>
+              {% if blog_form.slug.errors %}
+              <p class="field-error">{{ blog_form.slug.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-field">
+              <label for="{{ blog_form.excerpt.id_for_label }}">{{ blog_form.excerpt.label }}</label>
+              {{ blog_form.excerpt }}
+              <span class="field-hint">{{ blog_form.excerpt.help_text }}</span>
+              {% if blog_form.excerpt.errors %}
+              <p class="field-error">{{ blog_form.excerpt.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-field">
+              <label for="{{ blog_form.body.id_for_label }}">{{ blog_form.body.label }}</label>
+              {{ blog_form.body }}
+              <span class="field-hint" id="blog-word-count">Write at least 300 words for stronger SEO.</span>
+              {% if blog_form.body.errors %}
+              <p class="field-error">{{ blog_form.body.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-field">
+              <label for="{{ blog_form.cover_image.id_for_label }}">{{ blog_form.cover_image.label }}</label>
+              {% if blog_post and blog_post.cover_image %}
+              <div class="blog-cover-preview">
+                <img src="{{ blog_post.cover_image.url }}" alt="" width="240" height="135">
+              </div>
+              {% endif %}
+              {{ blog_form.cover_image }}
+              <span class="field-hint">{{ blog_form.cover_image.help_text }}</span>
+              {% if blog_form.clear_cover and not blog_form.clear_cover.is_hidden %}
+              <label class="blog-clear-cover">{{ blog_form.clear_cover }} {{ blog_form.clear_cover.label }}</label>
+              {% endif %}
+              {% if blog_form.cover_image.errors %}
+              <p class="field-error">{{ blog_form.cover_image.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="blog-form__section">
+            <h4 class="blog-form__section-title">SEO for Google</h4>
+            <p class="blog-form__section-lead">
+              Fill these so search engines can understand and surface your post.
+            </p>
+
+            <div class="form-field">
+              <label for="{{ blog_form.focus_keyword.id_for_label }}">{{ blog_form.focus_keyword.label }}</label>
+              {{ blog_form.focus_keyword }}
+              <span class="field-hint">{{ blog_form.focus_keyword.help_text }}</span>
+              {% if blog_form.focus_keyword.errors %}
+              <p class="field-error">{{ blog_form.focus_keyword.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-field">
+              <label for="{{ blog_form.meta_title.id_for_label }}">{{ blog_form.meta_title.label }}</label>
+              {{ blog_form.meta_title }}
+              <span class="field-hint" id="blog-meta-title-count">{{ blog_form.meta_title.help_text }}</span>
+              {% if blog_form.meta_title.errors %}
+              <p class="field-error">{{ blog_form.meta_title.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-field">
+              <label for="{{ blog_form.meta_description.id_for_label }}">{{ blog_form.meta_description.label }}</label>
+              {{ blog_form.meta_description }}
+              <span class="field-hint" id="blog-meta-desc-count">{{ blog_form.meta_description.help_text }}</span>
+              {% if blog_form.meta_description.errors %}
+              <p class="field-error">{{ blog_form.meta_description.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-field">
+              <label for="{{ blog_form.tags.id_for_label }}">{{ blog_form.tags.label }}</label>
+              {{ blog_form.tags }}
+              <span class="field-hint">{{ blog_form.tags.help_text }}</span>
+              {% if blog_form.tags.errors %}
+              <p class="field-error">{{ blog_form.tags.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="form-field">
+            <span class="form-label">{{ blog_form.status.label }}</span>
+            <div class="id-type-options">
+              {% for radio in blog_form.status %}
+              <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
+              {% endfor %}
+            </div>
+            <span class="field-hint">Draft stays private. Submit for approval sends it to Company Blogs for review before it goes live.</span>
+            {% if blog_form.status.errors %}
+            <p class="field-error">{{ blog_form.status.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-actions form-actions--start blog-form__actions">
+            <a href="{{ my_blogs_url }}" class="btn btn--quiet btn--inline">Back to My blogs</a>
+            {% if blog_post %}
+            <button
+              type="submit"
+              name="blog_delete"
+              value="1"
+              class="btn btn--quiet btn--inline"
+              onclick="return confirm('Delete this blog post? This cannot be undone.');"
+            >
+              Delete
+            </button>
+            {% endif %}
+            <button type="submit" class="btn btn--primary btn--inline">Save post</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <aside class="blog-seo-coach" aria-label="SEO guidance">
+      <div class="blog-seo-coach__card">
+        <div class="blog-seo-coach__score">
+          <p class="blog-seo-coach__score-label">SEO readiness</p>
+          <p class="blog-seo-coach__score-value" id="blog-seo-score">{{ seo_checklist.score }}%</p>
+          <p class="blog-seo-coach__score-meta" id="blog-seo-score-meta">
+            {{ seo_checklist.passed }} of {{ seo_checklist.total }} checks passed
+          </p>
+        </div>
+
+        <div class="blog-seo-serp" aria-live="polite">
+          <p class="blog-seo-serp__label">Google preview</p>
+          <p class="blog-seo-serp__url">yoursite.com/blog/<span id="serp-slug">{{ blog_form.slug.value|default:"your-slug" }}</span>/</p>
+          <p class="blog-seo-serp__title" id="serp-title">
+            {% if blog_form.meta_title.value %}{{ blog_form.meta_title.value }}{% elif blog_form.title.value %}{{ blog_form.title.value }}{% else %}Your SEO title{% endif %}
+          </p>
+          <p class="blog-seo-serp__desc" id="serp-desc">
+            {% if blog_form.meta_description.value %}{{ blog_form.meta_description.value }}{% elif blog_form.excerpt.value %}{{ blog_form.excerpt.value }}{% else %}Your meta description will appear here…{% endif %}
+          </p>
+        </div>
+
+        <ul class="blog-seo-checklist" id="blog-seo-checklist">
+          {% for check in seo_checklist.checks %}
+          <li class="blog-seo-check {% if check.ok %}is-ok{% else %}is-todo{% endif %}" data-check="{{ check.id }}">
+            <span class="blog-seo-check__mark" aria-hidden="true"></span>
+            <span class="blog-seo-check__copy">
+              <strong>{{ check.label }}</strong>
+              <span>{{ check.hint }}</span>
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+
+        <div class="blog-seo-tips">
+          <p class="blog-seo-tips__title">Tips for ranking</p>
+          <ul>
+            <li>Answer one clear question readers would search for.</li>
+            <li>Put the focus keyword in the title, slug, and first paragraph.</li>
+            <li>Use short paragraphs and concrete examples from practice.</li>
+            <li>Submit only when the checklist is mostly green — approval publishes it.</li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/blog-seo-coach.js' %}" defer></script>
+{% endblock %}

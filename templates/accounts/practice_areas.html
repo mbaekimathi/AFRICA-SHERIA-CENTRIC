@@ -1,0 +1,73 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="practice-areas-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Register the firm’s practice areas for the website. Rank them so the most
+        important areas appear first. The first image on each area is the main image.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ practice_areas_new_url }}" class="btn btn--primary btn--inline">Add practice area</a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Practice areas</h3>
+      <p class="panel__hint">
+        {% if practice_areas %}
+        {{ practice_areas|length }} area{{ practice_areas|length|pluralize }}
+        {% else %}
+        None registered
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if practice_areas %}
+      <ul class="practice-area-list">
+        {% for area in practice_areas %}
+        <li class="practice-area-item">
+          <div class="practice-area-item__media">
+            {% if area.main_image %}
+            <img src="{{ area.main_image.image.url }}" alt="" width="96" height="72">
+            {% else %}
+            <div class="practice-area-item__placeholder" aria-hidden="true">No image</div>
+            {% endif %}
+          </div>
+          <div class="practice-area-item__main">
+            <p class="practice-area-item__title">
+              <span class="practice-area-item__rank">#{{ area.rank }}</span>
+              {{ area.name }}
+            </p>
+            <p class="practice-area-item__summary">{{ area.summary|truncatewords:28 }}</p>
+            <p class="practice-area-item__meta">
+              {{ area.images.count }} image{{ area.images.count|pluralize }}
+              · Updated {{ area.updated_at|date:"j M Y" }}
+            </p>
+          </div>
+          <div class="practice-area-item__actions">
+            <a href="{% url 'accounts:edit_practice_area' role=role_slug area_id=area.pk %}" class="btn btn--quiet btn--inline">Edit</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No practice areas yet</p>
+        <p class="empty-state__copy">
+          Add your first practice area with a short summary, details, rank, and images.
+        </p>
+        <a href="{{ practice_areas_new_url }}" class="btn btn--primary btn--inline">Add practice area</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

@@ -10,13 +10,9 @@ document.addEventListener("DOMContentLoaded", () => {
     density: page.dataset.savedDensity || "comfortable",
   };
 
-  const viewModal = document.getElementById("view-profile-modal");
-  const editModal = document.getElementById("edit-profile-modal");
-  const openView = document.getElementById("open-view-profile");
-  const openEdit = document.getElementById("open-edit-profile");
-  const closeView = document.getElementById("close-view-profile");
+  const editDrop = document.getElementById("edit-profile-drop");
+  const editForm = document.getElementById("edit-profile-form");
   const closeEdit = document.getElementById("close-edit-profile");
-  const viewToEdit = document.getElementById("view-to-edit-profile");
   const savebar = document.getElementById("appearance-savebar");
   const form = document.getElementById("appearance-form");
 
@@ -27,64 +23,43 @@ document.addEventListener("DOMContentLoaded", () => {
   const previewFont = document.getElementById("preview-font");
   const previewDensity = document.getElementById("preview-density");
 
-  const openModal = (modal) => {
-    if (!modal) return;
-    if (typeof modal.showModal === "function") {
-      if (!modal.open) modal.showModal();
-    } else {
-      modal.setAttribute("open", "");
-    }
-  };
-
-  const closeModal = (modal) => {
-    if (!modal) return;
-    if (typeof modal.close === "function") {
-      modal.close();
-    } else {
-      modal.removeAttribute("open");
-    }
-  };
-
-  openView?.addEventListener("click", () => openModal(viewModal));
-  openEdit?.addEventListener("click", () => openModal(editModal));
-  closeView?.addEventListener("click", () => closeModal(viewModal));
-  closeEdit?.addEventListener("click", () => closeModal(editModal));
-  viewToEdit?.addEventListener("click", () => {
-    closeModal(viewModal);
-    openModal(editModal);
+  closeEdit?.addEventListener("click", () => {
+    if (editDrop) editDrop.open = false;
   });
 
-  [viewModal, editModal].forEach((modal) => {
-    modal?.addEventListener("click", (event) => {
-      if (event.target === modal) closeModal(modal);
-    });
-  });
-
-  if (viewModal?.hasAttribute("open") && typeof viewModal.showModal === "function") {
-    viewModal.removeAttribute("open");
-    openModal(viewModal);
-  }
-  if (editModal?.hasAttribute("open") && typeof editModal.showModal === "function") {
-    editModal.removeAttribute("open");
-    openModal(editModal);
+  if (editDrop?.open) {
     window.setTimeout(() => {
-      editModal.querySelector("input, select, textarea")?.focus();
+      editForm?.querySelector("input, select, textarea")?.focus();
     }, 0);
   }
 
   const syncIdFields = () => {
-    const selected = editModal?.querySelector('input[name="id_type"]:checked');
+    const selected = editForm?.querySelector('input[name="id_type"]:checked');
     const isCitizen = !selected || selected.value === "citizen";
-    const citizen = editModal?.querySelector("[data-id-citizen]");
-    const nonCitizen = editModal?.querySelector("[data-id-non-citizen]");
+    const citizen = editForm?.querySelector("[data-id-citizen]");
+    const nonCitizen = editForm?.querySelector("[data-id-non-citizen]");
     if (citizen) citizen.hidden = !isCitizen;
     if (nonCitizen) nonCitizen.hidden = isCitizen;
   };
 
-  editModal?.querySelectorAll('input[name="id_type"]').forEach((input) => {
+  editForm?.querySelectorAll('input[name="id_type"]').forEach((input) => {
     input.addEventListener("change", syncIdFields);
   });
   syncIdFields();
+
+  const syncPaymentFields = () => {
+    const selected = editForm?.querySelector('input[name="payment_method"]:checked');
+    const method = selected?.value || "";
+    const mobile = editForm?.querySelector("[data-payment-mobile]");
+    const bank = editForm?.querySelector("[data-payment-bank]");
+    if (mobile) mobile.hidden = method !== "mobile";
+    if (bank) bank.hidden = method !== "bank";
+  };
+
+  editForm?.querySelectorAll('input[name="payment_method"]').forEach((input) => {
+    input.addEventListener("change", syncPaymentFields);
+  });
+  syncPaymentFields();
 
   const tabs = [...page.querySelectorAll(".settings-tab")];
   const panels = {

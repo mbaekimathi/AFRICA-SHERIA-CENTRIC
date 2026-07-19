@@ -5,7 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.db.models import Q, Value
 from django.db.models.functions import Concat
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -14,9 +14,10 @@ from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 
 import calendar as calendar_mod
+import json
 from collections import defaultdict
 from datetime import date
-
+from django.utils.safestring import mark_safe
 from .appearance import appearance_catalog
 from .client_auth import (
     get_client,
@@ -27,6 +28,7 @@ from .client_auth import (
 from .client_portal import client_home_url, client_portal_context
 from .country_codes import country_name
 from .forms import (
+    AboutMeForm,
     AppearanceSettingsForm,
     ApproveCaseForm,
     ApproveMatterForm,
@@ -35,16 +37,22 @@ from .forms import (
     ClientLoginForm,
     ClientOnboardingForm,
     ClientSignUpForm,
+    CompanyInformationForm,
+    CompanyContactsForm,
+    AboutCompanyForm,
     CourtAttendanceAdvocateFormSet,
     CourtAttendanceBringUpItemFormSet,
     CreateGoogleDocumentForm,
     CreateCaseTaskForm,
     CreateMatterTaskForm,
+    EmployeeBlogForm,
     EmployeeOnboardingForm,
+    FAQForm,
     LoginForm,
     MatterPartyEditFormSet,
     MatterPartyFormSet,
     NotificationSettingsForm,
+    PracticeAreaForm,
     ProfileSettingsForm,
     RegisterCaseForm,
     RegisterMatterForm,
@@ -55,6 +63,7 @@ from .forms import (
     UpdateCourtAttendanceForm,
     UpdateMatterAttendanceForm,
     UploadDocumentForm,
+    WebsiteTemplateForm,
 )
 from .google_auth import GoogleAuthError, verify_google_id_token
 from .google_drive import (
@@ -99,6 +108,11 @@ from .models import (
     DocumentContentSnapshot,
     DocumentOpenSession,
     Employee,
+    EmployeeBlogPost,
+    FirmCompanyInformation,
+    FirmFAQ,
+    FirmPracticeArea,
+    FirmPracticeAreaImage,
     GoogleDriveConnection,
     LitigationCase,
     MatterAttendance,
@@ -106,6 +120,7 @@ from .models import (
     MatterTask,
     NonLitigationMatter,
     Notification,
+    WebsiteTemplateSetting,
 )
 from .notifications import (
     notifications_payload,
@@ -129,21 +144,233 @@ from .workspace import (
     resolve_workspace_page,
     workspace_context,
 )
+from .utils import optimize_image, render_blog_body, whatsapp_chat_url
 
 
 class HomeView(View):
-    """Public Sheria-Centric website home."""
+    """Public homepage — Sheria Centric product site or company firm site."""
 
-    template_name = "accounts/home.html"
+    product_template = "accounts/home.html"
+    company_template = "accounts/company_home.html"
 
     def get(self, request):
+        setting = WebsiteTemplateSetting.get_solo()
+        if setting.uses_company_website:
+            company = FirmCompanyInformation.get_solo()
+            practice_areas = list(
+                FirmPracticeArea.objects.prefetch_related("images").order_by(
+                    "rank", "name"
+                )
+            )
+            faqs = list(FirmFAQ.objects.order_by("rank", "question"))
+            blog_posts = list(
+                EmployeeBlogPost.objects.filter(
+                    status=EmployeeBlogPost.Status.PUBLISHED
+                )
+                .select_related("author")
+                .order_by("-published_at", "-updated_at")[:6]
+            )
+            return render(
+                request,
+                self.company_template,
+                {
+                    "company": company,
+                    "firm_name": company.display_name,
+                    "practice_areas": practice_areas,
+                    "faqs": faqs,
+                    "blog_posts": blog_posts,
+                    "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
+                },
+            )
         return render(
             request,
-            self.template_name,
+            self.product_template,
             {
                 "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
             },
         )
+
+
+def _public_firm_context():
+    company = FirmCompanyInformation.get_solo()
+    return {
+        "company": company,
+        "firm_name": company.display_name,
+    }
+
+
+class BlogListView(View):
+    """Public standalone blog index for published posts."""
+
+    template_name = "accounts/blog_list.html"
+
+    def get(self, request):
+        posts = list(
+            EmployeeBlogPost.objects.filter(status=EmployeeBlogPost.Status.PUBLISHED)
+            .select_related("author")
+            .order_by("-published_at", "-updated_at")
+        )
+        context = _public_firm_context()
+        context.update(
+            {
+                "blog_posts": posts,
+                "page_title": "Insights & blogs",
+                "meta_description": (
+                    f"Legal insights and articles from {context['firm_name']}."
+                ),
+            }
+        )
+        return render(request, self.template_name, context)
+
+
+class BlogDetailView(View):
+    """Public standalone blog post page with SEO meta and structured data."""
+
+    template_name = "accounts/blog_detail.html"
+
+    def get(self, request, slug):
+        post = get_object_or_404(
+            EmployeeBlogPost.objects.select_related("author"),
+            slug=slug,
+            status=EmployeeBlogPost.Status.PUBLISHED,
+        )
+        related = list(
+            EmployeeBlogPost.objects.filter(status=EmployeeBlogPost.Status.PUBLISHED)
+            .exclude(pk=post.pk)
+            .order_by("-published_at", "-updated_at")[:3]
+        )
+        context = _public_firm_context()
+        absolute_url = request.build_absolute_uri(post.get_absolute_url())
+        cover_url = (
+            request.build_absolute_uri(post.cover_image.url)
+            if post.cover_image
+            else ""
+        )
+        body_html, toc = render_blog_body(post.body)
+        author = post.author
+        author_bio = (getattr(author, "about_me", "") or "").strip()
+        company = context["company"]
+        company_website = (getattr(company, "website", "") or "").strip()
+        author_more = list(
+            EmployeeBlogPost.objects.filter(
+                author=author,
+                status=EmployeeBlogPost.Status.PUBLISHED,
+            )
+            .exclude(pk=post.pk)
+            .order_by("-published_at", "-updated_at")[:3]
+        )
+        author_published_count = (
+            EmployeeBlogPost.objects.filter(
+                author=author,
+                status=EmployeeBlogPost.Status.PUBLISHED,
+            ).count()
+        )
+        context.update(
+            {
+                "post": post,
+                "related_posts": related,
+                "page_title": post.effective_meta_title,
+                "meta_description": post.effective_meta_description,
+                "canonical_url": absolute_url,
+                "og_image_url": cover_url,
+                "body_html": body_html,
+                "toc": toc,
+                "reading_time": post.reading_time_minutes,
+                "author_initials": post.author_initials,
+                "author_bio": author_bio[:600],
+                "author_role": author.get_role_display(),
+                "author_published_count": author_published_count,
+                "author_more_posts": author_more,
+                "company_website": company_website,
+                "company_tagline": (getattr(company, "tagline", "") or "").strip(),
+                "company_email": (getattr(company, "email", "") or "").strip(),
+                "company_phone": (getattr(company, "phone", "") or "").strip(),
+                "company_city": (getattr(company, "city", "") or "").strip(),
+                "whatsapp_url": whatsapp_chat_url(
+                    getattr(company, "phone", "") or "",
+                    (
+                        f"Hello {context['firm_name']}, I read your article "
+                        f"“{post.title}” ({absolute_url}) and would like to enquire about this."
+                    ),
+                ),
+                "share_url": absolute_url,
+                "json_ld": mark_safe(
+                    json.dumps(
+                        {
+                            "@context": "https://schema.org",
+                            "@type": "BlogPosting",
+                            "headline": post.effective_meta_title,
+                            "description": post.effective_meta_description,
+                            "datePublished": (
+                                post.published_at.isoformat()
+                                if post.published_at
+                                else ""
+                            ),
+                            "dateModified": post.updated_at.isoformat(),
+                            "author": {
+                                "@type": "Person",
+                                "name": post.author.get_full_name(),
+                                "jobTitle": author.get_role_display(),
+                            },
+                            "publisher": {
+                                "@type": "Organization",
+                                "name": context["firm_name"],
+                                "url": company_website
+                                or request.build_absolute_uri(
+                                    reverse("accounts:home")
+                                ),
+                            },
+                            "mainEntityOfPage": absolute_url,
+                            "image": [cover_url] if cover_url else [],
+                            "keywords": ", ".join(post.tag_list),
+                            "wordCount": post.word_count,
+                            "timeRequired": f"PT{post.reading_time_minutes}M",
+                        }
+                    )
+                ),
+            }
+        )
+        return render(request, self.template_name, context)
+
+
+class BlogSitemapView(View):
+    """XML sitemap of published blog posts for search engines."""
+
+    def get(self, request):
+        posts = (
+            EmployeeBlogPost.objects.filter(status=EmployeeBlogPost.Status.PUBLISHED)
+            .order_by("-published_at", "-updated_at")
+            .only("slug", "updated_at", "published_at")
+        )
+        urls = [
+            {
+                "loc": request.build_absolute_uri(reverse("accounts:blog_list")),
+                "lastmod": None,
+            }
+        ]
+        for post in posts:
+            urls.append(
+                {
+                    "loc": request.build_absolute_uri(
+                        reverse("accounts:blog_detail", kwargs={"slug": post.slug})
+                    ),
+                    "lastmod": (post.updated_at or post.published_at),
+                }
+            )
+        xml_parts = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        ]
+        for item in urls:
+            xml_parts.append("<url>")
+            xml_parts.append(f"<loc>{item['loc']}</loc>")
+            if item["lastmod"]:
+                xml_parts.append(
+                    f"<lastmod>{item['lastmod'].date().isoformat()}</lastmod>"
+                )
+            xml_parts.append("</url>")
+        xml_parts.append("</urlset>")
+        return HttpResponse("\n".join(xml_parts), content_type="application/xml")
 
 
 def employee_home_url(employee: Employee) -> str:
@@ -1415,7 +1642,21 @@ class RoleWorkspaceView(View):
     reminders_template = "accounts/reminders.html"
     messages_template = "accounts/messages.html"
     notification_settings_template = "accounts/notification_settings.html"
+    about_me_template = "accounts/about_me.html"
+    my_blogs_template = "accounts/my_blogs.html"
+    my_blog_form_template = "accounts/my_blog_form.html"
     google_drive_settings_template = "accounts/google_drive_settings.html"
+    company_information_template = "accounts/company_information.html"
+    company_profile_template = "accounts/company_profile.html"
+    company_contacts_template = "accounts/company_contacts.html"
+    about_company_template = "accounts/about_company.html"
+    practice_areas_template = "accounts/practice_areas.html"
+    practice_area_form_template = "accounts/practice_area_form.html"
+    company_faqs_template = "accounts/company_faqs.html"
+    company_blogs_template = "accounts/company_blogs.html"
+    research_blogs_template = "accounts/research_blogs.html"
+    company_faq_form_template = "accounts/company_faq_form.html"
+    website_template_template = "accounts/website_template.html"
     page_template = "accounts/workspace_page.html"
 
     def get(self, request, role, pages="dashboard"):
@@ -1450,11 +1691,60 @@ class RoleWorkspaceView(View):
             response = render(
                 request, self.notification_settings_template, context
             )
+        elif resolved.get("is_about_me"):
+            context.update(self._settings_context(user))
+            response = render(request, self.about_me_template, context)
+        elif resolved.get("is_my_blogs"):
+            context.update(self._my_blogs_context(user))
+            response = render(request, self.my_blogs_template, context)
+        elif resolved.get("is_my_blogs_new"):
+            context.update(self._my_blog_form_context(user))
+            response = render(request, self.my_blog_form_template, context)
         elif resolved.get("is_google_drive_settings"):
             context.update(self._google_drive_settings_context(request, resolved))
             response = render(
                 request, self.google_drive_settings_template, context
             )
+        elif resolved.get("is_website_template"):
+            context.update(self._website_template_context(user))
+            response = render(request, self.website_template_template, context)
+        elif resolved.get("is_company_information"):
+            from .company_readiness import analyze_company_information
+
+            context["analysis"] = analyze_company_information(
+                role_slug=user.role_slug,
+                trail=list(resolved["trail"]),
+            )
+            response = render(
+                request, self.company_information_template, context
+            )
+        elif resolved.get("is_company_profile"):
+            context.update(self._company_profile_context())
+            response = render(request, self.company_profile_template, context)
+        elif resolved["leaf"] == "company-contacts":
+            context.update(self._company_contacts_context())
+            response = render(request, self.company_contacts_template, context)
+        elif resolved["leaf"] == "about-company":
+            context.update(self._about_company_context())
+            response = render(request, self.about_company_template, context)
+        elif resolved.get("is_practice_areas"):
+            context.update(self._practice_areas_context(user))
+            response = render(request, self.practice_areas_template, context)
+        elif resolved.get("is_practice_areas_new"):
+            context.update(self._practice_area_form_context(user))
+            response = render(request, self.practice_area_form_template, context)
+        elif resolved.get("is_company_faqs"):
+            context.update(self._company_faqs_context(user))
+            response = render(request, self.company_faqs_template, context)
+        elif resolved.get("is_company_faqs_new"):
+            context.update(self._company_faq_form_context(user))
+            response = render(request, self.company_faq_form_template, context)
+        elif resolved.get("is_company_blogs"):
+            context.update(self._company_blogs_context(user))
+            response = render(request, self.company_blogs_template, context)
+        elif resolved.get("is_research_blogs"):
+            context.update(self._research_blogs_context(user))
+            response = render(request, self.research_blogs_template, context)
         elif resolved["is_dashboard"]:
             response = render(request, self.dashboard_template, context)
         elif resolved["leaf"] == "employee-management":
@@ -1600,6 +1890,17 @@ class RoleWorkspaceView(View):
             "settings",
             "theme-settings",
             "notification-settings",
+            "about-me",
+            "my-blogs",
+            "my-blogs-new",
+            "company-profile",
+            "company-contacts",
+            "about-company",
+            "practice-areas",
+            "practice-areas-new",
+            "company-faqs",
+            "company-faqs-new",
+            "website-template",
             "register-case",
             "register-new-matter",
             "register-client",
@@ -1607,8 +1908,33 @@ class RoleWorkspaceView(View):
         }:
             return redirect(user.dashboard_url)
 
-        if resolved["leaf"] in {"settings", "theme-settings", "notification-settings"}:
+        if resolved["leaf"] in {
+            "settings",
+            "theme-settings",
+            "notification-settings",
+            "about-me",
+            "my-blogs",
+            "my-blogs-new",
+        }:
             return self._post_settings(request, user, resolved)
+
+        if resolved["leaf"] == "website-template":
+            return self._post_website_template(request, user, resolved)
+
+        if resolved["leaf"] == "company-profile":
+            return self._post_company_profile(request, user, resolved)
+
+        if resolved["leaf"] == "company-contacts":
+            return self._post_company_contacts(request, user, resolved)
+
+        if resolved["leaf"] == "about-company":
+            return self._post_about_company(request, user, resolved)
+
+        if resolved["leaf"] in {"practice-areas", "practice-areas-new"}:
+            return self._post_practice_area(request, user, resolved)
+
+        if resolved["leaf"] in {"company-faqs", "company-faqs-new"}:
+            return self._post_company_faq(request, user, resolved)
 
         if resolved["leaf"] == "register-client":
             return self._post_register_client(request, user, resolved)
@@ -1676,12 +2002,17 @@ class RoleWorkspaceView(View):
         )
 
         if action == "appearance":
+            # Bound only to the signed-in employee — never firm/system settings.
             appearance_form = AppearanceSettingsForm(request.POST, instance=user)
             profile_form = ProfileSettingsForm(instance=user)
             notification_form = NotificationSettingsForm(instance=user)
+            about_me_form = AboutMeForm(instance=user)
             if appearance_form.is_valid():
                 appearance_form.save()
-                messages.success(request, "Appearance preferences saved.")
+                messages.success(
+                    request,
+                    "Your appearance preferences were saved for your account only.",
+                )
                 return redirect(user.workspace_url(*resolved["trail"]))
             context.update(
                 self._settings_context(
@@ -1689,14 +2020,52 @@ class RoleWorkspaceView(View):
                     profile_form=profile_form,
                     appearance_form=appearance_form,
                     notification_form=notification_form,
+                    about_me_form=about_me_form,
                 )
             )
-            template = (
-                self.theme_settings_template
-                if resolved["leaf"] == "theme-settings"
-                else self.settings_template
+            response = render(request, self.theme_settings_template, context)
+            return attach_greeting_cookie(response, request)
+
+        if action == "about_me":
+            about_me_form = AboutMeForm(request.POST, instance=user)
+            profile_form = ProfileSettingsForm(instance=user)
+            appearance_form = AppearanceSettingsForm(instance=user)
+            notification_form = NotificationSettingsForm(instance=user)
+            about_trail = extend_page_trail(list(resolved["trail"]), "about-me")
+            if about_me_form.is_valid():
+                about_me_form.save()
+                messages.success(request, "About me saved to your profile.")
+                return redirect(user.workspace_url(*about_trail))
+            context.update(
+                self._settings_context(
+                    user,
+                    profile_form=profile_form,
+                    appearance_form=appearance_form,
+                    notification_form=notification_form,
+                    about_me_form=about_me_form,
+                )
             )
-            response = render(request, template, context)
+            response = render(request, self.about_me_template, context)
+            return attach_greeting_cookie(response, request)
+
+        if action == "blog":
+            blogs_trail = extend_page_trail(list(resolved["trail"]), "my-blogs")
+            blog_form = EmployeeBlogForm(request.POST, request.FILES)
+            if blog_form.is_valid():
+                post = blog_form.save(author=user)
+                if post.status == EmployeeBlogPost.Status.SUBMITTED:
+                    messages.success(
+                        request,
+                        "Blog post submitted for approval. It will appear on the website once approved.",
+                    )
+                else:
+                    messages.success(
+                        request,
+                        "Blog post saved as a draft. Submit it for approval when it is ready.",
+                    )
+                return redirect(user.workspace_url(*blogs_trail))
+            context.update(self._my_blog_form_context(user, form=blog_form))
+            response = render(request, self.my_blog_form_template, context)
             return attach_greeting_cookie(response, request)
 
         if action == "notifications":
@@ -1705,6 +2074,7 @@ class RoleWorkspaceView(View):
             )
             profile_form = ProfileSettingsForm(instance=user)
             appearance_form = AppearanceSettingsForm(instance=user)
+            about_me_form = AboutMeForm(instance=user)
             notify_trail = extend_page_trail(
                 list(resolved["trail"]), "notification-settings"
             )
@@ -1718,6 +2088,7 @@ class RoleWorkspaceView(View):
                     profile_form=profile_form,
                     appearance_form=appearance_form,
                     notification_form=notification_form,
+                    about_me_form=about_me_form,
                 )
             )
             response = render(
@@ -1734,14 +2105,35 @@ class RoleWorkspaceView(View):
                 )
             )
 
+        if resolved["leaf"] == "about-me":
+            return redirect(
+                user.workspace_url(
+                    *extend_page_trail(list(resolved["trail"]), "about-me")
+                )
+            )
+
+        if resolved["leaf"] in {"my-blogs", "my-blogs-new"}:
+            return redirect(
+                user.workspace_url(
+                    *extend_page_trail(list(resolved["trail"]), "my-blogs")
+                )
+            )
+
         profile_form = ProfileSettingsForm(
             request.POST, request.FILES, instance=user
         )
         appearance_form = AppearanceSettingsForm(instance=user)
         notification_form = NotificationSettingsForm(instance=user)
+        about_me_form = AboutMeForm(instance=user)
         if profile_form.is_valid():
-            profile_form.save()
-            messages.success(request, "Profile details updated.")
+            profile_form.save_with_request(request)
+            if profile_form.cleaned_data.get("new_password"):
+                messages.success(
+                    request,
+                    "Profile and password updated for your account.",
+                )
+            else:
+                messages.success(request, "Profile details updated.")
             return redirect(user.workspace_url(*resolved["trail"]))
 
         context.update(
@@ -1750,6 +2142,7 @@ class RoleWorkspaceView(View):
                 profile_form=profile_form,
                 appearance_form=appearance_form,
                 notification_form=notification_form,
+                about_me_form=about_me_form,
                 open_edit=True,
             )
         )
@@ -1763,16 +2156,24 @@ class RoleWorkspaceView(View):
         profile_form=None,
         appearance_form=None,
         notification_form=None,
+        about_me_form=None,
         open_edit=False,
         open_view=False,
     ):
-        catalog = appearance_catalog()
+        resolved_appearance = appearance_form or AppearanceSettingsForm(instance=user)
+        form_theme = resolved_appearance["ui_theme"].value() or user.ui_theme
+        catalog = appearance_catalog(current_theme=form_theme)
+        theme_key = (
+            Employee.UiTheme.DEFAULT
+            if (form_theme or "") in {"", "product", "default"}
+            else form_theme
+        )
         return {
             "profile_form": profile_form or ProfileSettingsForm(instance=user),
-            "appearance_form": appearance_form
-            or AppearanceSettingsForm(instance=user),
+            "appearance_form": resolved_appearance,
             "notification_form": notification_form
             or NotificationSettingsForm(instance=user),
+            "about_me_form": about_me_form or AboutMeForm(instance=user),
             "nationality_label": country_name(user.id_country),
             "theme_groups": catalog["theme_groups"],
             "font_catalog": catalog["font_catalog"],
@@ -1784,11 +2185,7 @@ class RoleWorkspaceView(View):
             "open_edit_modal": open_edit,
             "open_view_modal": open_view,
             "current_theme_label": dict(Employee.UiTheme.choices).get(
-                (
-                    Employee.UiTheme.DEFAULT
-                    if (user.ui_theme or "") in {"", "product", "default"}
-                    else user.ui_theme
-                ),
+                theme_key,
                 "Black & White",
             ),
             "current_font_label": dict(Employee.UiFont.choices).get(
@@ -1799,6 +2196,428 @@ class RoleWorkspaceView(View):
             ),
             "notification_sound_enabled": bool(user.notification_sound),
         }
+
+    @staticmethod
+    def _my_blogs_context(user):
+        return {
+            "blog_posts": list(
+                EmployeeBlogPost.objects.filter(author=user).order_by(
+                    "-updated_at", "-created_at"
+                )
+            ),
+            "public_blog_list_url": reverse("accounts:blog_list"),
+        }
+
+    @staticmethod
+    def _my_blog_form_context(user, *, form=None, post=None):
+        if form is not None:
+            blog_form = form
+        elif post is not None:
+            blog_form = EmployeeBlogForm(instance=post)
+        else:
+            blog_form = EmployeeBlogForm()
+
+        if form is not None and form.is_bound:
+            draft = EmployeeBlogPost(
+                title=form.data.get("title", ""),
+                body=form.data.get("body", ""),
+                excerpt=form.data.get("excerpt", ""),
+                meta_title=form.data.get("meta_title", ""),
+                meta_description=form.data.get("meta_description", ""),
+                focus_keyword=form.data.get("focus_keyword", ""),
+                tags=form.data.get("tags", ""),
+                slug=form.data.get("slug", ""),
+            )
+            if (
+                post is not None
+                and post.cover_image
+                and not form.data.get("clear_cover")
+            ):
+                draft.cover_image = post.cover_image
+            seo = draft.seo_checklist()
+        elif post is not None:
+            seo = post.seo_checklist()
+        else:
+            seo = EmployeeBlogPost(
+                title="",
+                body="",
+                excerpt="",
+                meta_title="",
+                meta_description="",
+                focus_keyword="",
+                tags="",
+                slug="",
+            ).seo_checklist()
+
+        return {
+            "blog_form": blog_form,
+            "blog_post": post,
+            "seo_checklist": seo,
+            "public_blog_list_url": reverse("accounts:blog_list"),
+            "public_post_url": (
+                post.get_absolute_url()
+                if post is not None and post.is_public
+                else ""
+            ),
+        }
+
+    @staticmethod
+    def _company_profile_context(*, form=None):
+        company = FirmCompanyInformation.get_solo()
+        return {
+            "company_information": company,
+            "form": form or CompanyInformationForm(instance=company),
+        }
+
+    @staticmethod
+    def _company_contacts_context(*, form=None):
+        company = FirmCompanyInformation.get_solo()
+        return {
+            "company_information": company,
+            "form": form or CompanyContactsForm(instance=company),
+        }
+
+    @staticmethod
+    def _about_company_context(*, form=None):
+        company = FirmCompanyInformation.get_solo()
+        form = form or AboutCompanyForm(instance=company)
+        if form.is_bound:
+            selected = set(form.data.getlist("selected_values"))
+        else:
+            selected = set(form.fields["selected_values"].initial or [])
+        value_rows = [
+            {
+                "label": label,
+                "field": form[field_name],
+                "checked": label in selected,
+            }
+            for label, field_name in form.value_how_fields
+        ]
+        return {
+            "company_information": company,
+            "form": form,
+            "value_rows": value_rows,
+        }
+
+    def _post_company_profile(self, request, user, resolved):
+        company = FirmCompanyInformation.get_solo()
+        form = CompanyInformationForm(request.POST, instance=company)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            info = form.save(commit=False)
+            info.updated_by = user
+            info.save()
+            messages.success(request, "Company profile saved.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._company_profile_context(form=form))
+        response = render(request, self.company_profile_template, context)
+        return attach_greeting_cookie(response, request)
+
+    def _post_company_contacts(self, request, user, resolved):
+        company = FirmCompanyInformation.get_solo()
+        form = CompanyContactsForm(request.POST, instance=company)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            info = form.save(commit=False)
+            info.updated_by = user
+            info.save()
+            messages.success(request, "Company contacts saved.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._company_contacts_context(form=form))
+        response = render(request, self.company_contacts_template, context)
+        return attach_greeting_cookie(response, request)
+
+    def _post_about_company(self, request, user, resolved):
+        company = FirmCompanyInformation.get_solo()
+        form = AboutCompanyForm(request.POST, instance=company)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            info = form.save(commit=False)
+            info.updated_by = user
+            info.save()
+            messages.success(request, "About company saved.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._about_company_context(form=form))
+        response = render(request, self.about_company_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _practice_areas_list_url(user):
+        return user.workspace_url("dashboard", "practice-areas")
+
+    @staticmethod
+    def _practice_areas_new_url(user):
+        return user.workspace_url("dashboard", "practice-areas-new")
+
+    @staticmethod
+    def _practice_areas_context(user):
+        areas = list(
+            FirmPracticeArea.objects.prefetch_related("images").order_by(
+                "rank", "name"
+            )
+        )
+        return {
+            "practice_areas": areas,
+            "practice_areas_new_url": RoleWorkspaceView._practice_areas_new_url(
+                user
+            ),
+        }
+
+    @staticmethod
+    def _practice_area_form_context(user, *, form=None, practice_area=None):
+        form = form or PracticeAreaForm(instance=practice_area)
+        existing_images = []
+        if practice_area and practice_area.pk:
+            existing_images = list(
+                practice_area.images.order_by("sort_order", "id")
+            )
+        return {
+            "form": form,
+            "practice_area": practice_area,
+            "existing_images": existing_images,
+            "practice_areas_url": RoleWorkspaceView._practice_areas_list_url(user),
+        }
+
+    @staticmethod
+    def _sync_practice_area_images(request, practice_area, *, append=True):
+        """Apply deletes, reorder, and newly uploaded images."""
+        delete_ids = request.POST.getlist("delete_images")
+        if delete_ids:
+            practice_area.images.filter(pk__in=delete_ids).delete()
+
+        for image in practice_area.images.all():
+            raw = request.POST.get(f"image_order_{image.pk}")
+            if raw is None or raw == "":
+                continue
+            try:
+                image.sort_order = max(0, int(raw))
+            except (TypeError, ValueError):
+                continue
+            image.save(update_fields=["sort_order"])
+
+        uploads = request.FILES.getlist("images")
+        if uploads:
+            start = 0
+            if append:
+                last = (
+                    practice_area.images.order_by("-sort_order")
+                    .values_list("sort_order", flat=True)
+                    .first()
+                )
+                start = (last + 1) if last is not None else 0
+            for index, uploaded in enumerate(uploads):
+                optimized = optimize_image(uploaded, max_size=1600, quality=78)
+                FirmPracticeAreaImage.objects.create(
+                    practice_area=practice_area,
+                    image=optimized,
+                    sort_order=start + index,
+                )
+
+        # Normalize so the lowest order is 0 (main image).
+        for index, image in enumerate(
+            practice_area.images.order_by("sort_order", "id")
+        ):
+            if image.sort_order != index:
+                image.sort_order = index
+                image.save(update_fields=["sort_order"])
+
+    def _post_practice_area(self, request, user, resolved):
+        # List page only supports create via the dedicated new URL.
+        if resolved["leaf"] == "practice-areas":
+            return redirect(self._practice_areas_new_url(user))
+
+        form = PracticeAreaForm(request.POST, request.FILES)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            area = form.save(commit=False)
+            area.updated_by = user
+            area.save()
+            self._sync_practice_area_images(request, area, append=False)
+            messages.success(request, f"Practice area “{area.name}” added.")
+            return redirect(self._practice_areas_list_url(user))
+
+        context.update(self._practice_area_form_context(user, form=form))
+        response = render(request, self.practice_area_form_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_faqs_list_url(user):
+        return user.workspace_url("dashboard", "company-faqs")
+
+    @staticmethod
+    def _company_faqs_new_url(user):
+        return user.workspace_url("dashboard", "company-faqs-new")
+
+    @staticmethod
+    def _company_blogs_list_url(user):
+        return user.workspace_url("dashboard", "company-blogs")
+
+    @staticmethod
+    def _research_blogs_context(user):
+        my_posts = EmployeeBlogPost.objects.filter(author=user)
+        firm_posts = list(
+            EmployeeBlogPost.objects.exclude(status=EmployeeBlogPost.Status.DRAFT)
+            .select_related("author", "approved_by")
+            .order_by("-updated_at", "-created_at")
+        )
+        pending_count = sum(
+            1
+            for post in firm_posts
+            if post.status == EmployeeBlogPost.Status.SUBMITTED
+        )
+        published_count = sum(
+            1
+            for post in firm_posts
+            if post.status == EmployeeBlogPost.Status.PUBLISHED
+        )
+        return {
+            "firm_blog_posts": firm_posts,
+            "firm_blog_count": len(firm_posts),
+            "my_blog_count": my_posts.count(),
+            "my_draft_count": my_posts.filter(
+                status=EmployeeBlogPost.Status.DRAFT
+            ).count(),
+            "my_submitted_count": my_posts.filter(
+                status=EmployeeBlogPost.Status.SUBMITTED
+            ).count(),
+            "my_published_count": my_posts.filter(
+                status=EmployeeBlogPost.Status.PUBLISHED
+            ).count(),
+            "pending_blog_count": pending_count,
+            "published_blog_count": published_count,
+            "my_blogs_url": user.workspace_url("dashboard", "my-blogs"),
+            "my_blogs_new_url": user.workspace_url("dashboard", "my-blogs-new"),
+            "company_blogs_url": RoleWorkspaceView._company_blogs_list_url(user),
+            "public_blog_list_url": reverse("accounts:blog_list"),
+        }
+
+    @staticmethod
+    def _company_blogs_context(user):
+        pending = list(
+            EmployeeBlogPost.objects.filter(
+                status=EmployeeBlogPost.Status.SUBMITTED
+            )
+            .select_related("author")
+            .order_by("submitted_at", "updated_at")
+        )
+        published = list(
+            EmployeeBlogPost.objects.filter(
+                status=EmployeeBlogPost.Status.PUBLISHED
+            )
+            .select_related("author", "approved_by")
+            .order_by("-published_at", "-updated_at")
+        )
+        return {
+            "pending_blog_posts": pending,
+            "published_blog_posts": published,
+            "pending_blog_count": len(pending),
+            "published_blog_count": len(published),
+            "public_blog_list_url": reverse("accounts:blog_list"),
+        }
+
+    @staticmethod
+    def _company_faqs_context(user):
+        faqs = list(FirmFAQ.objects.order_by("rank", "question"))
+        return {
+            "faqs": faqs,
+            "company_faqs_new_url": RoleWorkspaceView._company_faqs_new_url(
+                user
+            ),
+        }
+
+    @staticmethod
+    def _company_faq_form_context(user, *, form=None, faq=None):
+        form = form or FAQForm(instance=faq)
+        return {
+            "form": form,
+            "faq": faq,
+            "company_faqs_url": RoleWorkspaceView._company_faqs_list_url(user),
+        }
+
+    def _post_company_faq(self, request, user, resolved):
+        if resolved["leaf"] == "company-faqs":
+            return redirect(self._company_faqs_new_url(user))
+
+        form = FAQForm(request.POST)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            faq = form.save(commit=False)
+            faq.updated_by = user
+            faq.save()
+            messages.success(request, f"FAQ “{faq.question}” added.")
+            return redirect(self._company_faqs_list_url(user))
+
+        context.update(self._company_faq_form_context(user, form=form))
+        response = render(request, self.company_faq_form_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _website_template_context(user, *, form=None):
+        setting = WebsiteTemplateSetting.get_solo()
+        return {
+            "website_setting": setting,
+            "form": form or WebsiteTemplateForm(instance=setting),
+            "company_information_url": user.workspace_url(
+                "dashboard", "company-information"
+            ),
+        }
+
+    def _post_website_template(self, request, user, resolved):
+        setting = WebsiteTemplateSetting.get_solo()
+        form = WebsiteTemplateForm(request.POST, instance=setting)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            choice = form.save(commit=False)
+            choice.updated_by = user
+            choice.save()
+            messages.success(
+                request,
+                f"Homepage set to {choice.get_active_template_display()}.",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._website_template_context(user, form=form))
+        response = render(request, self.website_template_template, context)
+        return attach_greeting_cookie(response, request)
 
     @staticmethod
     def _google_drive_settings_context(request, resolved):
@@ -3414,6 +4233,408 @@ class EditActiveNonLitigationMatterView(View):
             }
         )
         return context
+
+
+@method_decorator(login_required, name="dispatch")
+class EditPracticeAreaView(View):
+    """Edit, reorder images, or delete a firm practice area."""
+
+    template_name = "accounts/practice_area_form.html"
+
+    def _area_or_404(self, area_id):
+        return get_object_or_404(
+            FirmPracticeArea.objects.prefetch_related("images"),
+            pk=area_id,
+        )
+
+    def get(self, request, role, area_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_practice_area",
+                    kwargs={"role": user.role_slug, "area_id": area_id},
+                )
+            )
+        area = self._area_or_404(area_id)
+        trail = ["dashboard", "practice-areas"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit practice area",
+            page_trail=trail,
+            active_page="practice-areas",
+        )
+        context.update(
+            RoleWorkspaceView._practice_area_form_context(
+                user, practice_area=area
+            )
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, area_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_practice_area",
+                    kwargs={"role": user.role_slug, "area_id": area_id},
+                )
+            )
+        area = self._area_or_404(area_id)
+        list_url = RoleWorkspaceView._practice_areas_list_url(user)
+
+        if request.POST.get("practice_area_delete"):
+            name = area.name
+            area.delete()
+            messages.success(request, f"Practice area “{name}” deleted.")
+            return redirect(list_url)
+
+        form = PracticeAreaForm(request.POST, request.FILES, instance=area)
+        trail = ["dashboard", "practice-areas"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit practice area",
+            page_trail=trail,
+            active_page="practice-areas",
+        )
+        if form.is_valid():
+            area = form.save(commit=False)
+            area.updated_by = user
+            area.save()
+            RoleWorkspaceView._sync_practice_area_images(
+                request, area, append=True
+            )
+            messages.success(request, f"Practice area “{area.name}” saved.")
+            return redirect(list_url)
+
+        context.update(
+            RoleWorkspaceView._practice_area_form_context(
+                user, form=form, practice_area=area
+            )
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
+class EditFAQView(View):
+    """Edit or delete a firm FAQ entry."""
+
+    template_name = "accounts/company_faq_form.html"
+
+    def _faq_or_404(self, faq_id):
+        return get_object_or_404(FirmFAQ, pk=faq_id)
+
+    def get(self, request, role, faq_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_faq",
+                    kwargs={"role": user.role_slug, "faq_id": faq_id},
+                )
+            )
+        faq = self._faq_or_404(faq_id)
+        trail = ["dashboard", "company-faqs"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit FAQ",
+            page_trail=trail,
+            active_page="company-faqs",
+        )
+        context.update(
+            RoleWorkspaceView._company_faq_form_context(user, faq=faq)
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, faq_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_faq",
+                    kwargs={"role": user.role_slug, "faq_id": faq_id},
+                )
+            )
+        faq = self._faq_or_404(faq_id)
+        list_url = RoleWorkspaceView._company_faqs_list_url(user)
+
+        if request.POST.get("faq_delete"):
+            question = faq.question
+            faq.delete()
+            messages.success(request, f"FAQ “{question}” deleted.")
+            return redirect(list_url)
+
+        form = FAQForm(request.POST, instance=faq)
+        trail = ["dashboard", "company-faqs"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit FAQ",
+            page_trail=trail,
+            active_page="company-faqs",
+        )
+        if form.is_valid():
+            faq = form.save(commit=False)
+            faq.updated_by = user
+            faq.save()
+            messages.success(request, f"FAQ “{faq.question}” saved.")
+            return redirect(list_url)
+
+        context.update(
+            RoleWorkspaceView._company_faq_form_context(
+                user, form=form, faq=faq
+            )
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
+class EditMyBlogView(View):
+    """Edit or delete a personal blog post owned by the signed-in employee."""
+
+    template_name = "accounts/my_blog_form.html"
+
+    def _post_or_404(self, user, post_id):
+        return get_object_or_404(EmployeeBlogPost, pk=post_id, author=user)
+
+    def get(self, request, role, post_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_my_blog",
+                    kwargs={"role": user.role_slug, "post_id": post_id},
+                )
+            )
+        post = self._post_or_404(user, post_id)
+        trail = ["dashboard", "my-blogs"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit blog post",
+            page_trail=trail,
+            active_page="my-blogs",
+        )
+        context.update(
+            RoleWorkspaceView._my_blog_form_context(user, post=post)
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, post_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_my_blog",
+                    kwargs={"role": user.role_slug, "post_id": post_id},
+                )
+            )
+        post = self._post_or_404(user, post_id)
+        blogs_url = user.workspace_url("dashboard", "my-blogs")
+
+        if request.POST.get("blog_delete") == "1":
+            post.delete()
+            messages.success(request, "Blog post deleted.")
+            return redirect(blogs_url)
+
+        form = EmployeeBlogForm(request.POST, request.FILES, instance=post)
+        if form.is_valid():
+            updated = form.save(author=user)
+            if updated.status == EmployeeBlogPost.Status.SUBMITTED:
+                messages.success(
+                    request,
+                    "Blog post submitted for approval. It will appear on the website once approved.",
+                )
+            elif updated.status == EmployeeBlogPost.Status.PUBLISHED:
+                messages.success(request, "Live blog post updated.")
+            else:
+                messages.success(
+                    request,
+                    "Blog post saved as a draft. Submit it for approval when it is ready.",
+                )
+            return redirect(blogs_url)
+
+        trail = ["dashboard", "my-blogs"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit blog post",
+            page_trail=trail,
+            active_page="my-blogs",
+        )
+        context.update(
+            RoleWorkspaceView._my_blog_form_context(user, form=form, post=post)
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
+class ReviewCompanyBlogView(View):
+    """Review a submitted blog post and approve it for the public website."""
+
+    template_name = "accounts/review_company_blog.html"
+
+    def _post_or_404(self, post_id):
+        return get_object_or_404(
+            EmployeeBlogPost.objects.select_related("author", "approved_by"),
+            pk=post_id,
+        )
+
+    def get(self, request, role, post_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:review_company_blog",
+                    kwargs={"role": user.role_slug, "post_id": post_id},
+                )
+            )
+        post = self._post_or_404(post_id)
+        trail = ["dashboard", "company-blogs"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Review blog post",
+            page_trail=trail,
+            active_page="company-blogs",
+        )
+        context.update(
+            {
+                "blog_post": post,
+                "company_blogs_url": RoleWorkspaceView._company_blogs_list_url(
+                    user
+                ),
+                "seo_checklist": post.seo_checklist(),
+                "public_post_url": (
+                    post.get_absolute_url() if post.is_public else ""
+                ),
+            }
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, post_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:review_company_blog",
+                    kwargs={"role": user.role_slug, "post_id": post_id},
+                )
+            )
+        post = self._post_or_404(post_id)
+        list_url = RoleWorkspaceView._company_blogs_list_url(user)
+        action = request.POST.get("blog_review_action", "").strip()
+
+        if action == "approve":
+            if post.status not in {
+                EmployeeBlogPost.Status.SUBMITTED,
+                EmployeeBlogPost.Status.PUBLISHED,
+            }:
+                messages.error(
+                    request,
+                    "Only submitted posts can be approved for the website.",
+                )
+                return redirect(list_url)
+            post.status = EmployeeBlogPost.Status.PUBLISHED
+            if not post.published_at:
+                post.published_at = timezone.now()
+            post.approved_by = user
+            post.approved_at = timezone.now()
+            post.save(
+                update_fields=[
+                    "status",
+                    "published_at",
+                    "approved_by",
+                    "approved_at",
+                    "updated_at",
+                ]
+            )
+            messages.success(
+                request,
+                f"“{post.title}” is now published on the website.",
+            )
+            return redirect(list_url)
+
+        if action == "return_draft":
+            post.status = EmployeeBlogPost.Status.DRAFT
+            post.submitted_at = None
+            post.published_at = None
+            post.approved_by = None
+            post.approved_at = None
+            post.save(
+                update_fields=[
+                    "status",
+                    "submitted_at",
+                    "published_at",
+                    "approved_by",
+                    "approved_at",
+                    "updated_at",
+                ]
+            )
+            messages.success(
+                request,
+                f"“{post.title}” was returned to the author as a draft.",
+            )
+            return redirect(list_url)
+
+        if action == "unpublish":
+            if post.status != EmployeeBlogPost.Status.PUBLISHED:
+                messages.error(request, "Only live posts can be unpublished.")
+                return redirect(list_url)
+            post.status = EmployeeBlogPost.Status.DRAFT
+            post.submitted_at = None
+            post.published_at = None
+            post.approved_by = None
+            post.approved_at = None
+            post.save(
+                update_fields=[
+                    "status",
+                    "submitted_at",
+                    "published_at",
+                    "approved_by",
+                    "approved_at",
+                    "updated_at",
+                ]
+            )
+            messages.success(
+                request,
+                f"“{post.title}” was unpublished and returned to draft.",
+            )
+            return redirect(list_url)
+
+        messages.error(request, "Choose a valid review action.")
+        return redirect(
+            reverse(
+                "accounts:review_company_blog",
+                kwargs={"role": user.role_slug, "post_id": post.pk},
+            )
+        )
 
 
 @method_decorator(login_required, name="dispatch")

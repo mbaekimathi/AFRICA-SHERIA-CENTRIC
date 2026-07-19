@@ -21,13 +21,18 @@ from .models import (
     CourtAttendanceAdvocate,
     CourtAttendanceBringUpItem,
     Employee,
+    EmployeeBlogPost,
+    FirmCompanyInformation,
+    FirmFAQ,
+    FirmPracticeArea,
     LitigationCase,
     MatterAttendance,
     MatterParty,
     MatterTask,
     NonLitigationMatter,
+    WebsiteTemplateSetting,
 )
-from .utils import optimize_profile_photo
+from .utils import optimize_image, optimize_profile_photo
 
 
 ALLOWED_CLIENT_EMAIL_DOMAINS = (
@@ -2360,7 +2365,12 @@ class RejectTaskForm(forms.Form):
 
 
 class ProfileSettingsForm(forms.ModelForm):
-    """Editable personal details on My settings."""
+    """
+    Edit the signed-in employee's full session profile.
+
+    Prefills every editable field from the current user. Passwords are hashed
+    and never displayed — change with current / new / confirm fields.
+    """
 
     courtesy_title = forms.ChoiceField(
         choices=[("", "Title")] + list(Employee.CourtesyTitle.choices),
@@ -2382,6 +2392,81 @@ class ProfileSettingsForm(forms.ModelForm):
             }
         ),
     )
+    login_code_display = forms.CharField(
+        required=False,
+        label="Login code",
+        disabled=True,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_settings_login_code",
+                "readonly": True,
+            }
+        ),
+    )
+    role_display = forms.CharField(
+        required=False,
+        label="Role",
+        disabled=True,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_settings_role",
+                "readonly": True,
+            }
+        ),
+    )
+    status_display = forms.CharField(
+        required=False,
+        label="Status",
+        disabled=True,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_settings_status",
+                "readonly": True,
+            }
+        ),
+    )
+    current_password = forms.CharField(
+        required=False,
+        label="Current password",
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Enter current password to change it",
+                "autocomplete": "current-password",
+                "id": "id_settings_current_password",
+            },
+            render_value=False,
+        ),
+    )
+    new_password = forms.CharField(
+        required=False,
+        label="New password",
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "New password",
+                "autocomplete": "new-password",
+                "id": "id_settings_new_password",
+            },
+            render_value=False,
+        ),
+    )
+    confirm_password = forms.CharField(
+        required=False,
+        label="Confirm new password",
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Re-enter new password",
+                "autocomplete": "new-password",
+                "id": "id_settings_confirm_password",
+            },
+            render_value=False,
+        ),
+    )
 
     class Meta:
         model = Employee
@@ -2391,11 +2476,19 @@ class ProfileSettingsForm(forms.ModelForm):
             "last_name",
             "personal_email",
             "personal_phone",
+            "work_email",
+            "work_phone",
             "id_type",
             "id_country",
             "identification_number",
             "alien_number",
             "profile_photo",
+            "about_me",
+            "payment_method",
+            "mobile_money_company",
+            "mobile_money_number",
+            "bank_name",
+            "bank_account_number",
         ]
         widgets = {
             "first_name": forms.TextInput(
@@ -2431,6 +2524,23 @@ class ProfileSettingsForm(forms.ModelForm):
                     "id": "id_settings_personal_phone",
                 }
             ),
+            "work_email": forms.EmailInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Work email (optional)",
+                    "autocomplete": "email",
+                    "id": "id_settings_work_email",
+                }
+            ),
+            "work_phone": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Work phone (optional)",
+                    "autocomplete": "tel",
+                    "inputmode": "tel",
+                    "id": "id_settings_work_phone",
+                }
+            ),
             "id_type": forms.RadioSelect(attrs={"class": "radio-group"}),
             "identification_number": forms.TextInput(
                 attrs={
@@ -2453,14 +2563,98 @@ class ProfileSettingsForm(forms.ModelForm):
                     "id": "id_settings_profile_photo",
                 }
             ),
+            "about_me": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 5,
+                    "placeholder": "A short note about you…",
+                    "id": "id_settings_about_me",
+                    "maxlength": "2000",
+                }
+            ),
+            "payment_method": forms.RadioSelect(attrs={"class": "radio-group"}),
+            "mobile_money_company": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. M-Pesa",
+                    "id": "id_settings_mobile_money_company",
+                }
+            ),
+            "mobile_money_number": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Mobile money number",
+                    "inputmode": "tel",
+                    "id": "id_settings_mobile_money_number",
+                }
+            ),
+            "bank_name": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Bank name",
+                    "id": "id_settings_bank_name",
+                }
+            ),
+            "bank_account_number": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Account number",
+                    "id": "id_settings_bank_account_number",
+                }
+            ),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["identification_number"].required = False
-        self.fields["alien_number"].required = False
-        self.fields["profile_photo"].required = False
-        self.fields["courtesy_title"].required = False
+        optional = [
+            "identification_number",
+            "alien_number",
+            "profile_photo",
+            "courtesy_title",
+            "work_email",
+            "work_phone",
+            "about_me",
+            "payment_method",
+            "mobile_money_company",
+            "mobile_money_number",
+            "bank_name",
+            "bank_account_number",
+        ]
+        for name in optional:
+            self.fields[name].required = False
+
+        self.fields["payment_method"].choices = list(Employee.PaymentMethod.choices)
+        self.has_password = bool(
+            self.instance and self.instance.pk and self.instance.has_usable_password()
+        )
+
+        # Always load the signed-in user's current values into the form.
+        if self.instance and self.instance.pk and not self.is_bound:
+            self.initial.update(
+                {
+                    "courtesy_title": self.instance.courtesy_title or "",
+                    "first_name": self.instance.first_name or "",
+                    "last_name": self.instance.last_name or "",
+                    "personal_email": self.instance.personal_email or "",
+                    "personal_phone": self.instance.personal_phone or "",
+                    "work_email": self.instance.work_email or "",
+                    "work_phone": self.instance.work_phone or "",
+                    "id_type": self.instance.id_type or "",
+                    "id_country": self.instance.id_country or DEFAULT_COUNTRY,
+                    "identification_number": self.instance.identification_number
+                    or "",
+                    "alien_number": self.instance.alien_number or "",
+                    "about_me": self.instance.about_me or "",
+                    "payment_method": self.instance.payment_method or "",
+                    "mobile_money_company": self.instance.mobile_money_company or "",
+                    "mobile_money_number": self.instance.mobile_money_number or "",
+                    "bank_name": self.instance.bank_name or "",
+                    "bank_account_number": self.instance.bank_account_number or "",
+                    "login_code_display": self.instance.login_code or "",
+                    "role_display": self.instance.get_role_display(),
+                    "status_display": self.instance.get_status_display(),
+                }
+            )
 
     def clean_personal_email(self):
         email = (self.cleaned_data.get("personal_email") or "").strip().lower()
@@ -2470,6 +2664,47 @@ class ProfileSettingsForm(forms.ModelForm):
         if qs.exists():
             raise ValidationError("This email is already in use.")
         return email
+
+    def clean_work_email(self):
+        email = (self.cleaned_data.get("work_email") or "").strip().lower()
+        return email or None
+
+    def clean_work_phone(self):
+        phone = (self.cleaned_data.get("work_phone") or "").strip()
+        return phone or None
+
+    def clean_about_me(self):
+        text = (self.cleaned_data.get("about_me") or "").strip()
+        if len(text) > 2000:
+            raise ValidationError("Keep your about me under 2,000 characters.")
+        return text
+
+    def clean_mobile_money_company(self):
+        return (self.cleaned_data.get("mobile_money_company") or "").strip()
+
+    def clean_mobile_money_number(self):
+        return (self.cleaned_data.get("mobile_money_number") or "").strip()
+
+    def clean_bank_name(self):
+        return (self.cleaned_data.get("bank_name") or "").strip()
+
+    def clean_bank_account_number(self):
+        return (self.cleaned_data.get("bank_account_number") or "").strip()
+
+    def clean_current_password(self):
+        return (self.cleaned_data.get("current_password") or "").upper()
+
+    def clean_new_password(self):
+        password = (self.cleaned_data.get("new_password") or "").upper()
+        if not password:
+            return ""
+        if len(password) < 6:
+            raise ValidationError("Password must be at least 6 characters.")
+        validate_password(password, user=self.instance)
+        return password
+
+    def clean_confirm_password(self):
+        return (self.cleaned_data.get("confirm_password") or "").upper()
 
     def clean(self):
         cleaned = super().clean()
@@ -2486,6 +2721,42 @@ class ProfileSettingsForm(forms.ModelForm):
                     "alien_number",
                     "Alien / permit number is required for non-citizens.",
                 )
+
+        method = cleaned.get("payment_method") or ""
+        if method == Employee.PaymentMethod.MOBILE:
+            cleaned["bank_name"] = ""
+            cleaned["bank_account_number"] = ""
+        elif method == Employee.PaymentMethod.BANK:
+            cleaned["mobile_money_company"] = ""
+            cleaned["mobile_money_number"] = ""
+        elif method == Employee.PaymentMethod.CASH:
+            cleaned["mobile_money_company"] = ""
+            cleaned["mobile_money_number"] = ""
+            cleaned["bank_name"] = ""
+            cleaned["bank_account_number"] = ""
+
+        current = cleaned.get("current_password") or ""
+        new = cleaned.get("new_password") or ""
+        confirm = cleaned.get("confirm_password") or ""
+        changing = bool(current or new or confirm)
+        if changing:
+            if not new:
+                self.add_error("new_password", "Enter a new password.")
+            if not confirm:
+                self.add_error("confirm_password", "Confirm the new password.")
+            if not current:
+                self.add_error(
+                    "current_password",
+                    "Enter your current password to change it.",
+                )
+            elif self.instance and self.instance.pk:
+                if not self.instance.check_password(current):
+                    self.add_error(
+                        "current_password",
+                        "Current password is incorrect.",
+                    )
+            if new and confirm and new != confirm:
+                self.add_error("confirm_password", "Passwords do not match.")
         return cleaned
 
     def save(self, commit=True):
@@ -2493,13 +2764,29 @@ class ProfileSettingsForm(forms.ModelForm):
         photo = self.cleaned_data.get("profile_photo")
         if photo:
             user.profile_photo = optimize_profile_photo(photo)
+        new_password = self.cleaned_data.get("new_password") or ""
+        if new_password:
+            user.set_password(new_password)
         if commit:
             user.save()
         return user
 
+    def save_with_request(self, request, commit=True):
+        """Save profile and keep the current session valid after a password change."""
+        from django.contrib.auth import update_session_auth_hash
+
+        user = self.save(commit=commit)
+        if commit and (self.cleaned_data.get("new_password") or ""):
+            update_session_auth_hash(request, user)
+        return user
+
 
 class AppearanceSettingsForm(forms.ModelForm):
-    """Theme, font, and density preferences for role workspace pages."""
+    """
+    Personal theme, font, and density for the signed-in employee only.
+
+    Saves to that employee's row — never a firm-wide or system default.
+    """
 
     class Meta:
         model = Employee
@@ -2529,6 +2816,13 @@ class AppearanceSettingsForm(forms.ModelForm):
             return Employee.UiTheme.DEFAULT
         return value
 
+    def save(self, commit=True):
+        """Persist appearance only on this employee instance."""
+        employee = super().save(commit=False)
+        if commit:
+            employee.save(update_fields=["ui_theme", "ui_font", "ui_density"])
+        return employee
+
 
 class NotificationSettingsForm(forms.ModelForm):
     """In-app notification preferences (sound, etc.)."""
@@ -2547,6 +2841,919 @@ class NotificationSettingsForm(forms.ModelForm):
                 }
             ),
         }
+
+
+class AboutMeForm(forms.ModelForm):
+    """Personal bio for the signed-in employee."""
+
+    class Meta:
+        model = Employee
+        fields = ["about_me"]
+        labels = {
+            "about_me": "About me",
+        }
+        widgets = {
+            "about_me": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 8,
+                    "placeholder": "Share a short note about your practice, focus areas, or how colleagues can work with you…",
+                    "id": "id_about_me",
+                    "maxlength": "2000",
+                }
+            ),
+        }
+
+    def clean_about_me(self):
+        text = (self.cleaned_data.get("about_me") or "").strip()
+        if len(text) > 2000:
+            raise ValidationError("Keep your about me under 2,000 characters.")
+        return text
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        if commit:
+            user.save(update_fields=["about_me"])
+        return user
+
+
+class EmployeeBlogForm(forms.ModelForm):
+    """Create or edit an SEO-ready blog post for the public website."""
+
+    clear_cover = forms.BooleanField(
+        required=False,
+        label="Remove current cover image",
+        widget=forms.CheckboxInput(attrs={"class": "form-checkbox"}),
+    )
+
+    class Meta:
+        model = EmployeeBlogPost
+        fields = [
+            "title",
+            "slug",
+            "excerpt",
+            "body",
+            "cover_image",
+            "meta_title",
+            "meta_description",
+            "focus_keyword",
+            "tags",
+            "status",
+        ]
+        widgets = {
+            "title": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Clear, specific title (include your focus keyword)",
+                    "id": "id_blog_title",
+                    "maxlength": "200",
+                    "data-seo-field": "title",
+                }
+            ),
+            "slug": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "url-friendly-slug",
+                    "id": "id_blog_slug",
+                    "maxlength": "220",
+                    "data-seo-field": "slug",
+                }
+            ),
+            "excerpt": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "One or two sentences summarising the post for the blog list…",
+                    "id": "id_blog_excerpt",
+                    "maxlength": "320",
+                    "data-seo-field": "excerpt",
+                }
+            ),
+            "body": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 16,
+                    "placeholder": "Write a helpful post. Aim for 300+ words. Use short paragraphs and clear headings.",
+                    "id": "id_blog_body",
+                    "data-seo-field": "body",
+                }
+            ),
+            "cover_image": forms.FileInput(
+                attrs={
+                    "class": "form-input",
+                    "id": "id_blog_cover",
+                    "accept": "image/*",
+                    "data-seo-field": "cover",
+                }
+            ),
+            "meta_title": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "SEO title for Google (50–60 characters)",
+                    "id": "id_blog_meta_title",
+                    "maxlength": "70",
+                    "data-seo-field": "meta_title",
+                }
+            ),
+            "meta_description": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Compelling meta description (120–160 characters)",
+                    "id": "id_blog_meta_description",
+                    "maxlength": "160",
+                    "data-seo-field": "meta_description",
+                }
+            ),
+            "focus_keyword": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. employment contract Kenya",
+                    "id": "id_blog_focus_keyword",
+                    "maxlength": "80",
+                    "data-seo-field": "focus_keyword",
+                }
+            ),
+            "tags": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "employment law, contracts, Kenya",
+                    "id": "id_blog_tags",
+                    "maxlength": "240",
+                    "data-seo-field": "tags",
+                }
+            ),
+            "status": forms.RadioSelect(attrs={"class": "radio-group"}),
+        }
+        labels = {
+            "title": "Post title",
+            "slug": "URL slug",
+            "excerpt": "Excerpt",
+            "body": "Body",
+            "cover_image": "Cover image",
+            "meta_title": "SEO title",
+            "meta_description": "Meta description",
+            "focus_keyword": "Focus keyword",
+            "tags": "Topic tags",
+            "status": "Status",
+        }
+        help_texts = {
+            "slug": "Appears as /blog/your-slug/. Leave blank to auto-generate from the title.",
+            "excerpt": "Shown on the public blog list and used if meta description is empty.",
+            "meta_title": "Overrides the browser/Google title. Leave blank to use the post title.",
+            "meta_description": "The snippet Google may show under your title in search results.",
+            "focus_keyword": "The main phrase you want this post to rank for.",
+            "tags": "Comma-separated topics for the website.",
+            "cover_image": "Recommended: landscape image, at least 1200×630px.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Authors draft or submit; publishing happens only after firm approval.
+        choices = [
+            (EmployeeBlogPost.Status.DRAFT, "Draft"),
+            (EmployeeBlogPost.Status.SUBMITTED, "Submit for approval"),
+        ]
+        if (
+            self.instance.pk
+            and self.instance.status == EmployeeBlogPost.Status.PUBLISHED
+        ):
+            choices.append(
+                (EmployeeBlogPost.Status.PUBLISHED, "Published (live on website)")
+            )
+        self.fields["status"].choices = choices
+        self.fields["status"].label = "Save as"
+        self.fields["slug"].required = False
+        self.fields["excerpt"].required = False
+        self.fields["meta_title"].required = False
+        self.fields["meta_description"].required = False
+        self.fields["focus_keyword"].required = False
+        self.fields["tags"].required = False
+        self.fields["cover_image"].required = False
+        if not self.instance.pk or not self.instance.cover_image:
+            self.fields["clear_cover"].widget = forms.HiddenInput()
+
+    def clean_title(self):
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise ValidationError("Enter a title for your post.")
+        if len(title) > 200:
+            raise ValidationError("Keep the title under 200 characters.")
+        return title
+
+    def clean_slug(self):
+        from django.utils.text import slugify
+
+        slug = (self.cleaned_data.get("slug") or "").strip()
+        if not slug:
+            return ""
+        slug = slugify(slug)[:220]
+        if not slug:
+            raise ValidationError("Enter a valid URL slug using letters, numbers, and hyphens.")
+        qs = EmployeeBlogPost.objects.filter(slug=slug)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise ValidationError("Another post already uses this URL slug.")
+        return slug
+
+    def clean_excerpt(self):
+        return (self.cleaned_data.get("excerpt") or "").strip()
+
+    def clean_meta_title(self):
+        return (self.cleaned_data.get("meta_title") or "").strip()
+
+    def clean_meta_description(self):
+        return (self.cleaned_data.get("meta_description") or "").strip()
+
+    def clean_focus_keyword(self):
+        return (self.cleaned_data.get("focus_keyword") or "").strip()
+
+    def clean_tags(self):
+        raw = (self.cleaned_data.get("tags") or "").strip()
+        if not raw:
+            return ""
+        tags = [t.strip() for t in raw.split(",") if t.strip()]
+        return ", ".join(tags)
+
+    def clean_body(self):
+        body = (self.cleaned_data.get("body") or "").strip()
+        if not body:
+            raise ValidationError("Write something in the body of your post.")
+        if len(body) > 50000:
+            raise ValidationError("Keep the post under 50,000 characters.")
+        return body
+
+    def clean_status(self):
+        status = self.cleaned_data.get("status") or EmployeeBlogPost.Status.DRAFT
+        if status == EmployeeBlogPost.Status.PUBLISHED:
+            if (
+                self.instance.pk
+                and self.instance.status == EmployeeBlogPost.Status.PUBLISHED
+            ):
+                return status
+            raise ValidationError(
+                "Posts must be submitted for approval before they can go live."
+            )
+        return status
+
+    def clean(self):
+        cleaned = super().clean()
+        status = cleaned.get("status") or EmployeeBlogPost.Status.DRAFT
+        if status == EmployeeBlogPost.Status.SUBMITTED:
+            if not (cleaned.get("excerpt") or "").strip():
+                self.add_error(
+                    "excerpt",
+                    "Add a short excerpt before submitting so the website list looks complete.",
+                )
+            if not (cleaned.get("focus_keyword") or "").strip():
+                self.add_error(
+                    "focus_keyword",
+                    "Set a focus keyword before submitting so the post can target a search phrase.",
+                )
+            if not (cleaned.get("meta_description") or "").strip():
+                self.add_error(
+                    "meta_description",
+                    "Add a meta description before submitting for better Google snippets.",
+                )
+        return cleaned
+
+    def save(self, commit=True, *, author=None):
+        new_cover = self.cleaned_data.get("cover_image")
+        clear_cover = bool(self.cleaned_data.get("clear_cover"))
+        # Empty file inputs come through as False and would wipe an existing image.
+        if not new_cover:
+            self.cleaned_data["cover_image"] = (
+                self.instance.cover_image if self.instance.pk else None
+            )
+
+        post = super().save(commit=False)
+        if author is not None and not post.author_id:
+            post.author = author
+        status = self.cleaned_data.get("status") or EmployeeBlogPost.Status.DRAFT
+        if status == EmployeeBlogPost.Status.SUBMITTED:
+            if not post.submitted_at:
+                post.submitted_at = timezone.now()
+            # Submitting (or re-submitting) takes the post offline until approved.
+            post.published_at = None
+            post.approved_by = None
+            post.approved_at = None
+        elif status == EmployeeBlogPost.Status.DRAFT:
+            post.submitted_at = None
+            post.published_at = None
+            post.approved_by = None
+            post.approved_at = None
+        # PUBLISHED left unchanged when author keeps an already-live post.
+        if new_cover:
+            post.cover_image = optimize_image(new_cover, max_size=1600, quality=78)
+        elif clear_cover and post.cover_image:
+            post.cover_image.delete(save=False)
+            post.cover_image = None
+        if commit:
+            post.save()
+        return post
+
+
+class CompanyInformationForm(forms.ModelForm):
+    """Firm-wide company profile under System Settings."""
+
+    class Meta:
+        model = FirmCompanyInformation
+        fields = [
+            "legal_name",
+            "trading_name",
+            "registration_number",
+            "tax_pin",
+            "tagline",
+        ]
+        labels = {
+            "legal_name": "Legal name",
+            "trading_name": "Trading / brand name",
+            "registration_number": "Registration number",
+            "tax_pin": "Tax PIN",
+            "tagline": "Tagline",
+        }
+        widgets = {
+            "legal_name": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Sheria Law Firm LLP",
+                    "autocomplete": "organization",
+                    "id": "id_company_legal_name",
+                }
+            ),
+            "trading_name": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Optional public name",
+                    "autocomplete": "organization",
+                    "id": "id_company_trading_name",
+                }
+            ),
+            "registration_number": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Business / company registration number",
+                    "id": "id_company_registration_number",
+                }
+            ),
+            "tax_pin": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. P051234567A",
+                    "id": "id_company_tax_pin",
+                }
+            ),
+            "tagline": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Short line under the firm name",
+                    "id": "id_company_tagline",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["legal_name"].required = True
+        for name in ("trading_name", "registration_number", "tax_pin", "tagline"):
+            self.fields[name].required = False
+
+    def clean_legal_name(self):
+        name = (self.cleaned_data.get("legal_name") or "").strip()
+        if not name:
+            raise ValidationError("Legal name is required.")
+        return name
+
+
+class CompanyContactsForm(forms.ModelForm):
+    """Firm contact and address details for the website."""
+
+    class Meta:
+        model = FirmCompanyInformation
+        fields = [
+            "email",
+            "phone",
+            "website",
+            "physical_address",
+            "postal_address",
+            "city",
+            "country",
+        ]
+        labels = {
+            "email": "Primary email",
+            "phone": "Primary phone",
+            "website": "Website",
+            "physical_address": "Physical address",
+            "postal_address": "Postal address",
+            "city": "City",
+            "country": "Country",
+        }
+        widgets = {
+            "email": forms.EmailInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "info@example.com",
+                    "autocomplete": "email",
+                    "id": "id_company_email",
+                }
+            ),
+            "phone": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "+254 700 000 000",
+                    "autocomplete": "tel",
+                    "inputmode": "tel",
+                    "id": "id_company_phone",
+                }
+            ),
+            "website": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://",
+                    "autocomplete": "url",
+                    "id": "id_company_website",
+                }
+            ),
+            "physical_address": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Building, street, area",
+                    "id": "id_company_physical_address",
+                }
+            ),
+            "postal_address": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "P.O. Box …",
+                    "id": "id_company_postal_address",
+                }
+            ),
+            "city": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "City",
+                    "autocomplete": "address-level2",
+                    "id": "id_company_city",
+                }
+            ),
+            "country": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Country",
+                    "autocomplete": "country-name",
+                    "id": "id_company_country",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in self.fields:
+            self.fields[name].required = False
+
+    def clean_website(self):
+        return (self.cleaned_data.get("website") or "").strip()
+
+
+FIRM_CORE_VALUE_CHOICES = (
+    ("Integrity", "Integrity"),
+    ("Client-Centered Service", "Client-Centered Service"),
+    ("Accessibility", "Accessibility"),
+    ("Excellence", "Excellence"),
+    ("Confidentiality", "Confidentiality"),
+    ("Innovation", "Innovation"),
+    ("Diligence", "Diligence"),
+)
+
+
+class MultipleFileInput(forms.ClearableFileInput):
+    """File input that accepts multiple files (Django 5+)."""
+
+    allow_multiple_selected = True
+
+
+class AboutCompanyForm(forms.ModelForm):
+    """Guided about-company story used on the firm website."""
+
+    selected_values = forms.MultipleChoiceField(
+        choices=FIRM_CORE_VALUE_CHOICES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple(
+            attrs={"class": "about-value-checks"}
+        ),
+        label="Core values",
+    )
+    custom_value_1 = forms.CharField(
+        required=False,
+        max_length=80,
+        label="Custom value 1",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Add your own value (optional)",
+                "id": "id_custom_value_1",
+            }
+        ),
+    )
+    custom_value_2 = forms.CharField(
+        required=False,
+        max_length=80,
+        label="Custom value 2",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Another custom value (optional)",
+                "id": "id_custom_value_2",
+            }
+        ),
+    )
+
+    class Meta:
+        model = FirmCompanyInformation
+        fields = [
+            "visitor_feeling",
+            "founded_year",
+            "founded_by",
+            "market_gap",
+            "milestone",
+            "service_areas",
+            "value_proposition",
+            "future_vision",
+        ]
+        labels = {
+            "visitor_feeling": (
+                "In one sentence, what do you want a visitor to know or feel "
+                "the moment they land on your site?"
+            ),
+            "founded_year": "When was your firm founded?",
+            "founded_by": "By whom?",
+            "market_gap": (
+                "What gap or need in the market inspired you to start the firm?"
+            ),
+            "milestone": (
+                "What's one milestone worth mentioning "
+                "(new office, growth, notable achievement)?"
+            ),
+            "service_areas": (
+                "Which towns/cities does your firm currently serve?"
+            ),
+            "value_proposition": (
+                "In one sentence: What do you do, for whom, and what outcome "
+                "do you deliver?"
+            ),
+            "future_vision": (
+                "Where do you want your firm to be in 5–10 years?"
+            ),
+        }
+        widgets = {
+            "visitor_feeling": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Clear counsel you can trust from day one",
+                    "id": "id_visitor_feeling",
+                }
+            ),
+            "founded_year": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. 2012",
+                    "id": "id_founded_year",
+                }
+            ),
+            "founded_by": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Jane Wanjiku & Partners",
+                    "id": "id_founded_by",
+                }
+            ),
+            "market_gap": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Describe the need you set out to meet…",
+                    "id": "id_market_gap",
+                }
+            ),
+            "milestone": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "e.g. Opened our second office in Mombasa in 2021",
+                    "id": "id_milestone",
+                }
+            ),
+            "service_areas": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 2,
+                    "placeholder": "e.g. Nairobi, Kisumu, Nakuru",
+                    "id": "id_service_areas",
+                }
+            ),
+            "value_proposition": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": (
+                        "e.g. We help SMEs resolve commercial disputes quickly "
+                        "and cost-effectively"
+                    ),
+                    "id": "id_value_proposition",
+                }
+            ),
+            "future_vision": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Describe your 5–10 year ambition…",
+                    "id": "id_future_vision",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in self.Meta.fields:
+            self.fields[name].required = False
+
+        existing = []
+        if self.instance and self.instance.pk:
+            existing = list(self.instance.core_values or [])
+        existing_map = {
+            (entry.get("name") or "").strip(): (entry.get("how") or "").strip()
+            for entry in existing
+            if isinstance(entry, dict) and (entry.get("name") or "").strip()
+        }
+        preset_names = {label for label, _ in FIRM_CORE_VALUE_CHOICES}
+        selected = [name for name in existing_map if name in preset_names]
+        self.fields["selected_values"].initial = selected
+
+        customs = [name for name in existing_map if name not in preset_names]
+        if customs:
+            self.fields["custom_value_1"].initial = customs[0]
+        if len(customs) > 1:
+            self.fields["custom_value_2"].initial = customs[1]
+
+        self.value_how_fields = []
+        for label, _ in FIRM_CORE_VALUE_CHOICES:
+            field_name = f"how_{label.lower().replace(' ', '_').replace('-', '_')}"
+            self.fields[field_name] = forms.CharField(
+                required=False,
+                max_length=400,
+                label=f"How “{label}” shows up in your work",
+                widget=forms.TextInput(
+                    attrs={
+                        "class": "form-input",
+                        "placeholder": "One sentence…",
+                        "data-value-how": label,
+                    }
+                ),
+            )
+            if label in existing_map:
+                self.fields[field_name].initial = existing_map[label]
+            self.value_how_fields.append((label, field_name))
+
+        self.fields["how_custom_1"] = forms.CharField(
+            required=False,
+            max_length=400,
+            label="How custom value 1 shows up",
+            widget=forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "One sentence…",
+                    "id": "id_how_custom_1",
+                }
+            ),
+        )
+        self.fields["how_custom_2"] = forms.CharField(
+            required=False,
+            max_length=400,
+            label="How custom value 2 shows up",
+            widget=forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "One sentence…",
+                    "id": "id_how_custom_2",
+                }
+            ),
+        )
+        if customs:
+            self.fields["how_custom_1"].initial = existing_map.get(customs[0], "")
+        if len(customs) > 1:
+            self.fields["how_custom_2"].initial = existing_map.get(customs[1], "")
+
+    def clean(self):
+        cleaned = super().clean()
+        selected = list(cleaned.get("selected_values") or [])
+        custom_1 = (cleaned.get("custom_value_1") or "").strip()
+        custom_2 = (cleaned.get("custom_value_2") or "").strip()
+        entries = []
+
+        for label, field_name in self.value_how_fields:
+            if label not in selected:
+                continue
+            how = (cleaned.get(field_name) or "").strip()
+            entries.append({"name": label, "how": how})
+
+        for name, how_key in (
+            (custom_1, "how_custom_1"),
+            (custom_2, "how_custom_2"),
+        ):
+            if not name:
+                continue
+            if any(e["name"].lower() == name.lower() for e in entries):
+                continue
+            how = (cleaned.get(how_key) or "").strip()
+            entries.append({"name": name, "how": how})
+
+        if len(entries) > 5:
+            self.add_error(
+                "selected_values",
+                "Pick up to 5 core values (including any custom values).",
+            )
+        cleaned["core_values"] = entries
+        return cleaned
+
+    def save(self, commit=True):
+        company = super().save(commit=False)
+        company.core_values = self.cleaned_data.get("core_values") or []
+        if commit:
+            company.save()
+        return company
+
+
+class PracticeAreaForm(forms.ModelForm):
+    """Create or edit a firm practice area."""
+
+    images = forms.FileField(
+        required=False,
+        widget=MultipleFileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*",
+                "id": "id_practice_area_images",
+            }
+        ),
+        label="Images",
+        help_text="Upload one or more images. The first image is the main image.",
+    )
+
+    class Meta:
+        model = FirmPracticeArea
+        fields = ["name", "summary", "details", "rank"]
+        labels = {
+            "name": "Practice area",
+            "summary": "What you do in this area",
+            "details": "Detailed information about the area",
+            "rank": "Rank",
+        }
+        widgets = {
+            "name": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Litigation, Conveyancing, Family law",
+                    "id": "id_practice_area_name",
+                }
+            ),
+            "summary": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Short description of the work you do here…",
+                    "id": "id_practice_area_summary",
+                }
+            ),
+            "details": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 6,
+                    "placeholder": "Longer detail for visitors who want to know more…",
+                    "id": "id_practice_area_details",
+                }
+            ),
+            "rank": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "min": 1,
+                    "step": 1,
+                    "id": "id_practice_area_rank",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["name"].required = True
+        self.fields["summary"].required = True
+        self.fields["details"].required = False
+        self.fields["rank"].required = True
+        self.fields["rank"].initial = self.fields["rank"].initial or 1
+
+    def clean_name(self):
+        name = (self.cleaned_data.get("name") or "").strip()
+        if not name:
+            raise ValidationError("Practice area name is required.")
+        return name
+
+    def clean_summary(self):
+        summary = (self.cleaned_data.get("summary") or "").strip()
+        if not summary:
+            raise ValidationError("Describe what you do in this area.")
+        return summary
+
+    def clean_rank(self):
+        rank = self.cleaned_data.get("rank")
+        if rank is None or rank < 1:
+            raise ValidationError("Rank must be 1 or higher.")
+        return rank
+
+
+class FAQForm(forms.ModelForm):
+    """Create or edit a firm FAQ entry."""
+
+    class Meta:
+        model = FirmFAQ
+        fields = ["question", "answer", "rank"]
+        labels = {
+            "question": "Question",
+            "answer": "Answer",
+            "rank": "Rank",
+        }
+        widgets = {
+            "question": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. How do I book a consultation?",
+                    "id": "id_faq_question",
+                }
+            ),
+            "answer": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 5,
+                    "placeholder": "Clear answer visitors will see on the website…",
+                    "id": "id_faq_answer",
+                }
+            ),
+            "rank": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "min": 1,
+                    "step": 1,
+                    "id": "id_faq_rank",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["question"].required = True
+        self.fields["answer"].required = True
+        self.fields["rank"].required = True
+        self.fields["rank"].initial = self.fields["rank"].initial or 1
+
+    def clean_question(self):
+        question = (self.cleaned_data.get("question") or "").strip()
+        if not question:
+            raise ValidationError("Question is required.")
+        return question
+
+    def clean_answer(self):
+        answer = (self.cleaned_data.get("answer") or "").strip()
+        if not answer:
+            raise ValidationError("Answer is required.")
+        return answer
+
+    def clean_rank(self):
+        rank = self.cleaned_data.get("rank")
+        if rank is None or rank < 1:
+            raise ValidationError("Rank must be 1 or higher.")
+        return rank
+
+
+class WebsiteTemplateForm(forms.ModelForm):
+    """Choose which public homepage appears at `/`."""
+
+    class Meta:
+        model = WebsiteTemplateSetting
+        fields = ["active_template"]
+        labels = {
+            "active_template": "Homepage website",
+        }
+        widgets = {
+            "active_template": forms.RadioSelect(
+                attrs={"class": "website-template-choice-group"}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["active_template"].choices = list(
+            WebsiteTemplateSetting.TemplateChoice.choices
+        )
+        self.fields["active_template"].required = True
 
 
 class CreateGoogleDocumentForm(forms.Form):
