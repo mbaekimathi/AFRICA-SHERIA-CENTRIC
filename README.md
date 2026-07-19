@@ -59,15 +59,30 @@ Open that URL on your phone or tablet. Both devices must be on the same network.
 
 Optional Google client sign-in: set `GOOGLE_CLIENT_ID` in `.env` (Google Cloud OAuth Web client ID).
 
-## MySQL settings (`.env`)
+## `.env` (keep it short)
+
+Copy `.env.example` → `.env`. **Domain auto-picks** from the URL visitors use (no `SITE_URL` / `ALLOWED_HOSTS` needed).
+
+**Local:**
 
 ```env
-DB_NAME=v.2-sheria-centric-db
-DB_USER=root
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
 DB_PASSWORD=
-DB_HOST=127.0.0.1
-DB_PORT=3306
 ```
+
+**Production (cPanel)** — DB credentials only; domain comes from your domain pointing at the app:
+
+```env
+DB_NAME=...
+DB_USER=...
+DB_PASSWORD=...
+DB_HOST=localhost
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+Auto-picked: `SECRET_KEY`, `DEBUG` (off under Passenger), any domain/host, CSRF origins, OAuth callback, MySQL defaults, firm/Drive names.
 
 ## GitHub + cPanel deploy
 
@@ -79,7 +94,7 @@ Remote: https://github.com/mbaekimathi/AFRICA-SHERIA-CENTRIC.git
 git push -u origin main
 ```
 
-`.env` is gitignored — never commit secrets.
+`.env` and `.secret_key` are gitignored — never commit secrets.
 
 ### First deploy on cPanel
 
@@ -96,18 +111,7 @@ git push -u origin main
    ```bash
    git clone https://github.com/mbaekimathi/AFRICA-SHERIA-CENTRIC.git .
    ```
-4. **Create `.env` on the server** (copy from `.env.example`), then set at least:
-   ```env
-   SECRET_KEY=<long-random-string>
-   DEBUG=False
-   ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
-   CSRF_TRUSTED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-   DB_NAME=...
-   DB_USER=...
-   DB_PASSWORD=...
-   DB_HOST=localhost
-   DB_PORT=3306
-   ```
+4. **Create `.env` on the server** with DB (+ Google) only — domain auto-picks.
 5. Collect static files and migrate:
    ```bash
    python manage.py migrate

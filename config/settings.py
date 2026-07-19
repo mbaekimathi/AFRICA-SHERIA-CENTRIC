@@ -1,8 +1,14 @@
 """
 Django settings for SHERIA-CENTRIC.
+
+Most values auto-pick — including the public domain from each request.
+Put only secrets / DB overrides in `.env`.
 """
 
+from __future__ import annotations
+
 import os
+import secrets
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,29 +18,70 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Prefer project .env over empty/stale process environment variables.
 load_dotenv(BASE_DIR / ".env", override=True)
 
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "django-insecure-69)v=mv&ge_@hf%5iv-*v)qkf@5mqpg5*aou%9r(6c*f0!2rg2",
+
+def _env(name: str, default: str = "") -> str:
+    return (os.getenv(name, default) or "").strip()
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _load_or_create_secret_key() -> str:
+    """Use SECRET_KEY from env, else a persistent local file, else generate one."""
+    from_env = _env("SECRET_KEY")
+    if from_env and from_env not in {"change-me-in-production", "changeme"}:
+        return from_env
+
+    key_path = BASE_DIR / ".secret_key"
+    if key_path.is_file():
+        stored = key_path.read_text(encoding="utf-8").strip()
+        if stored:
+            return stored
+
+    generated = secrets.token_urlsafe(50)
+    try:
+        key_path.write_text(generated + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return generated
+
+
+def _under_passenger() -> bool:
+    return any(key.startswith("PASSENGER_") for key in os.environ)
+
+
+# cPanel Passenger (or PRODUCTION=1) ⇒ production defaults.
+IS_PRODUCTION = _env_bool("PRODUCTION", False) or _under_passenger()
+
+SECRET_KEY = _load_or_create_secret_key()
+DEBUG = _env_bool("DEBUG", default=not IS_PRODUCTION)
+
+# Domain auto-picks from the request Host header (see AutoDomainMiddleware).
+_allowed_raw = _env("ALLOWED_HOSTS")
+ALLOWED_HOSTS = (
+    [h.strip() for h in _allowed_raw.split(",") if h.strip()]
+    if _allowed_raw
+    else ["*"]
 )
 
-DEBUG = os.getenv("DEBUG", "True").lower() in ("1", "true", "yes")
+# Filled at runtime from each request; localhost kept for local forms/OAuth.
+_csrf_raw = _env("CSRF_TRUSTED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = (
+    [o.strip() for o in _csrf_raw.split(",") if o.strip()]
+    if _csrf_raw
+    else [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+)
 
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",")
-    if host.strip()
-]
-# Allow phones/tablets on the LAN (Host header is the PC's IP, not localhost).
-if DEBUG and "*" not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append("*")
-
-# Comma-separated HTTPS origins for production (cPanel), e.g.
-# CSRF_TRUSTED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-CSRF_TRUSTED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
-    if origin.strip()
-]
+# cPanel / reverse proxies terminate SSL in front of the app.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -48,6 +95,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "config.auto_domain.AutoDomainMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -75,16 +123,16 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DB_NAME = os.getenv("DB_NAME", "v.2-sheria-centric-db")
-
+# MySQL — defaults suit local MariaDB/MySQL; override only what differs.
+DB_NAME = _env("DB_NAME") or "v.2-sheria-centric-db"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
         "NAME": DB_NAME,
-        "USER": os.getenv("DB_USER", "root"),
+        "USER": _env("DB_USER") or "root",
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", "3306"),
+        "HOST": _env("DB_HOST") or "127.0.0.1",
+        "PORT": _env("DB_PORT") or "3306",
         "OPTIONS": {
             "charset": "utf8mb4",
             "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
@@ -121,34 +169,15 @@ LOGIN_REDIRECT_URL = "accounts:employees_home"
 LOGOUT_REDIRECT_URL = "accounts:home"
 
 # Allow Google Identity Services (and other OAuth) popups to postMessage back.
-# Django 4+ defaults to "same-origin", which blanks the GIS popup and breaks sign-in.
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin-allow-popups"
 
-# Google OAuth — client portal sign-in + firm Google Drive connection.
-# Google rejects private LAN IPs for OAuth — use localhost / 127.0.0.1 in Console.
-# Client GIS login needs Authorized JavaScript origins (not redirect URIs):
-#   http://localhost:8000
-#   http://127.0.0.1:8000
-# Drive connect needs Authorized redirect URIs:
-#   http://localhost:8000/integrations/google/callback/
-#   http://127.0.0.1:8000/integrations/google/callback/
-GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID", "") or "").strip()
-GOOGLE_CLIENT_SECRET = (os.getenv("GOOGLE_CLIENT_SECRET", "") or "").strip()
-GOOGLE_OAUTH_REDIRECT_URI = (
-    os.getenv(
-        "GOOGLE_OAUTH_REDIRECT_URI",
-        "http://localhost:8000/integrations/google/callback/",
-    )
-    or ""
-).strip()
-# Root folder name created on the connected Google Drive account.
-FIRM_DRIVE_ROOT_NAME = (
-    os.getenv("FIRM_DRIVE_ROOT_NAME", "") or ""
-).strip() or "Sheria-Centric"
-# Display name shown in the workspace top bar.
-FIRM_DISPLAY_NAME = (
-    os.getenv("FIRM_DISPLAY_NAME", "") or ""
-).strip() or "Sheria Law Firm"
+# Google OAuth — only client id/secret belong in .env; redirect URI auto-picks domain.
+GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = _env("GOOGLE_CLIENT_SECRET")
+GOOGLE_OAUTH_REDIRECT_URI = _env("GOOGLE_OAUTH_REDIRECT_URI")
+
+FIRM_DRIVE_ROOT_NAME = _env("FIRM_DRIVE_ROOT_NAME") or "Sheria-Centric"
+FIRM_DISPLAY_NAME = _env("FIRM_DISPLAY_NAME") or "Sheria Law Firm"
 
 FILE_UPLOAD_MAX_MEMORY_SIZE = 15 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024 * 1024

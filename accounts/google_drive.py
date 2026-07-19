@@ -105,15 +105,31 @@ def firm_root_folder_name() -> str:
 
 def build_redirect_uri(request=None) -> str:
     """
-    Fixed localhost callback — Google rejects private LAN IPs (192.168.x.x).
-    Connect Google Drive while signed in at http://localhost:8000/ ...
+    Auto-pick OAuth callback from the live domain:
+    - explicit GOOGLE_OAUTH_REDIRECT_URI if set
+    - request origin / host when available (public domain or localhost)
+    - otherwise localhost (Google rejects private LAN IPs like 192.168.x.x)
     """
+    path = "/integrations/google/callback/"
     configured = (getattr(settings, "GOOGLE_OAUTH_REDIRECT_URI", "") or "").strip()
     if configured:
         return configured if configured.endswith("/") else configured + "/"
-    return "http://localhost:8000/integrations/google/callback/"
 
+    if request is not None:
+        origin = getattr(request, "auto_site_origin", "") or ""
+        if origin:
+            return f"{origin.rstrip('/')}{path}"
 
+        host = request.get_host()
+        if is_loopback_host(host):
+            return request.build_absolute_uri(path)
+
+        hostname = (host or "").split(":")[0].strip().lower()
+        # Public hostname (not a private/numeric LAN IP) → use this domain.
+        if hostname and not hostname.replace(".", "").isdigit():
+            return request.build_absolute_uri(path)
+
+    return f"http://localhost:8000{path}"
 def is_loopback_host(host: str) -> bool:
     hostname = (host or "").split(":")[0].strip().lower()
     return hostname in {"localhost", "127.0.0.1", "::1"}

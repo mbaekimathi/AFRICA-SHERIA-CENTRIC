@@ -24,7 +24,7 @@ class Command(StaticfilesRunserverCommand):
         "Starts the development server after ensuring DB/tables exist. "
         "Binds to 0.0.0.0 by default so other devices on your network can open the printed Network link."
     )
-    # Listen on all interfaces so phones/tablets on the same Wi‑Fi can connect.
+    # Listen on all interfaces so phones/tablets on the same Wi-Fi can connect.
     default_addr = "0.0.0.0"
 
     def inner_run(self, *args, **options):
@@ -41,7 +41,7 @@ class Command(StaticfilesRunserverCommand):
                 url = f"http://{lan}:{port}/"
                 self.stdout.write(self.style.SUCCESS(f"Network (other devices): {url}"))
                 self.stdout.write(
-                    "Open that link on another device on the same Wi‑Fi "
+                    "Open that link on another device on the same Wi-Fi "
                     "(allow Python through Windows Firewall if prompted)."
                 )
             else:
