@@ -67,6 +67,7 @@ GOOGLE_DRIVE_SCOPES = (
 
 SESSION_OAUTH_STATE = "google_drive_oauth_state"
 SESSION_OAUTH_RETURN = "google_drive_oauth_return"
+SESSION_OAUTH_REDIRECT = "google_drive_oauth_redirect"
 
 DRIVE_FILE_FIELDS = "id,name,mimeType,webViewLink,webContentLink,trashed"
 DRIVE_CONTENT_FIELDS = (
@@ -103,36 +104,78 @@ def firm_root_folder_name() -> str:
     ).strip() or "Sheria-Centric"
 
 
+def is_loopback_host(host: str) -> bool:
+    hostname = (host or "").split(":")[0].strip().lower()
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def is_private_lan_host(host: str) -> bool:
+    """True for RFC1918 / link-local IPs Google OAuth rejects."""
+    hostname = (host or "").split(":")[0].strip().lower()
+    if not hostname or is_loopback_host(hostname):
+        return False
+    if hostname.endswith(".local"):
+        return True
+    parts = hostname.split(".")
+    if len(parts) != 4 or not all(p.isdigit() for p in parts):
+        return False
+    a, b = int(parts[0]), int(parts[1])
+    if a == 10:
+        return True
+    if a == 172 and 16 <= b <= 31:
+        return True
+    if a == 192 and b == 168:
+        return True
+    if a == 169 and b == 254:
+        return True
+    return False
+
+
+def can_start_google_oauth(host: str) -> bool:
+    """
+    Connect works:
+    - offline/local: localhost / 127.0.0.1
+    - online: public domain (cPanel, etc.)
+    Not from private LAN IPs (Google rejects those redirect URIs).
+    """
+    if is_loopback_host(host):
+        return True
+    if is_private_lan_host(host):
+        return False
+    hostname = (host or "").split(":")[0].strip()
+    return bool(hostname)
+
+
+def _origin_from_request(request) -> str:
+    origin = (getattr(request, "auto_site_origin", "") or "").strip().rstrip("/")
+    if origin:
+        return origin
+    return request.build_absolute_uri("/").rstrip("/")
+
+
 def build_redirect_uri(request=None) -> str:
     """
-    Auto-pick OAuth callback from the live domain:
-    - explicit GOOGLE_OAUTH_REDIRECT_URI if set
-    - request origin / host when available (public domain or localhost)
-    - otherwise localhost (Google rejects private LAN IPs like 192.168.x.x)
+    Auto-pick OAuth callback for local (offline) and public (online) hosts.
+    Private LAN IPs fall back to localhost — Google rejects 192.168.x.x.
     """
     path = "/integrations/google/callback/"
     configured = (getattr(settings, "GOOGLE_OAUTH_REDIRECT_URI", "") or "").strip()
     if configured:
         return configured if configured.endswith("/") else configured + "/"
 
-    if request is not None:
-        origin = getattr(request, "auto_site_origin", "") or ""
-        if origin:
-            return f"{origin.rstrip('/')}{path}"
+    if request is None:
+        return f"http://localhost:8000{path}"
 
-        host = request.get_host()
-        if is_loopback_host(host):
-            return request.build_absolute_uri(path)
+    host = request.get_host()
+    if is_private_lan_host(host):
+        return f"http://localhost:8000{path}"
 
-        hostname = (host or "").split(":")[0].strip().lower()
-        # Public hostname (not a private/numeric LAN IP) → use this domain.
-        if hostname and not hostname.replace(".", "").isdigit():
-            return request.build_absolute_uri(path)
+    if is_loopback_host(host):
+        # Keep whatever loopback host/port the user is on.
+        return _origin_from_request(request).rstrip("/") + path
 
-    return f"http://localhost:8000{path}"
-def is_loopback_host(host: str) -> bool:
-    hostname = (host or "").split(":")[0].strip().lower()
-    return hostname in {"localhost", "127.0.0.1", "::1"}
+    # Public / production domain (https://yourdomain.com, …).
+    return _origin_from_request(request).rstrip("/") + path
 
 
 def sanitize_drive_name(name: str, *, fallback: str = "Untitled") -> str:
@@ -142,22 +185,33 @@ def sanitize_drive_name(name: str, *, fallback: str = "Untitled") -> str:
 
 
 def begin_oauth(request, return_path: str) -> str:
-    """Store CSRF state and return the Google consent URL."""
+    """Store CSRF state and return the Google consent URL (offline refresh token)."""
     if not google_oauth_configured():
         raise GoogleDriveOAuthError(
             "Google OAuth is not configured. Set GOOGLE_CLIENT_ID and "
             "GOOGLE_CLIENT_SECRET in the environment."
         )
 
+    host = request.get_host()
+    if not can_start_google_oauth(host):
+        raise GoogleDriveOAuthError(
+            "Google OAuth cannot start from a private LAN address. "
+            "Open settings on http://localhost:8000/ (local) or your "
+            "public domain (online), then connect."
+        )
+
     state = secrets.token_urlsafe(32)
+    redirect_uri = build_redirect_uri(request)
     request.session[SESSION_OAUTH_STATE] = state
     request.session[SESSION_OAUTH_RETURN] = return_path or "/"
+    request.session[SESSION_OAUTH_REDIRECT] = redirect_uri
 
     params = {
         "client_id": settings.GOOGLE_CLIENT_ID,
-        "redirect_uri": build_redirect_uri(request),
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": " ".join(GOOGLE_DRIVE_SCOPES),
+        # Offline = refresh token so Drive keeps working after the user leaves.
         "access_type": "offline",
         "include_granted_scopes": "true",
         "prompt": "consent",
@@ -786,13 +840,18 @@ def exchange_code(request, code: str) -> GoogleDriveConnection:
     if not google_oauth_configured():
         raise GoogleDriveOAuthError("Google OAuth is not configured.")
 
+    redirect_uri = (
+        (request.session.pop(SESSION_OAUTH_REDIRECT, None) or "").strip()
+        or build_redirect_uri(request)
+    )
+
     payload = _post_form(
         GOOGLE_TOKEN_URL,
         {
             "code": code,
             "client_id": settings.GOOGLE_CLIENT_ID,
             "client_secret": settings.GOOGLE_CLIENT_SECRET,
-            "redirect_uri": build_redirect_uri(request),
+            "redirect_uri": redirect_uri,
             "grant_type": "authorization_code",
         },
     )

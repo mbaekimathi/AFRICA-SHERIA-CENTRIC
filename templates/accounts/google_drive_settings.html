@@ -115,25 +115,29 @@
           </li>
         </ul>
       </div>
-      {% elif not google_oauth_on_loopback %}
+      {% elif google_oauth_on_private_lan %}
       <div class="gdrive-connect">
         <p class="gdrive-connect__copy">
-          Google only allows OAuth from <strong>localhost</strong> (not LAN IPs like
-          192.168.x.x). Open this settings page on the server PC via localhost, sign in
-          if asked, then connect Google.
+          Google blocks OAuth from private LAN IPs (like 192.168.x.x).
+          Connect from <strong>localhost</strong> on this PC, or from your
+          <strong>public domain</strong> when the site is online.
         </p>
         <a class="btn btn--primary btn--inline" href="{{ google_localhost_settings_url }}">
           Open on localhost to connect Google
         </a>
         <p class="gdrive-note">
-          After connecting once, you can return to this LAN address — the firm
-          connection is stored in the database.
+          After connecting once, Drive keeps working from any address — the
+          firm connection (with offline refresh) is stored in the database.
         </p>
       </div>
-      {% else %}
+      {% elif google_oauth_can_connect %}
       <div class="gdrive-connect">
         <p class="gdrive-connect__copy">
-          Sign in with Google to authorize Drive access for this firm.
+          {% if google_oauth_on_loopback %}
+          Local mode — connect Google Drive while running on this computer.
+          {% else %}
+          Online mode — connect Google Drive using this public domain.
+          {% endif %}
           Prefer a shared firm Google account when possible.
         </p>
         <a class="btn btn--google gdrive-connect__btn" href="{{ google_connect_url }}?next=/{{ role_slug }}/{{ page_trail|join:"/" }}/">
@@ -146,12 +150,18 @@
           Sign in with Google
         </a>
         <p class="gdrive-note">
-          Redirect URI registered in Google Cloud:
+          Add this Authorized redirect URI in Google Cloud Console
+          (both local and online if you use both):
           <code>{{ google_oauth_redirect_uri }}</code>
         </p>
       </div>
-      {% endif %}
-    </div>
+      {% else %}
+      <div class="gdrive-connect">
+        <p class="gdrive-connect__copy">
+          Open Google Drive Settings from localhost or your live domain to connect.
+        </p>
+      </div>
+      {% endif %}    </div>
   </section>
 </section>
 {% endblock %}

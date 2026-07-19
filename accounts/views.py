@@ -63,6 +63,7 @@ from .google_drive import (
     begin_oauth,
     bootstrap_drive_folders,
     build_redirect_uri,
+    can_start_google_oauth,
     create_google_workspace_file,
     disconnect_google_drive,
     ensure_case_drive_folder,
@@ -71,6 +72,7 @@ from .google_drive import (
     firm_root_folder_name,
     google_oauth_configured,
     is_loopback_host,
+    is_private_lan_host,
     pop_oauth_return,
     rename_drive_file,
     trash_drive_file,
@@ -1803,15 +1805,21 @@ class RoleWorkspaceView(View):
         connection = GoogleDriveConnection.get_solo()
         host = request.get_host()
         on_loopback = is_loopback_host(host)
+        on_private_lan = is_private_lan_host(host)
+        can_connect = can_start_google_oauth(host)
         trail = "/".join(resolved["trail"])
-        localhost_settings_url = f"http://localhost:8000/{request.user.role_slug}/{trail}/"
+        localhost_settings_url = (
+            f"http://localhost:8000/{request.user.role_slug}/{trail}/"
+        )
         root_name = firm_root_folder_name()
         return {
             "google_drive": connection,
             "google_drive_connected": connection.is_connected,
             "google_drive_has_structure": connection.has_folder_structure,
             "google_oauth_ready": google_oauth_configured(),
+            "google_oauth_can_connect": can_connect,
             "google_oauth_on_loopback": on_loopback,
+            "google_oauth_on_private_lan": on_private_lan,
             "google_oauth_redirect_uri": build_redirect_uri(request),
             "google_localhost_settings_url": localhost_settings_url,
             "google_connect_url": reverse("accounts:google_drive_connect"),
