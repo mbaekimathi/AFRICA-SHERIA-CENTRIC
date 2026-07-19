@@ -8,9 +8,26 @@ app_name = "accounts"
 urlpatterns = [
     # Public site
     path("", views.HomeView.as_view(), name="home"),
+    path("about/", views.FirmAboutView.as_view(), name="firm_about"),
+    path("practice/", views.FirmPracticeListView.as_view(), name="firm_practice_list"),
+    path(
+        "practice/<slug:slug>/",
+        views.FirmPracticeDetailView.as_view(),
+        name="firm_practice_detail",
+    ),
+    path("gallery/", views.FirmGalleryListView.as_view(), name="firm_gallery_list"),
+    path(
+        "gallery/<slug:slug>/",
+        views.FirmGalleryDetailView.as_view(),
+        name="firm_gallery_detail",
+    ),
+    path("faqs/", views.FirmFaqsView.as_view(), name="firm_faqs"),
+    path("contact/", views.FirmContactView.as_view(), name="firm_contact"),
     path("blog/", views.BlogListView.as_view(), name="blog_list"),
     path("blog/<slug:slug>/", views.BlogDetailView.as_view(), name="blog_detail"),
+    path("terms/", views.FirmTermsView.as_view(), name="firm_terms"),
     path("blog-sitemap.xml", views.BlogSitemapView.as_view(), name="blog_sitemap"),
+    path("robots.txt", views.RobotsTxtView.as_view(), name="robots_txt"),
     # Employee auth
     path("employee/login/", views.AdvocateLoginView.as_view(), name="login"),
     path("login/", views.AdvocateLoginView.as_view(), name="login-alt"),

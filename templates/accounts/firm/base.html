@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block body_class %}site-page site-page--firm{% endblock %}
+
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/firm_site.css' %}">
+{% block firm_head %}{% endblock %}
+{% endblock %}
+
+{% block content %}
+<div class="fw-site">
+  {% include "accounts/firm/_nav.html" %}
+  {% block firm_content %}{% endblock %}
+  {% include "accounts/firm/_footer.html" %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/firm_site.js' %}" defer></script>
+{% endblock %}

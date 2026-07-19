@@ -1,0 +1,31 @@
+{% extends "accounts/firm/base.html" %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead">
+  <div class="fw-wrap">
+    <p class="fw-pagehead__eyebrow">Practice</p>
+    <h1>Practice areas</h1>
+    <p class="fw-pagehead__lede">Select an area to open its full page — land, family, commercial, and more.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap">
+    <div class="fw-practice-grid">
+      {% for area in practice_areas %}
+      <a class="fw-practice-card fw-reveal" href="{{ area.get_absolute_url }}">
+        <span class="fw-practice-card__num">{{ forloop.counter|stringformat:"02d" }}</span>
+        <h3>{{ area.name }}</h3>
+        {% if area.summary %}<p>{{ area.summary }}</p>{% endif %}
+        <span class="fw-practice-card__more">Open page →</span>
+      </a>
+      {% empty %}
+      <p>Practice areas will appear once added in Company Information.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

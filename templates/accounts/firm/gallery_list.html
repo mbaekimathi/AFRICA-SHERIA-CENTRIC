@@ -1,0 +1,38 @@
+{% extends "accounts/firm/base.html" %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead">
+  <div class="fw-wrap">
+    <p class="fw-pagehead__eyebrow">Gallery</p>
+    <h1>Inside the chambers</h1>
+    <p class="fw-pagehead__lede">Each item opens on its own page.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap">
+    <div class="fw-gallery">
+      {% for item in gallery_items %}
+      <a class="fw-gallery-card fw-reveal" href="{{ item.get_absolute_url }}">
+        <div class="fw-gallery-card__media">
+          {% if item.image %}
+          <img src="{{ item.image.url }}" alt="{{ item.title }}" loading="lazy">
+          {% else %}
+          {{ forloop.counter|stringformat:"02d" }}
+          {% endif %}
+        </div>
+        <div class="fw-gallery-card__body">
+          <strong>{{ item.title }}</strong>
+          {% if item.caption %}<span>{{ item.caption|truncatewords:14 }}</span>{% endif %}
+        </div>
+      </a>
+      {% empty %}
+      <p>Gallery items will appear once added in Company Information.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

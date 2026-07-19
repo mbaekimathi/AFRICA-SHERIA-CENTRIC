@@ -1,0 +1,44 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="company-terms-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Publish the firm’s terms for website visitors and clients engaging Bauni Law Group online.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Terms content</h3>
+      <p class="panel__hint">{{ company_information.display_name }}</p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="workspace-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+        <div class="form-field">
+          <label for="{{ form.terms_and_conditions.id_for_label }}">{{ form.terms_and_conditions.label }}</label>
+          {{ form.terms_and_conditions }}
+          {% if form.terms_and_conditions.errors %}
+          <span class="field-error">{{ form.terms_and_conditions.errors.0 }}</span>
+          {% endif %}
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">Save terms</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

@@ -1554,6 +1554,11 @@ class FirmCompanyInformation(models.Model):
         default=list,
         help_text='List of {"name": "...", "how": "..."} core value entries.',
     )
+    terms_and_conditions = models.TextField(
+        blank=True,
+        default="",
+        help_text="Public terms and conditions shown on the firm website.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         Employee,
@@ -1608,6 +1613,13 @@ class FirmPracticeArea(models.Model):
     """A ranked practice area for the firm website."""
 
     name = models.CharField(max_length=160, verbose_name="Practice area")
+    slug = models.SlugField(
+        max_length=180,
+        unique=True,
+        blank=True,
+        default="",
+        help_text="Public URL slug for /practice/<slug>/",
+    )
     summary = models.TextField(
         blank=True,
         default="",
@@ -1641,6 +1653,28 @@ class FirmPracticeArea(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        from django.utils.text import slugify
+
+        if not (self.slug or "").strip():
+            base = slugify(self.name)[:160] or "practice-area"
+            candidate = base
+            n = 2
+            while (
+                FirmPracticeArea.objects.filter(slug=candidate)
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                candidate = f"{base}-{n}"
+                n += 1
+            self.slug = candidate
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("accounts:firm_practice_detail", kwargs={"slug": self.slug})
 
     @property
     def main_image(self):
@@ -1699,6 +1733,72 @@ class FirmFAQ(models.Model):
 
     def __str__(self):
         return self.question
+
+
+def gallery_image_upload_to(instance, filename):
+    return f"company/gallery/{filename}"
+
+
+class FirmGalleryImage(models.Model):
+    """A photo or visual for the firm website gallery."""
+
+    title = models.CharField(max_length=160)
+    slug = models.SlugField(
+        max_length=180,
+        unique=True,
+        blank=True,
+        default="",
+        help_text="Public URL slug for /gallery/<slug>/",
+    )
+    caption = models.CharField(max_length=320, blank=True, default="")
+    image = models.ImageField(
+        upload_to=gallery_image_upload_to,
+        blank=True,
+        null=True,
+    )
+    rank = models.PositiveIntegerField(
+        default=1,
+        help_text="Lower numbers appear first (1 = highest priority).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="gallery_updates",
+    )
+
+    class Meta:
+        ordering = ["rank", "title"]
+        verbose_name = "Company gallery image"
+        verbose_name_plural = "Company gallery images"
+
+    def __str__(self):
+        return self.title
+
+    def save(self, *args, **kwargs):
+        from django.utils.text import slugify
+
+        if not (self.slug or "").strip():
+            base = slugify(self.title)[:160] or "gallery-item"
+            candidate = base
+            n = 2
+            while (
+                FirmGalleryImage.objects.filter(slug=candidate)
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                candidate = f"{base}-{n}"
+                n += 1
+            self.slug = candidate
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("accounts:firm_gallery_detail", kwargs={"slug": self.slug})
 
 
 class WebsiteTemplateSetting(models.Model):

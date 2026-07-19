@@ -40,6 +40,7 @@ from .forms import (
     CompanyInformationForm,
     CompanyContactsForm,
     AboutCompanyForm,
+    CompanyTermsForm,
     CourtAttendanceAdvocateFormSet,
     CourtAttendanceBringUpItemFormSet,
     CreateGoogleDocumentForm,
@@ -48,6 +49,7 @@ from .forms import (
     EmployeeBlogForm,
     EmployeeOnboardingForm,
     FAQForm,
+    GalleryImageForm,
     LoginForm,
     MatterPartyEditFormSet,
     MatterPartyFormSet,
@@ -111,6 +113,7 @@ from .models import (
     EmployeeBlogPost,
     FirmCompanyInformation,
     FirmFAQ,
+    FirmGalleryImage,
     FirmPracticeArea,
     FirmPracticeAreaImage,
     GoogleDriveConnection,
@@ -147,6 +150,89 @@ from .workspace import (
 from .utils import optimize_image, render_blog_body, whatsapp_chat_url
 
 
+def _firm_meta_description(company: FirmCompanyInformation, firm_name: str) -> str:
+    """Build a Google-friendly meta description from company fields."""
+    parts = []
+    tagline = (company.tagline or "").strip()
+    value = (company.value_proposition or "").strip()
+    city = (company.city or "").strip()
+    country = (company.country or "").strip()
+    if tagline:
+        parts.append(tagline.rstrip("."))
+    elif value:
+        parts.append(value.rstrip(".")[:140])
+    else:
+        parts.append(f"Professional legal counsel from {firm_name}")
+    location = ", ".join(p for p in (city, country) if p)
+    if location:
+        parts.append(f"Based in {location}")
+    phone = (company.phone or "").strip()
+    if phone:
+        parts.append(f"Call {phone}")
+    text = ". ".join(parts).strip()
+    if not text.endswith("."):
+        text += "."
+    return text[:160]
+
+
+def _firm_organization_json_ld(request, company: FirmCompanyInformation, firm_name: str):
+    """Organization / LegalService structured data for the firm homepage."""
+    home_url = request.build_absolute_uri(reverse("accounts:home"))
+    data: dict = {
+        "@context": "https://schema.org",
+        "@type": ["LegalService", "Organization"],
+        "name": firm_name,
+        "url": home_url,
+        "description": _firm_meta_description(company, firm_name),
+    }
+    if company.legal_name and company.legal_name.strip() != firm_name:
+        data["legalName"] = company.legal_name.strip()
+    if company.email:
+        data["email"] = company.email.strip()
+    if company.phone:
+        data["telephone"] = company.phone.strip()
+    if company.website:
+        data["sameAs"] = [company.website.strip()]
+    address_parts = {
+        "@type": "PostalAddress",
+        "addressCountry": (company.country or "KE").strip() or "KE",
+    }
+    if company.physical_address:
+        address_parts["streetAddress"] = company.physical_address.strip()
+    if company.city:
+        address_parts["addressLocality"] = company.city.strip()
+    if company.postal_address:
+        address_parts["postalCode"] = company.postal_address.strip()
+    if company.physical_address or company.city:
+        data["address"] = address_parts
+    if company.founded_year:
+        data["foundingDate"] = str(company.founded_year)
+    areas = (company.service_areas or "").strip()
+    if areas:
+        data["areaServed"] = areas
+    return data
+
+
+def _firm_faq_json_ld(faqs) -> dict | None:
+    if not faqs:
+        return None
+    return {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": faq.question,
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": faq.answer,
+                },
+            }
+            for faq in faqs
+        ],
+    }
+
+
 class HomeView(View):
     """Public homepage — Sheria Centric product site or company firm site."""
 
@@ -157,28 +243,53 @@ class HomeView(View):
         setting = WebsiteTemplateSetting.get_solo()
         if setting.uses_company_website:
             company = FirmCompanyInformation.get_solo()
+            firm_name = company.display_name
             practice_areas = list(
                 FirmPracticeArea.objects.prefetch_related("images").order_by(
                     "rank", "name"
                 )
             )
-            faqs = list(FirmFAQ.objects.order_by("rank", "question"))
+            faqs = list(FirmFAQ.objects.order_by("rank", "question")[:4])
+            gallery_items = list(
+                FirmGalleryImage.objects.order_by("rank", "title")[:4]
+            )
             blog_posts = list(
                 EmployeeBlogPost.objects.filter(
                     status=EmployeeBlogPost.Status.PUBLISHED
                 )
                 .select_related("author")
-                .order_by("-published_at", "-updated_at")[:6]
+                .order_by("-published_at", "-updated_at")[:3]
+            )
+            meta_description = _firm_meta_description(company, firm_name)
+            canonical_url = request.build_absolute_uri(reverse("accounts:home"))
+            json_ld_graph = [_firm_organization_json_ld(request, company, firm_name)]
+            whatsapp_url = ""
+            if company.phone:
+                whatsapp_url = whatsapp_chat_url(
+                    company.phone,
+                    f"Hello {firm_name}, I would like to enquire about legal services.",
+                )
+            slides = _build_firm_slides(
+                request, company, firm_name, practice_areas, gallery_items
             )
             return render(
                 request,
                 self.company_template,
                 {
                     "company": company,
-                    "firm_name": company.display_name,
+                    "firm_name": firm_name,
                     "practice_areas": practice_areas,
                     "faqs": faqs,
+                    "gallery_items": gallery_items,
                     "blog_posts": blog_posts,
+                    "slides": slides,
+                    "has_terms": bool((company.terms_and_conditions or "").strip()),
+                    "meta_description": meta_description,
+                    "canonical_url": canonical_url,
+                    "json_ld": mark_safe(json.dumps(json_ld_graph, ensure_ascii=False)),
+                    "whatsapp_url": whatsapp_url,
+                    "nav_active": "home",
+                    "firm_nav_solid": False,
                     "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
                 },
             )
@@ -191,12 +302,263 @@ class HomeView(View):
         )
 
 
-def _public_firm_context():
+def _build_firm_slides(request, company, firm_name, practice_areas, gallery_items):
+    """Hero slideshow slides from firm profile, practice areas, and gallery."""
+    slides = [
+        {
+            "eyebrow": "Law firm · Kajiado",
+            "title": firm_name,
+            "text": (
+                (company.visitor_feeling or company.tagline or company.value_proposition)
+                or "Practical counsel for families, land, and business."
+            ),
+            "cta_label": "Explore practice areas",
+            "cta_url": reverse("accounts:firm_practice_list"),
+            "cta2_label": "Contact the firm",
+            "cta2_url": reverse("accounts:firm_contact"),
+            "tone": "navy",
+            "image_url": "",
+        }
+    ]
+    tones = ("teal", "ink", "slate", "navy")
+    for i, area in enumerate(practice_areas[:5]):
+        image_url = ""
+        if area.main_image and area.main_image.image:
+            image_url = area.main_image.image.url
+        slides.append(
+            {
+                "eyebrow": "Practice area",
+                "title": area.name,
+                "text": area.summary or area.details[:180] or f"Counsel in {area.name}.",
+                "cta_label": "Open this practice area",
+                "cta_url": area.get_absolute_url(),
+                "cta2_label": "All practice areas",
+                "cta2_url": reverse("accounts:firm_practice_list"),
+                "tone": tones[i % len(tones)],
+                "image_url": image_url,
+            }
+        )
+    for i, item in enumerate(gallery_items[:3]):
+        image_url = item.image.url if item.image else ""
+        slides.append(
+            {
+                "eyebrow": "Inside the chambers",
+                "title": item.title,
+                "text": item.caption or f"A look at {firm_name}.",
+                "cta_label": "View gallery item",
+                "cta_url": item.get_absolute_url(),
+                "cta2_label": "Full gallery",
+                "cta2_url": reverse("accounts:firm_gallery_list"),
+                "tone": tones[(i + 1) % len(tones)],
+                "image_url": image_url,
+            }
+        )
+    return slides
+
+
+def _public_firm_context(nav_active: str = "", solid_nav: bool = True):
     company = FirmCompanyInformation.get_solo()
+    firm_name = company.display_name
+    whatsapp_url = ""
+    if company.phone:
+        whatsapp_url = whatsapp_chat_url(
+            company.phone,
+            f"Hello {firm_name}, I would like to enquire about legal services.",
+        )
     return {
         "company": company,
-        "firm_name": company.display_name,
+        "firm_name": firm_name,
+        "has_terms": bool((company.terms_and_conditions or "").strip()),
+        "whatsapp_url": whatsapp_url,
+        "nav_active": nav_active,
+        "firm_nav_solid": solid_nav,
     }
+
+
+def _firm_page_render(request, template_name, nav_active, page_title, meta_description, extra=None):
+    context = _public_firm_context(nav_active=nav_active, solid_nav=True)
+    context.update(
+        {
+            "page_title": page_title,
+            "meta_description": meta_description,
+            "canonical_url": request.build_absolute_uri(request.path),
+        }
+    )
+    if extra:
+        context.update(extra)
+    return render(request, template_name, context)
+
+
+class FirmAboutView(View):
+    template_name = "accounts/firm/about.html"
+
+    def get(self, request):
+        company = FirmCompanyInformation.get_solo()
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "about",
+            "About the firm",
+            f"Learn about {company.display_name} — our story, values, and service areas in Kajiado County.",
+        )
+
+
+class FirmPracticeListView(View):
+    template_name = "accounts/firm/practice_list.html"
+
+    def get(self, request):
+        areas = list(
+            FirmPracticeArea.objects.prefetch_related("images").order_by("rank", "name")
+        )
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "practice",
+            "Practice areas",
+            f"Practice areas at {FirmCompanyInformation.get_solo().display_name} — land, family, commercial, and more.",
+            {"practice_areas": areas},
+        )
+
+
+class FirmPracticeDetailView(View):
+    template_name = "accounts/firm/practice_detail.html"
+
+    def get(self, request, slug):
+        area = get_object_or_404(
+            FirmPracticeArea.objects.prefetch_related("images"),
+            slug=slug,
+        )
+        related = list(
+            FirmPracticeArea.objects.exclude(pk=area.pk).order_by("rank", "name")[:4]
+        )
+        firm_name = FirmCompanyInformation.get_solo().display_name
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "practice",
+            area.name,
+            (area.summary or f"{area.name} counsel from {firm_name}.")[:160],
+            {"area": area, "related_areas": related},
+        )
+
+
+class FirmGalleryListView(View):
+    template_name = "accounts/firm/gallery_list.html"
+
+    def get(self, request):
+        items = list(FirmGalleryImage.objects.order_by("rank", "title"))
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "gallery",
+            "Gallery",
+            f"Inside the chambers of {FirmCompanyInformation.get_solo().display_name}.",
+            {"gallery_items": items},
+        )
+
+
+class FirmGalleryDetailView(View):
+    template_name = "accounts/firm/gallery_detail.html"
+
+    def get(self, request, slug):
+        item = get_object_or_404(FirmGalleryImage, slug=slug)
+        siblings = list(
+            FirmGalleryImage.objects.exclude(pk=item.pk).order_by("rank", "title")[:6]
+        )
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "gallery",
+            item.title,
+            (item.caption or item.title)[:160],
+            {"item": item, "siblings": siblings},
+        )
+
+
+class FirmFaqsView(View):
+    template_name = "accounts/firm/faqs.html"
+
+    def get(self, request):
+        faqs = list(FirmFAQ.objects.order_by("rank", "question"))
+        faq_ld = _firm_faq_json_ld(faqs)
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "faqs",
+            "Frequently asked questions",
+            f"Common questions about working with {FirmCompanyInformation.get_solo().display_name}.",
+            {
+                "faqs": faqs,
+                "json_ld": mark_safe(json.dumps(faq_ld, ensure_ascii=False))
+                if faq_ld
+                else "",
+            },
+        )
+
+
+class FirmContactView(View):
+    template_name = "accounts/firm/contact.html"
+
+    def get(self, request):
+        company = FirmCompanyInformation.get_solo()
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "contact",
+            "Contact",
+            f"Contact {company.display_name} in {company.city or 'Kajiado'} — phone, email, WhatsApp, and chambers address.",
+        )
+
+
+class FirmTermsView(View):
+    """Public terms and conditions page for the company website."""
+
+    template_name = "accounts/firm/terms.html"
+
+    def get(self, request):
+        context = _public_firm_context(nav_active="terms", solid_nav=True)
+        company = context["company"]
+        terms = (company.terms_and_conditions or "").strip()
+        context.update(
+            {
+                "page_title": "Terms and conditions",
+                "meta_description": (
+                    f"Terms and conditions for clients and website visitors of "
+                    f"{context['firm_name']}."
+                ),
+                "canonical_url": request.build_absolute_uri(
+                    reverse("accounts:firm_terms")
+                ),
+                "terms_text": terms
+                or (
+                    f"Terms for {context['firm_name']} will be published here shortly. "
+                    f"For enquiries, please use the contact page."
+                ),
+            }
+        )
+        return render(request, self.template_name, context)
+
+
+class RobotsTxtView(View):
+    """robots.txt pointing search engines at the firm sitemap."""
+
+    def get(self, request):
+        sitemap_url = request.build_absolute_uri(reverse("accounts:blog_sitemap"))
+        body = "\n".join(
+            [
+                "User-agent: *",
+                "Allow: /",
+                "Disallow: /employee/",
+                "Disallow: /client/",
+                "Disallow: /workspace/",
+                "Disallow: /dashboard/",
+                "Disallow: /it-support/",
+                "Disallow: /admin/",
+                f"Sitemap: {sitemap_url}",
+                "",
+            ]
+        )
+        return HttpResponse(body, content_type="text/plain")
 
 
 class BlogListView(View):
@@ -210,7 +572,7 @@ class BlogListView(View):
             .select_related("author")
             .order_by("-published_at", "-updated_at")
         )
-        context = _public_firm_context()
+        context = _public_firm_context(nav_active="blog", solid_nav=True)
         context.update(
             {
                 "blog_posts": posts,
@@ -239,7 +601,7 @@ class BlogDetailView(View):
             .exclude(pk=post.pk)
             .order_by("-published_at", "-updated_at")[:3]
         )
-        context = _public_firm_context()
+        context = _public_firm_context(nav_active="blog", solid_nav=True)
         absolute_url = request.build_absolute_uri(post.get_absolute_url())
         cover_url = (
             request.build_absolute_uri(post.cover_image.url)
@@ -334,7 +696,7 @@ class BlogDetailView(View):
 
 
 class BlogSitemapView(View):
-    """XML sitemap of published blog posts for search engines."""
+    """XML sitemap of public firm pages and published blog posts."""
 
     def get(self, request):
         posts = (
@@ -342,12 +704,90 @@ class BlogSitemapView(View):
             .order_by("-published_at", "-updated_at")
             .only("slug", "updated_at", "published_at")
         )
+        company = FirmCompanyInformation.get_solo()
+        practice_areas = FirmPracticeArea.objects.order_by("rank", "name").only(
+            "slug", "updated_at"
+        )
+        gallery_items = FirmGalleryImage.objects.order_by("rank", "title").only(
+            "slug", "updated_at"
+        )
         urls = [
+            {
+                "loc": request.build_absolute_uri(reverse("accounts:home")),
+                "lastmod": company.updated_at,
+                "priority": "1.0",
+            },
+            {
+                "loc": request.build_absolute_uri(reverse("accounts:firm_about")),
+                "lastmod": company.updated_at,
+                "priority": "0.8",
+            },
+            {
+                "loc": request.build_absolute_uri(
+                    reverse("accounts:firm_practice_list")
+                ),
+                "lastmod": None,
+                "priority": "0.9",
+            },
+            {
+                "loc": request.build_absolute_uri(
+                    reverse("accounts:firm_gallery_list")
+                ),
+                "lastmod": None,
+                "priority": "0.7",
+            },
+            {
+                "loc": request.build_absolute_uri(reverse("accounts:firm_faqs")),
+                "lastmod": None,
+                "priority": "0.7",
+            },
+            {
+                "loc": request.build_absolute_uri(reverse("accounts:firm_contact")),
+                "lastmod": company.updated_at,
+                "priority": "0.8",
+            },
             {
                 "loc": request.build_absolute_uri(reverse("accounts:blog_list")),
                 "lastmod": None,
-            }
+                "priority": "0.8",
+            },
         ]
+        if (company.terms_and_conditions or "").strip():
+            urls.append(
+                {
+                    "loc": request.build_absolute_uri(reverse("accounts:firm_terms")),
+                    "lastmod": company.updated_at,
+                    "priority": "0.3",
+                }
+            )
+        for area in practice_areas:
+            if area.slug:
+                urls.append(
+                    {
+                        "loc": request.build_absolute_uri(
+                            reverse(
+                                "accounts:firm_practice_detail",
+                                kwargs={"slug": area.slug},
+                            )
+                        ),
+                        "lastmod": area.updated_at,
+                        "priority": "0.75",
+                    }
+                )
+        for item in gallery_items:
+            if item.slug:
+                urls.append(
+                    {
+                        "loc": request.build_absolute_uri(
+                            reverse(
+                                "accounts:firm_gallery_detail",
+                                kwargs={"slug": item.slug},
+                            )
+                        ),
+                        "lastmod": item.updated_at,
+                        "priority": "0.5",
+                    }
+                )
         for post in posts:
             urls.append(
                 {
@@ -355,6 +795,7 @@ class BlogSitemapView(View):
                         reverse("accounts:blog_detail", kwargs={"slug": post.slug})
                     ),
                     "lastmod": (post.updated_at or post.published_at),
+                    "priority": "0.7",
                 }
             )
         xml_parts = [
@@ -368,6 +809,8 @@ class BlogSitemapView(View):
                 xml_parts.append(
                     f"<lastmod>{item['lastmod'].date().isoformat()}</lastmod>"
                 )
+            if item.get("priority"):
+                xml_parts.append(f"<priority>{item['priority']}</priority>")
             xml_parts.append("</url>")
         xml_parts.append("</urlset>")
         return HttpResponse("\n".join(xml_parts), content_type="application/xml")
@@ -1654,6 +2097,9 @@ class RoleWorkspaceView(View):
     practice_area_form_template = "accounts/practice_area_form.html"
     company_faqs_template = "accounts/company_faqs.html"
     company_blogs_template = "accounts/company_blogs.html"
+    company_gallery_template = "accounts/company_gallery.html"
+    company_gallery_form_template = "accounts/company_gallery_form.html"
+    company_terms_template = "accounts/company_terms.html"
     research_blogs_template = "accounts/research_blogs.html"
     company_faq_form_template = "accounts/company_faq_form.html"
     website_template_template = "accounts/website_template.html"
@@ -1742,6 +2188,17 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_company_blogs"):
             context.update(self._company_blogs_context(user))
             response = render(request, self.company_blogs_template, context)
+        elif resolved.get("is_company_gallery"):
+            context.update(self._company_gallery_context(user))
+            response = render(request, self.company_gallery_template, context)
+        elif resolved.get("is_company_gallery_new"):
+            context.update(self._company_gallery_form_context(user))
+            response = render(
+                request, self.company_gallery_form_template, context
+            )
+        elif resolved.get("is_company_terms"):
+            context.update(self._company_terms_context())
+            response = render(request, self.company_terms_template, context)
         elif resolved.get("is_research_blogs"):
             context.update(self._research_blogs_context(user))
             response = render(request, self.research_blogs_template, context)
@@ -1900,6 +2357,9 @@ class RoleWorkspaceView(View):
             "practice-areas-new",
             "company-faqs",
             "company-faqs-new",
+            "company-gallery",
+            "company-gallery-new",
+            "company-terms",
             "website-template",
             "register-case",
             "register-new-matter",
@@ -1935,6 +2395,12 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] in {"company-faqs", "company-faqs-new"}:
             return self._post_company_faq(request, user, resolved)
+
+        if resolved["leaf"] in {"company-gallery", "company-gallery-new"}:
+            return self._post_company_gallery(request, user, resolved)
+
+        if resolved["leaf"] == "company-terms":
+            return self._post_company_terms(request, user, resolved)
 
         if resolved["leaf"] == "register-client":
             return self._post_register_client(request, user, resolved)
@@ -2582,6 +3048,86 @@ class RoleWorkspaceView(View):
 
         context.update(self._company_faq_form_context(user, form=form))
         response = render(request, self.company_faq_form_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_gallery_list_url(user):
+        return user.workspace_url("dashboard", "company-gallery")
+
+    @staticmethod
+    def _company_gallery_new_url(user):
+        return user.workspace_url("dashboard", "company-gallery-new")
+
+    @staticmethod
+    def _company_gallery_context(user):
+        items = list(FirmGalleryImage.objects.order_by("rank", "title"))
+        return {
+            "gallery_items": items,
+            "company_gallery_new_url": RoleWorkspaceView._company_gallery_new_url(
+                user
+            ),
+        }
+
+    @staticmethod
+    def _company_gallery_form_context(user, *, form=None, item=None):
+        return {
+            "form": form or GalleryImageForm(instance=item),
+            "gallery_item": item,
+            "company_gallery_url": RoleWorkspaceView._company_gallery_list_url(
+                user
+            ),
+        }
+
+    def _post_company_gallery(self, request, user, resolved):
+        if resolved["leaf"] == "company-gallery":
+            return redirect(self._company_gallery_new_url(user))
+
+        form = GalleryImageForm(request.POST, request.FILES)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            item = form.save(commit=False)
+            item.updated_by = user
+            item.save()
+            messages.success(request, f"Gallery item “{item.title}” added.")
+            return redirect(self._company_gallery_list_url(user))
+
+        context.update(self._company_gallery_form_context(user, form=form))
+        response = render(request, self.company_gallery_form_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_terms_context(*, form=None):
+        company = FirmCompanyInformation.get_solo()
+        return {
+            "company_information": company,
+            "form": form or CompanyTermsForm(instance=company),
+        }
+
+    def _post_company_terms(self, request, user, resolved):
+        company = FirmCompanyInformation.get_solo()
+        form = CompanyTermsForm(request.POST, instance=company)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            info = form.save(commit=False)
+            info.updated_by = user
+            info.save()
+            messages.success(request, "Terms and conditions saved.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._company_terms_context(form=form))
+        response = render(request, self.company_terms_template, context)
         return attach_greeting_cookie(response, request)
 
     @staticmethod

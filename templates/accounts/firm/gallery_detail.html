@@ -1,0 +1,51 @@
+{% extends "accounts/firm/base.html" %}
+{% block title %}{{ item.title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead">
+  <div class="fw-wrap">
+    <p class="fw-pagehead__eyebrow"><a href="{% url 'accounts:firm_gallery_list' %}">Gallery</a></p>
+    <h1>{{ item.title }}</h1>
+    {% if item.caption %}<p class="fw-pagehead__lede">{{ item.caption }}</p>{% endif %}
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap fw-detail fw-reveal">
+    <div class="fw-detail__media">
+      {% if item.image %}
+      <img src="{{ item.image.url }}" alt="{{ item.title }}" loading="lazy">
+      {% else %}
+      <div class="fw-detail__ph">{{ firm_name|slice:":1"|upper }}</div>
+      {% endif %}
+    </div>
+    <div>
+      {% if item.caption %}<div class="fw-prose"><p>{{ item.caption }}</p></div>{% endif %}
+      <div class="fw-btn-row fw-actions">
+        <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_gallery_list' %}">Back to gallery</a>
+        <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}">Visit chambers</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if siblings %}
+<section class="fw-section fw-section--soft">
+  <div class="fw-wrap">
+    <div class="fw-section__head fw-reveal"><h2>More from the gallery</h2></div>
+    <div class="fw-gallery">
+      {% for sibling in siblings %}
+      <a class="fw-gallery-card fw-reveal" href="{{ sibling.get_absolute_url }}">
+        <div class="fw-gallery-card__media">
+          {% if sibling.image %}<img src="{{ sibling.image.url }}" alt="{{ sibling.title }}" loading="lazy">{% else %}{{ forloop.counter|stringformat:"02d" }}{% endif %}
+        </div>
+        <div class="fw-gallery-card__body"><strong>{{ sibling.title }}</strong></div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

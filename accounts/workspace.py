@@ -420,6 +420,7 @@ COMPANY_INFORMATION_AREA_SLUGS = {
     "company-information",
     "practice-areas-new",
     "company-faqs-new",
+    "company-gallery-new",
 } | {slug for _, slug, _ in COMPANY_INFORMATION_PAGE_LINKS}
 
 # Document Settings subtree (sidebar when drilled into Document Settings)
@@ -439,6 +440,7 @@ EXTRA_PAGE_SLUGS = {
     "my-blogs-new",
     "practice-areas-new",
     "company-faqs-new",
+    "company-gallery-new",
 }
 
 
@@ -556,6 +558,7 @@ PAGE_TITLES = {
     "practice-areas": "Practice Areas",
     "practice-areas-new": "Add practice area",
     "company-gallery": "Company Gallery",
+    "company-gallery-new": "Add gallery image",
     "company-blogs": "Company Blogs",
     "company-faqs": "Company FAQs",
     "company-faqs-new": "Add FAQ",
@@ -679,6 +682,9 @@ def resolve_workspace_page(role, pages: str):
         "is_company_faqs": leaf == "company-faqs",
         "is_company_faqs_new": leaf == "company-faqs-new",
         "is_company_blogs": leaf == "company-blogs",
+        "is_company_gallery": leaf == "company-gallery",
+        "is_company_gallery_new": leaf == "company-gallery-new",
+        "is_company_terms": leaf == "company-terms",
         "is_research_blogs": leaf == "research-blogs",
         "is_settings_area": leaf in SETTINGS_AREA_SLUGS,
         "is_system_settings_area": leaf in SYSTEM_SETTINGS_AREA_SLUGS,

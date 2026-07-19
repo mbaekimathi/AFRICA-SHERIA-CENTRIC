@@ -24,6 +24,7 @@ from .models import (
     EmployeeBlogPost,
     FirmCompanyInformation,
     FirmFAQ,
+    FirmGalleryImage,
     FirmPracticeArea,
     LitigationCase,
     MatterAttendance,
@@ -3731,6 +3732,115 @@ class FAQForm(forms.ModelForm):
         if rank is None or rank < 1:
             raise ValidationError("Rank must be 1 or higher.")
         return rank
+
+
+class CompanyTermsForm(forms.ModelForm):
+    """Firm terms and conditions for the public website."""
+
+    class Meta:
+        model = FirmCompanyInformation
+        fields = ["terms_and_conditions"]
+        labels = {
+            "terms_and_conditions": "Terms and conditions",
+        }
+        widgets = {
+            "terms_and_conditions": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 18,
+                    "placeholder": "Write the firm’s public terms and conditions…",
+                    "id": "id_company_terms",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["terms_and_conditions"].required = False
+
+    def clean_terms_and_conditions(self):
+        return (self.cleaned_data.get("terms_and_conditions") or "").strip()
+
+
+class GalleryImageForm(forms.ModelForm):
+    """Create or edit a firm gallery entry."""
+
+    class Meta:
+        model = FirmGalleryImage
+        fields = ["title", "caption", "image", "rank"]
+        labels = {
+            "title": "Title",
+            "caption": "Caption",
+            "image": "Image",
+            "rank": "Rank",
+        }
+        widgets = {
+            "title": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Reception at Kiserian office",
+                    "id": "id_gallery_title",
+                }
+            ),
+            "caption": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Short description shown under the image",
+                    "id": "id_gallery_caption",
+                }
+            ),
+            "image": forms.FileInput(
+                attrs={
+                    "class": "form-input",
+                    "accept": "image/*",
+                    "id": "id_gallery_image",
+                }
+            ),
+            "rank": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "min": 1,
+                    "step": 1,
+                    "id": "id_gallery_rank",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["title"].required = True
+        self.fields["caption"].required = False
+        self.fields["image"].required = False
+        self.fields["rank"].required = True
+        self.fields["rank"].initial = self.fields["rank"].initial or 1
+
+    def clean_title(self):
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise ValidationError("Title is required.")
+        return title
+
+    def clean_caption(self):
+        return (self.cleaned_data.get("caption") or "").strip()
+
+    def clean_rank(self):
+        rank = self.cleaned_data.get("rank")
+        if rank is None or rank < 1:
+            raise ValidationError("Rank must be 1 or higher.")
+        return rank
+
+    def save(self, commit=True):
+        new_image = self.cleaned_data.get("image")
+        if not new_image:
+            self.cleaned_data["image"] = (
+                self.instance.image if self.instance.pk else None
+            )
+        item = super().save(commit=False)
+        if new_image:
+            item.image = optimize_image(new_image, max_size=1600, quality=78)
+        if commit:
+            item.save()
+        return item
 
 
 class WebsiteTemplateForm(forms.ModelForm):

@@ -1,0 +1,35 @@
+{% extends "accounts/firm/base.html" %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}
+<link rel="canonical" href="{{ canonical_url }}">
+{% if json_ld %}<script type="application/ld+json">{{ json_ld }}</script>{% endif %}
+{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead">
+  <div class="fw-wrap">
+    <p class="fw-pagehead__eyebrow">Help</p>
+    <h1>Frequently asked questions</h1>
+    <p class="fw-pagehead__lede">Straight answers about working with {{ firm_name }}.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap">
+    <div class="fw-faqs">
+      {% for faq in faqs %}
+      <details class="fw-faq fw-reveal">
+        <summary>{{ faq.question }}</summary>
+        <p>{{ faq.answer }}</p>
+      </details>
+      {% empty %}
+      <p>FAQs will appear once added in Company Information.</p>
+      {% endfor %}
+    </div>
+    <div class="fw-actions fw-reveal">
+      <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}">Contact the firm</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

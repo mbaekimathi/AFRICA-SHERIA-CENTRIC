@@ -1,0 +1,56 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="company-gallery-form-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company gallery</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">Add a gallery entry for the firm website.</p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>New gallery image</h3>
+      <p class="panel__hint"><a href="{{ company_gallery_url }}">Back to gallery</a></p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="workspace-form" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+        <div class="form-field">
+          <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+          {{ form.title }}
+          {% if form.title.errors %}<span class="field-error">{{ form.title.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.caption.id_for_label }}">{{ form.caption.label }}</label>
+          {{ form.caption }}
+          {% if form.caption.errors %}<span class="field-error">{{ form.caption.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.image.id_for_label }}">{{ form.image.label }}</label>
+          {{ form.image }}
+          {% if form.image.errors %}<span class="field-error">{{ form.image.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.rank.id_for_label }}">{{ form.rank.label }}</label>
+          {{ form.rank }}
+          {% if form.rank.errors %}<span class="field-error">{{ form.rank.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">Save</button>
+          <a href="{{ company_gallery_url }}" class="btn btn--quiet btn--inline">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

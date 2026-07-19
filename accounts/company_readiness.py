@@ -234,12 +234,9 @@ def analyze_company_information(
         ),
     ]
 
-    content_summaries = {
-        "company-gallery": "No gallery media has been registered yet.",
-        "company-terms": "Terms and conditions have not been registered yet.",
-    }
+    content_summaries = {}
 
-    from .models import EmployeeBlogPost, FirmFAQ, FirmPracticeArea
+    from .models import EmployeeBlogPost, FirmFAQ, FirmGalleryImage, FirmPracticeArea
 
     practice_area_count = FirmPracticeArea.objects.count()
     practice_checks = [
@@ -269,6 +266,25 @@ def analyze_company_information(
             "published_blogs",
             "At least one published blog post",
             published_blog_count > 0,
+            True,
+        ),
+    ]
+
+    gallery_count = FirmGalleryImage.objects.count()
+    gallery_checks = [
+        FieldCheck(
+            "gallery",
+            "At least one gallery item",
+            gallery_count > 0,
+            True,
+        ),
+    ]
+
+    terms_checks = [
+        FieldCheck(
+            "terms_and_conditions",
+            "Terms and conditions text",
+            bool((company.terms_and_conditions or "").strip()),
             True,
         ),
     ]
@@ -339,6 +355,28 @@ def analyze_company_information(
                     checks=blog_checks,
                     url=url_for(slug),
                     empty_summary="No blog posts have been approved for the website yet.",
+                )
+            )
+        elif slug == "company-gallery":
+            sections.append(
+                _section_from_checks(
+                    slug=slug,
+                    label=label,
+                    icon=icon,
+                    checks=gallery_checks,
+                    url=url_for(slug),
+                    empty_summary="No gallery media has been registered yet.",
+                )
+            )
+        elif slug == "company-terms":
+            sections.append(
+                _section_from_checks(
+                    slug=slug,
+                    label=label,
+                    icon=icon,
+                    checks=terms_checks,
+                    url=url_for(slug),
+                    empty_summary="Terms and conditions have not been registered yet.",
                 )
             )
         else:

@@ -1,0 +1,82 @@
+{% extends "accounts/firm/base.html" %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}
+<link rel="canonical" href="{{ canonical_url }}">
+{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead">
+  <div class="fw-wrap">
+    <p class="fw-pagehead__eyebrow">About</p>
+    <h1>{{ firm_name }}</h1>
+    {% if company.tagline %}<p class="fw-pagehead__lede">{{ company.tagline }}</p>{% endif %}
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap">
+    <div class="fw-facts fw-reveal">
+      {% if company.founded_year or company.founded_by %}
+      <div class="fw-fact">
+        <p class="fw-fact__label">Founded</p>
+        <p>{% if company.founded_year %}{{ company.founded_year }}{% endif %}{% if company.founded_year and company.founded_by %} · {% endif %}{% if company.founded_by %}{{ company.founded_by }}{% endif %}</p>
+      </div>
+      {% endif %}
+      {% if company.legal_name %}
+      <div class="fw-fact">
+        <p class="fw-fact__label">Legal name</p>
+        <p>{{ company.legal_name }}</p>
+      </div>
+      {% endif %}
+      {% if company.market_gap %}
+      <div class="fw-fact">
+        <p class="fw-fact__label">Why we started</p>
+        <p>{{ company.market_gap }}</p>
+      </div>
+      {% endif %}
+      {% if company.milestone %}
+      <div class="fw-fact">
+        <p class="fw-fact__label">Milestone</p>
+        <p>{{ company.milestone }}</p>
+      </div>
+      {% endif %}
+      {% if company.service_areas %}
+      <div class="fw-fact">
+        <p class="fw-fact__label">Where we serve</p>
+        <p>{{ company.service_areas }}</p>
+      </div>
+      {% endif %}
+      {% if company.value_proposition %}
+      <div class="fw-fact">
+        <p class="fw-fact__label">What we offer</p>
+        <p>{{ company.value_proposition }}</p>
+      </div>
+      {% endif %}
+      {% if company.future_vision %}
+      <div class="fw-fact">
+        <p class="fw-fact__label">Looking ahead</p>
+        <p>{{ company.future_vision }}</p>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if company.core_values %}
+    <h2 class="fw-subhead fw-reveal">Our values</h2>
+    <div class="fw-values fw-reveal">
+      {% for value in company.core_values %}
+      <div class="fw-value">
+        <strong>{{ value.name }}</strong>
+        {% if value.how %}<span>{{ value.how }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="fw-btn-row fw-actions fw-reveal">
+      <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_practice_list' %}">Practice areas</a>
+      <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_contact' %}">Contact</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

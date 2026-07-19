@@ -1,0 +1,20 @@
+{% extends "accounts/firm/base.html" %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead">
+  <div class="fw-wrap">
+    <p class="fw-pagehead__eyebrow">Legal</p>
+    <h1>{{ page_title }}</h1>
+    <p class="fw-pagehead__lede">Terms for the {{ firm_name }} website and related enquiries.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap fw-reveal">
+    <div class="fw-prose">{{ terms_text|linebreaks }}</div>
+  </div>
+</section>
+{% endblock %}

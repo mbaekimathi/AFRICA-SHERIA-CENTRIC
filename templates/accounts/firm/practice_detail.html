@@ -1,0 +1,60 @@
+{% extends "accounts/firm/base.html" %}
+{% block title %}{{ area.name }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead">
+  <div class="fw-wrap">
+    <p class="fw-pagehead__eyebrow"><a href="{% url 'accounts:firm_practice_list' %}">Practice areas</a></p>
+    <h1>{{ area.name }}</h1>
+    {% if area.summary %}<p class="fw-pagehead__lede">{{ area.summary }}</p>{% endif %}
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap fw-detail fw-reveal">
+    <div class="fw-detail__media">
+      {% if area.main_image %}
+      <img src="{{ area.main_image.image.url }}" alt="{{ area.name }}" loading="lazy">
+      {% else %}
+      <div class="fw-detail__ph">{{ area.name|slice:":1"|upper }}</div>
+      {% endif %}
+    </div>
+    <div>
+      {% if area.details %}
+      <div class="fw-prose">{{ area.details|linebreaks }}</div>
+      {% elif area.summary %}
+      <div class="fw-prose"><p>{{ area.summary }}</p></div>
+      {% endif %}
+      <div class="fw-btn-row fw-actions">
+        <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}">Enquire</a>
+        {% if whatsapp_url %}
+        <a class="fw-btn fw-btn--outline" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+        {% endif %}
+        <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_practice_list' %}">All areas</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if related_areas %}
+<section class="fw-section fw-section--soft">
+  <div class="fw-wrap">
+    <div class="fw-section__head fw-reveal">
+      <p class="fw-section__eyebrow">Also practise</p>
+      <h2>Related areas</h2>
+    </div>
+    <div class="fw-practice-grid">
+      {% for related in related_areas %}
+      <a class="fw-practice-card fw-reveal" href="{{ related.get_absolute_url }}">
+        <span class="fw-practice-card__num">{{ forloop.counter|stringformat:"02d" }}</span>
+        <h3>{{ related.name }}</h3>
+        <span class="fw-practice-card__more">Open →</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

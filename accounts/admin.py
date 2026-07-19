@@ -16,6 +16,7 @@ from .models import (
     EmployeeBlogPost,
     FirmCompanyInformation,
     FirmFAQ,
+    FirmGalleryImage,
     FirmPracticeArea,
     FirmPracticeAreaImage,
     GoogleDriveConnection,
@@ -548,9 +549,10 @@ class NotificationAdmin(admin.ModelAdmin):
 
 @admin.register(FirmPracticeArea)
 class FirmPracticeAreaAdmin(admin.ModelAdmin):
-    list_display = ("name", "rank", "updated_at", "updated_by")
+    list_display = ("name", "slug", "rank", "updated_at", "updated_by")
     list_editable = ("rank",)
-    search_fields = ("name", "summary", "details")
+    prepopulated_fields = {"slug": ("name",)}
+    search_fields = ("name", "summary", "details", "slug")
     readonly_fields = ("created_at", "updated_at", "updated_by")
 
 
@@ -566,6 +568,15 @@ class FirmFAQAdmin(admin.ModelAdmin):
     list_display = ("question", "rank", "updated_at", "updated_by")
     list_editable = ("rank",)
     search_fields = ("question", "answer")
+    readonly_fields = ("created_at", "updated_at", "updated_by")
+
+
+@admin.register(FirmGalleryImage)
+class FirmGalleryImageAdmin(admin.ModelAdmin):
+    list_display = ("title", "slug", "rank", "updated_at", "updated_by")
+    list_editable = ("rank",)
+    prepopulated_fields = {"slug": ("title",)}
+    search_fields = ("title", "caption", "slug")
     readonly_fields = ("created_at", "updated_at", "updated_by")
 
 

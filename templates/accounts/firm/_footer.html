@@ -1,0 +1,106 @@
+<footer class="fw-footer">
+  <div class="fw-footer__glow" aria-hidden="true"></div>
+  <div class="fw-wrap">
+    <div class="fw-footer__cta-strip">
+      <div>
+        <p class="fw-footer__cta-kicker">Ready to talk?</p>
+        <h2 class="fw-footer__cta-title">Book a consultation with {{ firm_name }}</h2>
+      </div>
+      <div class="fw-footer__cta-actions">
+        <a class="fw-footer__cta-btn" href="{% url 'accounts:firm_contact' %}">Contact chambers</a>
+        {% if whatsapp_url %}
+        <a class="fw-footer__cta-btn fw-footer__cta-btn--ghost" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="fw-footer__grid">
+      <div class="fw-footer__brand">
+        <a class="fw-footer__logo" href="{% url 'accounts:home' %}">
+          <span class="fw-footer__mark" aria-hidden="true">{{ firm_name|slice:":1"|upper }}</span>
+          <span>
+            <span class="fw-footer__name">{{ firm_name }}</span>
+            <span class="fw-footer__sub">Advocates &amp; legal counsel</span>
+          </span>
+        </a>
+        {% if company.tagline %}
+        <p class="fw-footer__tag">{{ company.tagline }}</p>
+        {% endif %}
+        {% if company.physical_address or company.city %}
+        <p class="fw-footer__address">
+          {% if company.physical_address %}{{ company.physical_address }}{% endif %}
+          {% if company.city %}{% if company.physical_address %}<br>{% endif %}{{ company.city }}{% if company.country %}, {{ company.country }}{% endif %}{% endif %}
+        </p>
+        {% endif %}
+      </div>
+
+      <div class="fw-footer__col">
+        <p class="fw-footer__heading">Explore</p>
+        <nav class="fw-footer__nav" aria-label="Explore">
+          <a href="{% url 'accounts:home' %}">Home</a>
+          <a href="{% url 'accounts:firm_practice_list' %}">Practice</a>
+          <a href="{% url 'accounts:firm_about' %}">About</a>
+          <a href="{% url 'accounts:firm_gallery_list' %}">Gallery</a>
+          <a href="{% url 'accounts:blog_list' %}">Insights</a>
+        </nav>
+      </div>
+
+      <div class="fw-footer__col">
+        <p class="fw-footer__heading">Support</p>
+        <nav class="fw-footer__nav" aria-label="Support">
+          <a href="{% url 'accounts:firm_faqs' %}">FAQs</a>
+          <a href="{% url 'accounts:firm_contact' %}">Contact</a>
+          <a href="{% url 'accounts:firm_terms' %}">Terms</a>
+          <a href="{% url 'accounts:client_login' %}">Client login</a>
+          <a href="{% url 'accounts:login' %}">Employee login</a>
+        </nav>
+      </div>
+
+      <div class="fw-footer__col fw-footer__col--card">
+        <p class="fw-footer__heading">Chambers</p>
+        <ul class="fw-footer__contact">
+          {% if company.phone %}
+          <li>
+            <span>Phone</span>
+            <a href="tel:{{ company.phone }}">{{ company.phone }}</a>
+          </li>
+          {% endif %}
+          {% if company.email %}
+          <li>
+            <span>Email</span>
+            <a href="mailto:{{ company.email }}">{{ company.email }}</a>
+          </li>
+          {% endif %}
+          {% if whatsapp_url %}
+          <li>
+            <span>WhatsApp</span>
+            <a href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">Message the firm</a>
+          </li>
+          {% endif %}
+          {% if company.website %}
+          <li>
+            <span>Web</span>
+            <a href="{{ company.website }}" target="_blank" rel="noopener noreferrer">{{ company.website|cut:"https://"|cut:"http://" }}</a>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+
+    <div class="fw-footer__bar">
+      <p class="fw-footer__copy">
+        © {% now "Y" %} {{ firm_name }}.
+        {% if company.legal_name and company.legal_name != firm_name %}
+        {{ company.legal_name }}.
+        {% endif %}
+        {% if company.registration_number %}Reg. {{ company.registration_number }}.{% endif %}
+      </p>
+      <p class="fw-footer__note">Professional legal counsel · Kajiado County</p>
+    </div>
+  </div>
+</footer>
+{% if whatsapp_url %}
+<a class="fw-wa" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp {{ firm_name }}">
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M17.47 14.38c-.28-.14-1.64-.81-1.9-.9-.25-.1-.44-.14-.62.14-.18.27-.71.9-.87 1.08-.16.18-.32.2-.6.07-.28-.14-1.17-.43-2.23-1.37-.82-.73-1.38-1.64-1.54-1.92-.16-.27-.02-.42.12-.55.13-.13.28-.32.42-.48.14-.16.18-.27.28-.45.09-.18.05-.34-.02-.48-.07-.14-.62-1.5-.85-2.05-.22-.53-.45-.46-.62-.47h-.53c-.18 0-.48.07-.73.34-.25.27-.96.94-.96 2.3s.98 2.67 1.12 2.85c.14.18 1.93 2.95 4.68 4.14.65.28 1.16.45 1.56.57.65.2 1.25.17 1.72.1.53-.08 1.64-.67 1.87-1.32.23-.65.23-1.2.16-1.32-.07-.11-.25-.18-.53-.32zM12.05 2C6.48 2 2 6.47 2 12c0 1.76.46 3.48 1.34 5L2 22l5.15-1.35A9.95 9.95 0 0 0 12.05 22C17.6 22 22 17.53 22 12S17.6 2 12.05 2zm0 18.16c-1.58 0-3.13-.42-4.48-1.22l-.32-.19-3.06.8.82-2.98-.21-.31A8.14 8.14 0 0 1 3.88 12c0-4.5 3.67-8.16 8.17-8.16 4.5 0 8.16 3.66 8.16 8.16 0 4.5-3.66 8.16-8.16 8.16z"/></svg>
+</a>
+{% endif %}

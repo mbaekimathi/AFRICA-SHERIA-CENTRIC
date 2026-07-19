@@ -1,0 +1,71 @@
+{% extends "accounts/firm/base.html" %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead">
+  <div class="fw-wrap">
+    <p class="fw-pagehead__eyebrow">Contact</p>
+    <h1>Reach {{ firm_name }}</h1>
+    <p class="fw-pagehead__lede">Enquiries, appointments, and chambers directions.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap">
+    <div class="fw-contact-grid">
+      {% if company.email %}
+      <div class="fw-contact-item fw-reveal">
+        <p class="fw-contact-item__label">Email</p>
+        <a href="mailto:{{ company.email }}">{{ company.email }}</a>
+      </div>
+      {% endif %}
+      {% if company.phone %}
+      <div class="fw-contact-item fw-reveal">
+        <p class="fw-contact-item__label">Phone</p>
+        <a href="tel:{{ company.phone }}">{{ company.phone }}</a>
+      </div>
+      {% endif %}
+      {% if whatsapp_url %}
+      <div class="fw-contact-item fw-reveal">
+        <p class="fw-contact-item__label">WhatsApp</p>
+        <a href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">Chat with the firm</a>
+      </div>
+      {% endif %}
+      {% if company.website %}
+      <div class="fw-contact-item fw-reveal">
+        <p class="fw-contact-item__label">Website</p>
+        <a href="{{ company.website }}" target="_blank" rel="noopener noreferrer">{{ company.website }}</a>
+      </div>
+      {% endif %}
+      {% if company.physical_address or company.city %}
+      <div class="fw-contact-item fw-reveal">
+        <p class="fw-contact-item__label">Chambers</p>
+        <p>
+          {% if company.physical_address %}{{ company.physical_address }}{% endif %}
+          {% if company.city %}<br>{{ company.city }}{% if company.country %}, {{ company.country }}{% endif %}{% endif %}
+        </p>
+      </div>
+      {% endif %}
+      {% if company.postal_address %}
+      <div class="fw-contact-item fw-reveal">
+        <p class="fw-contact-item__label">Postal</p>
+        <p>{{ company.postal_address }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="fw-cta">
+  <div class="fw-wrap fw-reveal">
+    <h2>Secure portals</h2>
+    <p>Clients and employees sign in through the firm portals.</p>
+    <div class="fw-btn-row">
+      <a class="fw-btn fw-btn--on-dark" href="{% url 'accounts:client_login' %}">Client login</a>
+      <a class="fw-btn fw-btn--ghost" href="{% url 'accounts:login' %}">Employee login</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

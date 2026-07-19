@@ -1,0 +1,53 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="company-gallery-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Photos and visuals that introduce the firm’s office, team, and community presence.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ company_gallery_new_url }}" class="btn btn--primary btn--inline">Add image</a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Gallery</h3>
+      <p class="panel__hint">{{ gallery_items|length }} item{{ gallery_items|length|pluralize }}</p>
+    </div>
+    <div class="panel__body">
+      {% if gallery_items %}
+      <ul class="blog-post-list">
+        {% for item in gallery_items %}
+        <li class="blog-post-item">
+          <div class="blog-post-item__main">
+            {% if item.image %}
+            <p class="blog-cover-preview"><img src="{{ item.image.url }}" alt="" width="180" height="120"></p>
+            {% endif %}
+            <p class="blog-post-item__title">{{ item.title }}</p>
+            <p class="blog-post-item__meta">Rank {{ item.rank }}</p>
+            {% if item.caption %}
+            <p class="blog-post-item__excerpt">{{ item.caption }}</p>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No gallery images yet</p>
+        <p class="empty-state__copy">Add photos of the office, team, or community work.</p>
+        <a href="{{ company_gallery_new_url }}" class="btn btn--primary btn--inline">Add first image</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}
