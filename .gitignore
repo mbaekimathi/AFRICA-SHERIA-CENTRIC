@@ -1,0 +1,46 @@
+# Secrets & local env
+.env
+.env.local
+.env.*.local
+
+# Python
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments (create on server / locally)
+.venv/
+venv/
+env/
+ENV/
+
+# Django / local data
+*.sqlite3
+db.sqlite3
+staticfiles/
+media/
+*.log
+tmp/
+*.pid
+
+# Editors / OS / tools
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.qodo/
+*.swp
+*~
+
+# cPanel / Passenger local leftovers
+tmp/restart.txt
+passenger.*.log
+.python-version

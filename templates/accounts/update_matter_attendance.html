@@ -1,0 +1,230 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-wide page--register-case">
+  <header class="page-intro register-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Update matter attendance</h2>
+      <p class="page-lead">
+        Ref: <strong>{{ matter.reference_code }}</strong>
+        · {{ matter.matter_title }}
+        · {{ matter.client.get_full_name }}
+      </p>
+      {% if is_first_attendance %}
+      <p class="page-lead">
+        Add your first matter attendance for this matter.
+      </p>
+      {% endif %}
+    </div>
+  </header>
+
+  <form method="post" class="register-form" id="matter-attendance-form" novalidate>
+    {% csrf_token %}
+
+    <datalist id="matter-activity-type-suggestions">
+      {% for suggestion in activity_type_suggestions %}
+      <option value="{{ suggestion }}"></option>
+      {% endfor %}
+    </datalist>
+
+    {% if form.non_field_errors %}
+    <div class="form-alert" role="alert">
+      {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    <section class="register-section" aria-labelledby="section-attendance">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M7 4.75h7.5L19.25 9.5V19.5H7A1.75 1.75 0 0 1 5.25 17.75V6.5A1.75 1.75 0 0 1 7 4.75z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M9 12.5h6.5M9 15.75h4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-attendance">Matter attendance</h3>
+          <p>Activity, date, and notes for this attendance</p>
+        </div>
+      </header>
+      <div class="register-section__body register-grid register-grid--2">
+        <div class="form-field">
+          <label for="{{ form.activity_type.id_for_label }}">Activity Type <span aria-hidden="true">*</span></label>
+          {{ form.activity_type }}
+          {% if form.activity_type.errors %}<span class="field-error">{{ form.activity_type.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.attendance_date.id_for_label }}">Date of Attendance <span aria-hidden="true">*</span></label>
+          {{ form.attendance_date }}
+          {% if form.attendance_date.errors %}<span class="field-error">{{ form.attendance_date.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field register-grid__span">
+          <label for="{{ form.description.id_for_label }}">Description</label>
+          {{ form.description }}
+          {% if form.description.errors %}<span class="field-error">{{ form.description.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field register-grid__span">
+          <label for="{{ form.next_action.id_for_label }}">Next Action</label>
+          {{ form.next_action }}
+          {% if form.next_action.errors %}<span class="field-error">{{ form.next_action.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="register-section" aria-labelledby="section-next">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M8 2v3M16 2v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-next">Next Attendance</h3>
+          <p>Schedule the next matter attendance — shown on the case calendar</p>
+        </div>
+      </header>
+      <div class="register-section__body register-grid register-grid--2">
+        <div class="form-field">
+          <label for="{{ form.next_activity_type.id_for_label }}">Next Activity Type</label>
+          {{ form.next_activity_type }}
+          {% if form.next_activity_type.errors %}<span class="field-error">{{ form.next_activity_type.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.next_attendance_date.id_for_label }}">Next Attendance Date</label>
+          {{ form.next_attendance_date }}
+          {% if form.next_attendance_date.errors %}<span class="field-error">{{ form.next_attendance_date.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field register-grid__span">
+          <label for="{{ form.next_client_attendance.id_for_label }}">Next Client Attendance</label>
+          {{ form.next_client_attendance }}
+          {% if form.next_client_attendance.errors %}<span class="field-error">{{ form.next_client_attendance.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="register-section" aria-labelledby="section-bringup">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-bringup">Bring Update</h3>
+          <p>Notes to bring forward on the next attendance</p>
+        </div>
+      </header>
+      <div class="register-section__body">
+        <div class="form-field">
+          <label for="{{ form.bring_update.id_for_label }}" class="visually-hidden">Bring Update</label>
+          {{ form.bring_update }}
+          {% if form.bring_update.errors %}<span class="field-error">{{ form.bring_update.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <div class="form-actions form-actions--start">
+      <a href="{{ detail_url }}" class="btn btn--quiet">Cancel</a>
+      <button type="submit" class="btn btn--primary">Save matter attendance</button>
+    </div>
+  </form>
+
+  <section class="register-section attendance-history" aria-labelledby="section-previous-matter">
+    <header class="register-section__head">
+      <span class="register-section__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+          <path d="M8 2v3M16 2v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <div>
+        <h3 id="section-previous-matter">Previous matter attendances</h3>
+        <p>
+          {% if previous_attendances %}
+          {{ previous_attendances|length }} recorded for {{ matter.reference_code }}
+          {% else %}
+          No attendance recorded yet
+          {% endif %}
+        </p>
+      </div>
+    </header>
+    <div class="register-section__body">
+      {% if previous_attendances %}
+      <div class="attendance-history__list">
+        {% for attendance in previous_attendances %}
+        <details class="attendance-history__card"{% if forloop.first %} open{% endif %}>
+          <summary class="attendance-history__summary">
+            <span class="attendance-history__title">
+              {{ attendance.activity_type }}
+              · {{ attendance.attendance_date|date:"d M Y" }}
+            </span>
+            <span class="attendance-history__meta">
+              {% if attendance.next_attendance_date %}
+              Next · {{ attendance.next_attendance_date|date:"d M Y" }}
+              {% else %}
+              No next date
+              {% endif %}
+            </span>
+          </summary>
+          <div class="attendance-history__body">
+            <dl class="settings-grid review-grid">
+              <div>
+                <dt>Recorded by</dt>
+                <dd>
+                  {% if attendance.recorded_by %}
+                  {{ attendance.recorded_by.get_full_name }}
+                  {% else %}
+                  —
+                  {% endif %}
+                </dd>
+              </div>
+              <div>
+                <dt>Next client attendance</dt>
+                <dd>{{ attendance.get_next_client_attendance_display|default:"—" }}</dd>
+              </div>
+              <div class="review-grid__full">
+                <dt>Description</dt>
+                <dd>{{ attendance.description|default:"—"|linebreaksbr }}</dd>
+              </div>
+              <div class="review-grid__full">
+                <dt>Next action</dt>
+                <dd>{{ attendance.next_action|default:"—"|linebreaksbr }}</dd>
+              </div>
+              <div>
+                <dt>Next activity</dt>
+                <dd>{{ attendance.next_activity_type|default:"—" }}</dd>
+              </div>
+              <div>
+                <dt>Next attendance date</dt>
+                <dd>
+                  {% if attendance.next_attendance_date %}
+                  {{ attendance.next_attendance_date|date:"d M Y" }}
+                  {% else %}
+                  —
+                  {% endif %}
+                </dd>
+              </div>
+              <div class="review-grid__full">
+                <dt>Bring update</dt>
+                <dd>{{ attendance.bring_update|default:"—"|linebreaksbr }}</dd>
+              </div>
+            </dl>
+          </div>
+        </details>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No previous matter attendances</p>
+        <p class="empty-state__text">
+          Saved attendance records for this matter will appear here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

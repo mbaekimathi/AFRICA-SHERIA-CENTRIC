@@ -1,0 +1,164 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>View task</h2>
+      <p class="page-lead">
+        Case details and your assigned brief for this litigation matter.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Your assignment</h3>
+      <p class="panel__hint">
+        <a href="{{ list_url }}">Back to tasks</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <dl class="settings-grid review-grid">
+        <div>
+          <dt>Status</dt>
+          <dd>
+            <span class="status-pill status-pill--{{ task.status }}">
+              {{ task.get_status_display }}
+            </span>
+          </dd>
+        </div>
+        <div><dt>Due date</dt><dd>{{ task.due_date|date:"d M Y" }}</dd></div>
+        <div>
+          <dt>Tasked by</dt>
+          <dd>
+            {% if task.created_by %}
+            {{ task.created_by.get_full_name }}
+            {% else %}
+            —
+            {% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>Reminder</dt>
+          <dd>
+            {% if task.reminder_at %}
+            {{ task.reminder_at|date:"d M Y, H:i" }}
+            {% else %}
+            —
+            {% endif %}
+          </dd>
+        </div>
+        <div class="review-grid__full">
+          <dt>Instructions / Brief</dt>
+          <dd>{{ task.instructions|default:"—"|linebreaksbr }}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Case details</h3>
+    </div>
+    <div class="panel__body">
+      <div class="review-identity">
+        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+          {{ case.get_case_category_display|slice:":1"|upper }}
+        </div>
+        <div>
+          <p class="identity-name">
+            {% if case.court_case_number %}
+            {{ case.court_case_number }}
+            {% else %}
+            Case #{{ case.pk }}
+            {% endif %}
+          </p>
+          <p class="identity-meta">
+            {{ case.client.get_full_name }}
+            · <span class="status-pill status-pill--{{ case.status }}">{{ case.get_status_display }}</span>
+          </p>
+        </div>
+      </div>
+
+      <dl class="settings-grid review-grid">
+        <div><dt>Filing date</dt><dd>{{ case.filing_date|date:"d M Y" }}</dd></div>
+        <div><dt>Client</dt><dd>{{ case.client.get_full_name }}</dd></div>
+        <div><dt>Court rank</dt><dd>{{ case.get_court_rank_display }}</dd></div>
+        <div><dt>Case category</dt><dd>{{ case.get_case_category_display }}</dd></div>
+        <div><dt>Case type</dt><dd>{{ case.get_case_type_display }}</dd></div>
+        <div><dt>Station</dt><dd>{{ case.get_station_display }}</dd></div>
+        <div><dt>Court case number</dt><dd>{{ case.court_case_number|default:"—" }}</dd></div>
+        <div>
+          <dt>Registered by</dt>
+          <dd>
+            {% if case.registered_by %}
+            {{ case.registered_by.get_full_name }}
+            {% else %}
+            —
+            {% endif %}
+          </dd>
+        </div>
+        <div class="review-grid__full">
+          <dt>Description</dt>
+          <dd>{{ case.description|default:"—"|linebreaksbr }}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Parties</h3>
+      <p class="panel__hint">{{ parties|length }} registered</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if parties %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Party name</th>
+              <th scope="col">Type</th>
+              <th scope="col">Category</th>
+              <th scope="col">Firm/Agent</th>
+              <th scope="col">Phone</th>
+              <th scope="col">Email</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for party in parties %}
+            <tr>
+              <td>
+                {{ party.party_name }}
+                {% if party.is_client_party %}
+                <span class="status-pill status-pill--active">Client</span>
+                {% endif %}
+              </td>
+              <td>{{ party.get_party_type_display }}</td>
+              <td>{{ party.get_category_display|default:"—" }}</td>
+              <td>{{ party.firm_agent|default:"—" }}</td>
+              <td>{{ party.phone|default:"—" }}</td>
+              <td>{{ party.email|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No parties listed</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="form-actions form-actions--start">
+    <a href="{{ list_url }}" class="btn btn--quiet">Back to tasks</a>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}Case audit progress — {{ entity_label }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--docs page--case-audit">
+  <header class="docs-hero case-audit-hero">
+    <div class="docs-hero__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Case audit progress</h2>
+      <p class="page-lead">
+        Everything recorded for this case — from registration and allocation through
+        tasks, court attendance, documents, and updates.
+      </p>
+    </div>
+    <div class="case-audit-hero__actions">
+      <a href="{{ detail_url }}" class="btn btn--quiet">{{ detail_label }}</a>
+      <a href="{{ list_url }}" class="btn btn--quiet">Active cases</a>
+    </div>
+  </header>
+
+  <div class="docs-context" aria-label="Case summary">
+    <span class="docs-context__badge">{{ case.get_status_display }}</span>
+    <div class="docs-context__text">
+      <strong>{{ entity_label }}</strong>
+      <span>
+        {{ case.client.get_full_name }}
+        · {{ case.get_case_type_display }}
+        · {{ case.get_station_display }}
+      </span>
+    </div>
+    <span class="docs-context__status docs-context__status--on">
+      {{ audit_summary.total }} event{{ audit_summary.total|pluralize }}
+    </span>
+  </div>
+
+  <section class="dap-panel case-audit-kpis" aria-label="Audit summary">
+    <div class="dap-kpis">
+      <div class="dap-kpi">
+        <span class="dap-kpi__label">Events</span>
+        <strong class="dap-kpi__value">{{ audit_summary.total }}</strong>
+      </div>
+      <div class="dap-kpi">
+        <span class="dap-kpi__label">Tasks</span>
+        <strong class="dap-kpi__value">{{ audit_summary.tasks }}</strong>
+      </div>
+      <div class="dap-kpi">
+        <span class="dap-kpi__label">Court</span>
+        <strong class="dap-kpi__value">{{ audit_summary.court }}</strong>
+      </div>
+      <div class="dap-kpi">
+        <span class="dap-kpi__label">Documents</span>
+        <strong class="dap-kpi__value">{{ audit_summary.documents }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="dap-panel" aria-labelledby="case-audit-timeline-heading">
+    <div class="dap-panel__head">
+      <h3 id="case-audit-timeline-heading">Full timeline</h3>
+      <span>Newest first</span>
+    </div>
+
+    {% if events %}
+    <ol class="dap-timeline case-audit-timeline">
+      {% for event in events %}
+      <li class="dap-timeline__item dap-timeline__item--{{ event.kind }}">
+        <div class="dap-timeline__marker" aria-hidden="true"></div>
+        <div class="dap-timeline__body">
+          <div class="dap-timeline__topline">
+            <strong class="dap-timeline__kind">{{ event.title }}</strong>
+            <time class="dap-timeline__duration" datetime="{{ event.at|date:'c' }}">
+              {{ event.at|date:"d M Y · H:i" }}
+            </time>
+          </div>
+          {% if event.summary %}
+          <p class="case-audit-summary">{{ event.summary }}</p>
+          {% endif %}
+          <div class="dap-timeline__meta">
+            {% if event.actor_name %}
+            <span>{{ event.actor_name }}</span>
+            {% endif %}
+            <span class="case-audit-chip">{{ event.kind_label }}</span>
+            {% if event.href %}
+            <a href="{{ event.href }}">Open related</a>
+            {% endif %}
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <div class="dap-empty">
+      <p class="dap-empty__title">No audit events yet</p>
+      <p class="dap-empty__text">
+        Events appear here as the case is registered, approved, tasked, attended, and documented.
+      </p>
+    </div>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "layouts/client_portal.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--centered"
+  id="client-pending-page"
+  data-status-url="{% url 'accounts:client_status' %}"
+  data-expected-status="{{ client.status }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      {% if client.status == "pending_approval" %}
+      <h2>Pending approval</h2>
+      <p class="page-lead">
+        Your details have been submitted and are awaiting firm approval.
+        We will notify <strong>{{ client.email }}</strong> once your access is activated.
+      </p>
+      <p class="page-lead" id="pending-wait-hint" aria-live="polite">
+        This page updates automatically when your account is approved.
+      </p>
+      {% else %}
+      <h2>{{ client.get_status_display }}</h2>
+      <p class="page-lead">Welcome to your client portal.</p>
+      {% endif %}
+    </div>
+  </header>
+</section>
+{% endblock %}

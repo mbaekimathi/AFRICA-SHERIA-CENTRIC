@@ -1,0 +1,126 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--form-medium"
+  id="live-entity-page"
+  data-status-url="{% url 'accounts:workspace_entity_status' %}?kind=client&amp;id={{ client.pk }}"
+  data-expected-status="{{ client.status }}"
+  data-gone-url="{{ list_url }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Approve client</h2>
+      <p class="page-lead">
+        Review submitted details and uploads for
+        <strong>{{ client.get_full_name }}</strong>, then approve access.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Client profile</h3>
+      <p class="panel__hint">
+        <a href="{{ list_url }}">Back to pending clients</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <div class="review-identity">
+        {% if client.profile_photo %}
+        <img class="avatar avatar--lg" src="{{ client.profile_photo.url }}" alt="">
+        {% else %}
+        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+          {% if client.client_type == "corporate" %}
+          {{ client.company_name|default:client.email|slice:":1"|upper }}
+          {% else %}
+          {{ client.first_name|slice:":1"|upper }}{{ client.last_name|slice:":1"|upper }}
+          {% endif %}
+        </div>
+        {% endif %}
+        <div>
+          <p class="identity-name">{{ client.get_full_name }}</p>
+          <p class="identity-meta">
+            {{ client.get_client_type_display }}
+            {% if client.client_type == "corporate" and client.corporate_kind %}
+            · {{ client.get_corporate_kind_display }}
+            {% endif %}
+            · <span class="status-pill status-pill--{{ client.status }}">{{ client.get_status_display }}</span>
+          </p>
+        </div>
+      </div>
+
+      <dl class="settings-grid review-grid">
+        <div><dt>Email</dt><dd>{{ client.email }}</dd></div>
+        <div><dt>Phone</dt><dd>{{ client.phone|default:"—" }}</dd></div>
+        <div><dt>Physical address</dt><dd>{{ client.physical_address|default:"—" }}</dd></div>
+        <div><dt>Joined</dt><dd>{{ client.date_joined|date:"d M Y, H:i" }}</dd></div>
+        {% if client.client_type == "individual" %}
+        <div><dt>ID type</dt><dd>{{ client.get_id_type_display|default:"—" }}</dd></div>
+        {% if client.id_type == "citizen" %}
+        <div><dt>ID number</dt><dd>{{ client.identification_number|default:"—" }}</dd></div>
+        {% else %}
+        <div><dt>Alien number</dt><dd>{{ client.alien_number|default:"—" }}</dd></div>
+        {% endif %}
+        {% else %}
+        <div><dt>Corporate kind</dt><dd>{{ client.get_corporate_kind_display|default:"—" }}</dd></div>
+        {% if client.corporate_kind == "business" %}
+        <div><dt>Business number</dt><dd>{{ client.business_number|default:"—" }}</dd></div>
+        {% else %}
+        <div><dt>Company number</dt><dd>{{ client.company_registration_number|default:"—" }}</dd></div>
+        {% endif %}
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Uploaded documents</h3>
+      <p class="panel__hint">Open files to verify before approving</p>
+    </div>
+    <div class="panel__body">
+      {% if documents %}
+      <ul class="doc-list">
+        {% for label, number, file in documents %}
+        <li class="doc-list__item">
+          <div>
+            <p class="doc-list__label">{{ label }}</p>
+            <p class="doc-list__meta">{{ number|default:"No number recorded" }}</p>
+          </div>
+          {% if file %}
+          <a class="btn btn--quiet btn--inline" href="{{ file.url }}" target="_blank" rel="noopener">View upload</a>
+          {% else %}
+          <span class="doc-list__missing">No file uploaded</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No documents on file</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Decision</h3>
+      <p class="panel__hint">Approving sets this client to Active</p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="form-actions form-actions--start">
+        {% csrf_token %}
+        <a href="{{ list_url }}" class="btn btn--quiet">Cancel</a>
+        <button type="submit" name="action" value="approve" class="btn btn--primary btn--inline">
+          Approve client
+        </button>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

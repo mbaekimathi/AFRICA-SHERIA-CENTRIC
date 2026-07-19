@@ -1,0 +1,173 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium">
+  <header class="page-intro register-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Create task</h2>
+      <p class="page-lead">
+        Assign a follow-up task for this litigation case. Only the selected
+        employee is notified and can accept or reject it.
+      </p>
+    </div>
+  </header>
+
+  <form method="post" class="register-form" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="form-alert" role="alert">
+      {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    <section class="register-section" aria-labelledby="section-case-context">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M4.5 19.5h15M6 19.5V9.75L12 5.5l6 4.25V19.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-case-context">Case</h3>
+          <p>This task is locked to the current case</p>
+        </div>
+      </header>
+      <div class="register-section__body register-grid register-grid--2">
+        <div class="form-field register-grid__span">
+          <label>Selected case</label>
+          <div class="form-input form-input--static" aria-readonly="true">
+            {% if case.court_case_number %}{{ case.court_case_number }}{% else %}Case #{{ case.pk }}{% endif %}
+            · {{ case.client.get_full_name }}
+          </div>
+          <p class="field-hint">
+            Case allocated to:
+            {% if case.assigned_to %}
+            {{ case.assigned_to.get_full_name }}
+            {% else %}
+            —
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="register-section" aria-labelledby="section-task">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-task">Task details</h3>
+          <p>Allocate, title, description, and due date</p>
+        </div>
+      </header>
+      <div class="register-section__body register-grid register-grid--2">
+        <div class="form-field register-grid__span">
+          <label for="{{ form.assigned_to.id_for_label }}">Allocate task to employee <span aria-hidden="true">*</span></label>
+          {{ form.assigned_to }}
+          {% if form.assigned_to.help_text %}<p class="field-hint">{{ form.assigned_to.help_text }}</p>{% endif %}
+          {% if form.assigned_to.errors %}<span class="field-error">{{ form.assigned_to.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field register-grid__span">
+          <label for="{{ form.title.id_for_label }}">Task title <span aria-hidden="true">*</span></label>
+          {{ form.title }}
+          {% if form.title.errors %}<span class="field-error">{{ form.title.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field register-grid__span">
+          <label for="{{ form.instructions.id_for_label }}">Task description</label>
+          {{ form.instructions }}
+          {% if form.instructions.errors %}<span class="field-error">{{ form.instructions.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.due_date.id_for_label }}">Timeline / due date <span aria-hidden="true">*</span></label>
+          {{ form.due_date }}
+          {% if form.due_date.errors %}<span class="field-error">{{ form.due_date.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <div class="form-actions form-actions--start">
+      <a href="{{ detail_url }}" class="btn btn--quiet">Cancel</a>
+      <button type="submit" class="btn btn--primary">Create task</button>
+    </div>
+  </form>
+
+  <section class="register-section attendance-history" aria-labelledby="section-existing-tasks">
+    <header class="register-section__head">
+      <span class="register-section__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+          <path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <div>
+        <h3 id="section-existing-tasks">Existing case tasks</h3>
+        <p>
+          {% if existing_tasks %}
+          {{ existing_tasks|length }} task{{ existing_tasks|length|pluralize }} on this case
+          {% else %}
+          No tasks yet
+          {% endif %}
+        </p>
+      </div>
+    </header>
+    <div class="register-section__body register-section__body--table">
+      {% if existing_tasks %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Title</th>
+              <th scope="col">Allocated to</th>
+              <th scope="col">Due</th>
+              <th scope="col">Status</th>
+              <th scope="col">Created by</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in existing_tasks %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  <span class="person-cell__name">{{ task.title|default:"Untitled task" }}</span>
+                  {% if task.instructions %}
+                  <span class="person-cell__meta">{{ task.instructions|truncatechars:80 }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>{{ task.assignee.get_full_name }}</td>
+              <td>{{ task.due_date|date:"d M Y" }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ task.status }}">
+                  {{ task.get_status_display }}
+                </span>
+              </td>
+              <td>
+                {% if task.created_by %}
+                {{ task.created_by.get_full_name }}
+                {% else %}
+                —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No tasks on this case yet</p>
+        <p class="empty-state__text">Created tasks will appear here for review.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

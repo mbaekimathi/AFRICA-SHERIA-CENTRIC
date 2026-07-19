@@ -1,0 +1,99 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page settings-page settings-page--compact" id="settings-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Control how Sheria-Centric alerts you. Sound preferences apply across
+        Tasks, Calendar, Messages, and the notification bell.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel settings-notify-panel">
+    <div class="panel__head">
+      <h3>Alert sounds</h3>
+      <p class="panel__hint">
+        {% if notification_sound_enabled %}
+        Sounds are on
+        {% else %}
+        Sounds are off
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="settings-notify-form" id="notification-settings-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="settings_action" value="notifications">
+
+        <label class="settings-toggle" for="id_notification_sound">
+          <span class="settings-toggle__control">
+            {{ notification_form.notification_sound }}
+          </span>
+          <span class="settings-toggle__copy">
+            <strong>{{ notification_form.notification_sound.label }}</strong>
+            <span>
+              Play a soft chime when new unread notifications arrive while you work
+              (tasks, reminders, and messages).
+            </span>
+          </span>
+        </label>
+        {% if notification_form.notification_sound.errors %}
+        <p class="field-error">{{ notification_form.notification_sound.errors.0 }}</p>
+        {% endif %}
+
+        <div class="form-actions form-actions--start settings-notify-actions">
+          <button
+            type="button"
+            class="btn btn--quiet btn--inline"
+            id="test-notification-sound"
+          >
+            Test sound
+          </button>
+          <button type="submit" class="btn btn--primary btn--inline">Save notification settings</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>What you get notified about</h3>
+      <p class="panel__hint">In-app only · live while you are signed in</p>
+    </div>
+    <div class="panel__body">
+      <ul class="settings-notify-list">
+        <li>
+          <strong>Tasks</strong>
+          <span>New assignments you need to accept or reject.</span>
+        </li>
+        <li>
+          <strong>Calendar / Reminders</strong>
+          <span>
+              Personal reminders you set when accepting a task — listed on Reminders
+              and alerted when due.
+            </span>
+        </li>
+        <li>
+          <strong>Messages</strong>
+          <span>Updates such as task accepted or rejected by an assignee.</span>
+        </li>
+        <li>
+          <strong>Notification bell</strong>
+          <span>All unread items in one place, with category badges on the sidebar.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/settings.js' %}" defer></script>
+{% endblock %}

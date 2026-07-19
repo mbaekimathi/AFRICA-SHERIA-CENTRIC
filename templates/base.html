@@ -1,0 +1,29 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Sheria-Centric — professional practice management for advocates.">
+  <title>{% block title %}Sheria-Centric{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}" {% block body_attrs %}{% endblock %}>
+  {% if messages %}
+  <div class="toast-stack" role="status" aria-live="polite">
+    {% for message in messages %}
+    <div class="toast toast--{{ message.tags|default:'info' }}">{{ message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% block content %}{% endblock %}
+  <script src="{% static 'js/auth.js' %}" defer></script>
+  <script src="{% static 'js/live-poll.js' %}" defer></script>
+  <script src="{% static 'js/live-session.js' %}" defer></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,223 @@
+{% extends "layouts/workspace.html" %}
+{% load static document_extras %}
+
+{% block title %}Activity — {{ document.title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--docs page--docs-activity">
+  {% csrf_token %}
+
+  <header class="docs-hero docs-activity-hero">
+    <div class="docs-hero__copy">
+      <p class="page-kicker">Document activity</p>
+      <h2>{{ document.title }}</h2>
+      <p class="page-lead">
+        Time spent viewing, creating, and editing this file
+        {% if entity_label %} on {{ entity_label }}{% endif %}.
+      </p>
+    </div>
+    <div class="docs-activity-hero__actions">
+      <a href="{{ library_url }}" class="btn btn--quiet">Back to library</a>
+      {% if document.open_url or document.local_file %}
+      <a
+        class="btn btn--primary"
+        href="{{ open_url }}"
+        data-docs-open-track
+        data-target-url="{% if document.open_url %}{{ document.open_url }}{% elif document.local_file %}{{ document.local_file.url }}{% endif %}"
+      >
+        Open document
+      </a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="docs-context" aria-label="Document details">
+    <span class="docs-context__badge">{{ document.type_label }}</span>
+    <div class="docs-context__text">
+      <strong>
+        {% if entity_kind == "case" %}Case{% else %}Matter{% endif %}
+        {% if entity_label %}· {{ entity_label }}{% endif %}
+      </strong>
+      <span>
+        {% if document.uploaded_by %}Added by {{ document.uploaded_by.get_full_name }} · {% endif %}
+        Created {{ document.created_at|date:"d M Y" }}
+        {% if analytics.last_opened_at %}
+        · Last opened {{ analytics.last_opened_at|date:"d M Y H:i" }}
+        {% endif %}
+      </span>
+    </div>
+    <span class="docs-context__status docs-context__status--on">
+      {{ analytics.total_seconds|duration }} tracked
+    </span>
+  </div>
+
+  <section class="dap-focus" aria-labelledby="dap-total-label">
+    <div class="dap-focus__total">
+      <p class="dap-focus__eyebrow" id="dap-total-label">Total time used</p>
+      <p class="dap-focus__value">{{ analytics.total_seconds|duration }}</p>
+      <p class="dap-focus__hint">
+        Across {{ analytics.session_count }} session{{ analytics.session_count|pluralize }}
+        · {{ analytics.open_count }} open{{ analytics.open_count|pluralize }}
+      </p>
+    </div>
+
+    <div class="dap-focus__split" role="list">
+      <article class="dap-metric dap-metric--viewing" role="listitem">
+        <div class="dap-metric__top">
+          <span class="dap-metric__dot" aria-hidden="true"></span>
+          <span class="dap-metric__label">Viewing</span>
+          <span class="dap-metric__share">{{ analytics.viewing_share }}%</span>
+        </div>
+        <strong class="dap-metric__value">{{ analytics.viewing_seconds|duration }}</strong>
+        <div class="dap-metric__track" aria-hidden="true">
+          <span style="width: {{ analytics.viewing_share }}%"></span>
+        </div>
+      </article>
+
+      <article class="dap-metric dap-metric--editing" role="listitem">
+        <div class="dap-metric__top">
+          <span class="dap-metric__dot" aria-hidden="true"></span>
+          <span class="dap-metric__label">Editing</span>
+          <span class="dap-metric__share">{{ analytics.editing_share }}%</span>
+        </div>
+        <strong class="dap-metric__value">{{ analytics.editing_seconds|duration }}</strong>
+        <div class="dap-metric__track" aria-hidden="true">
+          <span style="width: {{ analytics.editing_share }}%"></span>
+        </div>
+      </article>
+
+      <article class="dap-metric dap-metric--creating" role="listitem">
+        <div class="dap-metric__top">
+          <span class="dap-metric__dot" aria-hidden="true"></span>
+          <span class="dap-metric__label">Creating</span>
+          <span class="dap-metric__share">{{ analytics.creating_share }}%</span>
+        </div>
+        <strong class="dap-metric__value">{{ analytics.creating_seconds|duration }}</strong>
+        <div class="dap-metric__track" aria-hidden="true">
+          <span style="width: {{ analytics.creating_share }}%"></span>
+        </div>
+      </article>
+    </div>
+
+    {% if analytics.total_seconds %}
+    <div class="dap-mix" aria-hidden="true">
+      <span class="dap-mix__seg dap-mix__seg--viewing" style="width: {{ analytics.viewing_share }}%"></span>
+      <span class="dap-mix__seg dap-mix__seg--editing" style="width: {{ analytics.editing_share }}%"></span>
+      <span class="dap-mix__seg dap-mix__seg--creating" style="width: {{ analytics.creating_share }}%"></span>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="dap-panel" aria-labelledby="dap-session-heading">
+    <div class="dap-panel__head">
+      <h3 id="dap-session-heading">Session overview</h3>
+    </div>
+    <div class="dap-kpis">
+      <div class="dap-kpi">
+        <span class="dap-kpi__label">Sessions</span>
+        <strong class="dap-kpi__value">{{ analytics.session_count }}</strong>
+      </div>
+      <div class="dap-kpi">
+        <span class="dap-kpi__label">Opens</span>
+        <strong class="dap-kpi__value">{{ analytics.open_count }}</strong>
+      </div>
+      <div class="dap-kpi">
+        <span class="dap-kpi__label">Average</span>
+        <strong class="dap-kpi__value">{{ analytics.avg_session_seconds|duration }}</strong>
+      </div>
+      <div class="dap-kpi">
+        <span class="dap-kpi__label">Longest</span>
+        <strong class="dap-kpi__value">{{ analytics.longest_session_seconds|duration }}</strong>
+      </div>
+    </div>
+  </section>
+
+  {% if analytics.by_actor %}
+  <section class="dap-panel" aria-labelledby="dap-people-heading">
+    <div class="dap-panel__head">
+      <h3 id="dap-people-heading">People</h3>
+      <span>{{ analytics.by_actor|length }} contributor{{ analytics.by_actor|length|pluralize }}</span>
+    </div>
+    <ul class="dap-people">
+      {% for row in analytics.by_actor %}
+      <li class="dap-person">
+        <div class="dap-person__avatar" aria-hidden="true">
+          {{ row.name|slice:":1"|upper }}
+        </div>
+        <div class="dap-person__main">
+          <div class="dap-person__topline">
+            <strong>{{ row.name }}</strong>
+            <span>{{ row.seconds|duration }}</span>
+          </div>
+          <div class="dap-person__meta">
+            {{ row.sessions }} session{{ row.sessions|pluralize }}
+            · View {{ row.viewing_seconds|duration }}
+            · Edit {{ row.editing_seconds|duration }}
+            · Create {{ row.creating_seconds|duration }}
+          </div>
+          {% if analytics.total_seconds %}
+          <div class="dap-person__bar" aria-hidden="true">
+            <span style="width: {% widthratio row.seconds analytics.total_seconds 100 %}%"></span>
+          </div>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section class="dap-panel" aria-labelledby="dap-history-heading">
+    <div class="dap-panel__head">
+      <h3 id="dap-history-heading">Recent sessions</h3>
+      <span>{{ analytics.session_count }} recorded</span>
+    </div>
+
+    {% if analytics.recent_sessions %}
+    <ol class="dap-timeline">
+      {% for session in analytics.recent_sessions %}
+      <li class="dap-timeline__item dap-timeline__item--{{ session.kind|default:'viewing' }}">
+        <div class="dap-timeline__marker" aria-hidden="true"></div>
+        <div class="dap-timeline__body">
+          <div class="dap-timeline__topline">
+            <strong class="dap-timeline__kind">{{ session.get_kind_display }}</strong>
+            <span class="dap-timeline__duration">{{ session.duration_seconds|duration }}</span>
+          </div>
+          <div class="dap-timeline__meta">
+            <span>
+              {% if session.actor %}{{ session.actor.get_full_name }}{% else %}Unknown{% endif %}
+            </span>
+            <span>{{ session.started_at|date:"d M Y · H:i" }}</span>
+            {% if session.ended_at %}
+            <span class="dap-timeline__status dap-timeline__status--ended">Ended</span>
+            {% else %}
+            <span class="dap-timeline__status dap-timeline__status--active">Active</span>
+            {% endif %}
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <div class="dap-empty">
+      <p class="dap-empty__title">No sessions yet</p>
+      <p class="dap-empty__text">Open this document to start tracking viewing, creating, and editing time.</p>
+      {% if document.open_url or document.local_file %}
+      <a
+        class="btn btn--primary btn--inline"
+        href="{{ open_url }}"
+        data-docs-open-track
+        data-target-url="{% if document.open_url %}{{ document.open_url }}{% elif document.local_file %}{{ document.local_file.url }}{% endif %}"
+      >
+        Open document
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/docs-open.js' %}" defer></script>
+{% endblock %}

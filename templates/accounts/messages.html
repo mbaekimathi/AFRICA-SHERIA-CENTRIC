@@ -1,0 +1,81 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Updates such as task accepted or rejected, and other firm notices.
+        Newest messages appear first.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Inbox</h3>
+      <p class="panel__hint">
+        {{ message_count }} total
+        {% if message_unread_count %}
+        · {{ message_unread_count }} unread
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if message_notifications %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">Message</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in message_notifications %}
+            <tr class="{% if not item.is_read %}message-row--unread{% endif %}">
+              <td>
+                <span class="reminder-when">{{ item.created_at|date:"d M Y, H:i" }}</span>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <a
+                    class="person-cell__name"
+                    href="{% url 'accounts:workspace_notification_open' item.pk %}"
+                  >{{ item.title }}</a>
+                  {% if item.body %}
+                  <span class="person-cell__meta">{{ item.body|truncatechars:140 }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                {% if item.is_read %}
+                <span class="status-pill status-pill--done">Read</span>
+                {% else %}
+                <span class="status-pill status-pill--pending">Unread</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No messages yet</p>
+        <p class="empty-state__copy">
+          When someone accepts or rejects a task you assigned, or other notices
+          arrive, they will show here — newest first.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

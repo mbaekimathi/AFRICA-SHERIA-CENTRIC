@@ -1,0 +1,233 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}Theme Settings — Sheria Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page settings-page theme-settings-page"
+  id="settings-page"
+  data-role-theme="{{ user.role }}"
+  data-saved-theme="{% if appearance_form.ui_theme.value == 'product' %}default{% else %}{{ appearance_form.ui_theme.value|default:'default' }}{% endif %}"
+  data-saved-font="{{ appearance_form.ui_font.value|default:'plex' }}"
+  data-saved-density="{{ appearance_form.ui_density.value|default:'comfortable' }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">System settings</p>
+      <h2>Theme settings</h2>
+      <p class="page-lead">
+        Choose a balanced workspace palette. Sidebar, top bar, accents, type, density,
+        and notification badges stay in sync — preview live, then save when it feels right.
+      </p>
+    </div>
+  </header>
+
+  <div class="theme-studio__hero">
+    <div>
+      <h2>Appearance studio</h2>
+      <p>
+        Start from Black & White for a clean baseline, or explore role, studio, and accent
+        collections. Every option keeps contrast readable for daily practice work.
+      </p>
+    </div>
+    <div class="theme-studio__stats" aria-label="Current appearance">
+      <span class="theme-studio__stat">Theme <strong id="chip-theme">{{ current_theme_label }}</strong></span>
+      <span class="theme-studio__stat">Type <strong id="chip-font">{{ current_font_label }}</strong></span>
+      <span class="theme-studio__stat">Density <strong id="chip-density">{{ current_density_label }}</strong></span>
+      <span class="theme-studio__stat">{{ theme_count }} themes · {{ font_count }} typefaces</span>
+    </div>
+  </div>
+
+  <form method="post" class="theme-studio settings-studio" id="appearance-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="settings_action" value="appearance">
+
+    <div class="theme-studio__main settings-studio__main">
+      <div class="settings-tabs" role="tablist" aria-label="Appearance controls">
+        <button type="button" class="settings-tab is-active" role="tab" aria-selected="true" data-tab="themes" id="tab-themes">Themes</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="fonts" id="tab-fonts">Typography</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="density" id="tab-density">Density</button>
+      </div>
+
+      <div class="settings-panels">
+        <div class="settings-panel" id="panel-themes" role="tabpanel" aria-labelledby="tab-themes">
+          <div class="settings-panel__intro">
+            <h3>Color themes</h3>
+            <p>Palettes balance shell, accent, and page canvas. Selection updates the whole workspace instantly.</p>
+          </div>
+          {% for group in theme_groups %}
+          <div class="theme-group">
+            <p class="theme-group__label">{{ group.label }}</p>
+            <div class="theme-grid" role="radiogroup" aria-label="{{ group.label }}">
+              {% for option in group.options %}
+              <label class="theme-card theme-card--{{ option.preview }}{% if option.featured %} theme-card--featured{% endif %}{% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %} is-selected{% endif %}">
+                <input
+                  type="radio"
+                  name="{{ appearance_form.ui_theme.name }}"
+                  value="{{ option.value }}"
+                  {% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %}checked{% endif %}
+                  data-theme-preview="{{ option.preview }}"
+                  data-theme-label="{{ option.label }}"
+                >
+                <span class="theme-card__stage" aria-hidden="true">
+                  <span class="theme-card__rail"></span>
+                  <span class="theme-card__canvas">
+                    <span class="theme-card__line"></span>
+                    <span class="theme-card__line theme-card__line--short"></span>
+                    <span class="theme-card__block"></span>
+                  </span>
+                </span>
+                <span class="theme-card__meta">
+                  <span class="theme-card__name">{{ option.label }}</span>
+                  <span class="theme-card__blurb">{{ option.blurb }}</span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+          {% if appearance_form.ui_theme.errors %}
+          <p class="field-error">{{ appearance_form.ui_theme.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        <div class="settings-panel" id="panel-fonts" role="tabpanel" aria-labelledby="tab-fonts" hidden>
+          <div class="settings-panel__intro">
+            <h3>Typography</h3>
+            <p>{{ font_count }} pairings. Body text, headings, and UI labels follow your choice across the workspace.</p>
+          </div>
+          <div class="font-grid" role="radiogroup" aria-label="Workspace fonts">
+            {% for font in font_catalog %}
+            <label class="font-card font-card--{{ font.value }}{% if appearance_form.ui_font.value == font.value %} is-selected{% endif %}">
+              <input
+                type="radio"
+                name="{{ appearance_form.ui_font.name }}"
+                value="{{ font.value }}"
+                {% if appearance_form.ui_font.value == font.value %}checked{% endif %}
+                data-font-preview="{{ font.value }}"
+                data-font-label="{{ font.label }}"
+              >
+              <span class="font-card__specimen" aria-hidden="true">Sheria</span>
+              <span class="font-card__body">Counsel that reads with clarity and presence.</span>
+              <span class="font-card__pair">
+                <span class="font-card__tag">{{ font.sans }}</span>
+                <span class="font-card__tag">{{ font.serif }}</span>
+              </span>
+              <span class="font-card__name">{{ font.label }}</span>
+              <span class="font-card__mood">{{ font.mood }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% if appearance_form.ui_font.errors %}
+          <p class="field-error">{{ appearance_form.ui_font.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        <div class="settings-panel" id="panel-density" role="tabpanel" aria-labelledby="tab-density" hidden>
+          <div class="settings-panel__intro">
+            <h3>Spacing density</h3>
+            <p>Changes table row height, nav padding, panel spacing, and type scale together.</p>
+          </div>
+          <div class="density-grid" role="radiogroup" aria-label="Workspace density">
+            {% for option in density_catalog %}
+            <label class="density-card density-card--{{ option.value }}{% if appearance_form.ui_density.value == option.value %} is-selected{% endif %}">
+              <input
+                type="radio"
+                name="{{ appearance_form.ui_density.name }}"
+                value="{{ option.value }}"
+                {% if appearance_form.ui_density.value == option.value %}checked{% endif %}
+                data-density-preview="{{ option.value }}"
+                data-density-label="{{ option.label }}"
+              >
+              <span class="density-card__bars" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </span>
+              <p class="density-card__name">{{ option.label }}</p>
+              <p class="density-card__blurb">{{ option.blurb }}</p>
+            </label>
+            {% endfor %}
+          </div>
+          {% if appearance_form.ui_density.errors %}
+          <p class="field-error">{{ appearance_form.ui_density.errors.0 }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <aside class="theme-studio__aside" aria-label="Live appearance preview">
+      <div class="settings-studio__preview">
+        <div class="settings-preview__head">
+          <h3>Live preview</h3>
+          <span class="settings-preview__badge">Realtime</span>
+        </div>
+        <div class="settings-preview__stage">
+          <div class="settings-preview__shell">
+            <div class="settings-preview__nav" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+              <span class="settings-preview__nav-item">
+                <i></i>
+                <em class="settings-preview__dot"></em>
+              </span>
+            </div>
+            <div class="settings-preview__main">
+              <div class="settings-preview__topbar" aria-hidden="true">
+                <span class="settings-preview__crumb"></span>
+                <span class="settings-preview__bell">
+                  <i></i>
+                  <em class="settings-preview__dot">1</em>
+                </span>
+              </div>
+              <div class="settings-preview__content">
+                <p class="settings-preview__title" id="preview-title">Matter desk</p>
+                <p class="settings-preview__text" id="preview-text">
+                  Sidebar, surfaces, type, and notification badges update as you explore.
+                </p>
+                <div class="settings-preview__card">
+                  <strong>Pending review</strong>
+                  <span class="settings-preview__text">Allocate counsel and activate the matter task.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-preview__meta">
+          <p><span>Theme</span> <strong id="preview-theme">{{ current_theme_label }}</strong></p>
+          <p><span>Typography</span> <strong id="preview-font">{{ current_font_label }}</strong></p>
+          <p><span>Density</span> <strong id="preview-density">{{ current_density_label }}</strong></p>
+        </div>
+      </div>
+
+      <div class="theme-balance">
+        <h3>Balance check</h3>
+        <p>Active tokens for shell, accent, page, surface, and notification badges.</p>
+        <div class="theme-balance__swatches" aria-hidden="true">
+          <span class="theme-balance__swatch theme-balance__swatch--sidebar"></span>
+          <span class="theme-balance__swatch theme-balance__swatch--accent"></span>
+          <span class="theme-balance__swatch theme-balance__swatch--page"></span>
+          <span class="theme-balance__swatch theme-balance__swatch--surface"></span>
+          <span class="theme-balance__swatch theme-balance__swatch--badge"></span>
+        </div>
+        <ul class="theme-balance__legend">
+          <li><span class="theme-balance__swatch--sidebar" style="background:var(--sidebar-bg)"></span>Shell</li>
+          <li><span class="theme-balance__swatch--accent" style="background:var(--accent)"></span>Accent</li>
+          <li><span class="theme-balance__swatch--page" style="background:var(--page-bg)"></span>Page</li>
+          <li><span class="theme-balance__swatch--surface" style="background:var(--surface)"></span>Surface</li>
+          <li><span class="theme-balance__swatch--badge" style="background:var(--notif-badge)"></span>Badge</li>
+        </ul>
+      </div>
+    </aside>
+
+    <div class="settings-savebar" id="appearance-savebar" aria-live="polite">
+      <p class="settings-savebar__copy">
+        <strong>Unsaved appearance</strong> — previewing on this page until you save.
+      </p>
+      <button type="submit" class="btn btn--primary btn--inline">Save appearance</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/settings.js' %}" defer></script>
+{% endblock %}

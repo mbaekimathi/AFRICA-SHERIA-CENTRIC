@@ -1,0 +1,86 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page"
+  id="live-list-page"
+  data-revision-url="{% url 'accounts:workspace_list_revision' %}?list=employees"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Active and suspended employee accounts registered with the firm.
+        Use Onboarding &amp; Approvals for pending staff.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employees</h3>
+      <p class="panel__hint">{{ employee_count }} total · live</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if employees %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Login code</th>
+              <th scope="col">Email</th>
+              <th scope="col">Phone</th>
+              <th scope="col">Role</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for employee in employees %}
+            <tr>
+              <td>
+                <div class="person-cell">
+                  {% if employee.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ employee.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {{ employee.first_name|slice:":1"|upper }}{{ employee.last_name|slice:":1"|upper }}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <span class="person-cell__name">{{ employee.get_full_name|default:employee.login_code }}</span>
+                    <span class="person-cell__meta">{{ employee.get_role_display }}</span>
+                  </div>
+                </div>
+              </td>
+              <td><code class="mono">{{ employee.login_code }}</code></td>
+              <td>{{ employee.personal_email }}</td>
+              <td>{{ employee.personal_phone|default:"—" }}</td>
+              <td>{{ employee.get_role_display }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ employee.status }}">
+                  {{ employee.get_status_display }}
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No employees found</p>
+        <p class="empty-state__text">
+          There are no active or suspended employee accounts yet.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

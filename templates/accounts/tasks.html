@@ -1,0 +1,268 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Tasks assigned to you. Accept or reject pending work; after you accept,
+        open View to see the full brief and matter details.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>My tasks</h3>
+      <p class="panel__hint">
+        {{ task_count }} total
+        {% if pending_count %}
+        · {{ pending_count }} awaiting response
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if tasks %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Task</th>
+              <th scope="col">Type</th>
+              <th scope="col">Due</th>
+              <th scope="col">Tasked by</th>
+              <th scope="col">Status</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in tasks %}
+            <tr
+              id="task-{{ item.kind }}-{{ item.task.pk }}"
+              class="{% if highlight_kind == item.kind and highlight_id == item.task.pk %}task-row--highlight{% endif %}"
+              data-task-kind="{{ item.kind }}"
+              data-task-id="{{ item.task.pk }}"
+              data-task-subject="{{ item.subject }}"
+              data-task-due="{{ item.task.due_date|date:'Y-m-d' }}"
+              data-accept-url="{{ item.accept_url }}"
+              data-reject-url="{{ item.reject_url }}"
+            >
+              <td>
+                <div class="person-cell__text">
+                  <span class="person-cell__name">{{ item.subject }}</span>
+                  <span class="person-cell__meta">
+                    {{ item.subject_meta }}
+                    {% if item.task.title %}
+                    · {{ item.task.title }}
+                    {% elif item.task.instructions %}
+                    · {{ item.task.instructions|truncatechars:80 }}
+                    {% endif %}
+                  </span>
+                  {% if item.task.reminder_at %}
+                  <span class="person-cell__meta task-reminder">
+                    Reminder: {{ item.task.reminder_at|date:"d M Y, H:i" }}
+                  </span>
+                  {% endif %}
+                  {% if item.task.status == "rejected" and item.task.rejection_reason %}
+                  <span class="person-cell__meta task-reject-reason">
+                    Rejection reason: {{ item.task.rejection_reason }}
+                  </span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                {% if item.kind == "case" %}
+                Litigation
+                {% else %}
+                Non-litigation
+                {% endif %}
+              </td>
+              <td>{{ item.task.due_date|date:"d M Y" }}</td>
+              <td>
+                {% if item.task.created_by %}
+                {{ item.task.created_by.get_full_name }}
+                {% else %}
+                —
+                {% endif %}
+              </td>
+              <td>
+                <span class="status-pill status-pill--{{ item.task.status }}">
+                  {{ item.task.get_status_display }}
+                </span>
+              </td>
+              <td>
+                {% if item.task.status == "pending" %}
+                <div class="row-actions">
+                  <button
+                    type="button"
+                    class="row-action row-action--approve open-accept-modal"
+                    title="Accept task"
+                    aria-label="Accept task {{ item.subject }}"
+                    aria-haspopup="dialog"
+                    aria-controls="task-accept-modal"
+                    data-accept-url="{{ item.accept_url }}"
+                    data-task-subject="{{ item.subject }}"
+                    data-task-due="{{ item.task.due_date|date:'Y-m-d' }}"
+                  >
+                    <span class="row-action__icon" aria-hidden="true">✓</span>
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    class="row-action row-action--reject open-reject-modal"
+                    title="Reject task"
+                    aria-label="Reject task {{ item.subject }}"
+                    aria-haspopup="dialog"
+                    aria-controls="task-reject-modal"
+                    data-reject-url="{{ item.reject_url }}"
+                    data-task-subject="{{ item.subject }}"
+                  >
+                    <span class="row-action__icon" aria-hidden="true">✕</span>
+                    Reject
+                  </button>
+                </div>
+                {% elif item.task.status == "accepted" %}
+                <div class="row-actions">
+                  <a
+                    class="row-action row-action--view"
+                    href="{{ item.view_url }}"
+                    title="View task"
+                    aria-label="View task {{ item.subject }}"
+                  >
+                    <span class="row-action__icon" aria-hidden="true">◎</span>
+                    View
+                  </a>
+                </div>
+                {% else %}
+                <span class="person-cell__meta">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No tasks assigned to you</p>
+        <p class="empty-state__copy">
+          When a case or matter is approved and tasked to you, it will appear here
+          for you to accept or reject.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+
+<dialog
+  class="workspace-modal"
+  id="task-accept-modal"
+  aria-labelledby="task-accept-title"
+  {% if open_accept_modal %}open{% endif %}
+>
+  <form
+    method="post"
+    class="workspace-modal__card"
+    id="task-accept-form"
+    novalidate
+    {% if accept_target %}action="{{ accept_target.url }}"{% endif %}
+  >
+    {% csrf_token %}
+    <input type="hidden" name="action" value="accept">
+    <header class="workspace-modal__head">
+      <h2 id="task-accept-title">Accept task</h2>
+      <p id="task-accept-subject">
+        {% if accept_target %}
+        Accept: {{ accept_target.subject }}
+        {% else %}
+        Confirm acceptance. You can optionally set a personal reminder.
+        {% endif %}
+      </p>
+    </header>
+
+    <div class="workspace-modal__body">
+      {% if accept_form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        {% for error in accept_form.non_field_errors %}{{ error }}{% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="form-field">
+        <label for="id_accept_reminder_at">Reminder</label>
+        {{ accept_form.reminder_at }}
+        {% if accept_form.reminder_at.errors %}
+        <span class="field-error">{{ accept_form.reminder_at.errors.0 }}</span>
+        {% endif %}
+        <span class="field-hint">Optional — set the date and time you want to be reminded.</span>
+      </div>
+    </div>
+
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-accept-modal">Cancel</button>
+      <button type="submit" class="btn btn--primary btn--inline">Accept task</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog
+  class="workspace-modal"
+  id="task-reject-modal"
+  aria-labelledby="task-reject-title"
+  {% if open_reject_modal %}open{% endif %}
+>
+  <form
+    method="post"
+    class="workspace-modal__card"
+    id="task-reject-form"
+    novalidate
+    {% if reject_target %}action="{{ reject_target.url }}"{% endif %}
+  >
+    {% csrf_token %}
+    <input type="hidden" name="action" value="reject">
+    <header class="workspace-modal__head">
+      <h2 id="task-reject-title">Reject task</h2>
+      <p id="task-reject-subject">
+        {% if reject_target %}
+        Provide a reason for rejecting: {{ reject_target.subject }}
+        {% else %}
+        Provide a reason for rejecting this task. The person who tasked you will be notified.
+        {% endif %}
+      </p>
+    </header>
+
+    <div class="workspace-modal__body">
+      {% if reject_form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        {% for error in reject_form.non_field_errors %}{{ error }}{% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="form-field">
+        <label for="id_reject_reason">
+          Reason <span aria-hidden="true">*</span>
+        </label>
+        {{ reject_form.reason }}
+        {% if reject_form.reason.errors %}
+        <span class="field-error">{{ reject_form.reason.errors.0 }}</span>
+        {% endif %}
+        <span class="field-hint">Required — the assigner will see this reason.</span>
+      </div>
+    </div>
+
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-reject-modal">Cancel</button>
+      <button type="submit" class="btn btn--primary btn--inline">Reject task</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/tasks.js' %}" defer></script>
+{% endblock %}

@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Create Account — Sheria-Centric{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+<main class="auth-shell">
+  <section class="auth-brand" aria-label="Sheria-Centric brand">
+    <div class="auth-brand__glow" aria-hidden="true"></div>
+    <div class="auth-brand__content">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none">
+          <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+          <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <p class="brand-name">Sheria Centric</p>
+      <p class="brand-tagline">Register to join the firm. New accounts start as Employee and await approval.</p>
+      <ul class="brand-points">
+        <li>
+          <svg class="justice-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M5 8l7-4 7 4M5 8c0 3 3 5 7 5s7-2 7-5M8 21h8" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          6-digit login code
+        </li>
+        <li>
+          <svg class="justice-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Encrypted password storage
+        </li>
+        <li>
+          <svg class="justice-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Pending approval workflow
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="auth-panel">
+    <div class="auth-card auth-card--wide">
+      <header class="auth-card__header">
+        <div class="mobile-brand">
+          <svg class="justice-icon justice-icon--sm" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+            <path d="M60 22V98" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+            <path d="M42 30H78" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+            <path d="M60 30L28 58M60 30L92 58" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+            <path d="M48 98H72" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+          </svg>
+          <span>Sheria-Centric</span>
+        </div>
+        <p class="auth-kicker"><a href="{% url 'accounts:home' %}">← Home</a></p>
+        <h1>Create employee account</h1>
+        <p>Role starts as Employee · Next: onboarding, then pending approval</p>
+      </header>
+
+      <form method="post" class="auth-form" enctype="multipart/form-data" id="signup-form" novalidate
+            data-check-code-url="{% url 'accounts:check_login_code' %}">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.first_name.id_for_label }}">First name</label>
+            <div class="name-with-title">
+              <div class="title-select">
+                {{ form.courtesy_title }}
+                <svg class="title-select__caret" viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M5 7.5 10 12.5 15 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              {{ form.first_name }}
+            </div>
+            {% if form.courtesy_title.errors %}<span class="field-error">{{ form.courtesy_title.errors.0 }}</span>{% endif %}
+            {% if form.first_name.errors %}<span class="field-error">{{ form.first_name.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.last_name.id_for_label }}">Last name</label>
+            {{ form.last_name }}
+            {% if form.last_name.errors %}<span class="field-error">{{ form.last_name.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.personal_email.id_for_label }}">Personal email</label>
+          {{ form.personal_email }}
+          <span class="field-hint">Work email will be auto-generated later (coming soon).</span>
+          {% if form.personal_email.errors %}<span class="field-error">{{ form.personal_email.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="id_personal_phone">Personal phone number</label>
+          {{ form.country_code }}
+          <div class="phone-field" id="phone-field">
+            <button type="button" class="country-trigger" id="country-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select country code">
+              <img class="country-flag" id="country-flag" src="https://flagcdn.com/w40/ke.png" srcset="https://flagcdn.com/w80/ke.png 2x" width="28" height="20" alt="">
+              <span class="country-dial" id="country-dial">+254</span>
+              <svg class="country-caret" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7.5 10 12.5 15 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="country-menu" id="country-menu" hidden>
+              <input type="search" class="country-search form-input" id="country-search" placeholder="Search country" autocomplete="off">
+              <ul class="country-list" id="country-list" role="listbox"></ul>
+            </div>
+            {{ form.personal_phone }}
+          </div>
+          <span class="field-hint">Select your country flag and code, then enter your number. Work phone linking coming soon.</span>
+          {% if form.country_code.errors %}<span class="field-error">{{ form.country_code.errors.0 }}</span>{% endif %}
+          {% if form.personal_phone.errors %}<span class="field-error">{{ form.personal_phone.errors.0 }}</span>{% endif %}
+        </div>
+        {{ form.countries_json|json_script:"country-codes-data" }}
+
+        <fieldset class="form-fieldset">
+          <legend>Identification</legend>
+          <div class="id-type-options">
+            {% for radio in form.id_type %}
+            <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
+            {% endfor %}
+          </div>
+          {% if form.id_type.errors %}<span class="field-error">{{ form.id_type.errors.0 }}</span>{% endif %}
+
+          <div class="form-field">
+            <label for="id-country-trigger">Country of nationality</label>
+            {{ form.id_country }}
+            <div class="phone-field id-country-field" id="id-country-field">
+              <button type="button" class="country-trigger country-trigger--wide" id="id-country-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select nationality country">
+                <img class="country-flag" id="id-country-flag" src="https://flagcdn.com/w40/ke.png" srcset="https://flagcdn.com/w80/ke.png 2x" width="28" height="20" alt="">
+                <span class="country-name" id="id-country-name">Kenya</span>
+                <svg class="country-caret" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7.5 10 12.5 15 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="country-menu country-menu--full" id="id-country-menu" hidden>
+                <input type="search" class="country-search form-input" id="id-country-search" placeholder="Search country" autocomplete="off">
+                <ul class="country-list" id="id-country-list" role="listbox"></ul>
+              </div>
+            </div>
+            <span class="field-hint">Defaults to Kenya. Independent of your phone country code.</span>
+            {% if form.id_country.errors %}<span class="field-error">{{ form.id_country.errors.0 }}</span>{% endif %}
+          </div>
+
+          <div class="form-field" id="citizen-id-field">
+            <label for="{{ form.identification_number.id_for_label }}">Identification number</label>
+            {{ form.identification_number }}
+            {% if form.identification_number.errors %}<span class="field-error">{{ form.identification_number.errors.0 }}</span>{% endif %}
+          </div>
+
+          <div class="form-field is-hidden" id="alien-id-field">
+            <label for="{{ form.alien_number.id_for_label }}">Alien number</label>
+            {{ form.alien_number }}
+            {% if form.alien_number.errors %}<span class="field-error">{{ form.alien_number.errors.0 }}</span>{% endif %}
+          </div>
+        </fieldset>
+
+        <div class="form-field">
+          <label for="id_login_code">6-digit login code</label>
+          {{ form.login_code }}
+          <span class="field-hint" id="login-code-status" aria-live="polite">Choose a unique 6-digit code for signing in.</span>
+          {% if form.login_code.errors %}<span class="field-error">{{ form.login_code.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <div class="label-row">
+            <label for="id_password1">Password</label>
+            <button type="button" class="link-btn" data-target="id_password1" aria-pressed="false">Show</button>
+          </div>
+          {{ form.password1 }}
+          <span class="field-hint">At least 6 characters. Digits or words allowed (e.g. 000000). Stored encrypted.</span>
+          {% if form.password1.errors %}<span class="field-error">{{ form.password1.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <div class="label-row">
+            <label for="id_password2">Confirm password</label>
+            <button type="button" class="link-btn" data-target="id_password2" aria-pressed="false">Show</button>
+          </div>
+          {{ form.password2 }}
+          <span class="field-hint" id="password-match-status" aria-live="polite"></span>
+          {% if form.password2.errors %}<span class="field-error">{{ form.password2.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="id_profile_photo">Profile photo</label>
+          <div class="photo-uploader">
+            <div class="photo-preview" id="photo-preview" aria-hidden="true">
+              <img src="" alt="Profile preview" id="photo-preview-img">
+            </div>
+            <div class="photo-actions">
+              {{ form.profile_photo }}
+              <span class="field-hint">Upload or take a photo. Saved as a lightweight WebP for fast loading.</span>
+            </div>
+          </div>
+          {% if form.profile_photo.errors %}<span class="field-error">{{ form.profile_photo.errors.0 }}</span>{% endif %}
+        </div>
+
+        <button type="submit" class="btn btn--primary" id="signup-submit">
+          <span>Submit registration</span>
+          <svg class="justice-icon justice-icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </form>
+
+      <p class="auth-switch">
+        Already have an account?
+        <a href="{% url 'accounts:login' %}">Sign in</a>
+      </p>
+    </div>
+  </section>
+</main>
+{% endblock %}

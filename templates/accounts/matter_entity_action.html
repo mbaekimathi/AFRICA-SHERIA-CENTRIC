@@ -1,0 +1,48 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Action for
+        {% if entity_kind == "case" %}
+        case <strong>{{ entity_label }}</strong>
+        {% else %}
+        matter <strong>{{ entity_label }}</strong>
+        {% endif %}.
+        This workspace tool will be commissioned next.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>{{ page_title }}</h3>
+      <p class="panel__hint">
+        <a href="{{ detail_url }}">{{ detail_label }}</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">{{ page_title }} is not commissioned yet</p>
+        <p class="empty-state__text">
+          You can return to the {{ entity_kind }} details while this action is prepared.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions form-actions--start">
+    <a href="{{ detail_url }}" class="btn btn--quiet">{{ detail_label }}</a>
+    <a href="{{ list_url }}" class="btn btn--quiet">
+      {% if entity_kind == "case" %}Back to active cases{% else %}Back to active matters{% endif %}
+    </a>
+  </div>
+</section>
+{% endblock %}

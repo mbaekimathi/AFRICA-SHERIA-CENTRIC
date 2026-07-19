@@ -1,0 +1,140 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Personal reminders you set when accepting a task. Only you can see these.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Due now</h3>
+      <p class="panel__hint">
+        {% if due_reminder_count %}
+        {{ due_reminder_count }} reminder{{ due_reminder_count|pluralize }}
+        {% else %}
+        None due
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if due_reminders %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Remind at</th>
+              <th scope="col">Task</th>
+              <th scope="col">Type</th>
+              <th scope="col">Task due</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in due_reminders %}
+            <tr class="reminder-row reminder-row--due">
+              <td>
+                <span class="reminder-when">{{ item.task.reminder_at|date:"d M Y, H:i" }}</span>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{{ item.url }}">{{ item.subject }}</a>
+                  <span class="person-cell__meta">{{ item.subject_meta }}</span>
+                </div>
+              </td>
+              <td>
+                {% if item.kind == "case" %}Litigation{% else %}Non-litigation{% endif %}
+              </td>
+              <td>{{ item.task.due_date|date:"d M Y" }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ item.task.status }}">
+                  {{ item.task.get_status_display }}
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No reminders due</p>
+        <p class="empty-state__copy">
+          When a reminder time you set arrives, it will appear here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Upcoming</h3>
+      <p class="panel__hint">
+        {% if upcoming_reminder_count %}
+        {{ upcoming_reminder_count }} scheduled
+        {% else %}
+        None scheduled
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if upcoming_reminders %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Remind at</th>
+              <th scope="col">Task</th>
+              <th scope="col">Type</th>
+              <th scope="col">Task due</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in upcoming_reminders %}
+            <tr class="reminder-row">
+              <td>
+                <span class="reminder-when">{{ item.task.reminder_at|date:"d M Y, H:i" }}</span>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{{ item.url }}">{{ item.subject }}</a>
+                  <span class="person-cell__meta">{{ item.subject_meta }}</span>
+                </div>
+              </td>
+              <td>
+                {% if item.kind == "case" %}Litigation{% else %}Non-litigation{% endif %}
+              </td>
+              <td>{{ item.task.due_date|date:"d M Y" }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ item.task.status }}">
+                  {{ item.task.get_status_display }}
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No upcoming reminders</p>
+        <p class="empty-state__copy">
+          Accept a task and optionally set a reminder date and time — it will show here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

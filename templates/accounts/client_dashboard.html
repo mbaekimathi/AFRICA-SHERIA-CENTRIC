@@ -1,0 +1,106 @@
+{% extends "layouts/client_portal.html" %}
+
+{% block title %}{{ page_title }} — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page page--dashboard" data-reveal-root>
+  <header class="dash-hero" data-reveal>
+    <div class="dash-hero__glow" aria-hidden="true"></div>
+    <div class="dash-hero__orb dash-hero__orb--a" aria-hidden="true"></div>
+    <div class="dash-hero__orb dash-hero__orb--b" aria-hidden="true"></div>
+
+    <div class="dash-hero__icon">
+      <span class="icon-orb icon-orb--violet" aria-hidden="true">
+        <span class="icon-orb__ring"></span>
+        <span class="icon-orb__ring icon-orb__ring--delayed"></span>
+        <span class="icon-orb__core">{{ icon_home|safe }}</span>
+      </span>
+    </div>
+
+    <div class="dash-hero__copy">
+      <p class="dash-hero__kicker">
+        <span class="dash-live" aria-hidden="true"></span>
+        {{ session_greeting }}
+      </p>
+      <h2>{{ welcome_headline|default:page_title }}</h2>
+      <p class="dash-hero__lede">{{ welcome_copy|default:"Follow your matters and stay connected with your counsel." }}</p>
+      <div class="dash-hero__chips">
+        <span class="dash-chip"><span class="dash-chip__dot dash-chip__dot--violet"></span>Client portal</span>
+        <span class="dash-chip"><span class="dash-chip__dot dash-chip__dot--teal"></span>Secure access</span>
+      </div>
+    </div>
+  </header>
+
+  {% if page_nav_items %}
+  <section class="dash-section" data-reveal>
+    <div class="dash-section__head">
+      <div>
+        <p class="dash-section__eyebrow">Portal</p>
+        <h3>Your workspace</h3>
+        <p>Access the areas available on your account.</p>
+      </div>
+    </div>
+    <div class="module-grid module-grid--dash">
+      {% for item in page_nav_items %}
+      <a
+        href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
+        class="module-card module-card--pro{% if item.disabled %} is-disabled{% endif %}"
+        style="--stagger: {{ forloop.counter0 }}"
+        data-magnetic
+        {% if item.disabled %}aria-disabled="true"{% endif %}
+      >
+        <span class="icon-orb icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
+          <span class="icon-orb__shine"></span>
+          <span class="icon-orb__core">{{ item.icon|safe }}</span>
+        </span>
+        <span class="module-card__body">
+          <span class="module-card__label">{{ item.label }}</span>
+          <span class="module-card__hint">{% if item.disabled %}Coming soon{% else %}Open{% endif %}</span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true">
+          <span>{% if item.disabled %}Soon{% else %}Open{% endif %}</span>
+          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if utility_items %}
+  <section class="dash-section" data-reveal>
+    <div class="dash-section__head">
+      <div>
+        <p class="dash-section__eyebrow">Utilities</p>
+        <h3>Stay in the loop</h3>
+        <p>Messages, tasks, and reminders as they come online.</p>
+      </div>
+    </div>
+    <div class="module-grid module-grid--dash">
+      {% for item in utility_items %}
+      <a
+        href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
+        class="module-card module-card--pro{% if item.disabled %} is-disabled{% endif %}"
+        style="--stagger: {{ forloop.counter0 }}"
+        data-magnetic
+        {% if item.disabled %}aria-disabled="true"{% endif %}
+      >
+        <span class="icon-orb icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
+          <span class="icon-orb__shine"></span>
+          <span class="icon-orb__core">{{ item.icon|safe }}</span>
+        </span>
+        <span class="module-card__body">
+          <span class="module-card__label">{{ item.label }}</span>
+          <span class="module-card__hint">{% if item.disabled %}Coming soon{% else %}Open{% endif %}</span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true">
+          <span>{% if item.disabled %}Soon{% else %}Open{% endif %}</span>
+          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</section>
+{% endblock %}

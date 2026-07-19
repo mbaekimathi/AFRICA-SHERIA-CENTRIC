@@ -1,0 +1,157 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="google-drive-settings-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Connect a Google account so Sheria-Centric can use Google Drive for
+        firm documents such as letterheads, stamps, and signatures.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Google account</h3>
+      <p class="panel__hint">
+        {% if google_drive_connected %}
+        Connected
+        {% else %}
+        Not connected
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if not google_oauth_ready %}
+      <div class="empty-state">
+        <p class="empty-state__title">Google OAuth is not configured</p>
+        <p class="empty-state__copy">
+          Set <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>
+          in <code>.env</code>, then restart the server. In Google Cloud Console add:
+          <code>{{ google_oauth_redirect_uri }}</code>
+        </p>
+      </div>
+      {% elif google_drive_connected %}
+      <div class="gdrive-status">
+        <div class="gdrive-status__identity">
+          <span class="status-pill status-pill--active">Connected</span>
+          <div>
+            <p class="gdrive-status__name">
+              {{ google_drive.account_name|default:"Google account" }}
+            </p>
+            <p class="gdrive-status__email">
+              {{ google_drive.account_email|default:"—" }}
+            </p>
+            {% if google_drive.connected_at %}
+            <p class="gdrive-status__meta">
+              Connected
+              {% if google_drive.connected_by %}
+              by {{ google_drive.connected_by.get_full_name|default:google_drive.connected_by.login_code }}
+              {% endif %}
+              on {{ google_drive.connected_at|date:"j M Y, H:i" }}
+            </p>
+            {% endif %}
+          </div>
+        </div>
+        <form
+          method="post"
+          action="{{ google_disconnect_url }}"
+          class="gdrive-status__actions"
+          onsubmit="return confirm('Disconnect Google Drive for the whole firm? All employees will be notified.');"
+        >
+          {% csrf_token %}
+          <input type="hidden" name="google_drive_action" value="disconnect">
+          <input type="hidden" name="next" value="/{{ role_slug }}/{{ page_trail|join:"/" }}/">
+          <button type="submit" class="btn btn--quiet btn--inline" name="disconnect" value="1">
+            Disconnect Google
+          </button>
+        </form>
+      </div>
+      <p class="gdrive-note">
+        Disconnect only clears the app connection (and notifies employees).
+        Folders already on Google Drive are left in place.
+      </p>
+
+      <div class="gdrive-tree">
+        <h4 class="gdrive-tree__title">Firm Drive structure</h4>
+        {% if google_drive_has_structure %}
+        <p class="gdrive-tree__status">
+          <span class="status-pill status-pill--active">Ready</span>
+          {% if google_drive_web_url %}
+          <a href="{{ google_drive_web_url }}" target="_blank" rel="noopener noreferrer">
+            Open company folder in Google Drive
+          </a>
+          {% endif %}
+        </p>
+        {% else %}
+        <p class="gdrive-tree__status">
+          <span class="status-pill status-pill--pending">Pending</span>
+          Structure will be created on connect / reconnect.
+        </p>
+        {% endif %}
+        <ul class="gdrive-tree__list">
+          <li>
+            <strong>{{ firm_drive_root_name }}/</strong>
+            <ul>
+              <li>
+                <strong>Clients/</strong>
+                <ul>
+                  <li>
+                    <em>{each client}/</em>
+                    <ul>
+                      <li>Litigation/{case}/ — case documents</li>
+                      <li>Non-Litigation/{matter}/ — matter documents</li>
+                    </ul>
+                  </li>
+                </ul>
+              </li>
+              <li><strong>Work/</strong> — internal firm work folders</li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+      {% elif not google_oauth_on_loopback %}
+      <div class="gdrive-connect">
+        <p class="gdrive-connect__copy">
+          Google only allows OAuth from <strong>localhost</strong> (not LAN IPs like
+          192.168.x.x). Open this settings page on the server PC via localhost, sign in
+          if asked, then connect Google.
+        </p>
+        <a class="btn btn--primary btn--inline" href="{{ google_localhost_settings_url }}">
+          Open on localhost to connect Google
+        </a>
+        <p class="gdrive-note">
+          After connecting once, you can return to this LAN address — the firm
+          connection is stored in the database.
+        </p>
+      </div>
+      {% else %}
+      <div class="gdrive-connect">
+        <p class="gdrive-connect__copy">
+          Sign in with Google to authorize Drive access for this firm.
+          Prefer a shared firm Google account when possible.
+        </p>
+        <a class="btn btn--google gdrive-connect__btn" href="{{ google_connect_url }}?next=/{{ role_slug }}/{{ page_trail|join:"/" }}/">
+          <svg class="provider-icon provider-icon--google" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          Sign in with Google
+        </a>
+        <p class="gdrive-note">
+          Redirect URI registered in Google Cloud:
+          <code>{{ google_oauth_redirect_uri }}</code>
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

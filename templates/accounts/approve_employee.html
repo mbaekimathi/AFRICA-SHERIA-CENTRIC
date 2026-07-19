@@ -1,0 +1,163 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--form-medium"
+  id="live-entity-page"
+  data-status-url="{% url 'accounts:workspace_entity_status' %}?kind=employee&amp;id={{ employee.pk }}"
+  data-expected-status="{{ employee.status }}"
+  data-gone-url="{{ list_url }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Approve employee</h2>
+      <p class="page-lead">
+        Review submitted details and uploads for
+        <strong>{{ employee.get_full_name|default:employee.login_code }}</strong>, then allocate a role and approve access.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employee profile</h3>
+      <p class="panel__hint">
+        <a href="{{ list_url }}">Back to onboarding &amp; approvals</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <div class="review-identity">
+        {% if employee.profile_photo %}
+        <img class="avatar avatar--lg" src="{{ employee.profile_photo.url }}" alt="">
+        {% else %}
+        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+          {{ employee.first_name|slice:":1"|upper }}{{ employee.last_name|slice:":1"|upper }}
+        </div>
+        {% endif %}
+        <div>
+          <p class="identity-name">{{ employee.get_full_name|default:employee.login_code }}</p>
+          <p class="identity-meta">
+            Current role: {{ employee.get_role_display }}
+            · Login code {{ employee.login_code }}
+            · <span class="status-pill status-pill--{{ employee.status }}">{{ employee.get_status_display }}</span>
+          </p>
+        </div>
+      </div>
+
+      <dl class="settings-grid review-grid">
+        <div><dt>Email</dt><dd>{{ employee.personal_email }}</dd></div>
+        <div><dt>Phone</dt><dd>{{ employee.personal_phone|default:"—" }}</dd></div>
+        <div><dt>ID type</dt><dd>{{ employee.get_id_type_display }}</dd></div>
+        {% if employee.id_type == "citizen" %}
+        <div><dt>ID number</dt><dd>{{ employee.identification_number|default:"—" }}</dd></div>
+        {% else %}
+        <div><dt>Alien number</dt><dd>{{ employee.alien_number|default:"—" }}</dd></div>
+        {% endif %}
+        <div><dt>Joined</dt><dd>{{ employee.date_joined|date:"d M Y, H:i" }}</dd></div>
+        <div><dt>Payment method</dt><dd>{{ employee.get_payment_method_display|default:"—" }}</dd></div>
+        {% if employee.payment_method == "mobile" %}
+        <div><dt>Mobile company</dt><dd>{{ employee.mobile_money_company|default:"—" }}</dd></div>
+        <div><dt>Mobile number</dt><dd>{{ employee.mobile_money_number|default:"—" }}</dd></div>
+        {% elif employee.payment_method == "bank" %}
+        <div><dt>Bank name</dt><dd>{{ employee.bank_name|default:"—" }}</dd></div>
+        <div><dt>Account number</dt><dd>{{ employee.bank_account_number|default:"—" }}</dd></div>
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Uploaded documents</h3>
+      <p class="panel__hint">Open files to verify before approving</p>
+    </div>
+    <div class="panel__body">
+      {% if documents %}
+      <ul class="doc-list">
+        {% for label, number, file in documents %}
+        <li class="doc-list__item">
+          <div>
+            <p class="doc-list__label">{{ label }}</p>
+            {% if number %}
+            <p class="doc-list__meta">{{ number }}</p>
+            {% endif %}
+          </div>
+          {% if file %}
+          <a class="btn btn--quiet btn--inline" href="{{ file.url }}" target="_blank" rel="noopener">View upload</a>
+          {% else %}
+          <span class="doc-list__missing">No file uploaded</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No documents on file</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Decision</h3>
+      <p class="panel__hint">Allocate a role, then approve to activate this account</p>
+    </div>
+    <div class="panel__body">
+      <div class="form-actions form-actions--start">
+        <a href="{{ list_url }}" class="btn btn--quiet">Cancel</a>
+        <button
+          type="button"
+          class="btn btn--primary btn--inline"
+          id="open-role-modal"
+          aria-haspopup="dialog"
+          aria-controls="role-allocate-modal"
+        >
+          Allocate role &amp; approve
+        </button>
+      </div>
+    </div>
+  </section>
+</section>
+
+<dialog class="workspace-modal" id="role-allocate-modal" aria-labelledby="role-modal-title">
+  <form method="post" class="workspace-modal__card" id="role-allocate-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="approve">
+    <header class="workspace-modal__head">
+      <h2 id="role-modal-title">Allocate role</h2>
+      <p>
+        Choose the workspace role for
+        <strong>{{ employee.get_full_name|default:employee.login_code }}</strong>
+        before approving.
+      </p>
+    </header>
+
+    <div class="workspace-modal__body">
+      <div class="form-field">
+        <label for="id_allocate_role">Role <span aria-hidden="true">*</span></label>
+        <select name="role" id="id_allocate_role" class="form-input" required>
+          <option value="" disabled {% if not employee.role %}selected{% endif %}>Select a role</option>
+          {% for value, label in role_choices %}
+          <option value="{{ value }}" {% if employee.role == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <span class="field-hint">This determines which dashboard they land on after approval.</span>
+      </div>
+    </div>
+
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-role-modal">Cancel</button>
+      <button type="submit" class="btn btn--primary btn--inline">Approve employee</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/approve-employee.js' %}" defer></script>
+{% endblock %}

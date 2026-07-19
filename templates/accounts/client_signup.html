@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Client Sign Up — Sheria-Centric{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/site.css' %}">
+{% if google_client_id %}
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<main class="auth-shell">
+  <section class="auth-brand" aria-label="Sheria-Centric brand">
+    <div class="auth-brand__glow" aria-hidden="true"></div>
+    <div class="auth-brand__content">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none">
+          <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+          <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <p class="brand-name">Sheria Centric</p>
+      <p class="brand-tagline">Create your client account. New accounts start as Pending Onboarding.</p>
+    </div>
+  </section>
+
+  <section class="auth-panel">
+    <div class="auth-card auth-card--wide">
+      <header class="auth-card__header">
+        <div class="mobile-brand">
+          <svg class="justice-icon justice-icon--sm" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+            <path d="M60 22V98" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+            <path d="M42 30H78" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+            <path d="M60 30L28 58M60 30L92 58" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+            <path d="M48 98H72" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+          </svg>
+          <span>Sheria-Centric</span>
+        </div>
+        <p class="auth-kicker"><a href="{% url 'accounts:home' %}">← Home</a></p>
+        <h1>Create client account</h1>
+        <p>Status after signup: Pending Onboarding</p>
+      </header>
+
+      {% if google_client_id %}
+      <div id="google-btn-wrap" class="google-btn-wrap"
+           data-client-id="{{ google_client_id }}"
+           data-google-url="{% url 'accounts:client_google' %}"></div>
+      <p id="google-auth-status" class="field-hint" hidden></p>
+      <form id="google-auth-form" method="post" action="{% url 'accounts:client_google' %}" class="is-hidden">
+        {% csrf_token %}
+        <input type="hidden" name="credential" id="google-credential">
+      </form>
+      <div class="auth-divider"><span>or register with email</span></div>
+      {% endif %}
+
+      <form method="post" class="auth-form" enctype="multipart/form-data" id="client-signup-form" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="id_client_type">Client type <span aria-hidden="true">*</span></label>
+          {{ form.client_type }}
+          {% if form.client_type.errors %}<span class="field-error">{{ form.client_type.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-row" id="individual-name-fields">
+          <div class="form-field">
+            <label for="id_client_first_name">First name</label>
+            {{ form.first_name }}
+            {% if form.first_name.errors %}<span class="field-error">{{ form.first_name.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="id_client_last_name">Last name</label>
+            {{ form.last_name }}
+            {% if form.last_name.errors %}<span class="field-error">{{ form.last_name.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="form-field is-hidden" id="corporate-name-fields">
+          <label for="id_client_company_name">Company name</label>
+          {{ form.company_name }}
+          {% if form.company_name.errors %}<span class="field-error">{{ form.company_name.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="id_client_email">Email</label>
+          <div class="email-with-provider">
+            <span class="email-provider" id="email-provider" data-provider="email" aria-hidden="true">
+              <svg class="provider-icon provider-icon--google" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              <svg class="provider-icon provider-icon--yahoo" viewBox="0 0 24 24"><path fill="#6001D2" d="M3 4.5 8.2 14.2V19.5h2.6v-5.3L16 4.5h-2.9l-2.6 5.1L7.9 4.5H3zm12.8 6.2c0 2.4 1.5 3.8 3.7 3.8 1.1 0 2-.3 2.7-.8l-.7-1.9c-.5.3-1 .5-1.6.5-1.1 0-1.8-.7-1.8-1.9V6.8H21V4.5h-5.2v6.2z"/></svg>
+              <svg class="provider-icon provider-icon--microsoft" viewBox="0 0 24 24"><path fill="#F25022" d="M11.4 11.4H2V2h9.4v9.4z"/><path fill="#7FBA00" d="M22 11.4h-9.4V2H22v9.4z"/><path fill="#00A4EF" d="M11.4 22H2v-9.4h9.4V22z"/><path fill="#FFB900" d="M22 22h-9.4v-9.4H22V22z"/></svg>
+              <svg class="provider-icon provider-icon--email" viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></svg>
+            </span>
+            {{ form.email }}
+          </div>
+          <div class="provider-hints" aria-hidden="true">
+            <span class="provider-chip" title="Google"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></span>
+            <span class="provider-chip" title="Yahoo"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="#6001D2" d="M3 4.5 8.2 14.2V19.5h2.6v-5.3L16 4.5h-2.9l-2.6 5.1L7.9 4.5H3zm12.8 6.2c0 2.4 1.5 3.8 3.7 3.8 1.1 0 2-.3 2.7-.8l-.7-1.9c-.5.3-1 .5-1.6.5-1.1 0-1.8-.7-1.8-1.9V6.8H21V4.5h-5.2v6.2z"/></svg></span>
+            <span class="provider-chip" title="Outlook"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="#F25022" d="M11.4 11.4H2V2h9.4v9.4z"/><path fill="#7FBA00" d="M22 11.4h-9.4V2H22v9.4z"/><path fill="#00A4EF" d="M11.4 22H2v-9.4h9.4V22z"/><path fill="#FFB900" d="M22 22h-9.4v-9.4H22V22z"/></svg></span>
+          </div>
+          <span class="field-hint" id="email-domain-hint">Google, Yahoo, Outlook, iCloud, or Proton emails for individuals. Corporate emails allowed for companies.</span>
+          {% if form.email.errors %}<span class="field-error">{{ form.email.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="id_client_phone">Phone number</label>
+          {{ form.country_code }}
+          <div class="phone-field" id="phone-field">
+            <button type="button" class="country-trigger" id="country-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select country code">
+              <img class="country-flag" id="country-flag" src="https://flagcdn.com/w40/ke.png" srcset="https://flagcdn.com/w80/ke.png 2x" width="28" height="20" alt="">
+              <span class="country-dial" id="country-dial">+254</span>
+              <svg class="country-caret" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 7.5 10 12.5 15 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="country-menu" id="country-menu" hidden>
+              <input type="search" class="country-search form-input" id="country-search" placeholder="Search country" autocomplete="off">
+              <ul class="country-list" id="country-list" role="listbox"></ul>
+            </div>
+            {{ form.phone }}
+          </div>
+          {% if form.country_code.errors %}<span class="field-error">{{ form.country_code.errors.0 }}</span>{% endif %}
+          {% if form.phone.errors %}<span class="field-error">{{ form.phone.errors.0 }}</span>{% endif %}
+        </div>
+        {{ form.countries_json|json_script:"country-codes-data" }}
+
+        <div class="form-field">
+          <div class="label-row">
+            <label for="id_client_password1">Password</label>
+            <button type="button" class="link-btn" data-target="id_client_password1" aria-pressed="false">Show</button>
+          </div>
+          {{ form.password1 }}
+          {% if form.password1.errors %}<span class="field-error">{{ form.password1.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <div class="label-row">
+            <label for="id_client_password2">Confirm password</label>
+            <button type="button" class="link-btn" data-target="id_client_password2" aria-pressed="false">Show</button>
+          </div>
+          {{ form.password2 }}
+          <span class="field-hint" id="password-match-status" aria-live="polite"></span>
+          {% if form.password2.errors %}<span class="field-error">{{ form.password2.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="id_client_profile_photo">Profile photo</label>
+          <div class="photo-uploader">
+            <div class="photo-preview" id="photo-preview" aria-hidden="true">
+              <img src="" alt="Profile preview" id="photo-preview-img">
+            </div>
+            <div class="photo-actions">
+              {{ form.profile_photo }}
+              <span class="field-hint">Optional. Compressed automatically for fast loading.</span>
+            </div>
+          </div>
+          {% if form.profile_photo.errors %}<span class="field-error">{{ form.profile_photo.errors.0 }}</span>{% endif %}
+        </div>
+
+        <button type="submit" class="btn btn--primary">
+          <span>Create account</span>
+        </button>
+      </form>
+
+      <p class="auth-switch">
+        Already have a client account?
+        <a href="{% url 'accounts:client_login' %}">Sign in</a>
+      </p>
+    </div>
+  </section>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/country-phone.js' %}" defer></script>
+<script src="{% static 'js/client-auth.js' %}" defer></script>
+{% endblock %}

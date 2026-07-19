@@ -1,0 +1,51 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}Tracking — {{ document.title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--docs-session"
+  data-docs-session
+  data-ping-url="{{ ping_url }}"
+  data-target-url="{{ target_url }}"
+  data-library-url="{{ library_url }}"
+>
+  {% csrf_token %}
+  <header class="docs-session__hero">
+    <p class="page-kicker">Document session</p>
+    <h2>{{ document.title }}</h2>
+    <p class="page-lead">
+      Tracking started when the document opened. It stops automatically when you close
+      the document window.
+    </p>
+  </header>
+
+  <div class="docs-session__panel">
+    <div class="docs-session__timer" aria-live="polite">
+      <span class="docs-session__timer-label">Time used</span>
+      <strong class="docs-session__timer-value" data-docs-session-timer>0s</strong>
+    </div>
+    <p class="docs-session__detected">
+      Detected activity:
+      <strong data-docs-session-kind-label>Viewing</strong>
+    </p>
+    <p class="docs-session__status" data-docs-session-status>Opening document…</p>
+    <div class="docs-session__actions">
+      <a
+        class="btn btn--primary"
+        href="{{ target_url }}"
+        data-docs-session-open
+      >
+        {% if document.source == "google_doc" %}Open document{% else %}Open file{% endif %}
+      </a>
+      <button type="button" class="btn btn--quiet" data-docs-session-end>Stop now</button>
+      <a class="btn btn--quiet" href="{{ library_url }}">Back to library</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/docs-session.js' %}" defer></script>
+{% endblock %}

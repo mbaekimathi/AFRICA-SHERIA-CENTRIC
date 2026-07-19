@@ -1,0 +1,87 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page"
+  id="live-list-page"
+  data-revision-url="{% url 'accounts:workspace_list_revision' %}?list=clients"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Active and suspended client accounts registered with the firm.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Clients</h3>
+      <p class="panel__hint">{{ client_count }} total · live</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if clients %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Client</th>
+              <th scope="col">Email</th>
+              <th scope="col">Phone</th>
+              <th scope="col">Joined</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for client in clients %}
+            <tr>
+              <td>
+                <div class="person-cell">
+                  {% if client.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ client.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {% if client.client_type == "corporate" %}
+                    {{ client.company_name|default:client.email|slice:":1"|upper }}
+                    {% else %}
+                    {{ client.first_name|slice:":1"|upper }}{{ client.last_name|slice:":1"|upper }}
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <span class="person-cell__name">{{ client.get_full_name }}</span>
+                    <span class="person-cell__meta">{{ client.get_client_type_display }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>{{ client.email }}</td>
+              <td>{{ client.phone|default:"—" }}</td>
+              <td>{{ client.date_joined|date:"d M Y" }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ client.status }}">
+                  {{ client.get_status_display }}
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No clients found</p>
+        <p class="empty-state__text">
+          There are no active or suspended client accounts yet.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="employee-pending-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Pending approval</h2>
+      <p class="page-lead">
+        Your onboarding details have been submitted and are awaiting firm approval.
+        Sidebar links stay locked until your account is activated — then you will be
+        taken to your <strong>{{ role_label }}</strong> dashboard automatically.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Your registration status</h3>
+      <p class="panel__hint">Updates automatically when approved</p>
+    </div>
+    <div class="panel__body">
+      <p>
+        Hello {{ user.get_full_name|default:user.login_code }}. Your role is currently
+        <strong>{{ user.get_role_display }}</strong> and your status is
+        <strong>{{ user.get_status_display }}</strong>.
+      </p>
+      <p>
+        A firm administrator must approve your account before you can access your role dashboard.
+        Work email and work phone linking will be available soon.
+      </p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>What happens next</h3>
+    </div>
+    <div class="panel__body">
+      <ul class="plain-list">
+        <li>Firm leadership reviews your registration and onboarding details.</li>
+        <li>Your role may be updated (Advocate, Intern, IT Support, and more).</li>
+        <li>Once marked Active, you will be redirected to your role dashboard.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>About our work</h3>
+      <p class="panel__hint">While you wait</p>
+    </div>
+    <div class="panel__body">
+      <p>
+        Sheria-Centric equips advocates and firm teams to manage matters, documents, and client
+        relationships with clarity, confidentiality, and professional discipline.
+      </p>
+      <ul class="plain-list">
+        <li>Matter-centred workflows for advocates, interns, and firm administrators.</li>
+        <li>Secure document handling with clear access by role.</li>
+        <li>Client onboarding and approval that keeps the firm in control.</li>
+        <li>Session tools that keep your working day organised and accountable.</li>
+      </ul>
+    </div>
+  </section>
+</section>
+{% endblock %}

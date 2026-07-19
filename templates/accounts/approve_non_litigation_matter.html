@@ -1,0 +1,191 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--form-wide"
+  id="live-entity-page"
+  data-status-url="{% url 'accounts:workspace_entity_status' %}?kind=matter&amp;id={{ matter.pk }}"
+  data-expected-status="{{ matter.status }}"
+  data-gone-url="{{ list_url }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Approve matter</h2>
+      <p class="page-lead">
+        Review matter details, allocate an employee, set their task, then approve.
+        Only the assigned employee is notified and can accept or reject the task.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Matter details</h3>
+      <p class="panel__hint">
+        <a href="{{ list_url }}">Back to pending matters</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <div class="review-identity">
+        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+          {{ matter.get_matter_category_display|slice:":1"|upper }}
+        </div>
+        <div>
+          <p class="identity-name">{{ matter.matter_title }}</p>
+          <p class="identity-meta">
+            {{ matter.client.get_full_name }}
+            · <span class="status-pill status-pill--{{ matter.status }}">{{ matter.get_status_display }}</span>
+          </p>
+        </div>
+      </div>
+
+      <dl class="settings-grid review-grid">
+        <div><dt>Date opened</dt><dd>{{ matter.date_opened|date:"d M Y" }}</dd></div>
+        <div><dt>Client</dt><dd>{{ matter.client.get_full_name }}</dd></div>
+        <div><dt>Matter category</dt><dd>{{ matter.get_matter_category_display }}</dd></div>
+        <div><dt>Matter title</dt><dd>{{ matter.matter_title }}</dd></div>
+        <div>
+          <dt>Registered by</dt>
+          <dd>
+            {% if matter.registered_by %}
+            {{ matter.registered_by.get_full_name }}
+            {% else %}
+            —
+            {% endif %}
+          </dd>
+        </div>
+        <div class="review-grid__full">
+          <dt>Client instructions</dt>
+          <dd>{{ matter.client_instructions|default:"—"|linebreaksbr }}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Parties</h3>
+      <p class="panel__hint">{{ parties|length }} registered</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if parties %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Party name</th>
+              <th scope="col">Type</th>
+              <th scope="col">Category</th>
+              <th scope="col">Firm/Agent</th>
+              <th scope="col">Phone</th>
+              <th scope="col">Email</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for party in parties %}
+            <tr>
+              <td>
+                {{ party.party_name }}
+                {% if party.is_client_party %}
+                <span class="status-pill status-pill--active">Client</span>
+                {% endif %}
+              </td>
+              <td>{{ party.get_party_type_display }}</td>
+              <td>{{ party.get_category_display|default:"—" }}</td>
+              <td>{{ party.firm_agent|default:"—" }}</td>
+              <td>{{ party.phone|default:"—" }}</td>
+              <td>{{ party.email|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No parties listed</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Decision</h3>
+      <p class="panel__hint">Allocate an employee and task them before approving</p>
+    </div>
+    <div class="panel__body">
+      <div class="form-actions form-actions--start">
+        <a href="{{ list_url }}" class="btn btn--quiet">Cancel</a>
+        <a href="{{ edit_url }}" class="btn btn--quiet btn--inline">Edit</a>
+        <button
+          type="button"
+          class="btn btn--primary btn--inline"
+          id="open-allocate-modal"
+          aria-haspopup="dialog"
+          aria-controls="case-allocate-modal"
+        >
+          Allocate &amp; approve
+        </button>
+      </div>
+    </div>
+  </section>
+</section>
+
+<dialog
+  class="workspace-modal"
+  id="case-allocate-modal"
+  aria-labelledby="case-allocate-title"
+  {% if open_allocate_modal %}open{% endif %}
+>
+  <form method="post" class="workspace-modal__card" id="case-allocate-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="action" value="approve">
+    <header class="workspace-modal__head">
+      <h2 id="case-allocate-title">Allocate &amp; task employee</h2>
+      <p>
+        Assign this matter to an active employee and create their task brief.
+        Only that employee will be notified and can accept or reject the task.
+      </p>
+    </header>
+
+    <div class="workspace-modal__body">
+      {% if form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="form-field">
+        <label for="id_assigned_to">Allocate to employee <span aria-hidden="true">*</span></label>
+        {{ form.assigned_to }}
+        {% if form.assigned_to.errors %}<span class="field-error">{{ form.assigned_to.errors.0 }}</span>{% endif %}
+      </div>
+
+      <div class="form-field">
+        <label for="id_instructions">Instructions / Brief</label>
+        {{ form.instructions }}
+        {% if form.instructions.errors %}<span class="field-error">{{ form.instructions.errors.0 }}</span>{% endif %}
+      </div>
+
+      <div class="form-field">
+        <label for="id_due_date">Due date <span aria-hidden="true">*</span></label>
+        {{ form.due_date }}
+        {% if form.due_date.errors %}<span class="field-error">{{ form.due_date.errors.0 }}</span>{% endif %}
+      </div>
+    </div>
+
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-allocate-modal">Cancel</button>
+      <button type="submit" class="btn btn--primary btn--inline">Approve matter</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/approve-case.js' %}" defer></script>
+{% endblock %}

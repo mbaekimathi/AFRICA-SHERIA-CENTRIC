@@ -1,0 +1,379 @@
+{% extends "layouts/workspace.html" %}
+{% load static document_extras %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--docs">
+  <header class="docs-hero">
+    <div class="docs-hero__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Documents</h2>
+      <p class="page-lead">
+        Create, upload, rename, and open files linked to this
+        {% if entity_kind == "case" %}case{% else %}matter{% endif %}.
+        Opens are tracked with views, edits, and time used.
+      </p>
+    </div>
+    <a href="{{ detail_url }}" class="btn btn--quiet docs-hero__back">{{ detail_label }}</a>
+  </header>
+
+  <div class="docs-context" aria-label="Current {% if entity_kind == "case" %}case{% else %}matter{% endif %}">
+    <span class="docs-context__badge">
+      {% if entity_kind == "case" %}Case{% else %}Matter{% endif %}
+    </span>
+    <div class="docs-context__text">
+      <strong>{{ entity_label }}</strong>
+      <span>
+        {% if entity_kind == "case" %}
+        {{ case.client.get_full_name }}
+        {% else %}
+        {{ matter.client.get_full_name }}
+        {% endif %}
+      </span>
+    </div>
+    {% if google_drive_connected %}
+    <span class="docs-context__status docs-context__status--on">Drive ready</span>
+    {% else %}
+    <a class="docs-context__status docs-context__status--off" href="{{ google_drive_settings_url }}">
+      Connect Drive
+    </a>
+    {% endif %}
+  </div>
+
+  {% if not google_drive_connected %}
+  <div class="docs-alert" role="alert">
+    Connect Google Drive before creating or uploading documents.
+    <a href="{{ google_drive_settings_url }}">Open settings</a>
+  </div>
+  {% endif %}
+
+  <div class="docs-compose">
+    <div class="docs-compose__intro">
+      <h3>Add to library</h3>
+      <p>Upload an existing file or create one in Google Drive. Both land in this folder’s library.</p>
+    </div>
+
+    <div class="docs-actions">
+      <form
+        method="post"
+        class="docs-tile docs-tile--upload"
+        enctype="multipart/form-data"
+        novalidate
+        data-docs-upload
+      >
+        {% csrf_token %}
+        <input type="hidden" name="document_action" value="upload">
+        <div class="docs-tile__head">
+          <span class="docs-tile__icon docs-tile__icon--upload" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <div class="docs-tile__copy">
+            <h3>Upload existing file</h3>
+            <p>Upload a PDF, Word file, image or scan into this {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder.</p>
+          </div>
+        </div>
+
+        {% if upload_form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in upload_form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="docs-tile__body">
+          <div class="docs-field">
+            <label for="{{ upload_form.title.id_for_label }}">Name <span aria-hidden="true">*</span></label>
+            {{ upload_form.title }}
+            {% if upload_form.title.errors %}<span class="field-error">{{ upload_form.title.errors.0 }}</span>{% endif %}
+          </div>
+
+          <div class="docs-field">
+            <span class="docs-field__label">File <span aria-hidden="true">*</span></span>
+            <label class="docs-drop" for="{{ upload_form.file.id_for_label }}" data-docs-drop>
+              <span class="docs-drop__visual" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+                  <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="docs-drop__copy">
+                <strong data-docs-drop-title>Drop a file or browse</strong>
+                <span data-docs-drop-meta>PDF · Word · Excel · PowerPoint · images</span>
+              </span>
+              {{ upload_form.file }}
+            </label>
+            {% if upload_form.file.errors %}<span class="field-error">{{ upload_form.file.errors.0 }}</span>{% endif %}
+          </div>
+
+          <div class="docs-field">
+            <label for="{{ upload_form.notes.id_for_label }}">Notes <span class="docs-optional">(optional)</span></label>
+            {{ upload_form.notes }}
+            {% if upload_form.notes.errors %}<span class="field-error">{{ upload_form.notes.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="docs-tile__foot">
+          <p class="docs-tile__hint">Max 15 MB per upload.</p>
+          <button type="submit" class="btn btn--docs-upload" {% if not google_drive_connected %}disabled{% endif %}>
+            Upload &amp; save
+          </button>
+        </div>
+      </form>
+
+      <form method="post" class="docs-tile docs-tile--google" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="document_action" value="create_google">
+        <div class="docs-tile__head">
+          <span class="docs-tile__icon docs-tile__icon--google" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <path d="M8.05 3.5 2.2 13.6h4.95l5.85-10.1H8.05Zm7.9 0-2.9 5.02 2.92 5.08h5.83L15.95 3.5ZM4.55 15.1 2.2 19.15c.45.95 1.2 1.7 2.15 2.2h15.3c.95-.5 1.7-1.25 2.15-2.2L19.45 15.1H4.55Z"/>
+            </svg>
+          </span>
+          <div class="docs-tile__copy">
+            <h3>Create with Google</h3>
+            <p>Create a Google Doc, Sheet, or Slides file in this {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder.</p>
+          </div>
+        </div>
+
+        {% if create_form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in create_form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="docs-tile__body">
+          <div class="docs-field">
+            <label for="{{ create_form.title.id_for_label }}">File name <span aria-hidden="true">*</span></label>
+            {{ create_form.title }}
+            {% if create_form.title.errors %}<span class="field-error">{{ create_form.title.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ create_form.description.id_for_label }}">Description <span aria-hidden="true">*</span></label>
+            {{ create_form.description }}
+            {% if create_form.description.errors %}<span class="field-error">{{ create_form.description.errors.0 }}</span>{% endif %}
+          </div>
+          <fieldset class="docs-type">
+            <legend>Create as <span aria-hidden="true">*</span></legend>
+            <div class="docs-type__options" role="radiogroup" aria-label="Google file type">
+              {% for value, label in create_form.google_type.field.choices %}
+              <label class="docs-type__option docs-type__option--{{ value }}">
+                <input
+                  type="radio"
+                  name="{{ create_form.google_type.name }}"
+                  value="{{ value }}"
+                  class="docs-type-input"
+                  {% if create_form.google_type.value == value %}checked{% elif not create_form.is_bound and value == "document" %}checked{% endif %}
+                >
+                <span class="docs-type__card">
+                  <span class="docs-type__glyph" aria-hidden="true"></span>
+                  <span class="docs-type__name">{{ label }}</span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% if create_form.google_type.errors %}
+            <span class="field-error">{{ create_form.google_type.errors.0 }}</span>
+            {% endif %}
+          </fieldset>
+        </div>
+
+        <div class="docs-tile__foot">
+          <p class="docs-tile__hint">Opens in Google Drive for editing.</p>
+          <button type="submit" class="btn btn--docs-google" {% if not google_drive_connected %}disabled{% endif %}>
+            Create file
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <section class="docs-library" aria-labelledby="docs-library-title">
+    <div class="docs-library__head">
+      <div class="docs-library__title">
+        <h3 id="docs-library-title">Library</h3>
+        <p class="docs-library__sub">Open starts tracking. Close the document window to stop.</p>
+      </div>
+      <span class="docs-library__count" title="Documents in library">
+        {% if documents %}{{ documents|length }}{% else %}0{% endif %}
+      </span>
+    </div>
+
+    {% if documents %}
+    <ul class="docs-list">
+      {% for document in documents %}
+      {% with summary=document.activity_summary %}
+      <li class="docs-item docs-item--{{ document.source }}">
+        <div class="docs-item__row">
+          <span class="docs-item__icon" aria-hidden="true">
+            {% if document.source == "google_doc" %}
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M8.05 3.5 2.2 13.6h4.95l5.85-10.1H8.05Zm7.9 0-2.9 5.02 2.92 5.08h5.83L15.95 3.5ZM4.55 15.1 2.2 19.15c.45.95 1.2 1.7 2.15 2.2h15.3c.95-.5 1.7-1.25 2.15-2.2L19.45 15.1H4.55Z"/>
+            </svg>
+            {% else %}
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+              <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {% endif %}
+          </span>
+
+          <div class="docs-item__main">
+            <div class="docs-item__topline">
+              <h4 class="docs-item__title">{{ document.title }}</h4>
+              <span class="docs-item__type">{{ document.type_label }}</span>
+            </div>
+            {% if document.description %}
+            <p class="docs-item__desc">{{ document.description|truncatechars:120 }}</p>
+            {% elif document.notes %}
+            <p class="docs-item__desc docs-item__desc--notes">{{ document.notes|truncatechars:120 }}</p>
+            {% endif %}
+            <div class="docs-item__meta">
+              <span>{{ document.updated_at|date:"d M Y" }}</span>
+              {% if document.uploaded_by %}
+              <span>{{ document.uploaded_by.get_full_name }}</span>
+              {% endif %}
+              <span>{{ summary.total_seconds|duration }} total</span>
+            </div>
+          </div>
+
+          <div class="docs-item__actions">
+            {% if document.open_url or document.local_file %}
+            <a
+              class="btn btn--docs-open btn--inline"
+              href="{{ document.tracked_open_url|default:document.open_url }}"
+              data-docs-open-track
+              data-target-url="{% if document.open_url %}{{ document.open_url }}{% elif document.local_file %}{{ document.local_file.url }}{% endif %}"
+            >
+              Open
+            </a>
+            {% endif %}
+            {% if document.local_file %}
+            <a
+              class="btn btn--quiet btn--inline"
+              href="{% url 'accounts:download_document' role=role_slug document_id=document.pk %}"
+            >
+              Download
+            </a>
+            {% endif %}
+            <button
+              type="button"
+              class="btn btn--quiet btn--inline"
+              data-docs-edit
+              data-id="{{ document.pk }}"
+            >
+              Edit details
+            </button>
+            <form
+              method="post"
+              class="docs-item__remove-form"
+              onsubmit="return confirm('Remove “{{ document.title|escapejs }}”? It will also go to Drive trash.');"
+            >
+              {% csrf_token %}
+              <input type="hidden" name="document_action" value="delete">
+              <input type="hidden" name="document_id" value="{{ document.pk }}">
+              <button type="submit" class="btn btn--quiet btn--inline docs-item__remove">Remove</button>
+            </form>
+          </div>
+        </div>
+
+        <div hidden data-docs-edit-source="{{ document.pk }}">
+          <span data-field="title">{{ document.title }}</span>
+          <span data-field="description">{{ document.description }}</span>
+          <span data-field="notes">{{ document.notes }}</span>
+          <span data-field="type">{{ document.type_label }}</span>
+        </div>
+
+        <a
+          class="docs-item__activity-link"
+          href="{{ document.activity_url }}"
+        >
+          <span>Activity</span>
+          <span>{{ summary.total_seconds|duration }} total</span>
+        </a>
+      </li>
+      {% endwith %}
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="docs-empty">
+      <span class="docs-empty__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+          <path d="M14 2v6h6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <p class="docs-empty__title">Nothing here yet</p>
+      <p class="docs-empty__text">Upload a file or create with Google to get started.</p>
+    </div>
+    {% endif %}
+  </section>
+</section>
+
+<dialog
+  class="workspace-modal docs-edit-modal"
+  id="docs-edit-modal"
+  aria-labelledby="docs-edit-heading"
+>
+  <form method="post" class="workspace-modal__card docs-edit-card" id="docs-edit-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="document_action" value="rename">
+    <input type="hidden" name="document_id" id="docs-edit-id" value="">
+    <header class="workspace-modal__head docs-edit-head">
+      <div>
+        <p class="docs-edit-eyebrow" id="docs-edit-type">Document</p>
+        <h2 id="docs-edit-heading">Edit document details</h2>
+        <p>Update the name, description, and notes. Changing the name also renames the file on Google Drive.</p>
+      </div>
+      <button type="button" class="btn btn--quiet btn--inline" id="docs-edit-close" aria-label="Close">
+        Close
+      </button>
+    </header>
+    <div class="workspace-modal__body docs-edit-body">
+      <div class="docs-field">
+        <label for="docs-edit-name">Name <span aria-hidden="true">*</span></label>
+        <input
+          id="docs-edit-name"
+          class="form-input"
+          type="text"
+          name="title"
+          required
+          maxlength="255"
+          autocomplete="off"
+        >
+      </div>
+      <div class="docs-field">
+        <label for="docs-edit-description">Description</label>
+        <textarea
+          id="docs-edit-description"
+          class="form-input"
+          name="description"
+          rows="3"
+          placeholder="What this document is for"
+        ></textarea>
+      </div>
+      <div class="docs-field">
+        <label for="docs-edit-notes">Notes</label>
+        <textarea
+          id="docs-edit-notes"
+          class="form-input"
+          name="notes"
+          rows="2"
+          placeholder="Optional internal notes"
+        ></textarea>
+      </div>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="docs-edit-cancel">Cancel</button>
+      <button type="submit" class="btn btn--primary">Save details</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/docs-upload.js' %}" defer></script>
+<script src="{% static 'js/docs-open.js' %}" defer></script>
+{% endblock %}

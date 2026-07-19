@@ -1,0 +1,442 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}My settings — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page settings-page"
+  id="settings-page"
+  data-role-theme="{{ user.role }}"
+  data-saved-theme="{% if appearance_form.ui_theme.value == 'product' %}default{% else %}{{ appearance_form.ui_theme.value|default:'default' }}{% endif %}"
+  data-saved-font="{{ appearance_form.ui_font.value|default:'plex' }}"
+  data-saved-density="{{ appearance_form.ui_density.value|default:'comfortable' }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Account studio</p>
+      <h2>My settings</h2>
+      <p class="page-lead">
+        Keep your profile lean, then open details when you need them. Shape your workspace with themes, type, and density.
+        Manage alert sounds from Notifications in the sidebar.
+      </p>
+    </div>
+  </header>
+
+  <section class="settings-hero">
+    <div class="settings-hero__glow" aria-hidden="true"></div>
+    <div class="settings-hero__body">
+      <div class="settings-hero__identity">
+        {% if user.profile_photo %}
+        <img class="avatar avatar--xl" src="{{ user.profile_photo.url }}" alt="Profile photo of {{ user.get_full_name }}">
+        {% else %}
+        <div class="avatar avatar--xl avatar--placeholder" aria-hidden="true">
+          {{ user.first_name|slice:":1"|upper }}{{ user.last_name|slice:":1"|upper }}
+        </div>
+        {% endif %}
+        <div>
+          <p class="settings-hero__name">{{ user.get_full_name|default:user.login_code }}</p>
+          <p class="settings-hero__meta">
+            <span>{{ role_label }}</span>
+            <span class="status-pill status-pill--{{ user.status }}">{{ user.get_status_display }}</span>
+          </p>
+          <p class="settings-hero__email">{{ user.personal_email }}</p>
+        </div>
+      </div>
+      <div class="settings-hero__actions">
+        <button
+          type="button"
+          class="btn btn--quiet btn--inline"
+          id="open-view-profile"
+          aria-haspopup="dialog"
+          aria-controls="view-profile-modal"
+        >
+          View details
+        </button>
+        <button
+          type="button"
+          class="btn btn--primary btn--inline"
+          id="open-edit-profile"
+          aria-haspopup="dialog"
+          aria-controls="edit-profile-modal"
+        >
+          Edit profile
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <div class="settings-chips" aria-label="Current appearance">
+    <span class="settings-chip">Theme <strong id="chip-theme">{{ current_theme_label }}</strong></span>
+    <span class="settings-chip">Type <strong id="chip-font">{{ current_font_label }}</strong></span>
+    <span class="settings-chip">Density <strong id="chip-density">{{ current_density_label }}</strong></span>
+  </div>
+
+  <form method="post" class="settings-studio" id="appearance-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="settings_action" value="appearance">
+
+    <div class="settings-studio__main">
+      <div class="settings-tabs" role="tablist" aria-label="Appearance controls">
+        <button type="button" class="settings-tab is-active" role="tab" aria-selected="true" data-tab="themes" id="tab-themes">Themes</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="fonts" id="tab-fonts">Typography</button>
+        <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="density" id="tab-density">Density</button>
+      </div>
+
+      <div class="settings-panels">
+        <div class="settings-panel" id="panel-themes" role="tabpanel" aria-labelledby="tab-themes">
+          <div class="settings-panel__intro">
+            <h3>Color themes</h3>
+            <p>Balanced palettes — titles, icons, and text follow your theme. Preview updates instantly.</p>
+          </div>
+          {% for group in theme_groups %}
+          <div class="theme-group">
+            <p class="theme-group__label">{{ group.label }}</p>
+            <div class="theme-grid" role="radiogroup" aria-label="{{ group.label }}">
+              {% for option in group.options %}
+              <label class="theme-card theme-card--{{ option.preview|default:option.value }}{% if option.featured %} theme-card--featured{% endif %}{% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %} is-selected{% endif %}">
+                <input
+                  type="radio"
+                  name="{{ appearance_form.ui_theme.name }}"
+                  value="{{ option.value }}"
+                  {% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %}checked{% endif %}
+                  data-theme-preview="{{ option.preview|default:option.value }}"
+                  data-theme-label="{{ option.label }}"
+                >
+                <span class="theme-card__stage" aria-hidden="true">
+                  <span class="theme-card__rail"></span>
+                  <span class="theme-card__canvas">
+                    <span class="theme-card__line"></span>
+                    <span class="theme-card__line theme-card__line--short"></span>
+                    <span class="theme-card__block"></span>
+                  </span>
+                </span>
+                <span class="theme-card__meta">
+                  <span class="theme-card__name">{{ option.label }}</span>
+                  <span class="theme-card__blurb">{{ option.blurb }}</span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+          {% if appearance_form.ui_theme.errors %}
+          <p class="field-error">{{ appearance_form.ui_theme.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        <div class="settings-panel" id="panel-fonts" role="tabpanel" aria-labelledby="tab-fonts" hidden>
+          <div class="settings-panel__intro">
+            <h3>Typography</h3>
+            <p>{{ font_count }} curated pairings for body and headings across your role pages.</p>
+          </div>
+          <div class="font-grid" role="radiogroup" aria-label="Workspace fonts">
+            {% for font in font_catalog %}
+            <label class="font-card font-card--{{ font.value }}{% if appearance_form.ui_font.value == font.value %} is-selected{% endif %}">
+              <input
+                type="radio"
+                name="{{ appearance_form.ui_font.name }}"
+                value="{{ font.value }}"
+                {% if appearance_form.ui_font.value == font.value %}checked{% endif %}
+                data-font-preview="{{ font.value }}"
+                data-font-label="{{ font.label }}"
+              >
+              <span class="font-card__specimen" aria-hidden="true">Sheria</span>
+              <span class="font-card__body">Counsel that reads with clarity and presence.</span>
+              <span class="font-card__pair">
+                <span class="font-card__tag">{{ font.sans }}</span>
+                <span class="font-card__tag">{{ font.serif }}</span>
+              </span>
+              <span class="font-card__name">{{ font.label }}</span>
+              <span class="font-card__mood">{{ font.mood }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          {% if appearance_form.ui_font.errors %}
+          <p class="field-error">{{ appearance_form.ui_font.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        <div class="settings-panel" id="panel-density" role="tabpanel" aria-labelledby="tab-density" hidden>
+          <div class="settings-panel__intro">
+            <h3>Spacing density</h3>
+            <p>Tune how compact or open your workspace chrome feels.</p>
+          </div>
+          <div class="density-grid" role="radiogroup" aria-label="Workspace density">
+            {% for option in density_catalog %}
+            <label class="density-card density-card--{{ option.value }}{% if appearance_form.ui_density.value == option.value %} is-selected{% endif %}">
+              <input
+                type="radio"
+                name="{{ appearance_form.ui_density.name }}"
+                value="{{ option.value }}"
+                {% if appearance_form.ui_density.value == option.value %}checked{% endif %}
+                data-density-preview="{{ option.value }}"
+                data-density-label="{{ option.label }}"
+              >
+              <span class="density-card__bars" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </span>
+              <p class="density-card__name">{{ option.label }}</p>
+              <p class="density-card__blurb">{{ option.blurb }}</p>
+            </label>
+            {% endfor %}
+          </div>
+          {% if appearance_form.ui_density.errors %}
+          <p class="field-error">{{ appearance_form.ui_density.errors.0 }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <aside class="settings-studio__preview" aria-label="Live appearance preview">
+      <div class="settings-preview__head">
+        <h3>Live preview</h3>
+        <span class="settings-preview__badge">Realtime</span>
+      </div>
+      <div class="settings-preview__stage">
+        <div class="settings-preview__shell">
+          <div class="settings-preview__nav" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+            <span class="settings-preview__nav-item">
+              <i></i>
+              <em class="settings-preview__dot"></em>
+            </span>
+          </div>
+          <div class="settings-preview__main">
+            <div class="settings-preview__topbar" aria-hidden="true">
+              <span class="settings-preview__crumb"></span>
+              <span class="settings-preview__bell">
+                <i></i>
+                <em class="settings-preview__dot">1</em>
+              </span>
+            </div>
+            <div class="settings-preview__content">
+              <p class="settings-preview__title" id="preview-title">Matter desk</p>
+              <p class="settings-preview__text" id="preview-text">
+                Your sidebar, surfaces, type, and notification badges update as you explore.
+              </p>
+              <div class="settings-preview__card">
+                <strong>Pending review</strong>
+                <span class="settings-preview__text">Allocate counsel and activate the matter task.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-preview__meta">
+        <p><span>Theme</span> <strong id="preview-theme">{{ current_theme_label }}</strong></p>
+        <p><span>Typography</span> <strong id="preview-font">{{ current_font_label }}</strong></p>
+        <p><span>Density</span> <strong id="preview-density">{{ current_density_label }}</strong></p>
+      </div>
+    </aside>
+
+    <div class="settings-savebar" id="appearance-savebar" aria-live="polite">
+      <p class="settings-savebar__copy">
+        <strong>Unsaved appearance</strong> — previewing changes on this page only until you save.
+      </p>
+      <button type="submit" class="btn btn--primary btn--inline">Save appearance</button>
+    </div>
+  </form>
+</section>
+
+<dialog
+  class="workspace-modal"
+  id="view-profile-modal"
+  aria-labelledby="view-profile-title"
+  {% if open_view_modal %}open{% endif %}
+>
+  <div class="workspace-modal__card">
+    <header class="workspace-modal__head">
+      <h2 id="view-profile-title">Profile details</h2>
+      <p>Full account information — kept off the main page until you need it.</p>
+    </header>
+    <div class="workspace-modal__body">
+      <div class="profile-sheet__hero">
+        {% if user.profile_photo %}
+        <img class="avatar avatar--lg" src="{{ user.profile_photo.url }}" alt="">
+        {% else %}
+        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+          {{ user.first_name|slice:":1"|upper }}{{ user.last_name|slice:":1"|upper }}
+        </div>
+        {% endif %}
+        <div>
+          <p class="identity-name">{{ user.get_full_name|default:user.login_code }}</p>
+          <p class="identity-meta">{{ role_label }} · {{ user.get_status_display }}</p>
+        </div>
+      </div>
+      <div class="profile-sheet__sections">
+        <section class="profile-sheet__section">
+          <h3>Account</h3>
+          <dl class="settings-grid">
+            <div><dt>Login code</dt><dd>{{ user.login_code }}</dd></div>
+            <div><dt>Role</dt><dd>{{ role_label }}</dd></div>
+            <div><dt>Status</dt><dd>{{ user.get_status_display }}</dd></div>
+          </dl>
+        </section>
+        <section class="profile-sheet__section">
+          <h3>Contact</h3>
+          <dl class="settings-grid">
+            <div><dt>Personal email</dt><dd>{{ user.personal_email }}</dd></div>
+            <div><dt>Personal phone</dt><dd>{{ user.personal_phone|default:"—" }}</dd></div>
+            {% if user.work_email %}
+            <div><dt>Work email</dt><dd>{{ user.work_email }}</dd></div>
+            {% endif %}
+            {% if user.work_phone %}
+            <div><dt>Work phone</dt><dd>{{ user.work_phone }}</dd></div>
+            {% endif %}
+          </dl>
+        </section>
+        <section class="profile-sheet__section">
+          <h3>Identity</h3>
+          <dl class="settings-grid">
+            <div><dt>Nationality</dt><dd>{{ nationality_label }}</dd></div>
+            <div><dt>ID type</dt><dd>{{ user.get_id_type_display }}</dd></div>
+            {% if user.id_type == "citizen" %}
+            <div><dt>ID number</dt><dd>{{ user.identification_number|default:"—" }}</dd></div>
+            {% else %}
+            <div><dt>Alien number</dt><dd>{{ user.alien_number|default:"—" }}</dd></div>
+            {% endif %}
+          </dl>
+        </section>
+      </div>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-view-profile">Close</button>
+      <button type="button" class="btn btn--primary" id="view-to-edit-profile">Edit</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog
+  class="workspace-modal"
+  id="edit-profile-modal"
+  aria-labelledby="edit-profile-title"
+  {% if open_edit_modal %}open{% endif %}
+>
+  <form
+    method="post"
+    enctype="multipart/form-data"
+    class="workspace-modal__card workspace-form"
+    id="edit-profile-form"
+    novalidate
+  >
+    {% csrf_token %}
+    <input type="hidden" name="settings_action" value="profile">
+    <header class="workspace-modal__head">
+      <h2 id="edit-profile-title">Edit profile</h2>
+      <p>Update personal details. Role and login code stay firm-managed.</p>
+    </header>
+    <div class="workspace-modal__body">
+      {% if profile_form.non_field_errors %}
+      <div class="form-errors" role="alert">
+        {% for error in profile_form.non_field_errors %}
+        <p>{{ error }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="form-row form-row--name">
+        <div class="form-field form-field--title">
+          <label for="{{ profile_form.courtesy_title.id_for_label }}">Title</label>
+          {{ profile_form.courtesy_title }}
+          {% if profile_form.courtesy_title.errors %}
+          <p class="field-error">{{ profile_form.courtesy_title.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ profile_form.first_name.id_for_label }}">First name</label>
+          {{ profile_form.first_name }}
+          {% if profile_form.first_name.errors %}
+          <p class="field-error">{{ profile_form.first_name.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ profile_form.last_name.id_for_label }}">Last name</label>
+          {{ profile_form.last_name }}
+          {% if profile_form.last_name.errors %}
+          <p class="field-error">{{ profile_form.last_name.errors.0 }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-field">
+          <label for="{{ profile_form.personal_email.id_for_label }}">Personal email</label>
+          {{ profile_form.personal_email }}
+          {% if profile_form.personal_email.errors %}
+          <p class="field-error">{{ profile_form.personal_email.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ profile_form.personal_phone.id_for_label }}">Personal phone</label>
+          {{ profile_form.personal_phone }}
+          {% if profile_form.personal_phone.errors %}
+          <p class="field-error">{{ profile_form.personal_phone.errors.0 }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-field">
+          <label for="{{ profile_form.id_country.id_for_label }}">Nationality</label>
+          {{ profile_form.id_country }}
+          {% if profile_form.id_country.errors %}
+          <p class="field-error">{{ profile_form.id_country.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div class="form-field">
+          <span class="form-label">ID type</span>
+          <div class="id-type-options">
+            {% for radio in profile_form.id_type %}
+            <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
+            {% endfor %}
+          </div>
+          {% if profile_form.id_type.errors %}
+          <p class="field-error">{{ profile_form.id_type.errors.0 }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="form-row" data-id-fields>
+        <div class="form-field" data-id-citizen>
+          <label for="{{ profile_form.identification_number.id_for_label }}">National ID</label>
+          {{ profile_form.identification_number }}
+          {% if profile_form.identification_number.errors %}
+          <p class="field-error">{{ profile_form.identification_number.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div class="form-field" data-id-non-citizen hidden>
+          <label for="{{ profile_form.alien_number.id_for_label }}">Alien / permit number</label>
+          {{ profile_form.alien_number }}
+          {% if profile_form.alien_number.errors %}
+          <p class="field-error">{{ profile_form.alien_number.errors.0 }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label for="{{ profile_form.profile_photo.id_for_label }}">Profile photo</label>
+        {{ profile_form.profile_photo }}
+        {% if profile_form.profile_photo.errors %}
+        <p class="field-error">{{ profile_form.profile_photo.errors.0 }}</p>
+        {% endif %}
+        <p class="field-hint">Optional. Leave blank to keep your current photo.</p>
+      </div>
+
+      <div class="settings-readonly">
+        <p><span>Login code</span> {{ user.login_code }}</p>
+        <p><span>Role</span> {{ role_label }}</p>
+        <p><span>Status</span> {{ user.get_status_display }}</p>
+      </div>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-edit-profile">Cancel</button>
+      <button type="submit" class="btn btn--primary">Save changes</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/settings.js' %}" defer></script>
+{% endblock %}

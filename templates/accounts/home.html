@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Sheria Centric — Practice ERP for law firms{% endblock %}
+{% block body_class %}site-page site-page--landing{% endblock %}
+{% block extra_head %}
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'css/site.css' %}">
+{% endblock %}
+
+{% block content %}
+<main class="landing">
+  <header class="lp-nav">
+    <a class="lp-nav__brand" href="{% url 'accounts:home' %}">
+      <span class="lp-nav__mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none">
+          <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+          <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="lp-nav__name">Sheria Centric</span>
+    </a>
+    <nav class="lp-nav__actions" aria-label="Account access">
+      <a class="lp-nav__link" href="{% url 'accounts:login' %}">Employee login</a>
+      <a class="lp-nav__cta" href="{% url 'accounts:client_login' %}">Client login</a>
+    </nav>
+  </header>
+
+  <section class="lp-hero" aria-label="Sheria Centric introduction" data-landing-hero>
+    <div class="lp-hero__ambient" aria-hidden="true">
+      <span class="lp-hero__orb lp-hero__orb--a"></span>
+      <span class="lp-hero__orb lp-hero__orb--b"></span>
+      <span class="lp-hero__grid"></span>
+    </div>
+
+    <div class="lp-hero__inner">
+      <div class="lp-hero__intro">
+        <div class="lp-brand">
+          <div class="lp-brand__mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" fill="none">
+              <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+              <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="lp-brand__text">
+            <p class="lp-brand__name">Sheria Centric</p>
+            <p class="lp-brand__tag">Legal practice platform</p>
+          </div>
+        </div>
+
+        <div class="lp-dots" role="tablist" aria-label="Feature slides" data-slide-dots>
+          <button type="button" class="lp-dot lp-dot--violet is-active" role="tab" aria-selected="true" aria-label="Platform overview" data-slide-to="0"></button>
+          <button type="button" class="lp-dot lp-dot--teal" role="tab" aria-selected="false" aria-label="Practice operations" data-slide-to="1"></button>
+          <button type="button" class="lp-dot lp-dot--orange" role="tab" aria-selected="false" aria-label="Portals" data-slide-to="2"></button>
+        </div>
+        <div class="lp-progress" aria-hidden="true"><span class="lp-progress__bar" data-slide-progress></span></div>
+      </div>
+
+      <div class="lp-slides" data-slides>
+        <article class="lp-slide is-active" data-slide role="tabpanel" aria-hidden="false">
+          <p class="lp-slide__kicker">ERP platform for</p>
+          <h1 class="lp-slide__title">Law Firms,<br>Lawyers &amp;<br>Advocates</h1>
+          <p class="lp-slide__type" data-type-phrases='["Never miss a court date","Track every matter end-to-end","Run your firm from one desk"]'>
+            <span data-type-text></span><span class="lp-caret" aria-hidden="true">|</span>
+          </p>
+          <p class="lp-slide__lede">
+            Professional practice management for Kenyan advocates — matters, diaries,
+            documents, clients, and team workflows in one organised workspace.
+          </p>
+        </article>
+
+        <article class="lp-slide" data-slide role="tabpanel" aria-hidden="true">
+          <p class="lp-slide__kicker">Built for busy practice</p>
+          <h1 class="lp-slide__title">Cases,<br>Clients &amp;<br>Court Diaries</h1>
+          <p class="lp-slide__type" data-type-phrases='["File updates in seconds","Reminders before every hearing","Documents stay with the matter"]'>
+            <span data-type-text></span><span class="lp-caret" aria-hidden="true">|</span>
+          </p>
+          <p class="lp-slide__lede">
+            Keep litigation and non-litigation work structured with clear ownership,
+            attendance tracking, and files that never leave the matter record.
+          </p>
+        </article>
+
+        <article class="lp-slide" data-slide role="tabpanel" aria-hidden="true">
+          <p class="lp-slide__kicker">One platform · two portals</p>
+          <h1 class="lp-slide__title">Firm Staff<br>&amp; Clients,<br>Connected</h1>
+          <p class="lp-slide__type" data-type-phrases='["Employee workspace ready","Secure client sign-in","Approvals without the chase"]'>
+            <span data-type-text></span><span class="lp-caret" aria-hidden="true">|</span>
+          </p>
+          <p class="lp-slide__lede">
+            Advocates manage practice work in the firm workspace while clients follow
+            progress through a dedicated portal — same system, clear roles.
+          </p>
+        </article>
+      </div>
+
+      <div class="lp-ctas">
+        <a class="lp-btn lp-btn--primary" href="{% url 'accounts:client_signup' %}">Start free trial</a>
+        <a class="lp-btn lp-btn--ghost" href="#capabilities">See how it works</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section" id="capabilities">
+    <div class="lp-section__head">
+      <p class="lp-section__eyebrow">Capabilities</p>
+      <h2>Organised around how firms actually work</h2>
+      <p class="lp-section__lede">Core practice tools in a clear structure — not a cluttered dashboard.</p>
+    </div>
+    <ul class="lp-caps">
+      <li class="lp-cap" data-reveal style="--stagger: 0">
+        <span class="lp-cap__orb lp-cap__orb--violet" aria-hidden="true">
+          <span class="lp-cap__ring"></span>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5h16M7 4v3.5M17 4v3.5M6.5 11.5h11v7.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-7.5Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="lp-cap__index">01</span>
+        <h3 class="lp-cap__title">Matters &amp; cases</h3>
+        <p class="lp-cap__text">Litigation and non-litigation records with ownership, status, and history.</p>
+      </li>
+      <li class="lp-cap" data-reveal style="--stagger: 1">
+        <span class="lp-cap__orb lp-cap__orb--teal" aria-hidden="true">
+          <span class="lp-cap__ring"></span>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M7 3.5h10v3H7v-3Zm-2 5h14v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8.5Zm5 4h6M10 16h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="lp-cap__index">02</span>
+        <h3 class="lp-cap__title">Court diaries</h3>
+        <p class="lp-cap__text">Hearings, attendance, and reminders so dates are never lost in a notebook.</p>
+      </li>
+      <li class="lp-cap" data-reveal style="--stagger: 2">
+        <span class="lp-cap__orb lp-cap__orb--orange" aria-hidden="true">
+          <span class="lp-cap__ring"></span>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M8 4h6l4 4v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm6 0v4h4M9.5 13h5M9.5 16.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="lp-cap__index">03</span>
+        <h3 class="lp-cap__title">Documents</h3>
+        <p class="lp-cap__text">Uploads and Drive links kept with the matter — searchable and accountable.</p>
+      </li>
+      <li class="lp-cap" data-reveal style="--stagger: 3">
+        <span class="lp-cap__orb lp-cap__orb--gold" aria-hidden="true">
+          <span class="lp-cap__ring"></span>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm-6.5 8c.6-3 3.2-5 6.5-5s5.9 2 6.5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="lp-cap__index">04</span>
+        <h3 class="lp-cap__title">Clients &amp; team</h3>
+        <p class="lp-cap__text">Client portal access alongside employee roles, approvals, and onboarding.</p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="lp-section lp-section--portals" id="portals">
+    <div class="lp-section__head">
+      <p class="lp-section__eyebrow">Access</p>
+      <h2>Choose your portal</h2>
+      <p class="lp-section__lede">Firm staff and clients each enter through a dedicated, secure path.</p>
+    </div>
+    <div class="lp-portals">
+      <a class="lp-portal" href="{% url 'accounts:login' %}">
+        <span class="lp-portal__label">Employees</span>
+        <span class="lp-portal__title">Firm workspace</span>
+        <span class="lp-portal__text">Sign in with your 6-digit code to manage matters, tasks, and firm operations.</span>
+        <span class="lp-portal__cta">Employee login</span>
+      </a>
+      <a class="lp-portal lp-portal--accent" href="{% url 'accounts:client_login' %}">
+        <span class="lp-portal__label">Clients</span>
+        <span class="lp-portal__title">Client portal</span>
+        <span class="lp-portal__text">Access matter updates with Google or email — clear status without chasing counsel.</span>
+        <span class="lp-portal__cta">Client login</span>
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer class="lp-footer">
+  <div class="lp-footer__brand">
+    <span class="lp-footer__name">Sheria Centric</span>
+    <span class="lp-footer__tag">Legal practice platform</span>
+  </div>
+  <nav class="lp-footer__links" aria-label="Footer">
+    <a href="{% url 'accounts:login' %}">Employees</a>
+    <a href="{% url 'accounts:client_login' %}">Clients</a>
+    <a href="{% url 'accounts:client_signup' %}">Start trial</a>
+  </nav>
+  <p class="lp-footer__copy">© {% now "Y" %} Sheria Centric. All rights reserved.</p>
+</footer>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/site.js' %}" defer></script>
+{% endblock %}
