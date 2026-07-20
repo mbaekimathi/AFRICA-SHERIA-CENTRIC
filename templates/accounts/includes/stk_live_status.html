@@ -1,0 +1,42 @@
+{% if stk_push %}
+<div
+  id="stk-live-monitor"
+  class="pay-stk-status pay-stk-status--{{ stk_push.stk_status|default:'pending' }}"
+  role="status"
+  aria-live="polite"
+  {% if stk_poll_url and stk_push.stk_status != "success" and stk_push.stk_status != "failed" %}
+  data-stk-live
+  data-poll-url="{{ stk_poll_url }}"
+  data-status="{{ stk_push.stk_status|default:'pending' }}"
+  {% endif %}
+>
+  <h3>STK payment status</h3>
+  <p>
+    Prompt sent to <strong>{{ stk_push.phone }}</strong>
+    for <strong>KES {{ stk_push.amount }}</strong>.
+  </p>
+
+  <p class="pay-stk-banner pay-stk-banner--success js-stk-banner" {% if stk_push.stk_status != "success" %}hidden{% endif %}>
+    Payment successful.
+    {% if stk_push.mpesa_receipt %}
+    M-Pesa receipt: <strong class="js-stk-receipt">{{ stk_push.mpesa_receipt }}</strong>.
+    {% else %}
+    <strong class="js-stk-receipt"></strong>
+    {% endif %}
+    Invoice is <span class="js-stk-invoice-status">{{ stk_push.invoice_status_label|default:invoice.get_status_display }}</span>.
+  </p>
+
+  <p class="pay-stk-banner pay-stk-banner--failed js-stk-banner" {% if stk_push.stk_status != "failed" %}hidden{% endif %}>
+    Payment failed<span class="js-stk-fail-reason">{% if stk_push.result_desc %}: {{ stk_push.result_desc }}{% endif %}</span>.
+  </p>
+
+  <p class="pay-stk-banner pay-stk-banner--pending js-stk-banner" {% if stk_push.stk_status == "success" or stk_push.stk_status == "failed" %}hidden{% endif %}>
+    <span class="pay-stk-live">
+      <span class="btn-spinner" aria-hidden="true"></span>
+      <span class="pay-stk-live__label js-stk-live-label">
+        {% if stk_push.result_desc %}{{ stk_push.result_desc }}{% else %}Checking payment status live — enter your M-Pesa PIN on your phone.{% endif %}
+      </span>
+    </span>
+  </p>
+</div>
+{% endif %}

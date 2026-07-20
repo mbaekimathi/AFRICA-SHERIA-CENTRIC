@@ -1473,6 +1473,50 @@ class Notification(models.Model):
         self.save(update_fields=["is_read", "read_at"])
 
 
+class ClientNotification(models.Model):
+    """In-app notification for a client portal user (billing, messages)."""
+
+    class Category(models.TextChoices):
+        BILLING = "billing", "Billing"
+        MESSAGE = "message", "Message"
+
+    recipient = models.ForeignKey(
+        Client,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    category = models.CharField(max_length=16, choices=Category.choices)
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True, default="")
+    target_url = models.CharField(
+        max_length=500,
+        help_text="Client portal path to open when the notification is clicked.",
+    )
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(blank=True, null=True)
+    source_key = models.CharField(max_length=120, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["recipient", "is_read", "-created_at"]),
+            models.Index(fields=["recipient", "category", "-created_at"]),
+        ]
+        verbose_name = "Client notification"
+        verbose_name_plural = "Client notifications"
+
+    def __str__(self):
+        return f"{self.get_category_display()}: {self.title}"
+
+    def mark_read(self):
+        if self.is_read:
+            return
+        self.is_read = True
+        self.read_at = timezone.now()
+        self.save(update_fields=["is_read", "read_at"])
+
+
 class FirmCompanyInformation(models.Model):
     """
     Firm-wide company profile (singleton row, pk=1).
@@ -1504,6 +1548,15 @@ class FirmCompanyInformation(models.Model):
     email = models.EmailField(blank=True, default="")
     phone = models.CharField(max_length=40, blank=True, default="")
     website = models.URLField(blank=True, default="")
+    linkedin_url = models.URLField(blank=True, default="")
+    facebook_url = models.URLField(blank=True, default="")
+    instagram_url = models.URLField(blank=True, default="")
+    x_url = models.URLField(
+        blank=True,
+        default="",
+        verbose_name="X (Twitter) URL",
+    )
+    youtube_url = models.URLField(blank=True, default="")
     physical_address = models.TextField(blank=True, default="")
     postal_address = models.CharField(max_length=255, blank=True, default="")
     city = models.CharField(max_length=120, blank=True, default="")
@@ -1598,6 +1651,56 @@ class FirmCompanyInformation(models.Model):
         return (
             getattr(settings, "FIRM_DISPLAY_NAME", "") or ""
         ).strip() or "Sheria Law Firm"
+
+    @property
+    def social_media_links(self) -> list[dict[str, str]]:
+        """Configured social profiles for the public website."""
+        links = []
+        for key, label in (
+            ("linkedin_url", "LinkedIn"),
+            ("facebook_url", "Facebook"),
+            ("instagram_url", "Instagram"),
+            ("x_url", "X"),
+            ("youtube_url", "YouTube"),
+        ):
+            url = (getattr(self, key, "") or "").strip()
+            if url:
+                links.append({"key": key, "label": label, "url": url})
+        return links
+
+    @property
+    def main_image(self):
+        return self.profile_images.order_by("sort_order", "id").first()
+
+
+def company_profile_image_upload_to(instance, filename):
+    return f"company/profile/{filename}"
+
+
+class FirmCompanyProfileImage(models.Model):
+    """Brand image for the firm profile. Lowest sort_order is the main image."""
+
+    company = models.ForeignKey(
+        FirmCompanyInformation,
+        on_delete=models.CASCADE,
+        related_name="profile_images",
+    )
+    image = models.ImageField(upload_to=company_profile_image_upload_to)
+    sort_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        verbose_name = "Company profile image"
+        verbose_name_plural = "Company profile images"
+
+    def __str__(self):
+        return f"{self.company.display_name} image #{self.sort_order}"
+
+    @property
+    def is_main(self) -> bool:
+        main = self.company.main_image
+        return bool(main and main.pk == self.pk)
 
 
 def get_firm_display_name() -> str:
@@ -2319,3 +2422,330 @@ class DocumentContentSnapshot(models.Model):
         if len(text) <= 280:
             return text
         return text[:277].rstrip() + "…"
+
+
+class Invoice(models.Model):
+    """A firm invoice generated under Finance & Billing → General Accounts."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        GENERATED = "generated", "Generated"
+        ISSUED = "issued", "Issued"
+        PARTIALLY_PAID = "partially_paid", "Partially paid"
+        PAID = "paid", "Paid"
+        CANCELLED = "cancelled", "Cancelled"
+
+    invoice_number = models.CharField(max_length=40, unique=True)
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.PROTECT,
+        related_name="invoices",
+    )
+    issue_date = models.DateField()
+    due_date = models.DateField()
+    description = models.TextField(
+        help_text="What this invoice covers.",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    tax_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
+    amount_paid = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Total amount received against this invoice.",
+    )
+    last_mpesa_receipt = models.CharField(max_length=64, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.GENERATED,
+    )
+    created_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="invoices_created",
+    )
+    approved_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="invoices_approved",
+        help_text="Employee who issued / approved this invoice for the client.",
+    )
+    approved_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-issue_date", "-created_at", "-id"]
+        verbose_name = "Invoice"
+        verbose_name_plural = "Invoices"
+
+    def __str__(self):
+        return f"{self.invoice_number} — {self.client}"
+
+    @property
+    def total_amount(self):
+        return (self.amount or 0) + (self.tax_amount or 0)
+
+    @property
+    def balance_due(self):
+        from decimal import Decimal
+
+        paid = self.amount_paid or Decimal("0")
+        balance = self.total_amount - paid
+        return balance if balance > 0 else Decimal("0.00")
+
+    @property
+    def is_payable(self) -> bool:
+        return self.status in {
+            self.Status.ISSUED,
+            self.Status.GENERATED,
+            self.Status.PARTIALLY_PAID,
+        } and self.balance_due > 0
+
+    def apply_payment(self, amount, *, mpesa_receipt: str = ""):
+        """
+        Record a payment and set status to partially_paid or paid.
+        Returns (applied_amount, new_status).
+        """
+        from decimal import Decimal
+
+        pay = Decimal(amount).quantize(Decimal("0.01"))
+        if pay <= 0:
+            return Decimal("0.00"), self.status
+
+        current = (self.amount_paid or Decimal("0")).quantize(Decimal("0.01"))
+        total = Decimal(self.total_amount).quantize(Decimal("0.01"))
+        remaining = total - current
+        if remaining <= 0:
+            self.status = self.Status.PAID
+            self.save(update_fields=["status", "updated_at"])
+            return Decimal("0.00"), self.status
+
+        applied = pay if pay <= remaining else remaining
+        self.amount_paid = current + applied
+        if mpesa_receipt:
+            self.last_mpesa_receipt = (mpesa_receipt or "")[:64]
+        if self.amount_paid >= total:
+            self.amount_paid = total
+            self.status = self.Status.PAID
+        else:
+            self.status = self.Status.PARTIALLY_PAID
+
+        fields = ["amount_paid", "status", "updated_at"]
+        if mpesa_receipt:
+            fields.append("last_mpesa_receipt")
+        self.save(update_fields=fields)
+        return applied, self.status
+
+    @classmethod
+    def next_invoice_number(cls):
+        today = timezone.localdate()
+        prefix = f"INV-{today.strftime('%Y%m%d')}-"
+        latest = (
+            cls.objects.filter(invoice_number__startswith=prefix)
+            .order_by("-invoice_number")
+            .values_list("invoice_number", flat=True)
+            .first()
+        )
+        if latest:
+            try:
+                seq = int(latest.rsplit("-", 1)[-1]) + 1
+            except ValueError:
+                seq = 1
+        else:
+            seq = 1
+        return f"{prefix}{seq:04d}"
+
+
+class MpesaStkRequest(models.Model):
+    """Tracks an STK push against an invoice until success or failure."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        SUCCESS = "success", "Success"
+        FAILED = "failed", "Failed"
+
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.CASCADE,
+        related_name="stk_requests",
+    )
+    checkout_request_id = models.CharField(max_length=128, unique=True)
+    merchant_request_id = models.CharField(max_length=128, blank=True, default="")
+    phone = models.CharField(max_length=20, blank=True, default="")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    result_code = models.CharField(max_length=32, blank=True, default="")
+    result_desc = models.CharField(max_length=255, blank=True, default="")
+    mpesa_receipt = models.CharField(max_length=64, blank=True, default="")
+    simulated = models.BooleanField(default=False)
+    payment_applied = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "M-Pesa STK request"
+        verbose_name_plural = "M-Pesa STK requests"
+
+    def __str__(self):
+        return f"{self.checkout_request_id} ({self.status})"
+
+
+class FinanceSettings(models.Model):
+    """
+    Firm-wide payment methods and M-Pesa configuration (singleton, pk=1).
+    """
+
+    class MpesaStkChannel(models.TextChoices):
+        PAYBILL = "paybill", "Paybill"
+        BUY_GOODS = "buy_goods", "Buy Goods (Till)"
+
+    class MpesaEnv(models.TextChoices):
+        SANDBOX = "sandbox", "Sandbox"
+        PRODUCTION = "production", "Production"
+
+    allow_mpesa = models.BooleanField(default=True)
+    allow_bank_transfer = models.BooleanField(default=True)
+    allow_cash = models.BooleanField(default=True)
+    allow_cheque = models.BooleanField(default=False)
+
+    mpesa_paybill_enabled = models.BooleanField(default=False)
+    mpesa_paybill_number = models.CharField(max_length=20, blank=True, default="")
+    mpesa_paybill_account_label = models.CharField(
+        max_length=64,
+        blank=True,
+        default="Invoice number",
+        help_text="What clients enter as the account reference for Paybill.",
+    )
+
+    mpesa_buy_goods_enabled = models.BooleanField(default=False)
+    mpesa_till_number = models.CharField(max_length=20, blank=True, default="")
+
+    mpesa_stk_enabled = models.BooleanField(default=False)
+    mpesa_stk_channel = models.CharField(
+        max_length=16,
+        choices=MpesaStkChannel.choices,
+        default=MpesaStkChannel.PAYBILL,
+    )
+    mpesa_consumer_key = models.CharField(max_length=255, blank=True, default="")
+    mpesa_consumer_secret = models.CharField(max_length=255, blank=True, default="")
+    mpesa_passkey = models.CharField(max_length=255, blank=True, default="")
+    mpesa_shortcode = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Daraja BusinessShortCode. Defaults to Paybill or Till when blank.",
+    )
+    mpesa_callback_url = models.URLField(blank=True, default="")
+    mpesa_env = models.CharField(
+        max_length=16,
+        choices=MpesaEnv.choices,
+        default=MpesaEnv.SANDBOX,
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="finance_settings_updates",
+    )
+
+    class Meta:
+        verbose_name = "Finance settings"
+        verbose_name_plural = "Finance settings"
+
+    def __str__(self):
+        methods = []
+        if self.allow_mpesa:
+            methods.append("M-Pesa")
+        if self.allow_bank_transfer:
+            methods.append("Bank")
+        if self.allow_cash:
+            methods.append("Cash")
+        if self.allow_cheque:
+            methods.append("Cheque")
+        return "Finance settings (" + (", ".join(methods) or "none") + ")"
+
+    @classmethod
+    def get_solo(cls):
+        obj, created = cls.objects.get_or_create(pk=1)
+        if created:
+            from django.conf import settings as django_settings
+
+            key = getattr(django_settings, "MPESA_CONSUMER_KEY", "") or ""
+            secret = getattr(django_settings, "MPESA_CONSUMER_SECRET", "") or ""
+            shortcode = getattr(django_settings, "MPESA_SHORTCODE", "") or ""
+            passkey = getattr(django_settings, "MPESA_PASSKEY", "") or ""
+            callback = getattr(django_settings, "MPESA_CALLBACK_URL", "") or ""
+            env = getattr(django_settings, "MPESA_ENV", "sandbox") or "sandbox"
+            if key or secret or shortcode or passkey:
+                obj.mpesa_consumer_key = key
+                obj.mpesa_consumer_secret = secret
+                obj.mpesa_passkey = passkey
+                obj.mpesa_shortcode = shortcode
+                obj.mpesa_callback_url = callback
+                obj.mpesa_env = (
+                    cls.MpesaEnv.PRODUCTION
+                    if env.lower() == "production"
+                    else cls.MpesaEnv.SANDBOX
+                )
+                if shortcode:
+                    obj.mpesa_paybill_enabled = True
+                    obj.mpesa_paybill_number = shortcode
+                obj.save()
+        return obj
+
+    @property
+    def enabled_payment_methods(self) -> list[str]:
+        labels = []
+        if self.allow_mpesa:
+            labels.append("M-Pesa")
+        if self.allow_bank_transfer:
+            labels.append("Bank transfer")
+        if self.allow_cash:
+            labels.append("Cash")
+        if self.allow_cheque:
+            labels.append("Cheque")
+        return labels
+
+    @property
+    def stk_business_shortcode(self) -> str:
+        if self.mpesa_shortcode.strip():
+            return self.mpesa_shortcode.strip()
+        if self.mpesa_stk_channel == self.MpesaStkChannel.BUY_GOODS:
+            return self.mpesa_till_number.strip()
+        return self.mpesa_paybill_number.strip()
+
+    @property
+    def stk_transaction_type(self) -> str:
+        if self.mpesa_stk_channel == self.MpesaStkChannel.BUY_GOODS:
+            return "CustomerBuyGoodsOnline"
+        return "CustomerPayBillOnline"
+
+    @property
+    def stk_ready(self) -> bool:
+        return bool(
+            self.allow_mpesa
+            and self.mpesa_stk_enabled
+            and self.mpesa_consumer_key.strip()
+            and self.mpesa_consumer_secret.strip()
+            and self.mpesa_passkey.strip()
+            and self.stk_business_shortcode
+        )

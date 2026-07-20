@@ -59,6 +59,22 @@ urlpatterns = [
         name="workspace_entity_status",
     ),
     path(
+        "<slug:role>/dashboard/finance-billing/general-accounts/payments/"
+        "invoice/<int:invoice_id>/stk-status/",
+        views.invoice_stk_status,
+        name="invoice_stk_status",
+    ),
+    path(
+        "client/finance-billing/invoice/<int:invoice_id>/stk-status/",
+        views.client_invoice_stk_status,
+        name="client_invoice_stk_status",
+    ),
+    path(
+        "invoice/shared/<str:token>/stk-status/",
+        views.shared_invoice_stk_status,
+        name="shared_invoice_stk_status",
+    ),
+    path(
         "api/workspace/clients/search/",
         views.workspace_client_search,
         name="workspace_client_search",
@@ -101,6 +117,11 @@ urlpatterns = [
         name="google_drive_disconnect",
     ),
     path(
+        "integrations/mpesa/callback/",
+        views.mpesa_stk_callback,
+        name="mpesa_stk_callback",
+    ),
+    path(
         "client/onboarding/",
         views.ClientOnboardingView.as_view(),
         name="client_onboarding",
@@ -110,6 +131,41 @@ urlpatterns = [
         "client/dashboard/",
         views.ClientDashboardView.as_view(),
         name="client_dashboard",
+    ),
+    path(
+        "client/finance-billing/",
+        views.ClientBillingView.as_view(),
+        name="client_billing",
+    ),
+    path(
+        "client/finance-billing/invoice/<int:invoice_id>/",
+        views.ClientInvoiceView.as_view(),
+        name="client_invoice",
+    ),
+    path(
+        "client/finance-billing/invoice/<int:invoice_id>/pay/",
+        views.ClientPayInvoiceView.as_view(),
+        name="client_pay_invoice",
+    ),
+    path(
+        "client/finance-billing/invoice/<int:invoice_id>/pdf/",
+        views.ClientInvoicePdfView.as_view(),
+        name="client_invoice_pdf",
+    ),
+    path(
+        "client/api/notifications/",
+        views.client_notifications,
+        name="client_notifications",
+    ),
+    path(
+        "client/api/notifications/<int:notification_id>/open/",
+        views.client_notification_open,
+        name="client_notification_open",
+    ),
+    path(
+        "client/api/notifications/mark-all-read/",
+        views.client_notifications_mark_all_read,
+        name="client_notifications_mark_all_read",
     ),
     path("client/api/status/", views.client_status, name="client_status"),
     path("client/logout/", views.ClientLogoutView.as_view(), name="client_logout"),
@@ -329,6 +385,11 @@ urlpatterns = [
         views.EditFAQView.as_view(),
         name="edit_faq",
     ),
+    path(
+        "<slug:role>/dashboard/company-gallery/<int:item_id>/edit/",
+        views.EditGalleryImageView.as_view(),
+        name="edit_gallery_image",
+    ),
     # Task accept / reject / view (assignee only)
     path(
         "<slug:role>/dashboard/tasks/case/<int:task_id>/",
@@ -349,6 +410,34 @@ urlpatterns = [
         "<slug:role>/dashboard/tasks/matter/<int:task_id>/respond/",
         views.RespondMatterTaskView.as_view(),
         name="respond_matter_task",
+    ),
+    path(
+        "<slug:role>/dashboard/finance-billing/general-accounts/invoicing/"
+        "invoice/<int:invoice_id>/",
+        views.ViewInvoiceView.as_view(),
+        name="view_invoice",
+    ),
+    path(
+        "<slug:role>/dashboard/finance-billing/general-accounts/invoicing/"
+        "invoice/<int:invoice_id>/pdf/",
+        views.InvoicePdfView.as_view(),
+        name="invoice_pdf",
+    ),
+    path(
+        "invoice/shared/<str:token>/pdf/",
+        views.SharedInvoicePdfView.as_view(),
+        name="invoice_pdf_shared",
+    ),
+    path(
+        "invoice/shared/<str:token>/pay/",
+        views.SharedInvoicePayView.as_view(),
+        name="invoice_pay_shared",
+    ),
+    path(
+        "<slug:role>/dashboard/finance-billing/general-accounts/payments/"
+        "invoice/<int:invoice_id>/",
+        views.PayInvoiceView.as_view(),
+        name="pay_invoice",
     ),
     # Role workspace: /<role>/<page>/...  (catch-alls last)
     path("<slug:role>/", views.RoleHomeView.as_view(), name="role_home"),

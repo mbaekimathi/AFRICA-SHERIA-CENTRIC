@@ -15,15 +15,20 @@ from .models import (
     Employee,
     EmployeeBlogPost,
     FirmCompanyInformation,
+    FirmCompanyProfileImage,
     FirmFAQ,
     FirmGalleryImage,
     FirmPracticeArea,
     FirmPracticeAreaImage,
+    FinanceSettings,
     GoogleDriveConnection,
+    ClientNotification,
+    Invoice,
     LitigationCase,
     MatterAttendance,
     MatterParty,
     MatterTask,
+    MpesaStkRequest,
     NonLitigationMatter,
     Notification,
     WebsiteTemplateSetting,
@@ -547,6 +552,30 @@ class NotificationAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "read_at")
 
 
+@admin.register(ClientNotification)
+class ClientNotificationAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "recipient",
+        "category",
+        "title",
+        "is_read",
+        "created_at",
+    )
+    list_filter = ("category", "is_read", "created_at")
+    search_fields = (
+        "title",
+        "body",
+        "source_key",
+        "recipient__first_name",
+        "recipient__last_name",
+        "recipient__email",
+        "recipient__company_name",
+    )
+    readonly_fields = ("created_at", "read_at")
+    raw_id_fields = ("recipient",)
+
+
 @admin.register(FirmPracticeArea)
 class FirmPracticeAreaAdmin(admin.ModelAdmin):
     list_display = ("name", "slug", "rank", "updated_at", "updated_by")
@@ -560,6 +589,13 @@ class FirmPracticeAreaAdmin(admin.ModelAdmin):
 class FirmPracticeAreaImageAdmin(admin.ModelAdmin):
     list_display = ("practice_area", "sort_order", "created_at")
     list_filter = ("practice_area",)
+    list_editable = ("sort_order",)
+
+
+@admin.register(FirmCompanyProfileImage)
+class FirmCompanyProfileImageAdmin(admin.ModelAdmin):
+    list_display = ("company", "sort_order", "created_at")
+    list_filter = ("company",)
     list_editable = ("sort_order",)
 
 
@@ -584,6 +620,59 @@ class FirmGalleryImageAdmin(admin.ModelAdmin):
 class WebsiteTemplateSettingAdmin(admin.ModelAdmin):
     list_display = ("active_template", "updated_at", "updated_by")
     readonly_fields = ("updated_at", "updated_by")
+
+
+@admin.register(FinanceSettings)
+class FinanceSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        "allow_mpesa",
+        "allow_bank_transfer",
+        "mpesa_stk_enabled",
+        "updated_at",
+        "updated_by",
+    )
+    readonly_fields = ("updated_at", "updated_by")
+    fieldsets = (
+        (
+            "Payment methods",
+            {
+                "fields": (
+                    "allow_mpesa",
+                    "allow_bank_transfer",
+                    "allow_cash",
+                    "allow_cheque",
+                )
+            },
+        ),
+        (
+            "M-Pesa Paybill / Buy Goods",
+            {
+                "fields": (
+                    "mpesa_paybill_enabled",
+                    "mpesa_paybill_number",
+                    "mpesa_paybill_account_label",
+                    "mpesa_buy_goods_enabled",
+                    "mpesa_till_number",
+                )
+            },
+        ),
+        (
+            "M-Pesa STK Push",
+            {
+                "fields": (
+                    "mpesa_stk_enabled",
+                    "mpesa_stk_channel",
+                    "mpesa_consumer_key",
+                    "mpesa_consumer_secret",
+                    "mpesa_passkey",
+                    "mpesa_shortcode",
+                    "mpesa_callback_url",
+                    "mpesa_env",
+                )
+            },
+        ),
+        ("Meta", {"fields": ("updated_at", "updated_by")}),
+    )
 
 
 @admin.register(FirmCompanyInformation)
@@ -614,7 +703,18 @@ class FirmCompanyInformationAdmin(admin.ModelAdmin):
         ),
         (
             "Contact",
-            {"fields": ("email", "phone", "website")},
+            {
+                "fields": (
+                    "email",
+                    "phone",
+                    "website",
+                    "linkedin_url",
+                    "facebook_url",
+                    "instagram_url",
+                    "x_url",
+                    "youtube_url",
+                )
+            },
         ),
         (
             "Address",
@@ -738,3 +838,58 @@ class DocumentContentSnapshotAdmin(admin.ModelAdmin):
     )
     readonly_fields = ("captured_at", "content_hash")
     raw_id_fields = ("document", "captured_by")
+
+
+@admin.register(Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
+    list_display = (
+        "invoice_number",
+        "client",
+        "issue_date",
+        "due_date",
+        "amount",
+        "tax_amount",
+        "amount_paid",
+        "status",
+        "last_mpesa_receipt",
+        "created_by",
+        "approved_by",
+        "created_at",
+    )
+    list_filter = ("status", "issue_date")
+    search_fields = (
+        "invoice_number",
+        "description",
+        "last_mpesa_receipt",
+        "client__first_name",
+        "client__last_name",
+        "client__company_name",
+        "client__email",
+    )
+    readonly_fields = ("invoice_number", "approved_at", "created_at", "updated_at")
+    raw_id_fields = ("client", "created_by", "approved_by")
+    date_hierarchy = "issue_date"
+
+
+@admin.register(MpesaStkRequest)
+class MpesaStkRequestAdmin(admin.ModelAdmin):
+    list_display = (
+        "checkout_request_id",
+        "invoice",
+        "amount",
+        "phone",
+        "status",
+        "mpesa_receipt",
+        "payment_applied",
+        "created_at",
+    )
+    list_filter = ("status", "simulated", "payment_applied")
+    search_fields = (
+        "checkout_request_id",
+        "merchant_request_id",
+        "mpesa_receipt",
+        "phone",
+        "invoice__invoice_number",
+    )
+    readonly_fields = ("created_at", "updated_at")
+    raw_id_fields = ("invoice",)

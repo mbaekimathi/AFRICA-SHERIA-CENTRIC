@@ -32,10 +32,16 @@
             <p class="blog-cover-preview"><img src="{{ item.image.url }}" alt="" width="180" height="120"></p>
             {% endif %}
             <p class="blog-post-item__title">{{ item.title }}</p>
-            <p class="blog-post-item__meta">Rank {{ item.rank }}</p>
+            <p class="blog-post-item__meta">Rank {{ item.rank }} · Updated {{ item.updated_at|date:"j M Y" }}</p>
             {% if item.caption %}
             <p class="blog-post-item__excerpt">{{ item.caption }}</p>
             {% endif %}
+          </div>
+          <div class="blog-post-item__actions">
+            <a
+              href="{% url 'accounts:edit_gallery_image' role=role_slug item_id=item.pk %}"
+              class="btn btn--quiet btn--inline"
+            >Edit</a>
           </div>
         </li>
         {% endfor %}

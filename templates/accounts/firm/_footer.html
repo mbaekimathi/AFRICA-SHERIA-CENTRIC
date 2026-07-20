@@ -26,6 +26,13 @@
         {% if company.tagline %}
         <p class="fw-footer__tag">{{ company.tagline }}</p>
         {% endif %}
+        {% if company.social_media_links %}
+        <nav class="fw-footer__social" aria-label="Social media">
+          {% for link in company.social_media_links %}
+          <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label }}</a>
+          {% endfor %}
+        </nav>
+        {% endif %}
         {% if company.physical_address or company.city %}
         <p class="fw-footer__address">
           {% if company.physical_address %}{{ company.physical_address }}{% endif %}

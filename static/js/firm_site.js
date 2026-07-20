@@ -3,9 +3,12 @@
   if (header) {
     const toggle = header.querySelector("[data-fw-nav-toggle]");
     const panel = header.querySelector("[data-fw-nav]");
+    const page = document.querySelector(".site-page--firm");
+    const mqDesktop = window.matchMedia("(min-width: 1101px)");
 
     const setOpen = (open) => {
       header.classList.toggle("is-open", open);
+      if (page) page.classList.toggle("is-nav-locked", open);
       if (toggle) {
         toggle.setAttribute("aria-expanded", open ? "true" : "false");
         toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
@@ -24,6 +27,15 @@
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") setOpen(false);
     });
+
+    const onBreakpoint = () => {
+      if (mqDesktop.matches) setOpen(false);
+    };
+    if (typeof mqDesktop.addEventListener === "function") {
+      mqDesktop.addEventListener("change", onBreakpoint);
+    } else if (typeof mqDesktop.addListener === "function") {
+      mqDesktop.addListener(onBreakpoint);
+    }
 
     const onScroll = () => {
       header.classList.toggle("is-scrolled", window.scrollY > 12);

@@ -1,0 +1,160 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}Pay {{ invoice.invoice_number }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Payments · {{ invoice.client.get_full_name }}</p>
+      <h2>Pay invoice</h2>
+      <p class="page-lead">
+        Review status, balance, and payment records for {{ invoice.invoice_number }}, then send an M-Pesa STK push if a balance remains.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>{{ invoice.invoice_number }}</h3>
+      <p class="panel__hint">
+        <a href="{{ invoice_url }}">View invoice</a>
+        ·
+        <a href="{{ list_url }}">Back to payments</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <dl class="settings-grid review-grid pay-summary">
+        <div>
+          <dt>Client</dt>
+          <dd>{{ invoice.client.get_full_name }}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{{ invoice.get_status_display }}</dd>
+        </div>
+        <div>
+          <dt>Total</dt>
+          <dd>KES {{ invoice.total_amount|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Amount paid</dt>
+          <dd>KES {{ invoice.amount_paid|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Balance due</dt>
+          <dd><strong>KES {{ invoice.balance_due|floatformat:2 }}</strong></dd>
+        </div>
+        {% if invoice.last_mpesa_receipt %}
+        <div>
+          <dt>Last M-Pesa receipt</dt>
+          <dd>{{ invoice.last_mpesa_receipt }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+
+      {% if invoice.status == "paid" %}
+      <div class="empty-state pay-state">
+        <p class="empty-state__title">Fully paid</p>
+        <p class="empty-state__copy">This invoice has been marked as paid.</p>
+      </div>
+      {% elif invoice.status == "cancelled" %}
+      <div class="empty-state pay-state">
+        <p class="empty-state__title">Cancelled</p>
+        <p class="empty-state__copy">Cancelled invoices cannot be paid.</p>
+      </div>
+      {% else %}
+      {% if can_pay %}
+      <form method="post" class="workspace-form" id="stk-pay-form" data-stk-loading novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="stk">
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.amount.id_for_label }}">
+            {{ form.amount.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.amount }}
+          {% if form.amount.help_text %}
+          <span class="field-hint">{{ form.amount.help_text }}</span>
+          {% endif %}
+          {% if form.amount.errors %}<span class="field-error">{{ form.amount.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.phone.id_for_label }}">
+            {{ form.phone.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.phone }}
+          <span class="field-hint">
+            Safaricom number that will receive the STK push prompt.
+            {% if not mpesa_live %}Live M-Pesa credentials are not set — STK will be simulated.{% endif %}
+          </span>
+          {% if form.phone.errors %}<span class="field-error">{{ form.phone.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <button
+            type="submit"
+            class="btn btn--primary btn--inline"
+            data-loading-text="Sending STK push…"
+          >Send STK push</button>
+        </div>
+      </form>
+      {% endif %}
+
+      {% include "accounts/includes/stk_live_status.html" %}
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Payment records</h3>
+      <p class="panel__hint">{{ payment_records|length }} payment(s)</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if payment_records %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Phone</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Receipt</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for record in payment_records %}
+            <tr>
+              <td>{{ record.created_at|date:"d M Y H:i" }}</td>
+              <td>{{ record.phone|default:"—" }}</td>
+              <td>KES {{ record.amount|floatformat:2 }}</td>
+              <td>{{ record.mpesa_receipt|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No payment records yet</p>
+        <p class="empty-state__copy">Successful M-Pesa payments for this invoice will appear here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/stk-pay.js' %}" defer></script>
+<script src="{% static 'js/stk-live.js' %}" defer></script>
+{% endblock %}

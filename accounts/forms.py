@@ -4,6 +4,7 @@ from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from decimal import Decimal
 
 from .country_codes import (
     DEFAULT_COUNTRY,
@@ -22,10 +23,12 @@ from .models import (
     CourtAttendanceBringUpItem,
     Employee,
     EmployeeBlogPost,
+    FinanceSettings,
     FirmCompanyInformation,
     FirmFAQ,
     FirmGalleryImage,
     FirmPracticeArea,
+    Invoice,
     LitigationCase,
     MatterAttendance,
     MatterParty,
@@ -3155,8 +3158,47 @@ class EmployeeBlogForm(forms.ModelForm):
         return post
 
 
+class MultipleFileInput(forms.FileInput):
+    """File input that accepts multiple files (Django 5+)."""
+
+    allow_multiple_selected = True
+
+
+class MultipleFileField(forms.FileField):
+    """Validate zero or more uploads from a multiple file input."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("widget", MultipleFileInput())
+        super().__init__(*args, **kwargs)
+
+    def clean(self, data, initial=None):
+        if data in self.empty_values:
+            return []
+        if not isinstance(data, list):
+            data = [data]
+        cleaned = []
+        for uploaded in data:
+            if uploaded in self.empty_values:
+                continue
+            cleaned.append(super().clean(uploaded, None))
+        return cleaned
+
+
 class CompanyInformationForm(forms.ModelForm):
     """Firm-wide company profile under System Settings."""
+
+    images = MultipleFileField(
+        required=False,
+        widget=MultipleFileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*",
+                "id": "id_company_profile_images",
+            }
+        ),
+        label="Company images",
+        help_text="Upload one or more images. The first image is the main image.",
+    )
 
     class Meta:
         model = FirmCompanyInformation
@@ -3236,6 +3278,11 @@ class CompanyContactsForm(forms.ModelForm):
             "email",
             "phone",
             "website",
+            "linkedin_url",
+            "facebook_url",
+            "instagram_url",
+            "x_url",
+            "youtube_url",
             "physical_address",
             "postal_address",
             "city",
@@ -3245,6 +3292,11 @@ class CompanyContactsForm(forms.ModelForm):
             "email": "Primary email",
             "phone": "Primary phone",
             "website": "Website",
+            "linkedin_url": "LinkedIn",
+            "facebook_url": "Facebook",
+            "instagram_url": "Instagram",
+            "x_url": "X (Twitter)",
+            "youtube_url": "YouTube",
             "physical_address": "Physical address",
             "postal_address": "Postal address",
             "city": "City",
@@ -3274,6 +3326,46 @@ class CompanyContactsForm(forms.ModelForm):
                     "placeholder": "https://",
                     "autocomplete": "url",
                     "id": "id_company_website",
+                }
+            ),
+            "linkedin_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://linkedin.com/company/…",
+                    "autocomplete": "url",
+                    "id": "id_company_linkedin_url",
+                }
+            ),
+            "facebook_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://facebook.com/…",
+                    "autocomplete": "url",
+                    "id": "id_company_facebook_url",
+                }
+            ),
+            "instagram_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://instagram.com/…",
+                    "autocomplete": "url",
+                    "id": "id_company_instagram_url",
+                }
+            ),
+            "x_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://x.com/…",
+                    "autocomplete": "url",
+                    "id": "id_company_x_url",
+                }
+            ),
+            "youtube_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://youtube.com/@…",
+                    "autocomplete": "url",
+                    "id": "id_company_youtube_url",
                 }
             ),
             "physical_address": forms.Textarea(
@@ -3317,6 +3409,21 @@ class CompanyContactsForm(forms.ModelForm):
     def clean_website(self):
         return (self.cleaned_data.get("website") or "").strip()
 
+    def clean_linkedin_url(self):
+        return (self.cleaned_data.get("linkedin_url") or "").strip()
+
+    def clean_facebook_url(self):
+        return (self.cleaned_data.get("facebook_url") or "").strip()
+
+    def clean_instagram_url(self):
+        return (self.cleaned_data.get("instagram_url") or "").strip()
+
+    def clean_x_url(self):
+        return (self.cleaned_data.get("x_url") or "").strip()
+
+    def clean_youtube_url(self):
+        return (self.cleaned_data.get("youtube_url") or "").strip()
+
 
 FIRM_CORE_VALUE_CHOICES = (
     ("Integrity", "Integrity"),
@@ -3327,12 +3434,6 @@ FIRM_CORE_VALUE_CHOICES = (
     ("Innovation", "Innovation"),
     ("Diligence", "Diligence"),
 )
-
-
-class MultipleFileInput(forms.ClearableFileInput):
-    """File input that accepts multiple files (Django 5+)."""
-
-    allow_multiple_selected = True
 
 
 class AboutCompanyForm(forms.ModelForm):
@@ -3588,7 +3689,7 @@ class AboutCompanyForm(forms.ModelForm):
 class PracticeAreaForm(forms.ModelForm):
     """Create or edit a firm practice area."""
 
-    images = forms.FileField(
+    images = MultipleFileField(
         required=False,
         widget=MultipleFileInput(
             attrs={
@@ -3866,6 +3967,206 @@ class WebsiteTemplateForm(forms.ModelForm):
         self.fields["active_template"].required = True
 
 
+class FinanceSettingsForm(forms.ModelForm):
+    """Firm payment methods and M-Pesa / STK configuration."""
+
+    class Meta:
+        model = FinanceSettings
+        fields = [
+            "allow_mpesa",
+            "allow_bank_transfer",
+            "allow_cash",
+            "allow_cheque",
+            "mpesa_paybill_enabled",
+            "mpesa_paybill_number",
+            "mpesa_paybill_account_label",
+            "mpesa_buy_goods_enabled",
+            "mpesa_till_number",
+            "mpesa_stk_enabled",
+            "mpesa_stk_channel",
+            "mpesa_consumer_key",
+            "mpesa_consumer_secret",
+            "mpesa_passkey",
+            "mpesa_shortcode",
+            "mpesa_callback_url",
+            "mpesa_env",
+        ]
+        labels = {
+            "allow_mpesa": "M-Pesa",
+            "allow_bank_transfer": "Bank transfer",
+            "allow_cash": "Cash",
+            "allow_cheque": "Cheque",
+            "mpesa_paybill_enabled": "Accept Paybill payments",
+            "mpesa_paybill_number": "Paybill number",
+            "mpesa_paybill_account_label": "Account reference label",
+            "mpesa_buy_goods_enabled": "Accept Buy Goods (Till) payments",
+            "mpesa_till_number": "Till number",
+            "mpesa_stk_enabled": "Enable M-Pesa STK Push",
+            "mpesa_stk_channel": "STK Push charges to",
+            "mpesa_consumer_key": "Consumer key",
+            "mpesa_consumer_secret": "Consumer secret",
+            "mpesa_passkey": "Lipa Na M-Pesa passkey",
+            "mpesa_shortcode": "Business shortcode (optional)",
+            "mpesa_callback_url": "Callback URL",
+            "mpesa_env": "Daraja environment",
+        }
+        help_texts = {
+            "mpesa_paybill_account_label": "Shown to clients — usually invoice number.",
+            "mpesa_shortcode": "Leave blank to use the Paybill or Till number above.",
+            "mpesa_callback_url": "HTTPS URL Safaricom will POST to after payment (not localhost).",
+            "mpesa_stk_enabled": "Lets staff and clients send Lipa Na M-Pesa prompts from invoices.",
+        }
+        widgets = {
+            "allow_mpesa": forms.CheckboxInput(),
+            "allow_bank_transfer": forms.CheckboxInput(),
+            "allow_cash": forms.CheckboxInput(),
+            "allow_cheque": forms.CheckboxInput(),
+            "mpesa_paybill_enabled": forms.CheckboxInput(),
+            "mpesa_buy_goods_enabled": forms.CheckboxInput(),
+            "mpesa_stk_enabled": forms.CheckboxInput(),
+            "mpesa_paybill_number": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. 123456",
+                    "autocomplete": "off",
+                    "inputmode": "numeric",
+                }
+            ),
+            "mpesa_paybill_account_label": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Invoice number",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_till_number": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. 567890",
+                    "autocomplete": "off",
+                    "inputmode": "numeric",
+                }
+            ),
+            "mpesa_stk_channel": forms.RadioSelect(),
+            "mpesa_consumer_key": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Daraja consumer key",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_consumer_secret": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Daraja consumer secret",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_passkey": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Lipa Na M-Pesa online passkey",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_shortcode": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Defaults to Paybill or Till",
+                    "autocomplete": "off",
+                    "inputmode": "numeric",
+                }
+            ),
+            "mpesa_callback_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://yourdomain.com/integrations/mpesa/callback/",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_env": forms.Select(attrs={"class": "form-input"}),
+        }
+
+    def clean_mpesa_callback_url(self):
+        from .mpesa import is_valid_mpesa_callback_url
+
+        url = (self.cleaned_data.get("mpesa_callback_url") or "").strip()
+        if not url:
+            return ""
+        if not is_valid_mpesa_callback_url(url):
+            raise ValidationError(
+                "Use a public HTTPS URL with a path, e.g. "
+                "https://yourdomain.com/integrations/mpesa/callback/. "
+                "localhost and http:// are rejected by Safaricom."
+            )
+        return url
+
+    def clean(self):
+        cleaned = super().clean()
+        allow_mpesa = cleaned.get("allow_mpesa")
+        paybill_on = cleaned.get("mpesa_paybill_enabled")
+        buy_goods_on = cleaned.get("mpesa_buy_goods_enabled")
+        stk_on = cleaned.get("mpesa_stk_enabled")
+        channel = cleaned.get("mpesa_stk_channel")
+        paybill = (cleaned.get("mpesa_paybill_number") or "").strip()
+        till = (cleaned.get("mpesa_till_number") or "").strip()
+
+        if not allow_mpesa:
+            cleaned["mpesa_paybill_enabled"] = False
+            cleaned["mpesa_buy_goods_enabled"] = False
+            cleaned["mpesa_stk_enabled"] = False
+            return cleaned
+
+        if paybill_on and not paybill:
+            self.add_error("mpesa_paybill_number", "Enter the Paybill number.")
+        if buy_goods_on and not till:
+            self.add_error("mpesa_till_number", "Enter the Till number.")
+
+        if not paybill_on and not buy_goods_on:
+            self.add_error(
+                None,
+                "Enable Paybill and/or Buy Goods when M-Pesa is allowed.",
+            )
+
+        if stk_on:
+            if channel == FinanceSettings.MpesaStkChannel.PAYBILL and not paybill_on:
+                self.add_error(
+                    "mpesa_stk_channel",
+                    "Enable Paybill before using it for STK Push.",
+                )
+            if channel == FinanceSettings.MpesaStkChannel.BUY_GOODS and not buy_goods_on:
+                self.add_error(
+                    "mpesa_stk_channel",
+                    "Enable Buy Goods before using it for STK Push.",
+                )
+            shortcode = (cleaned.get("mpesa_shortcode") or "").strip()
+            effective = shortcode or (
+                till
+                if channel == FinanceSettings.MpesaStkChannel.BUY_GOODS
+                else paybill
+            )
+            has_api = all(
+                (cleaned.get(field) or "").strip()
+                for field in (
+                    "mpesa_consumer_key",
+                    "mpesa_consumer_secret",
+                    "mpesa_passkey",
+                )
+            )
+            if has_api and not effective:
+                self.add_error(
+                    "mpesa_shortcode",
+                    "Set a shortcode, or enter Paybill / Till details above.",
+                )
+            if has_api and not (cleaned.get("mpesa_callback_url") or "").strip():
+                self.add_error(
+                    "mpesa_callback_url",
+                    "Required for live STK Push — use your public HTTPS callback URL.",
+                )
+
+        return cleaned
+
+
 class CreateGoogleDocumentForm(forms.Form):
     """Name and describe a file, then choose Docs / Excel / Slides."""
 
@@ -4027,4 +4328,201 @@ class RenameDocumentForm(forms.Form):
 
     def clean_notes(self):
         return (self.cleaned_data.get("notes") or "").strip()
+
+
+class GenerateInvoiceForm(forms.ModelForm):
+    """Create a new invoice under General Accounts → Invoicing."""
+
+    class Meta:
+        model = Invoice
+        fields = [
+            "client",
+            "issue_date",
+            "due_date",
+            "description",
+            "amount",
+            "tax_amount",
+            "notes",
+        ]
+        labels = {
+            "client": "Client",
+            "issue_date": "Issue date",
+            "due_date": "Due date",
+            "description": "Description",
+            "amount": "Amount",
+            "tax_amount": "Tax amount",
+            "notes": "Notes",
+        }
+        widgets = {
+            "client": forms.Select(
+                attrs={
+                    "class": "form-input",
+                    "id": "id_invoice_client",
+                }
+            ),
+            "issue_date": forms.DateInput(
+                attrs={
+                    "class": "form-input",
+                    "type": "date",
+                    "id": "id_invoice_issue_date",
+                }
+            ),
+            "due_date": forms.DateInput(
+                attrs={
+                    "class": "form-input",
+                    "type": "date",
+                    "id": "id_invoice_due_date",
+                }
+            ),
+            "description": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 4,
+                    "placeholder": "Describe the services or charges…",
+                    "id": "id_invoice_description",
+                }
+            ),
+            "amount": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "min": "0",
+                    "step": "0.01",
+                    "placeholder": "0.00",
+                    "id": "id_invoice_amount",
+                }
+            ),
+            "tax_amount": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "min": "0",
+                    "step": "0.01",
+                    "placeholder": "0.00",
+                    "id": "id_invoice_tax_amount",
+                }
+            ),
+            "notes": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 2,
+                    "placeholder": "Optional notes for this invoice",
+                    "id": "id_invoice_notes",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["client"].queryset = Client.objects.filter(
+            status=Client.Status.ACTIVE
+        ).order_by("company_name", "first_name", "last_name", "email")
+        self.fields["client"].empty_label = "Select a client"
+        self.fields["tax_amount"].required = False
+        self.fields["notes"].required = False
+        today = timezone.localdate()
+        self.fields["issue_date"].initial = today
+        self.fields["due_date"].initial = today
+        self.fields["tax_amount"].initial = 0
+
+    def clean_description(self):
+        description = (self.cleaned_data.get("description") or "").strip()
+        if not description:
+            raise ValidationError("Enter a description for this invoice.")
+        return description
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get("amount")
+        if amount is None or amount < 0:
+            raise ValidationError("Enter a valid amount (0 or greater).")
+        return amount
+
+    def clean_tax_amount(self):
+        tax_amount = self.cleaned_data.get("tax_amount")
+        if tax_amount is None:
+            return 0
+        if tax_amount < 0:
+            raise ValidationError("Tax amount cannot be negative.")
+        return tax_amount
+
+    def clean_notes(self):
+        return (self.cleaned_data.get("notes") or "").strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        issue_date = cleaned.get("issue_date")
+        due_date = cleaned.get("due_date")
+        if issue_date and due_date and due_date < issue_date:
+            self.add_error("due_date", "Due date cannot be before the issue date.")
+        return cleaned
+
+
+class InvoiceStkPaymentForm(forms.Form):
+    """Collect the M-Pesa number and amount for an invoice STK push."""
+
+    phone = forms.CharField(
+        label="M-Pesa phone number",
+        max_length=20,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "07XX XXX XXX",
+                "inputmode": "tel",
+                "autocomplete": "tel",
+                "id": "id_stk_phone",
+            }
+        ),
+    )
+    amount = forms.DecimalField(
+        label="Amount (KES)",
+        min_value=Decimal("1"),
+        max_digits=12,
+        decimal_places=2,
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "0.00",
+                "inputmode": "decimal",
+                "step": "0.01",
+                "min": "1",
+                "id": "id_stk_amount",
+            }
+        ),
+    )
+
+    def __init__(self, *args, max_amount=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_amount = None
+        if max_amount is not None:
+            try:
+                self.max_amount = Decimal(max_amount).quantize(Decimal("0.01"))
+            except Exception:
+                self.max_amount = None
+        if self.max_amount is not None and self.max_amount >= 1:
+            self.fields["amount"].widget.attrs["max"] = str(self.max_amount)
+            self.fields["amount"].help_text = (
+                f"Balance due is KES {self.max_amount}. You can pay this or a lower amount."
+            )
+
+    def clean_phone(self):
+        from .mpesa import MpesaError, normalize_msisdn
+
+        phone = (self.cleaned_data.get("phone") or "").strip()
+        if not phone:
+            raise ValidationError("Enter the Safaricom number that will receive the STK push.")
+        try:
+            return normalize_msisdn(phone)
+        except MpesaError as exc:
+            raise ValidationError(str(exc)) from exc
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get("amount")
+        if amount is None:
+            raise ValidationError("Enter the amount to charge.")
+        amount = Decimal(amount).quantize(Decimal("0.01"))
+        if amount < 1:
+            raise ValidationError("Amount must be at least KES 1.")
+        if self.max_amount is not None and amount > self.max_amount:
+            raise ValidationError(
+                f"Amount cannot exceed the balance due of KES {self.max_amount}."
+            )
+        return amount
 

@@ -11,10 +11,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const notifMenu = document.getElementById("notif-menu");
   const notifTrigger = document.getElementById("notif-trigger");
   const notifDropdown = document.getElementById("notif-dropdown");
+  const mqDesktop = window.matchMedia("(min-width: 980px)");
 
   const setSidebarOpen = (open) => {
     if (!sidebar) return;
     sidebar.classList.toggle("is-open", open);
+    document.body.classList.toggle("is-sidebar-locked", open && !mqDesktop.matches);
     if (backdrop) backdrop.hidden = !open;
     if (toggle) {
       toggle.setAttribute("aria-expanded", String(open));
@@ -51,6 +53,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   backdrop?.addEventListener("click", () => setSidebarOpen(false));
+
+  sidebar?.querySelectorAll("a.nav-link").forEach((link) => {
+    link.addEventListener("click", () => {
+      if (!mqDesktop.matches) setSidebarOpen(false);
+    });
+  });
+
+  const onDesktopChange = () => {
+    if (mqDesktop.matches) setSidebarOpen(false);
+  };
+  if (typeof mqDesktop.addEventListener === "function") {
+    mqDesktop.addEventListener("change", onDesktopChange);
+  } else if (typeof mqDesktop.addListener === "function") {
+    mqDesktop.addListener(onDesktopChange);
+  }
 
   profileTrigger?.addEventListener("click", (event) => {
     event.stopPropagation();

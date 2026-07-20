@@ -1,0 +1,89 @@
+{% extends "layouts/client_portal.html" %}
+
+{% block title %}Finance & Billing — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page page--client-billing">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Finance &amp; Billing</h2>
+      <p class="page-lead">
+        View invoices issued to you by {{ firm_name }} and pay outstanding balances.
+      </p>
+    </div>
+  </header>
+
+  {% if outstanding_count %}
+  <section class="panel client-billing-summary">
+    <div class="panel__body">
+      <dl class="settings-grid review-grid">
+        <div>
+          <dt>Outstanding invoices</dt>
+          <dd>{{ outstanding_count }}</dd>
+        </div>
+        <div>
+          <dt>Amount due</dt>
+          <dd><strong>KES {{ outstanding_total|floatformat:2 }}</strong></dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Your invoices</h3>
+      <p class="panel__hint">Issued invoices appear here when the firm sends them to your portal.</p>
+    </div>
+    <div class="panel__body">
+      {% if invoices %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Invoice</th>
+              <th scope="col">Issued</th>
+              <th scope="col">Due</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Status</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for invoice in invoices %}
+            <tr>
+              <td>
+                <a href="{% url 'accounts:client_invoice' invoice.pk %}">{{ invoice.invoice_number }}</a>
+              </td>
+              <td>{{ invoice.issue_date|date:"d M Y" }}</td>
+              <td>{{ invoice.due_date|date:"d M Y" }}</td>
+              <td>KES {{ invoice.total_amount|floatformat:2 }}</td>
+              <td>
+                <span class="invoice-status invoice-status--{{ invoice.status }}">
+                  {{ invoice.get_status_display }}
+                </span>
+              </td>
+              <td class="data-table__actions">
+                <a href="{% url 'accounts:client_invoice' invoice.pk %}" class="btn btn--quiet btn--inline">View</a>
+                {% if invoice.status == "issued" %}
+                <a href="{% url 'accounts:client_pay_invoice' invoice.pk %}" class="btn btn--primary btn--inline">Pay</a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No invoices yet</p>
+        <p class="empty-state__copy">
+          When {{ firm_name }} issues an invoice to you, it will show up here and you will get a portal notification.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

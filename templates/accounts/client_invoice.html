@@ -1,0 +1,163 @@
+{% extends "layouts/client_portal.html" %}
+
+{% block title %}{{ invoice.invoice_number }} — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page page--invoice">
+  <header class="invoice-toolbar no-print">
+    <div class="invoice-toolbar__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Invoice</h2>
+      <p class="page-lead">{{ invoice.invoice_number }} from {{ firm.display_name }}.</p>
+    </div>
+    <div class="invoice-toolbar__actions">
+      <a href="{{ list_url }}" class="btn btn--quiet btn--inline">Back to billing</a>
+      {% if can_pay %}
+      <a href="{{ pay_url }}" class="btn btn--primary btn--inline">Pay with M-Pesa</a>
+      {% endif %}
+      <a href="{{ pdf_url }}" class="btn btn--quiet btn--inline">Download PDF</a>
+      <button type="button" class="btn btn--quiet btn--inline" id="invoice-print-btn">Print</button>
+    </div>
+  </header>
+
+  <article class="invoice-sheet" aria-label="Invoice {{ invoice.invoice_number }}">
+    <header class="invoice-letterhead">
+      <div class="invoice-letterhead__brand">
+        {% if firm.main_image %}
+        <img
+          class="invoice-letterhead__logo"
+          src="{{ firm.main_image.image.url }}"
+          alt=""
+          width="56"
+          height="56"
+        >
+        {% else %}
+        <div class="invoice-letterhead__mark" aria-hidden="true">
+          {{ firm.display_name|slice:":1"|upper }}
+        </div>
+        {% endif %}
+        <div class="invoice-letterhead__identity">
+          <p class="invoice-letterhead__name">{{ firm.display_name }}</p>
+          {% if firm.city %}
+          <p class="invoice-letterhead__place">{{ firm.city }}{% if firm.country %}, {{ firm.country }}{% endif %}</p>
+          {% endif %}
+        </div>
+      </div>
+      <div class="invoice-letterhead__details">
+        {% if firm.phone %}<p>{{ firm.phone }}</p>{% endif %}
+        {% if firm.email %}<p>{{ firm.email }}</p>{% endif %}
+      </div>
+    </header>
+
+    <div class="invoice-sheet__top">
+      <div class="invoice-sheet__title-block">
+        <h1 class="invoice-sheet__title">Invoice</h1>
+        <p class="invoice-sheet__number">{{ invoice.invoice_number }}</p>
+      </div>
+      <dl class="invoice-sheet__meta">
+        <div>
+          <dt>Issue date</dt>
+          <dd>{{ invoice.issue_date|date:"d M Y" }}</dd>
+        </div>
+        <div>
+          <dt>Due date</dt>
+          <dd>{{ invoice.due_date|date:"d M Y" }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    <section class="invoice-sheet__parties">
+      <div class="invoice-party">
+        <h2 class="invoice-party__label">Bill to</h2>
+        <p class="invoice-party__name">{{ invoice.client.get_full_name }}</p>
+        {% if invoice.client.email %}
+        <p class="invoice-party__line">{{ invoice.client.email }}</p>
+        {% endif %}
+        {% if invoice.client.phone %}
+        <p class="invoice-party__line">{{ invoice.client.phone }}</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="invoice-sheet__items" aria-label="Invoice items">
+      <table class="invoice-table">
+        <thead>
+          <tr>
+            <th scope="col" class="invoice-table__desc">Description</th>
+            <th scope="col" class="invoice-table__qty">Qty</th>
+            <th scope="col" class="invoice-table__amt">Amount (KES)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="invoice-table__desc">{{ invoice.description|linebreaksbr }}</td>
+            <td class="invoice-table__qty">1</td>
+            <td class="invoice-table__amt">{{ invoice.amount|floatformat:2 }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="invoice-sheet__totals" aria-label="Totals">
+      <dl class="invoice-totals">
+        <div>
+          <dt>Subtotal</dt>
+          <dd>KES {{ invoice.amount|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Tax</dt>
+          <dd>KES {{ invoice.tax_amount|floatformat:2 }}</dd>
+        </div>
+        <div class="invoice-totals__grand">
+          <dt>Total due</dt>
+          <dd>KES {{ invoice.total_amount|floatformat:2 }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    {% if invoice.notes %}
+    <section class="invoice-sheet__notes">
+      <h2>Notes</h2>
+      <p>{{ invoice.notes|linebreaksbr }}</p>
+    </section>
+    {% endif %}
+
+    <div class="invoice-sheet__stamps-row">
+      <div
+        class="invoice-seal invoice-seal--{{ invoice.status }}"
+        role="img"
+        aria-label="{% if invoice.approved_by %}{{ invoice.get_status_display }}, approved by {{ invoice.approved_by.get_full_name }}{% else %}{{ invoice.get_status_display }}{% endif %}"
+      >
+        <span class="invoice-seal__ring" aria-hidden="true"></span>
+        <span class="invoice-seal__inner">
+          <span class="invoice-seal__status">{{ invoice.get_status_display }}</span>
+          {% if invoice.approved_by %}
+          <span class="invoice-seal__rule" aria-hidden="true"></span>
+          <span class="invoice-seal__label">Approved by</span>
+          <span class="invoice-seal__name">{{ invoice.approved_by.get_full_name }}</span>
+          {% if invoice.approved_at %}
+          <span class="invoice-seal__date">{{ invoice.approved_at|date:"d M Y" }}</span>
+          {% endif %}
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    <footer class="invoice-company-footer">
+      <p class="invoice-company-footer__thanks">Thank you for your business.</p>
+      <p class="invoice-company-footer__line">
+        {{ firm.display_name }}
+        {% if firm.phone %} · {{ firm.phone }}{% endif %}
+        {% if firm.email %} · {{ firm.email }}{% endif %}
+        {% if firm.tax_pin %} · PIN {{ firm.tax_pin }}{% endif %}
+      </p>
+    </footer>
+  </article>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.getElementById("invoice-print-btn")?.addEventListener("click", () => window.print());
+</script>
+{% endblock %}

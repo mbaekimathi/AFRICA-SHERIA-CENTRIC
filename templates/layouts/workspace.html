@@ -66,8 +66,8 @@
         </nav>
 
         {% if page_nav_items %}
-        <p class="nav-section">Navigation</p>
-        <nav class="sidebar__nav">
+        <p class="nav-section">In this section</p>
+        <nav class="sidebar__nav" aria-label="Section pages">
           {% block sidebar_page_nav %}
           {% for item in page_nav_items %}
           <a
@@ -107,6 +107,7 @@
       </div>
 
       <div class="sidebar__bottom">
+        <p class="nav-section">Account</p>
         <nav class="sidebar__utility" aria-label="Account">
           {% for item in utility_items %}
           <a

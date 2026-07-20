@@ -9,8 +9,9 @@
       <p class="page-kicker">Company information</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Register the firm’s legal identity. The display name appears across the
-        workspace, client portal, and website.
+        Register the firm’s legal identity and brand images. The display name appears
+        across the workspace, client portal, and website. Upload images in the order you
+        want — the first image is the main one.
       </p>
     </div>
   </header>
@@ -26,6 +27,7 @@
       <form
         method="post"
         class="workspace-form"
+        enctype="multipart/form-data"
         id="company-profile-form"
         novalidate
       >
@@ -84,6 +86,51 @@
             <span class="field-error">{{ form.tax_pin.errors.0 }}</span>
             {% endif %}
           </div>
+        </div>
+
+        {% if existing_images %}
+        <div class="form-field">
+          <span class="form-label">Current images</span>
+          <span class="field-hint">The first image is the main image. Change order or remove images below.</span>
+          <ul class="practice-image-list">
+            {% for image in existing_images %}
+            <li class="practice-image-item">
+              <img src="{{ image.image.url }}" alt="" width="120" height="90">
+              <div class="practice-image-item__controls">
+                <label>
+                  Order
+                  <input
+                    type="number"
+                    class="form-input"
+                    name="image_order_{{ image.pk }}"
+                    value="{{ image.sort_order }}"
+                    min="0"
+                    step="1"
+                  >
+                </label>
+                <label class="practice-image-item__delete">
+                  <input type="checkbox" name="delete_images" value="{{ image.pk }}">
+                  Remove
+                </label>
+                {% if forloop.first %}
+                <span class="status-pill status-pill--active">Main</span>
+                {% endif %}
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.images.id_for_label }}">
+            {% if existing_images %}Add more images{% else %}{{ form.images.label }}{% endif %}
+          </label>
+          {{ form.images }}
+          <span class="field-hint">{{ form.images.help_text }}</span>
+          {% if form.images.errors %}
+          <span class="field-error">{{ form.images.errors.0 }}</span>
+          {% endif %}
         </div>
 
         <div class="form-actions form-actions--start">

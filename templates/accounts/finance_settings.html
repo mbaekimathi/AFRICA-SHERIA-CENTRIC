@@ -1,0 +1,276 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="finance-settings-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">System settings</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Choose which payment methods the firm accepts, then configure M-Pesa Paybill,
+        Buy Goods, and STK Push for invoice collections.
+      </p>
+    </div>
+  </header>
+
+  <form method="post" class="workspace-form finance-settings-form" id="finance-settings-form" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="form-alert" role="alert">
+      {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Payment methods allowed</h3>
+        <p class="panel__hint">
+          {% if finance_setting.enabled_payment_methods %}
+          {{ finance_setting.enabled_payment_methods|join:", " }}
+          {% else %}
+          None selected
+          {% endif %}
+        </p>
+      </div>
+      <div class="panel__body">
+        <div class="finance-method-grid" role="group" aria-label="Allowed payment methods">
+          <label class="settings-toggle" for="{{ form.allow_mpesa.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.allow_mpesa }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.allow_mpesa.label }}</strong>
+              <span>Mobile money via Safaricom Paybill or Buy Goods.</span>
+            </span>
+          </label>
+          <label class="settings-toggle" for="{{ form.allow_bank_transfer.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.allow_bank_transfer }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.allow_bank_transfer.label }}</strong>
+              <span>Direct deposits to the firm bank account.</span>
+            </span>
+          </label>
+          <label class="settings-toggle" for="{{ form.allow_cash.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.allow_cash }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.allow_cash.label }}</strong>
+              <span>Cash received at the office.</span>
+            </span>
+          </label>
+          <label class="settings-toggle" for="{{ form.allow_cheque.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.allow_cheque }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.allow_cheque.label }}</strong>
+              <span>Cheque payments from clients.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel finance-mpesa-panel" id="finance-mpesa-panel" {% if not form.allow_mpesa.value %}hidden{% endif %}>
+      <div class="panel__head">
+        <h3>M-Pesa details</h3>
+        <p class="panel__hint">Paybill and Buy Goods numbers shown to clients</p>
+      </div>
+      <div class="panel__body">
+        <div class="finance-mpesa-block">
+          <label class="settings-toggle" for="{{ form.mpesa_paybill_enabled.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.mpesa_paybill_enabled }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.mpesa_paybill_enabled.label }}</strong>
+              <span>Clients pay to your business Paybill number.</span>
+            </span>
+          </label>
+          <div class="finance-mpesa-fields" id="finance-paybill-fields" {% if not form.mpesa_paybill_enabled.value %}hidden{% endif %}>
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.mpesa_paybill_number.id_for_label }}">{{ form.mpesa_paybill_number.label }}</label>
+                {{ form.mpesa_paybill_number }}
+                {% if form.mpesa_paybill_number.errors %}
+                <p class="field-error">{{ form.mpesa_paybill_number.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.mpesa_paybill_account_label.id_for_label }}">{{ form.mpesa_paybill_account_label.label }}</label>
+                {{ form.mpesa_paybill_account_label }}
+                <p class="field-hint">{{ form.mpesa_paybill_account_label.help_text }}</p>
+                {% if form.mpesa_paybill_account_label.errors %}
+                <p class="field-error">{{ form.mpesa_paybill_account_label.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="finance-mpesa-block">
+          <label class="settings-toggle" for="{{ form.mpesa_buy_goods_enabled.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.mpesa_buy_goods_enabled }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.mpesa_buy_goods_enabled.label }}</strong>
+              <span>Clients pay to your Till (Buy Goods) number.</span>
+            </span>
+          </label>
+          <div class="finance-mpesa-fields" id="finance-till-fields" {% if not form.mpesa_buy_goods_enabled.value %}hidden{% endif %}>
+            <div class="form-field">
+              <label for="{{ form.mpesa_till_number.id_for_label }}">{{ form.mpesa_till_number.label }}</label>
+              {{ form.mpesa_till_number }}
+              {% if form.mpesa_till_number.errors %}
+              <p class="field-error">{{ form.mpesa_till_number.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="finance-mpesa-block finance-stk-block">
+          <label class="settings-toggle" for="{{ form.mpesa_stk_enabled.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.mpesa_stk_enabled }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.mpesa_stk_enabled.label }}</strong>
+              <span>{{ form.mpesa_stk_enabled.help_text }}</span>
+            </span>
+          </label>
+          {% if form.mpesa_stk_enabled.errors %}
+          <p class="field-error">{{ form.mpesa_stk_enabled.errors.0 }}</p>
+          {% endif %}
+
+          <div class="finance-mpesa-fields" id="finance-stk-fields" {% if not form.mpesa_stk_enabled.value %}hidden{% endif %}>
+            <p class="field-hint finance-stk-status">
+              {% if stk_ready %}
+              <span class="status-pill status-pill--active">Live Daraja credentials set</span>
+              {% else %}
+              <span class="status-pill status-pill--pending">Simulation mode until credentials are set</span>
+              {% endif %}
+            </p>
+
+            <fieldset class="form-fieldset">
+              <legend>{{ form.mpesa_stk_channel.label }}</legend>
+              <div class="id-type-options">
+                {% for radio in form.mpesa_stk_channel %}
+                <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
+                {% endfor %}
+              </div>
+              {% if form.mpesa_stk_channel.errors %}
+              <p class="field-error">{{ form.mpesa_stk_channel.errors.0 }}</p>
+              {% endif %}
+            </fieldset>
+
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.mpesa_consumer_key.id_for_label }}">{{ form.mpesa_consumer_key.label }}</label>
+                {{ form.mpesa_consumer_key }}
+                {% if form.mpesa_consumer_key.errors %}
+                <p class="field-error">{{ form.mpesa_consumer_key.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.mpesa_consumer_secret.id_for_label }}">{{ form.mpesa_consumer_secret.label }}</label>
+                {{ form.mpesa_consumer_secret }}
+                {% if form.mpesa_consumer_secret.errors %}
+                <p class="field-error">{{ form.mpesa_consumer_secret.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.mpesa_passkey.id_for_label }}">{{ form.mpesa_passkey.label }}</label>
+                {{ form.mpesa_passkey }}
+                {% if form.mpesa_passkey.errors %}
+                <p class="field-error">{{ form.mpesa_passkey.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.mpesa_shortcode.id_for_label }}">{{ form.mpesa_shortcode.label }}</label>
+                {{ form.mpesa_shortcode }}
+                <p class="field-hint">{{ form.mpesa_shortcode.help_text }}</p>
+                {% if form.mpesa_shortcode.errors %}
+                <p class="field-error">{{ form.mpesa_shortcode.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.mpesa_callback_url.id_for_label }}">{{ form.mpesa_callback_url.label }}</label>
+                {{ form.mpesa_callback_url }}
+                <p class="field-hint">
+                  {{ form.mpesa_callback_url.help_text }}
+                  Use <code>https://your-public-domain{{ mpesa_callback_path }}</code>
+                  (for example <code>https://baunilawgroup.com{{ mpesa_callback_path }}</code>).
+                  Localhost will not work.
+                </p>
+                {% if form.mpesa_callback_url.value and not mpesa_callback_valid and not form.mpesa_callback_url.errors %}
+                <p class="field-error">
+                  Current value is not accepted by Safaricom — replace it with a public HTTPS URL.
+                </p>
+                {% endif %}
+                {% if form.mpesa_callback_url.errors %}
+                <p class="field-error">{{ form.mpesa_callback_url.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.mpesa_env.id_for_label }}">{{ form.mpesa_env.label }}</label>
+                {{ form.mpesa_env }}
+                {% if form.mpesa_env.errors %}
+                <p class="field-error">{{ form.mpesa_env.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="form-actions form-actions--start">
+      <button type="submit" class="btn btn--primary btn--inline">Save finance settings</button>
+    </div>
+
+    {% if finance_setting.updated_at %}
+    <p class="website-template-meta">
+      Last updated {{ finance_setting.updated_at|date:"j M Y, H:i" }}
+      {% if finance_setting.updated_by %}
+      by {{ finance_setting.updated_by.get_full_name|default:finance_setting.updated_by.login_code }}
+      {% endif %}
+    </p>
+    {% endif %}
+  </form>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var form = document.getElementById("finance-settings-form");
+    if (!form) return;
+
+    var mpesa = form.querySelector("#id_allow_mpesa");
+    var paybill = form.querySelector("#id_mpesa_paybill_enabled");
+    var buyGoods = form.querySelector("#id_mpesa_buy_goods_enabled");
+    var stk = form.querySelector("#id_mpesa_stk_enabled");
+    var mpesaPanel = document.getElementById("finance-mpesa-panel");
+    var paybillFields = document.getElementById("finance-paybill-fields");
+    var tillFields = document.getElementById("finance-till-fields");
+    var stkFields = document.getElementById("finance-stk-fields");
+
+    function sync() {
+      var mpesaOn = !!(mpesa && mpesa.checked);
+      if (mpesaPanel) mpesaPanel.hidden = !mpesaOn;
+      if (!mpesaOn) {
+        if (paybill) paybill.checked = false;
+        if (buyGoods) buyGoods.checked = false;
+        if (stk) stk.checked = false;
+      }
+      if (paybillFields) paybillFields.hidden = !(mpesaOn && paybill && paybill.checked);
+      if (tillFields) tillFields.hidden = !(mpesaOn && buyGoods && buyGoods.checked);
+      if (stkFields) stkFields.hidden = !(mpesaOn && stk && stk.checked);
+    }
+
+    [mpesa, paybill, buyGoods, stk].forEach(function (el) {
+      if (el) el.addEventListener("change", sync);
+    });
+    sync();
+  })();
+</script>
+{% endblock %}

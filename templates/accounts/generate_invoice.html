@@ -1,0 +1,96 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Invoicing</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Fill in the details below to generate a new invoice for an active client.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="generate-invoice-heading">
+    <div class="panel__head">
+      <h3 id="generate-invoice-heading">Invoice details</h3>
+      <p class="panel__hint">
+        <a href="{{ invoicing_url }}">Back to invoicing</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="workspace-form" id="generate-invoice-form" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.client.id_for_label }}">
+            {{ form.client.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.client }}
+          {% if form.client.errors %}<span class="field-error">{{ form.client.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.issue_date.id_for_label }}">
+              {{ form.issue_date.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.issue_date }}
+            {% if form.issue_date.errors %}<span class="field-error">{{ form.issue_date.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.due_date.id_for_label }}">
+              {{ form.due_date.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.due_date }}
+            {% if form.due_date.errors %}<span class="field-error">{{ form.due_date.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.description.id_for_label }}">
+            {{ form.description.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.description }}
+          {% if form.description.errors %}<span class="field-error">{{ form.description.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.amount.id_for_label }}">
+              {{ form.amount.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.amount }}
+            {% if form.amount.errors %}<span class="field-error">{{ form.amount.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.tax_amount.id_for_label }}">{{ form.tax_amount.label }}</label>
+            {{ form.tax_amount }}
+            {% if form.tax_amount.errors %}<span class="field-error">{{ form.tax_amount.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+          {{ form.notes }}
+          {% if form.notes.errors %}<span class="field-error">{{ form.notes.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <a href="{{ invoicing_url }}" class="btn btn--quiet">Cancel</a>
+          <button type="submit" class="btn btn--primary btn--inline">Generate invoice</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

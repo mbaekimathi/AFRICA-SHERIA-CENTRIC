@@ -309,7 +309,8 @@ SHARED_UTILITY_LINKS = [
     ("My tools", "my-tools", ICON_TOOLS),
 ]
 
-# Dashboard-only management links — shown below Dashboard on dashboard pages only
+# Practice hubs — secondary links shown on the dashboard (and their children
+# on allocated pages via PAGE_LOCAL_LINKS).
 DASHBOARD_PAGE_LINKS = [
     ("User Management", "user-management", ICON_USERS),
     ("Matter Management", "matter-management", ICON_BRIEF),
@@ -362,10 +363,41 @@ NON_LITIGATION_MATTERS_PAGE_LINKS = [
     ("Approve registered matters", "approve-registered-matters", ICON_BRIEF),
 ]
 
+# Finance & Billing page-only links
+FINANCE_BILLING_PAGE_LINKS = [
+    ("General Accounts", "general-accounts", ICON_FINANCE),
+    ("Client Accounts", "client-accounts", ICON_USERS),
+    ("Employee Accounts", "employee-accounts", ICON_USERS),
+    ("Company Accounts", "company-accounts", ICON_BRIEF),
+]
+
+# General Accounts page-only links
+GENERAL_ACCOUNTS_PAGE_LINKS = [
+    ("Invoicing", "invoicing", ICON_DOC),
+    ("Payments", "payments", ICON_FINANCE),
+    ("Purchasing", "purchasing", ICON_BRIEF),
+    ("Inventory", "inventory", ICON_TOOLS),
+    ("Sales", "sales", ICON_FINANCE),
+    ("Customers", "customers", ICON_USERS),
+    ("Suppliers", "suppliers", ICON_USERS),
+    ("Banking", "banking", ICON_FINANCE),
+    ("Accounting", "accounting", ICON_SCALE),
+    ("Reporting", "reporting", ICON_LEARN),
+]
+
+# Invoicing page-only links
+INVOICING_PAGE_LINKS = [
+    ("Generate Invoice", "generate-invoice", ICON_DOC),
+]
+
+# Shown only on their own hub pages — not inherited by child pages.
+PAGE_LOCAL_LINKS_NO_INHERIT = {"finance-billing", "general-accounts"}
+
 SYSTEM_SETTINGS_PAGE_LINKS = [
     ("Website Template", "website-template", ICON_DOC),
     ("Company Information", "company-information", ICON_BRIEF),
     ("Document Settings", "document-settings", ICON_SETTINGS),
+    ("Finance Settings", "finance-settings", ICON_FINANCE),
 ]
 
 COMPANY_INFORMATION_PAGE_LINKS = [
@@ -393,6 +425,9 @@ PAGE_LOCAL_LINKS = {
     "matter-management": MATTER_MANAGEMENT_PAGE_LINKS,
     "litigation-matters": LITIGATION_MATTERS_PAGE_LINKS,
     "non-litigation-matters": NON_LITIGATION_MATTERS_PAGE_LINKS,
+    "finance-billing": FINANCE_BILLING_PAGE_LINKS,
+    "general-accounts": GENERAL_ACCOUNTS_PAGE_LINKS,
+    "invoicing": INVOICING_PAGE_LINKS,
     "settings": [
         ("My profile", "settings", ICON_SETTINGS),
         ("About me", "about-me", ICON_DOC),
@@ -517,11 +552,12 @@ def non_litigation_matter_nav_items(
 
 def page_local_links_for(active: str, trail: list[str] | None = None):
     """
-    Return page-local nav for this page only.
+    Return secondary (page-allocated) nav for this page only.
 
-    When drilled into a child of that page (e.g. register-client or
-    approve-pending-clients under client-management), keep showing the
-    parent page's local links.
+    When drilled into a child of that page (e.g. register-client under
+    client-management), keep showing the parent page's local links —
+    unless the parent is marked no-inherit (e.g. finance-billing /
+    general-accounts hub links stay on that hub page only).
     """
     if active in SETTINGS_AREA_SLUGS:
         return PAGE_LOCAL_LINKS["settings"]
@@ -535,10 +571,19 @@ def page_local_links_for(active: str, trail: list[str] | None = None):
         return PAGE_LOCAL_LINKS[active]
     trail = trail or []
     for segment in reversed(trail[:-1]):
+        if segment in PAGE_LOCAL_LINKS_NO_INHERIT:
+            continue
         links = PAGE_LOCAL_LINKS.get(segment)
-        if links and any(slug == active for _, slug, _ in links):
+        if links:
             return links
     return None
+
+
+def main_hub_is_active(hub_slug: str, active: str, trail: list[str]) -> bool:
+    """True when the current page sits in this main hub's subtree."""
+    if active == hub_slug:
+        return True
+    return hub_slug in (trail or [])
 
 
 PAGE_TITLES = {
@@ -569,6 +614,7 @@ PAGE_TITLES = {
     "digital-stamp": "Digital stamp",
     "default-signature": "Default signature",
     "google-drive-settings": "Google Drive Settings",
+    "finance-settings": "Finance Settings",
     "messages": "Messages",
     "tasks": "Tasks",
     "reminders": "Reminders",
@@ -597,6 +643,21 @@ PAGE_TITLES = {
     "approve-registered-matters": "Approve registered matters",
     "document-management": "Document Management",
     "finance-billing": "Finance & Billing",
+    "general-accounts": "General Accounts",
+    "invoicing": "Invoicing",
+    "generate-invoice": "Generate Invoice",
+    "payments": "Payments",
+    "purchasing": "Purchasing",
+    "inventory": "Inventory",
+    "sales": "Sales",
+    "customers": "Customers",
+    "suppliers": "Suppliers",
+    "banking": "Banking",
+    "accounting": "Accounting",
+    "reporting": "Reporting",
+    "client-accounts": "Client Accounts",
+    "employee-accounts": "Employee Accounts",
+    "company-accounts": "Company Accounts",
     "people": "People",
     "firm-settings": "Firm settings",
     "matters": "Matters",
@@ -674,6 +735,7 @@ def resolve_workspace_page(role, pages: str):
         "is_my_blogs": leaf == "my-blogs",
         "is_my_blogs_new": leaf == "my-blogs-new",
         "is_google_drive_settings": leaf == "google-drive-settings",
+        "is_finance_settings": leaf == "finance-settings",
         "is_company_information": leaf == "company-information",
         "is_company_profile": leaf == "company-profile",
         "is_website_template": leaf == "website-template",
@@ -754,7 +816,7 @@ def workspace_context(
     is_settings_chrome = is_personal_settings or is_system_settings
     is_dashboard = (not is_settings_chrome) and active == "dashboard"
 
-    # Shared sidebar: Dashboard only. Other modules stay page-unique.
+    # Shared main sidebar: Dashboard (primary chrome is in the template).
     nav_items = [
         {
             "label": "Dashboard",
@@ -838,7 +900,7 @@ def workspace_context(
     for item in utility_items:
         item["badge_count"] = notif_ctx["notification_badges"].get(item["slug"], 0)
 
-    # Page-local sidebar links (dashboard modules, or links unique to one page).
+    # Secondary links — dashboard hubs on dashboard; otherwise page-allocated only.
     if page_nav_items is None:
         if is_dashboard:
             page_nav_items = [
@@ -856,12 +918,16 @@ def workspace_context(
         else:
             local_links = page_local_links_for(active, trail)
             if local_links:
+                local_slugs = {slug for _, slug, _ in local_links}
+                base_trail = [part for part in trail if part]
+                while base_trail and base_trail[-1] in local_slugs:
+                    base_trail.pop()
                 page_nav_items = [
                     {
                         "label": label,
                         "slug": slug,
                         "url": workspace_reverse(
-                            role_slug, *extend_page_trail(trail, slug)
+                            role_slug, *extend_page_trail(base_trail, slug)
                         ),
                         "icon": icon,
                         "active": active == slug,

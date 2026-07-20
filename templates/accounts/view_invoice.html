@@ -1,0 +1,294 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ invoice.invoice_number }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--invoice">
+  <header class="invoice-toolbar no-print">
+    <div class="invoice-toolbar__copy">
+      <h2>{{ invoice.invoice_number }}</h2>
+    </div>
+    <div class="invoice-toolbar__actions">
+      {% if can_issue %}
+      <form method="post" class="invoice-inline-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="issue">
+        <button type="submit" class="btn btn--primary btn--inline">Issue</button>
+      </form>
+      {% endif %}
+      {% if can_share %}
+      <button
+        type="button"
+        class="btn btn--quiet btn--inline"
+        id="invoice-share-open"
+        data-open-share
+      >Share</button>
+      {% endif %}
+    </div>
+  </header>
+
+  <article class="invoice-sheet" aria-label="Invoice {{ invoice.invoice_number }}">
+    <header class="invoice-letterhead">
+      <div class="invoice-letterhead__brand">
+        {% if firm.main_image %}
+        <img
+          class="invoice-letterhead__logo"
+          src="{{ firm.main_image.image.url }}"
+          alt=""
+          width="56"
+          height="56"
+        >
+        {% else %}
+        <div class="invoice-letterhead__mark" aria-hidden="true">
+          {{ firm.display_name|slice:":1"|upper }}
+        </div>
+        {% endif %}
+        <div class="invoice-letterhead__identity">
+          <p class="invoice-letterhead__name">{{ firm.display_name }}</p>
+          {% if firm.city %}
+          <p class="invoice-letterhead__place">{{ firm.city }}{% if firm.country %}, {{ firm.country }}{% endif %}</p>
+          {% endif %}
+        </div>
+      </div>
+      <div class="invoice-letterhead__details">
+        {% if firm.phone %}<p>{{ firm.phone }}</p>{% endif %}
+        {% if firm.email %}<p>{{ firm.email }}</p>{% endif %}
+      </div>
+    </header>
+
+    <div class="invoice-sheet__top">
+      <div class="invoice-sheet__title-block">
+        <h1 class="invoice-sheet__title">Invoice</h1>
+        <p class="invoice-sheet__number">{{ invoice.invoice_number }}</p>
+      </div>
+      <dl class="invoice-sheet__meta">
+        <div>
+          <dt>Issue date</dt>
+          <dd>{{ invoice.issue_date|date:"d M Y" }}</dd>
+        </div>
+        <div>
+          <dt>Due date</dt>
+          <dd>{{ invoice.due_date|date:"d M Y" }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    <section class="invoice-sheet__parties">
+      <div class="invoice-party">
+        <h2 class="invoice-party__label">Bill to</h2>
+        <p class="invoice-party__name">{{ invoice.client.get_full_name }}</p>
+        {% if invoice.client.email %}
+        <p class="invoice-party__line">{{ invoice.client.email }}</p>
+        {% endif %}
+        {% if invoice.client.phone %}
+        <p class="invoice-party__line">{{ invoice.client.phone }}</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="invoice-sheet__items" aria-label="Invoice items">
+      <table class="invoice-table">
+        <thead>
+          <tr>
+            <th scope="col" class="invoice-table__desc">Description</th>
+            <th scope="col" class="invoice-table__qty">Qty</th>
+            <th scope="col" class="invoice-table__amt">Amount (KES)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="invoice-table__desc">{{ invoice.description|linebreaksbr }}</td>
+            <td class="invoice-table__qty">1</td>
+            <td class="invoice-table__amt">{{ invoice.amount|floatformat:2 }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="invoice-sheet__totals" aria-label="Totals">
+      <dl class="invoice-totals">
+        <div>
+          <dt>Subtotal</dt>
+          <dd>KES {{ invoice.amount|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Tax</dt>
+          <dd>KES {{ invoice.tax_amount|floatformat:2 }}</dd>
+        </div>
+        <div class="invoice-totals__grand">
+          <dt>Total due</dt>
+          <dd>KES {{ invoice.total_amount|floatformat:2 }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    {% if invoice.notes %}
+    <section class="invoice-sheet__notes">
+      <h2>Notes</h2>
+      <p>{{ invoice.notes|linebreaksbr }}</p>
+    </section>
+    {% endif %}
+
+    <div class="invoice-sheet__stamps-row">
+      <div
+        class="invoice-seal invoice-seal--{{ invoice.status }}"
+        role="img"
+        aria-label="{% if invoice.approved_by %}{{ invoice.get_status_display }}, approved by {{ invoice.approved_by.get_full_name }}{% else %}{{ invoice.get_status_display }}{% endif %}"
+      >
+        <span class="invoice-seal__ring" aria-hidden="true"></span>
+        <span class="invoice-seal__inner">
+          <span class="invoice-seal__status">{{ invoice.get_status_display }}</span>
+          {% if invoice.approved_by %}
+          <span class="invoice-seal__rule" aria-hidden="true"></span>
+          <span class="invoice-seal__label">Approved by</span>
+          <span class="invoice-seal__name">{{ invoice.approved_by.get_full_name }}</span>
+          {% if invoice.approved_at %}
+          <span class="invoice-seal__date">{{ invoice.approved_at|date:"d M Y" }}</span>
+          {% endif %}
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    <footer class="invoice-company-footer">
+      <p class="invoice-company-footer__thanks">Thank you for your business.</p>
+      <p class="invoice-company-footer__line">
+        {{ firm.display_name }}
+        {% if firm.phone %} · {{ firm.phone }}{% endif %}
+        {% if firm.email %} · {{ firm.email }}{% endif %}
+        {% if firm.tax_pin %} · PIN {{ firm.tax_pin }}{% endif %}
+      </p>
+    </footer>
+  </article>
+</section>
+
+<dialog
+  class="workspace-modal invoice-share-modal no-print"
+  id="invoice-share-modal"
+  {% if open_share_modal %}data-open-on-load="1"{% endif %}
+>
+  <div class="workspace-modal__card">
+    <header class="workspace-modal__head">
+      <h2>Share invoice</h2>
+      <p>Choose how to send the PDF invoice to {{ invoice.client.get_full_name }}.</p>
+    </header>
+    <div class="workspace-modal__body">
+      <div class="invoice-share-options" role="list">
+        {% if whatsapp_url %}
+        <a
+          class="invoice-share-option"
+          role="listitem"
+          href="{{ whatsapp_url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span class="invoice-share-option__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <path d="M12 3.5a8.2 8.2 0 0 0-7.1 12.3L4 20.5l4.8-.9A8.2 8.2 0 1 0 12 3.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M9.2 9.4c.3-.3.6-.3.8 0l.9 1.2c.2.2.1.5 0 .7l-.4.5c.5 1 1.4 1.9 2.4 2.4l.5-.4c.2-.2.5-.2.7 0l1.2.9c.3.2.3.5 0 .8l-.6.6c-.3.3-.7.4-1.1.3-2.2-.5-4.2-2.1-5.4-4.1-.3-.5-.2-1 .2-1.4l.8-.8z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="invoice-share-option__copy">
+            <strong>WhatsApp</strong>
+            <span>Share PDF and payment link to {{ invoice.client.phone }}</span>
+          </span>
+        </a>
+        {% else %}
+        <div class="invoice-share-option is-disabled" role="listitem" aria-disabled="true">
+          <span class="invoice-share-option__copy">
+            <strong>WhatsApp</strong>
+            <span>No valid client phone number on file</span>
+          </span>
+        </div>
+        {% endif %}
+
+        {% if email_url %}
+        <a class="invoice-share-option" role="listitem" href="{{ email_url }}">
+          <span class="invoice-share-option__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <rect x="3.5" y="5.5" width="17" height="13" rx="2" stroke="currentColor" stroke-width="1.6"/>
+              <path d="m4.5 7.5 7.5 5.5 7.5-5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="invoice-share-option__copy">
+            <strong>Email</strong>
+            <span>Share PDF and payment link to {{ invoice.client.email }}</span>
+          </span>
+        </a>
+        {% else %}
+        <div class="invoice-share-option is-disabled" role="listitem" aria-disabled="true">
+          <span class="invoice-share-option__copy">
+            <strong>Email</strong>
+            <span>No client email on file</span>
+          </span>
+        </div>
+        {% endif %}
+
+        <a class="invoice-share-option" role="listitem" href="{{ pdf_url }}">
+          <span class="invoice-share-option__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M9 13h6M9 17h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="invoice-share-option__copy">
+            <strong>Download PDF</strong>
+            <span>Save {{ invoice.invoice_number }}.pdf</span>
+          </span>
+        </a>
+
+        <button type="button" class="invoice-share-option" role="listitem" id="invoice-share-print">
+          <span class="invoice-share-option__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <path d="M7 8V4.5h10V8M7 15.5H5.5A2 2 0 0 1 3.5 13.5v-4A2 2 0 0 1 5.5 7.5h13a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <rect x="7" y="13.5" width="10" height="6" rx="1.2" stroke="currentColor" stroke-width="1.6"/>
+            </svg>
+          </span>
+          <span class="invoice-share-option__copy">
+            <strong>Print</strong>
+            <span>Print the invoice document</span>
+          </span>
+        </button>
+      </div>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="invoice-share-close">Close</button>
+    </div>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (() => {
+    const modal = document.getElementById("invoice-share-modal");
+    const openBtn = document.querySelector("[data-open-share]");
+    const closeBtn = document.getElementById("invoice-share-close");
+    const sharePrintBtn = document.getElementById("invoice-share-print");
+
+    const openModal = () => {
+      if (modal && typeof modal.showModal === "function") modal.showModal();
+    };
+    const closeModal = () => {
+      if (modal && typeof modal.close === "function") modal.close();
+    };
+
+    openBtn?.addEventListener("click", openModal);
+    closeBtn?.addEventListener("click", closeModal);
+    modal?.addEventListener("click", (event) => {
+      if (event.target === modal) closeModal();
+    });
+    sharePrintBtn?.addEventListener("click", () => {
+      closeModal();
+      window.print();
+    });
+
+    if (modal?.dataset.openOnLoad === "1") {
+      openModal();
+      const url = new URL(window.location.href);
+      url.searchParams.delete("share");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  })();
+</script>
+{% endblock %}

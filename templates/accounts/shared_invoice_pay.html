@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Pay {{ invoice.invoice_number }} — {{ firm_name }}{% endblock %}
+{% block body_class %}auth-page shared-pay-page{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+<link rel="stylesheet" href="{% static 'css/site.css' %}">
+{% endblock %}
+
+{% block content %}
+<main class="auth-shell shared-pay-shell">
+  <section class="auth-panel shared-pay-panel">
+    <div class="auth-card">
+      <p class="auth-kicker">{{ firm_name }}</p>
+      <h1>Pay invoice</h1>
+      <p class="auth-lead">
+        {{ invoice.invoice_number }} · Due {{ invoice.due_date|date:"d M Y" }}
+      </p>
+
+      {% if messages %}
+      <div class="toast-stack toast-stack--inline" role="status" aria-live="polite">
+        {% for message in messages %}
+        <div class="toast toast--{{ message.tags|default:'info' }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <dl class="settings-grid review-grid pay-summary">
+        <div>
+          <dt>Billed to</dt>
+          <dd>{{ invoice.client.get_full_name }}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{{ invoice.get_status_display }}</dd>
+        </div>
+        <div>
+          <dt>Amount due</dt>
+          <dd><strong>KES {{ invoice.total_amount|floatformat:2 }}</strong></dd>
+        </div>
+        <div>
+          <dt>Paid</dt>
+          <dd>KES {{ invoice.amount_paid|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Balance</dt>
+          <dd><strong>KES {{ invoice.balance_due|floatformat:2 }}</strong></dd>
+        </div>
+        {% if invoice.last_mpesa_receipt %}
+        <div>
+          <dt>Last M-Pesa receipt</dt>
+          <dd>{{ invoice.last_mpesa_receipt }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+
+      <p class="field-hint" style="margin-bottom: 1rem;">
+        <a href="{{ pdf_url }}">Download PDF invoice</a>
+      </p>
+
+      {% if invoice.status == "paid" %}
+      <div class="empty-state pay-state">
+        <p class="empty-state__title">Fully paid</p>
+        <p class="empty-state__copy">Thank you. This invoice has been marked as paid.</p>
+      </div>
+      {% elif invoice.status == "cancelled" %}
+      <div class="empty-state pay-state">
+        <p class="empty-state__title">Cancelled</p>
+        <p class="empty-state__copy">This invoice cannot be paid.</p>
+      </div>
+      {% elif can_pay %}
+      <form method="post" class="workspace-form" data-stk-loading novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="stk">
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.amount.id_for_label }}">
+            {{ form.amount.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.amount }}
+          {% if form.amount.help_text %}
+          <span class="field-hint">{{ form.amount.help_text }}</span>
+          {% endif %}
+          {% if form.amount.errors %}<span class="field-error">{{ form.amount.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.phone.id_for_label }}">
+            {{ form.phone.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.phone }}
+          <span class="field-hint">
+            Safaricom number that will receive the M-Pesa prompt.
+            {% if not mpesa_live %}Live M-Pesa is not configured — payment will be simulated.{% endif %}
+          </span>
+          {% if form.phone.errors %}<span class="field-error">{{ form.phone.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <button
+            type="submit"
+            class="btn btn--primary btn--inline"
+            data-loading-text="Sending M-Pesa prompt…"
+          >Pay with M-Pesa</button>
+        </div>
+      </form>
+
+      {% include "accounts/includes/stk_live_status.html" %}
+      {% else %}
+      <div class="empty-state pay-state">
+        <p class="empty-state__title">Not available</p>
+        <p class="empty-state__copy">This invoice cannot be paid in its current status.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/stk-pay.js' %}" defer></script>
+<script src="{% static 'js/stk-live.js' %}" defer></script>
+{% endblock %}

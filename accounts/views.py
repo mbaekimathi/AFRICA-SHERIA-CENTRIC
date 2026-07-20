@@ -11,10 +11,12 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 import calendar as calendar_mod
 import json
+import logging
 from collections import defaultdict
 from datetime import date
 from django.utils.safestring import mark_safe
@@ -49,7 +51,10 @@ from .forms import (
     EmployeeBlogForm,
     EmployeeOnboardingForm,
     FAQForm,
+    FinanceSettingsForm,
     GalleryImageForm,
+    GenerateInvoiceForm,
+    InvoiceStkPaymentForm,
     LoginForm,
     MatterPartyEditFormSet,
     MatterPartyFormSet,
@@ -98,10 +103,15 @@ from .document_tracking import (
     start_open_session,
     sync_google_document_content,
 )
+from .client_notifications import (
+    client_notifications_payload,
+    notify_invoice_issued,
+)
 from .models import (
     CaseParty,
     CaseTask,
     Client,
+    ClientNotification,
     CourtAttendance,
     CourtAttendanceAdvocate,
     CourtAttendanceBringUpItem,
@@ -111,12 +121,15 @@ from .models import (
     DocumentOpenSession,
     Employee,
     EmployeeBlogPost,
+    FinanceSettings,
     FirmCompanyInformation,
+    FirmCompanyProfileImage,
     FirmFAQ,
     FirmGalleryImage,
     FirmPracticeArea,
     FirmPracticeAreaImage,
     GoogleDriveConnection,
+    Invoice,
     LitigationCase,
     MatterAttendance,
     MatterParty,
@@ -143,11 +156,14 @@ from .workspace import (
     mark_session_start,
     non_litigation_matter_nav_items,
     NON_LITIGATION_MATTER_ACTION_SLUGS,
+    PAGE_LOCAL_LINKS,
     PAGE_TITLES,
     resolve_workspace_page,
     workspace_context,
 )
 from .utils import optimize_image, render_blog_body, whatsapp_chat_url
+
+logger = logging.getLogger(__name__)
 
 
 def _firm_meta_description(company: FirmCompanyInformation, firm_name: str) -> str:
@@ -192,7 +208,9 @@ def _firm_organization_json_ld(request, company: FirmCompanyInformation, firm_na
     if company.phone:
         data["telephone"] = company.phone.strip()
     if company.website:
-        data["sameAs"] = [company.website.strip()]
+        same_as = [company.website.strip()]
+        same_as.extend(link["url"] for link in company.social_media_links)
+        data["sameAs"] = same_as
     address_parts = {
         "@type": "PostalAddress",
         "addressCountry": (company.country or "KE").strip() or "KE",
@@ -1152,6 +1170,207 @@ def google_drive_disconnect(request):
     return redirect(return_path)
 
 
+@csrf_exempt
+@require_POST
+def mpesa_stk_callback(request):
+    """Safaricom Daraja STK result webhook — updates invoice payment status."""
+    from .mpesa import process_stk_callback
+
+    raw = request.body.decode("utf-8", errors="replace") if request.body else ""
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+
+    try:
+        outcome = process_stk_callback(payload)
+    except Exception:
+        logger.exception("M-Pesa STK callback processing failed")
+        outcome = None
+
+    if outcome:
+        logger.info(
+            "M-Pesa STK callback processed status=%s receipt=%s checkout=%s",
+            outcome.get("status"),
+            outcome.get("mpesa_receipt"),
+            outcome.get("checkout_request_id"),
+        )
+    else:
+        body = (payload or {}).get("Body") or {}
+        stk = body.get("stkCallback") or {}
+        logger.info(
+            "M-Pesa STK callback ResultCode=%s CheckoutRequestID=%s",
+            stk.get("ResultCode"),
+            stk.get("CheckoutRequestID") or "",
+        )
+
+    return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+def _invoice_payable_statuses():
+    return {
+        Invoice.Status.ISSUED,
+        Invoice.Status.GENERATED,
+        Invoice.Status.PARTIALLY_PAID,
+    }
+
+
+def _stk_form_for_invoice(invoice, data=None, *, phone=""):
+    max_amount = invoice.balance_due
+    if data is not None:
+        return InvoiceStkPaymentForm(data, max_amount=max_amount)
+    return InvoiceStkPaymentForm(
+        initial={"phone": phone, "amount": max_amount},
+        max_amount=max_amount,
+    )
+
+
+def _session_stk_payload(stk_request, outcome=None):
+    payload = {
+        "invoice_id": stk_request.invoice_id,
+        "checkout_request_id": stk_request.checkout_request_id,
+        "merchant_request_id": stk_request.merchant_request_id,
+        "phone": stk_request.phone,
+        "amount": str(stk_request.amount),
+        "simulated": stk_request.simulated,
+        "stk_status": stk_request.status,
+        "result_code": stk_request.result_code,
+        "result_desc": stk_request.result_desc,
+        "mpesa_receipt": stk_request.mpesa_receipt,
+    }
+    if outcome:
+        payload["stk_status"] = outcome.get("status") or payload["stk_status"]
+        payload["result_code"] = outcome.get("result_code") or ""
+        payload["result_desc"] = outcome.get("result_desc") or ""
+        payload["mpesa_receipt"] = outcome.get("mpesa_receipt") or ""
+        payload["invoice_status"] = outcome.get("invoice_status")
+        payload["invoice_status_label"] = outcome.get("invoice_status_label")
+        payload["amount_paid"] = outcome.get("amount_paid")
+        payload["balance_due"] = outcome.get("balance_due")
+        payload["payment_applied"] = outcome.get("payment_applied")
+    return payload
+
+
+def _start_invoice_stk(invoice, *, phone, amount):
+    from .mpesa import (
+        create_stk_request,
+        initiate_stk_push,
+        mpesa_configured,
+    )
+
+    result = initiate_stk_push(
+        phone=phone,
+        amount=amount,
+        account_reference=invoice.invoice_number,
+        description=f"Pay {invoice.invoice_number}",
+        callback_url=getattr(settings, "MPESA_CALLBACK_URL", "") or "",
+    )
+    stk = create_stk_request(invoice, result)
+    return result, stk, mpesa_configured()
+
+
+def _check_invoice_stk(session_dict, invoice):
+    from .models import MpesaStkRequest
+    from .mpesa import MpesaError, refresh_stk_request
+
+    checkout_id = (session_dict.get("checkout_request_id") or "").strip()
+    if not checkout_id or session_dict.get("invoice_id") != invoice.pk:
+        raise MpesaError(
+            "Start an STK push first, then check status after the customer responds."
+        )
+
+    try:
+        stk = MpesaStkRequest.objects.select_related("invoice").get(
+            checkout_request_id=checkout_id,
+            invoice=invoice,
+        )
+    except MpesaStkRequest.DoesNotExist as exc:
+        raise MpesaError(
+            "Could not find this STK request. Send a new payment prompt."
+        ) from exc
+
+    outcome = refresh_stk_request(stk)
+    session_dict.clear()
+    session_dict.update(_session_stk_payload(stk, outcome))
+    return outcome
+
+
+def _stk_status_response(outcome: dict) -> dict:
+    """JSON-serializable STK status for live polling."""
+    status = outcome.get("status") or "pending"
+    return {
+        "status": status,
+        "result_code": outcome.get("result_code") or "",
+        "result_desc": outcome.get("result_desc") or "",
+        "mpesa_receipt": outcome.get("mpesa_receipt") or "",
+        "amount": outcome.get("amount") or "",
+        "phone": outcome.get("phone") or "",
+        "amount_paid": outcome.get("amount_paid") or "",
+        "balance_due": outcome.get("balance_due") or "",
+        "invoice_status": outcome.get("invoice_status") or "",
+        "invoice_status_label": outcome.get("invoice_status_label") or "",
+        "payment_applied": bool(outcome.get("payment_applied")),
+        "terminal": status in {"success", "failed", "error", "idle"},
+    }
+
+
+def _poll_invoice_stk_status(request, invoice, session_key: str) -> dict:
+    """Refresh STK status from Daraja/session and return poll payload."""
+    from .mpesa import MpesaError
+
+    push = dict(request.session.get(session_key) or {})
+    if not push or push.get("invoice_id") != invoice.pk:
+        return _stk_status_response({"status": "idle", "result_desc": "No active STK push."})
+
+    try:
+        outcome = _check_invoice_stk(push, invoice)
+        request.session[session_key] = push
+        request.session.modified = True
+        return _stk_status_response(outcome)
+    except MpesaError as exc:
+        return _stk_status_response({"status": "error", "result_desc": str(exc)})
+
+
+@login_required
+@require_GET
+def invoice_stk_status(request, role, invoice_id):
+    """Live poll: M-Pesa STK result for staff pay invoice page."""
+    user, denied = _employee_workspace_guard(request, role)
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    invoice = get_object_or_404(Invoice, pk=invoice_id)
+    payload = _poll_invoice_stk_status(request, invoice, PayInvoiceView.session_key)
+    return JsonResponse(payload)
+
+
+@require_GET
+def client_invoice_stk_status(request, invoice_id):
+    """Live poll: M-Pesa STK result for client pay invoice page."""
+    client, denied = _require_active_client(request)
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    invoice = get_object_or_404(_client_invoice_queryset(client), pk=invoice_id)
+    payload = _poll_invoice_stk_status(
+        request, invoice, ClientPayInvoiceView.session_key
+    )
+    return JsonResponse(payload)
+
+
+@require_GET
+def shared_invoice_stk_status(request, token):
+    """Live poll: M-Pesa STK result for shared invoice pay link."""
+    invoice, error = _shared_invoice_from_token(token)
+    if error:
+        return error
+
+    payload = _poll_invoice_stk_status(
+        request, invoice, SharedInvoicePayView.session_key
+    )
+    return JsonResponse(payload)
+
+
 class ClientOnboardingView(View):
     template_name = "accounts/client_onboarding.html"
 
@@ -1248,8 +1467,8 @@ class ClientDashboardView(View):
         display_name = client.get_full_name() or client.email
         context["welcome_headline"] = f"Welcome, {display_name}"
         context["welcome_copy"] = (
-            "Your client account is active. Use the portal to follow your matters, "
-            "documents, and billing as they become available."
+            "Your client account is active. Use Finance & Billing to view and pay "
+            "invoices issued to you, and follow other portal areas as they open."
         )
         return render(request, self.template_name, context)
 
@@ -1305,6 +1524,329 @@ class ClientLogoutView(View):
 
     def get(self, request):
         return self.post(request)
+
+
+CLIENT_INVOICE_STATUSES = (
+    Invoice.Status.ISSUED,
+    Invoice.Status.PARTIALLY_PAID,
+    Invoice.Status.PAID,
+    Invoice.Status.CANCELLED,
+)
+
+
+def _require_active_client(request):
+    """Return (client, None) or (None, redirect response)."""
+    client = get_client(request)
+    if not client:
+        return None, redirect("accounts:client_login")
+    if client.status == Client.Status.SUSPENDED:
+        logout_client(request)
+        return None, redirect("accounts:client_login")
+    if client.status != Client.Status.ACTIVE:
+        return None, redirect_for_client(client)
+    return client, None
+
+
+def _client_invoice_queryset(client):
+    return Invoice.objects.filter(
+        client=client,
+        status__in=CLIENT_INVOICE_STATUSES,
+    ).select_related("approved_by", "created_by")
+
+
+class ClientBillingView(View):
+    """Client Finance & Billing hub — issued invoices awaiting payment."""
+
+    template_name = "accounts/client_billing.html"
+
+    def get(self, request):
+        client, denied = _require_active_client(request)
+        if denied:
+            return denied
+
+        invoices = list(_client_invoice_queryset(client))
+        outstanding = [
+            inv for inv in invoices if inv.status in {
+                Invoice.Status.ISSUED,
+                Invoice.Status.PARTIALLY_PAID,
+            }
+        ]
+        from decimal import Decimal
+
+        context = client_portal_context(
+            request,
+            client,
+            page_title="Finance & Billing",
+            active="billing",
+        )
+        context.update(
+            {
+                "invoices": invoices,
+                "outstanding_count": len(outstanding),
+                "outstanding_total": sum(
+                    (inv.total_amount for inv in outstanding),
+                    start=Decimal("0"),
+                ),
+            }
+        )
+        return render(request, self.template_name, context)
+
+
+class ClientInvoiceView(View):
+    """Client-facing invoice document with pay / download actions."""
+
+    template_name = "accounts/client_invoice.html"
+
+    def get(self, request, invoice_id):
+        client, denied = _require_active_client(request)
+        if denied:
+            return denied
+
+        invoice = get_object_or_404(
+            _client_invoice_queryset(client),
+            pk=invoice_id,
+        )
+        # Opening the invoice from a notification marks related alerts read.
+        ClientNotification.objects.filter(
+            recipient=client,
+            source_key=f"invoice_issued:{invoice.pk}",
+            is_read=False,
+        ).update(is_read=True, read_at=timezone.now())
+
+        firm = FirmCompanyInformation.get_solo()
+        context = client_portal_context(
+            request,
+            client,
+            page_title=invoice.invoice_number,
+            active="billing",
+        )
+        context.update(
+            {
+                "invoice": invoice,
+                "firm": firm,
+                "list_url": reverse("accounts:client_billing"),
+                "pay_url": reverse(
+                    "accounts:client_pay_invoice",
+                    kwargs={"invoice_id": invoice.pk},
+                ),
+                "pdf_url": reverse(
+                    "accounts:client_invoice_pdf",
+                    kwargs={"invoice_id": invoice.pk},
+                ),
+                "can_pay": invoice.is_payable,
+            }
+        )
+        return render(request, self.template_name, context)
+
+
+class ClientInvoicePdfView(View):
+    """Authenticated PDF download for the logged-in client."""
+
+    def get(self, request, invoice_id):
+        client, denied = _require_active_client(request)
+        if denied:
+            return denied
+
+        invoice = get_object_or_404(
+            _client_invoice_queryset(client),
+            pk=invoice_id,
+        )
+        return _invoice_pdf_response(invoice)
+
+
+class ClientPayInvoiceView(View):
+    """Client portal M-Pesa payment for an issued invoice."""
+
+    template_name = "accounts/client_pay_invoice.html"
+    session_key = "client_invoice_stk_push"
+
+    def get(self, request, invoice_id):
+        client, denied = _require_active_client(request)
+        if denied:
+            return denied
+
+        invoice = get_object_or_404(
+            _client_invoice_queryset(client),
+            pk=invoice_id,
+        )
+        context = self._context(request, client, invoice)
+        return render(request, self.template_name, context)
+
+    def post(self, request, invoice_id):
+        client, denied = _require_active_client(request)
+        if denied:
+            return denied
+
+        invoice = get_object_or_404(
+            _client_invoice_queryset(client),
+            pk=invoice_id,
+        )
+        action = (request.POST.get("action") or "stk").strip()
+
+        if invoice.status == Invoice.Status.PAID:
+            messages.info(request, "This invoice is already paid.")
+            return redirect("accounts:client_invoice", invoice_id=invoice.pk)
+
+        if invoice.status not in _invoice_payable_statuses():
+            messages.error(request, "This invoice cannot be paid.")
+            return redirect("accounts:client_invoice", invoice_id=invoice.pk)
+
+        if action in {"confirm", "check_status"}:
+            return self._check_payment_status(request, invoice)
+
+        form = _stk_form_for_invoice(invoice, request.POST)
+        if not form.is_valid():
+            context = self._context(request, client, invoice, form=form)
+            return render(request, self.template_name, context)
+
+        from .mpesa import MpesaError
+
+        try:
+            result, _stk, live = _start_invoice_stk(
+                invoice,
+                phone=form.cleaned_data["phone"],
+                amount=form.cleaned_data["amount"],
+            )
+            push = _session_stk_payload(_stk)
+            push["started_at"] = result.get("started_at") or ""
+            request.session[self.session_key] = push
+            request.session.modified = True
+        except MpesaError as exc:
+            messages.error(request, str(exc))
+            context = self._context(request, client, invoice, form=form)
+            return render(request, self.template_name, context)
+
+        messages.success(
+            request,
+            result.get("customer_message")
+            or "STK push sent. We are checking payment status live.",
+        )
+        if not live:
+            messages.info(
+                request,
+                "Payment is running in simulation mode — status will update automatically.",
+            )
+        return redirect("accounts:client_pay_invoice", invoice_id=invoice.pk)
+
+    def _check_payment_status(self, request, invoice):
+        from .mpesa import MpesaError
+
+        push = dict(request.session.get(self.session_key) or {})
+        try:
+            outcome = _check_invoice_stk(push, invoice)
+            request.session[self.session_key] = push
+            request.session.modified = True
+        except MpesaError as exc:
+            messages.error(request, str(exc))
+            return redirect("accounts:client_pay_invoice", invoice_id=invoice.pk)
+
+        status = outcome.get("status")
+        if status == "success":
+            receipt = outcome.get("mpesa_receipt") or "—"
+            messages.success(
+                request,
+                f"Payment successful. M-Pesa receipt {receipt}. "
+                f"Invoice is now {outcome.get('invoice_status_label')} "
+                f"(paid KES {outcome.get('amount_paid')}, "
+                f"balance KES {outcome.get('balance_due')}).",
+            )
+            invoice.refresh_from_db()
+            if invoice.status == Invoice.Status.PAID:
+                request.session.pop(self.session_key, None)
+                return redirect("accounts:client_invoice", invoice_id=invoice.pk)
+        elif status == "failed":
+            messages.error(
+                request,
+                outcome.get("result_desc") or "M-Pesa payment failed.",
+            )
+        else:
+            messages.info(
+                request,
+                outcome.get("result_desc")
+                or "Payment is still pending. Ask the payer to complete the prompt, then check again.",
+            )
+        return redirect("accounts:client_pay_invoice", invoice_id=invoice.pk)
+
+    def _context(self, request, client, invoice, *, form=None):
+        from .mpesa import mpesa_configured
+
+        initial_phone = (client.phone or "").strip()
+        form = form or _stk_form_for_invoice(invoice, phone=initial_phone)
+        push = request.session.get(self.session_key)
+        if push and push.get("invoice_id") != invoice.pk:
+            push = None
+
+        context = client_portal_context(
+            request,
+            client,
+            page_title=f"Pay {invoice.invoice_number}",
+            active="billing",
+        )
+        context.update(
+            {
+                "invoice": invoice,
+                "form": form,
+                "list_url": reverse("accounts:client_billing"),
+                "invoice_url": reverse(
+                    "accounts:client_invoice",
+                    kwargs={"invoice_id": invoice.pk},
+                ),
+                "stk_push": push,
+                "stk_poll_url": reverse(
+                    "accounts:client_invoice_stk_status",
+                    kwargs={"invoice_id": invoice.pk},
+                ),
+                "mpesa_live": mpesa_configured(),
+                "can_pay": invoice.is_payable,
+            }
+        )
+        return context
+
+
+@require_GET
+def client_notifications(request):
+    """Live notification feed for the client portal topbar bell."""
+    client, denied = _require_active_client(request)
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    return JsonResponse(client_notifications_payload(client))
+
+
+@require_GET
+def client_notification_open(request, notification_id):
+    """Mark a client notification read and redirect to its target page."""
+    client, denied = _require_active_client(request)
+    if denied:
+        return denied
+
+    notification = get_object_or_404(
+        ClientNotification,
+        pk=notification_id,
+        recipient=client,
+    )
+    notification.mark_read()
+    return redirect(notification.target_url)
+
+
+@require_POST
+def client_notifications_mark_all_read(request):
+    """Mark every unread notification for the current client as read."""
+    client, denied = _require_active_client(request)
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    now = timezone.now()
+    updated = ClientNotification.objects.filter(
+        recipient=client, is_read=False
+    ).update(is_read=True, read_at=now)
+    return JsonResponse(
+        {
+            "ok": True,
+            "marked": updated,
+            "unread_count": 0,
+            "badges": {},
+        }
+    )
 
 
 @require_GET
@@ -2054,6 +2596,47 @@ def group_non_litigation_matters(matters, group_by: str):
     return mode, groups
 
 
+def group_invoices(invoices, group_by: str = "client"):
+    """Group invoices by client for the invoicing browse UI."""
+    buckets = defaultdict(list)
+    for invoice in invoices:
+        buckets[invoice.client.pk].append(invoice)
+
+    groups = []
+    for index, (key, items) in enumerate(buckets.items()):
+        client = items[0].client
+        label = client.get_full_name()
+        subtitle = (
+            f"{client.get_client_type_display()} · "
+            f"{_client_contact_subtitle(client)}"
+        )
+        search_bits = [
+            label,
+            client.get_client_type_display(),
+            client.phone or "",
+            client.email or "",
+            *[
+                f"{invoice.invoice_number} {invoice.description} "
+                f"{invoice.get_status_display()}"
+                for invoice in items
+            ],
+        ]
+        groups.append(
+            {
+                "key": f"client-{key}",
+                "label": label,
+                "subtitle": subtitle,
+                "count": len(items),
+                "items": items,
+                "tone": index % 6,
+                "search_text": " ".join(search_bits).lower(),
+                "kind": "client",
+            }
+        )
+    groups.sort(key=lambda g: g["label"].lower())
+    return "client", groups
+
+
 @method_decorator(login_required, name="dispatch")
 class RoleWorkspaceView(View):
     """
@@ -2103,6 +2686,10 @@ class RoleWorkspaceView(View):
     research_blogs_template = "accounts/research_blogs.html"
     company_faq_form_template = "accounts/company_faq_form.html"
     website_template_template = "accounts/website_template.html"
+    finance_settings_template = "accounts/finance_settings.html"
+    invoicing_template = "accounts/invoicing.html"
+    generate_invoice_template = "accounts/generate_invoice.html"
+    payments_template = "accounts/payments.html"
     page_template = "accounts/workspace_page.html"
 
     def get(self, request, role, pages="dashboard"):
@@ -2154,6 +2741,9 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_website_template"):
             context.update(self._website_template_context(user))
             response = render(request, self.website_template_template, context)
+        elif resolved.get("is_finance_settings"):
+            context.update(self._finance_settings_context(form=None))
+            response = render(request, self.finance_settings_template, context)
         elif resolved.get("is_company_information"):
             from .company_readiness import analyze_company_information
 
@@ -2202,6 +2792,47 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_research_blogs"):
             context.update(self._research_blogs_context(user))
             response = render(request, self.research_blogs_template, context)
+        elif resolved["leaf"] == "invoicing":
+            invoices = list(
+                Invoice.objects.select_related("client", "created_by").order_by(
+                    "-issue_date", "-created_at"
+                )
+            )
+            _group_by, invoice_groups = group_invoices(invoices)
+            context["invoices"] = invoices
+            context["invoice_count"] = len(invoices)
+            context["invoice_groups"] = invoice_groups
+            response = render(request, self.invoicing_template, context)
+        elif resolved["leaf"] == "generate-invoice":
+            context.update(self._generate_invoice_context(user, resolved))
+            response = render(request, self.generate_invoice_template, context)
+        elif resolved["leaf"] == "payments":
+            from decimal import Decimal
+
+            invoices = list(
+                Invoice.objects.select_related("client")
+                .exclude(status=Invoice.Status.CANCELLED)
+                .order_by("-issue_date", "-created_at")
+            )
+            _group_by, payment_groups = group_invoices(invoices)
+            for group in payment_groups:
+                items = group["items"]
+                group["balance_due"] = sum(
+                    (inv.balance_due for inv in items),
+                    Decimal("0.00"),
+                )
+                group["open_count"] = sum(
+                    1 for inv in items if inv.status != Invoice.Status.PAID
+                )
+            context["invoices"] = invoices
+            context["invoice_count"] = len(invoices)
+            context["payment_groups"] = payment_groups
+            context["unpaid_invoices"] = [
+                inv
+                for inv in invoices
+                if inv.status != Invoice.Status.PAID
+            ]
+            response = render(request, self.payments_template, context)
         elif resolved["is_dashboard"]:
             response = render(request, self.dashboard_template, context)
         elif resolved["leaf"] == "employee-management":
@@ -2361,10 +2992,12 @@ class RoleWorkspaceView(View):
             "company-gallery-new",
             "company-terms",
             "website-template",
+            "finance-settings",
             "register-case",
             "register-new-matter",
             "register-client",
             "register-employee",
+            "generate-invoice",
         }:
             return redirect(user.dashboard_url)
 
@@ -2380,6 +3013,9 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "website-template":
             return self._post_website_template(request, user, resolved)
+
+        if resolved["leaf"] == "finance-settings":
+            return self._post_finance_settings(request, user, resolved)
 
         if resolved["leaf"] == "company-profile":
             return self._post_company_profile(request, user, resolved)
@@ -2407,6 +3043,9 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "register-employee":
             return self._post_register_employee(request, user, resolved)
+
+        if resolved["leaf"] == "generate-invoice":
+            return self._post_generate_invoice(request, user, resolved)
 
         if resolved["leaf"] == "register-new-matter":
             return self._post_register_matter(request, user, resolved)
@@ -2730,10 +3369,56 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _company_profile_context(*, form=None):
         company = FirmCompanyInformation.get_solo()
+        existing_images = list(
+            company.profile_images.order_by("sort_order", "id")
+        )
         return {
             "company_information": company,
+            "existing_images": existing_images,
             "form": form or CompanyInformationForm(instance=company),
         }
+
+    @staticmethod
+    def _sync_company_profile_images(request, company, *, append=True):
+        """Apply deletes, reorder, and newly uploaded company profile images."""
+        delete_ids = request.POST.getlist("delete_images")
+        if delete_ids:
+            company.profile_images.filter(pk__in=delete_ids).delete()
+
+        for image in company.profile_images.all():
+            raw = request.POST.get(f"image_order_{image.pk}")
+            if raw is None or raw == "":
+                continue
+            try:
+                image.sort_order = max(0, int(raw))
+            except (TypeError, ValueError):
+                continue
+            image.save(update_fields=["sort_order"])
+
+        uploads = request.FILES.getlist("images")
+        if uploads:
+            start = 0
+            if append:
+                last = (
+                    company.profile_images.order_by("-sort_order")
+                    .values_list("sort_order", flat=True)
+                    .first()
+                )
+                start = (last + 1) if last is not None else 0
+            for index, uploaded in enumerate(uploads):
+                optimized = optimize_image(uploaded, max_size=1600, quality=78)
+                FirmCompanyProfileImage.objects.create(
+                    company=company,
+                    image=optimized,
+                    sort_order=start + index,
+                )
+
+        for index, image in enumerate(
+            company.profile_images.order_by("sort_order", "id")
+        ):
+            if image.sort_order != index:
+                image.sort_order = index
+                image.save(update_fields=["sort_order"])
 
     @staticmethod
     def _company_contacts_context(*, form=None):
@@ -2767,7 +3452,7 @@ class RoleWorkspaceView(View):
 
     def _post_company_profile(self, request, user, resolved):
         company = FirmCompanyInformation.get_solo()
-        form = CompanyInformationForm(request.POST, instance=company)
+        form = CompanyInformationForm(request.POST, request.FILES, instance=company)
         context = workspace_context(
             user,
             request=request,
@@ -2779,6 +3464,7 @@ class RoleWorkspaceView(View):
             info = form.save(commit=False)
             info.updated_by = user
             info.save()
+            self._sync_company_profile_images(request, info, append=True)
             messages.success(request, "Company profile saved.")
             return redirect(user.workspace_url(*resolved["trail"]))
 
@@ -3166,6 +3852,46 @@ class RoleWorkspaceView(View):
         return attach_greeting_cookie(response, request)
 
     @staticmethod
+    def _finance_settings_context(*, form=None):
+        setting = FinanceSettings.get_solo()
+        from .mpesa import MPESA_CALLBACK_PATH, is_valid_mpesa_callback_url
+
+        return {
+            "finance_setting": setting,
+            "form": form or FinanceSettingsForm(instance=setting),
+            "stk_ready": setting.stk_ready,
+            "mpesa_callback_path": MPESA_CALLBACK_PATH,
+            "mpesa_callback_valid": is_valid_mpesa_callback_url(
+                setting.mpesa_callback_url or ""
+            ),
+        }
+
+    def _post_finance_settings(self, request, user, resolved):
+        setting = FinanceSettings.get_solo()
+        form = FinanceSettingsForm(request.POST, instance=setting)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            choice = form.save(commit=False)
+            choice.updated_by = user
+            choice.save()
+            methods = ", ".join(choice.enabled_payment_methods) or "none"
+            messages.success(
+                request,
+                f"Finance settings saved. Allowed methods: {methods}.",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._finance_settings_context(form=form))
+        response = render(request, self.finance_settings_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
     def _google_drive_settings_context(request, resolved):
         connection = GoogleDriveConnection.get_solo()
         host = request.get_host()
@@ -3276,6 +4002,47 @@ class RoleWorkspaceView(View):
                 "employee-management",
             ),
         }
+
+    @staticmethod
+    def _invoicing_url(user, trail):
+        clean = [part for part in trail if part and part != "generate-invoice"]
+        if not clean or clean[-1] != "invoicing":
+            clean = extend_page_trail(clean, "invoicing")
+        return user.workspace_url(*clean)
+
+    @classmethod
+    def _generate_invoice_context(cls, user, resolved, form=None):
+        return {
+            "form": form or GenerateInvoiceForm(),
+            "invoicing_url": cls._invoicing_url(user, resolved["trail"]),
+        }
+
+    def _post_generate_invoice(self, request, user, resolved):
+        form = GenerateInvoiceForm(request.POST)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+
+        if form.is_valid():
+            invoice = form.save(commit=False)
+            invoice.invoice_number = Invoice.next_invoice_number()
+            invoice.created_by = user
+            invoice.status = Invoice.Status.GENERATED
+            invoice.save()
+            messages.success(
+                request,
+                f"Invoice {invoice.invoice_number} generated for "
+                f"{invoice.client.get_full_name()}.",
+            )
+            return redirect(self._invoicing_url(user, resolved["trail"]))
+
+        context.update(self._generate_invoice_context(user, resolved, form))
+        response = render(request, self.generate_invoice_template, context)
+        return attach_greeting_cookie(response, request)
 
     def _post_register_matter(self, request, user, resolved):
         form = RegisterMatterForm(request.POST)
@@ -3833,6 +4600,20 @@ ACTIVE_MATTERS_TRAIL = (
     "non-litigation-matters",
 )
 
+INVOICING_TRAIL = (
+    "dashboard",
+    "finance-billing",
+    "general-accounts",
+    "invoicing",
+)
+
+PAYMENTS_TRAIL = (
+    "dashboard",
+    "finance-billing",
+    "general-accounts",
+    "payments",
+)
+
 
 def _employee_workspace_guard(request, role):
     user = request.user
@@ -3857,6 +4638,21 @@ def _pending_cases_list_url(user):
 
 def _active_cases_list_url(user):
     return user.workspace_url(*ACTIVE_CASES_TRAIL)
+
+
+def _invoicing_list_url(user):
+    return user.workspace_url(*INVOICING_TRAIL)
+
+
+def _payments_list_url(user):
+    return user.workspace_url(*PAYMENTS_TRAIL)
+
+
+def _invoice_pay_url(user, invoice_id: int) -> str:
+    return reverse(
+        "accounts:pay_invoice",
+        kwargs={"role": user.role_slug, "invoice_id": invoice_id},
+    )
 
 
 def _pending_matters_list_url(user):
@@ -4870,6 +5666,86 @@ class EditPracticeAreaView(View):
 
 
 @method_decorator(login_required, name="dispatch")
+class EditGalleryImageView(View):
+    """Edit or delete a firm gallery image."""
+
+    template_name = "accounts/company_gallery_form.html"
+
+    def _item_or_404(self, item_id):
+        return get_object_or_404(FirmGalleryImage, pk=item_id)
+
+    def get(self, request, role, item_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_gallery_image",
+                    kwargs={"role": user.role_slug, "item_id": item_id},
+                )
+            )
+        item = self._item_or_404(item_id)
+        trail = ["dashboard", "company-gallery"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit gallery image",
+            page_trail=trail,
+            active_page="company-gallery",
+        )
+        context.update(
+            RoleWorkspaceView._company_gallery_form_context(user, item=item)
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, item_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_gallery_image",
+                    kwargs={"role": user.role_slug, "item_id": item_id},
+                )
+            )
+        item = self._item_or_404(item_id)
+        list_url = RoleWorkspaceView._company_gallery_list_url(user)
+
+        if request.POST.get("gallery_delete"):
+            title = item.title
+            item.delete()
+            messages.success(request, f"Gallery item “{title}” deleted.")
+            return redirect(list_url)
+
+        form = GalleryImageForm(request.POST, request.FILES, instance=item)
+        trail = ["dashboard", "company-gallery"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit gallery image",
+            page_trail=trail,
+            active_page="company-gallery",
+        )
+        if form.is_valid():
+            item = form.save(commit=False)
+            item.updated_by = user
+            item.save()
+            messages.success(request, f"Gallery item “{item.title}” saved.")
+            return redirect(list_url)
+
+        context.update(
+            RoleWorkspaceView._company_gallery_form_context(
+                user, form=form, item=item
+            )
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
 class EditFAQView(View):
     """Edit or delete a firm FAQ entry."""
 
@@ -5388,6 +6264,583 @@ class ViewLitigationCaseView(View):
         )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
+class ViewInvoiceView(View):
+    """Invoice document view — issue, share, and pay entry points."""
+
+    template_name = "accounts/view_invoice.html"
+
+    def get_invoice(self, invoice_id):
+        return get_object_or_404(
+            Invoice.objects.select_related("client", "created_by", "approved_by"),
+            pk=invoice_id,
+        )
+
+    def get(self, request, role, invoice_id):
+        user, denied = _employee_workspace_guard(request, role)
+        if denied:
+            return denied
+
+        invoice = self.get_invoice(invoice_id)
+        context = self._context(user, invoice, request=request)
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, invoice_id):
+        user, denied = _employee_workspace_guard(request, role)
+        if denied:
+            return denied
+
+        invoice = self.get_invoice(invoice_id)
+        action = (request.POST.get("action") or "").strip()
+
+        if action == "issue":
+            if invoice.status in {
+                Invoice.Status.PAID,
+                Invoice.Status.CANCELLED,
+            }:
+                messages.error(
+                    request,
+                    "This invoice cannot be issued in its current status.",
+                )
+                return redirect(
+                    "accounts:view_invoice",
+                    role=role,
+                    invoice_id=invoice.pk,
+                )
+            if invoice.status != Invoice.Status.ISSUED:
+                invoice.status = Invoice.Status.ISSUED
+                invoice.approved_by = user
+                invoice.approved_at = timezone.now()
+                invoice.save(
+                    update_fields=[
+                        "status",
+                        "approved_by",
+                        "approved_at",
+                        "updated_at",
+                    ]
+                )
+                notify_invoice_issued(invoice)
+                messages.success(
+                    request,
+                    f"{invoice.invoice_number} marked as Issued. "
+                    f"{invoice.client.get_full_name()} has been notified in their portal.",
+                )
+            return redirect(
+                f"{reverse('accounts:view_invoice', kwargs={'role': role, 'invoice_id': invoice.pk})}"
+                f"?share=1"
+            )
+
+        return redirect(
+            "accounts:view_invoice",
+            role=role,
+            invoice_id=invoice.pk,
+        )
+
+    def _context(self, user, invoice, *, request=None):
+        from .mpesa import MpesaError, normalize_msisdn
+        from urllib.parse import quote
+
+        from django.core import signing
+
+        page_nav_items = [
+            {
+                "label": label,
+                "slug": slug,
+                "url": user.workspace_url(
+                    *extend_page_trail(list(INVOICING_TRAIL), slug)
+                ),
+                "icon": icon,
+                "active": False,
+            }
+            for label, slug, icon in PAGE_LOCAL_LINKS.get("invoicing", [])
+        ]
+
+        firm = FirmCompanyInformation.get_solo()
+        pay_url = _invoice_pay_url(user, invoice.pk)
+        pdf_download_url = reverse(
+            "accounts:invoice_pdf",
+            kwargs={"role": user.role_slug, "invoice_id": invoice.pk},
+        )
+        share_token = signing.dumps(
+            {"invoice_id": invoice.pk},
+            salt="invoice-pdf-share",
+        )
+        pdf_share_path = reverse(
+            "accounts:invoice_pdf_shared",
+            kwargs={"token": share_token},
+        )
+        pay_share_path = reverse(
+            "accounts:invoice_pay_shared",
+            kwargs={"token": share_token},
+        )
+        absolute_pdf_url = ""
+        absolute_pay_url = ""
+        if request is not None:
+            absolute_pdf_url = request.build_absolute_uri(pdf_share_path)
+            absolute_pay_url = request.build_absolute_uri(pay_share_path)
+
+        share_message = (
+            f"Invoice {invoice.invoice_number} from {firm.display_name}\n"
+            f"Amount due: KES {invoice.total_amount}\n"
+            f"Due date: {invoice.due_date.strftime('%d %b %Y')}"
+        )
+        if absolute_pdf_url:
+            share_message += f"\n\nPDF invoice:\n{absolute_pdf_url}"
+        if absolute_pay_url and invoice.status != Invoice.Status.PAID:
+            share_message += f"\n\nPay online (M-Pesa):\n{absolute_pay_url}"
+        elif absolute_pay_url:
+            share_message += f"\n\nPayment page:\n{absolute_pay_url}"
+
+        whatsapp_url = ""
+        client_phone = (invoice.client.phone or "").strip()
+        if client_phone:
+            try:
+                msisdn = normalize_msisdn(client_phone)
+                whatsapp_url = (
+                    f"https://wa.me/{msisdn}?text={quote(share_message)}"
+                )
+            except MpesaError:
+                whatsapp_url = ""
+
+        email_url = ""
+        client_email = (invoice.client.email or "").strip()
+        if client_email:
+            subject = quote(
+                f"Invoice {invoice.invoice_number} — {firm.display_name}"
+            )
+            body = quote(share_message)
+            email_url = f"mailto:{client_email}?subject={subject}&body={body}"
+
+        open_share = bool(
+            request is not None and request.GET.get("share") == "1"
+        )
+
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=invoice.invoice_number,
+            page_trail=list(INVOICING_TRAIL),
+            active_page="invoicing",
+            page_nav_items=page_nav_items,
+        )
+        context.update(
+            {
+                "invoice": invoice,
+                "list_url": _invoicing_list_url(user),
+                "firm": firm,
+                "pay_url": pay_url,
+                "pdf_url": pdf_download_url,
+                "pdf_share_url": absolute_pdf_url or pdf_share_path,
+                "pay_share_url": absolute_pay_url or pay_share_path,
+                "can_pay": invoice.status
+                not in {Invoice.Status.PAID, Invoice.Status.CANCELLED},
+                "can_issue": invoice.status
+                in {Invoice.Status.DRAFT, Invoice.Status.GENERATED},
+                "can_share": invoice.status
+                in {
+                    Invoice.Status.ISSUED,
+                    Invoice.Status.GENERATED,
+                    Invoice.Status.PAID,
+                },
+                "whatsapp_url": whatsapp_url,
+                "email_url": email_url,
+                "open_share_modal": open_share
+                and invoice.status == Invoice.Status.ISSUED,
+            }
+        )
+        return context
+
+
+def _invoice_pdf_response(invoice):
+    from .invoice_pdf import build_invoice_pdf
+
+    firm = FirmCompanyInformation.get_solo()
+    pdf_bytes = build_invoice_pdf(invoice, firm)
+    filename = f"{invoice.invoice_number}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@method_decorator(login_required, name="dispatch")
+class InvoicePdfView(View):
+    """Authenticated PDF download for an invoice."""
+
+    def get(self, request, role, invoice_id):
+        user, denied = _employee_workspace_guard(request, role)
+        if denied:
+            return denied
+        invoice = get_object_or_404(
+            Invoice.objects.select_related("client", "approved_by"),
+            pk=invoice_id,
+        )
+        return _invoice_pdf_response(invoice)
+
+
+class SharedInvoicePdfView(View):
+    """Public signed PDF link used when sharing via WhatsApp or email."""
+
+    def get(self, request, token):
+        invoice, error = _shared_invoice_from_token(token)
+        if error:
+            return error
+        return _invoice_pdf_response(invoice)
+
+
+def _shared_invoice_from_token(token):
+    """Return (invoice, None) or (None, HttpResponse error)."""
+    from django.core import signing
+
+    try:
+        payload = signing.loads(
+            token,
+            salt="invoice-pdf-share",
+            max_age=60 * 60 * 24 * 30,
+        )
+        invoice_id = int(payload["invoice_id"])
+    except (
+        signing.BadSignature,
+        signing.SignatureExpired,
+        KeyError,
+        TypeError,
+        ValueError,
+    ):
+        return None, HttpResponse(
+            "This invoice link is invalid or has expired.",
+            status=404,
+        )
+
+    invoice = get_object_or_404(
+        Invoice.objects.select_related("client", "approved_by", "created_by"),
+        pk=invoice_id,
+    )
+    return invoice, None
+
+
+class SharedInvoicePayView(View):
+    """Public signed payment page linked from WhatsApp / email shares."""
+
+    template_name = "accounts/shared_invoice_pay.html"
+    session_key = "shared_invoice_stk_push"
+
+    def get(self, request, token):
+        invoice, error = _shared_invoice_from_token(token)
+        if error:
+            return error
+        context = self._context(request, invoice, token)
+        return render(request, self.template_name, context)
+
+    def post(self, request, token):
+        invoice, error = _shared_invoice_from_token(token)
+        if error:
+            return error
+
+        action = (request.POST.get("action") or "stk").strip()
+        pay_redirect = redirect(
+            "accounts:invoice_pay_shared",
+            token=token,
+        )
+
+        if invoice.status == Invoice.Status.PAID:
+            messages.info(request, "This invoice is already paid.")
+            return pay_redirect
+
+        if invoice.status == Invoice.Status.CANCELLED:
+            messages.error(request, "Cancelled invoices cannot be paid.")
+            return pay_redirect
+
+        if invoice.status not in _invoice_payable_statuses():
+            messages.error(request, "This invoice cannot be paid yet.")
+            return pay_redirect
+
+        if action in {"confirm", "check_status"}:
+            return self._check_payment_status(request, invoice, token)
+
+        form = _stk_form_for_invoice(invoice, request.POST)
+        if not form.is_valid():
+            context = self._context(request, invoice, token, form=form)
+            return render(request, self.template_name, context)
+
+        from .mpesa import MpesaError
+
+        try:
+            result, stk, live = _start_invoice_stk(
+                invoice,
+                phone=form.cleaned_data["phone"],
+                amount=form.cleaned_data["amount"],
+            )
+            push = _session_stk_payload(stk)
+            push["started_at"] = result.get("started_at") or ""
+            request.session[self.session_key] = push
+            request.session.modified = True
+        except MpesaError as exc:
+            messages.error(request, str(exc))
+            context = self._context(request, invoice, token, form=form)
+            return render(request, self.template_name, context)
+
+        messages.success(
+            request,
+            result.get("customer_message")
+            or "STK push sent. We are checking payment status live.",
+        )
+        if not live:
+            messages.info(
+                request,
+                "Payment is running in simulation mode — status will update automatically.",
+            )
+        return pay_redirect
+
+    def _check_payment_status(self, request, invoice, token):
+        from .mpesa import MpesaError
+
+        push = dict(request.session.get(self.session_key) or {})
+        try:
+            outcome = _check_invoice_stk(push, invoice)
+            request.session[self.session_key] = push
+            request.session.modified = True
+        except MpesaError as exc:
+            messages.error(request, str(exc))
+            return redirect("accounts:invoice_pay_shared", token=token)
+
+        status = outcome.get("status")
+        if status == "success":
+            receipt = outcome.get("mpesa_receipt") or "—"
+            messages.success(
+                request,
+                f"Payment successful. M-Pesa receipt {receipt}. "
+                f"Invoice is now {outcome.get('invoice_status_label')} "
+                f"(paid KES {outcome.get('amount_paid')}, "
+                f"balance KES {outcome.get('balance_due')}).",
+            )
+        elif status == "failed":
+            messages.error(
+                request,
+                outcome.get("result_desc") or "M-Pesa payment failed.",
+            )
+        else:
+            messages.info(
+                request,
+                outcome.get("result_desc")
+                or "Payment is still pending. Complete the prompt, then check again.",
+            )
+        return redirect("accounts:invoice_pay_shared", token=token)
+
+    def _context(self, request, invoice, token, *, form=None):
+        from .mpesa import mpesa_configured
+
+        firm = FirmCompanyInformation.get_solo()
+        initial_phone = (invoice.client.phone or "").strip()
+        form = form or _stk_form_for_invoice(invoice, phone=initial_phone)
+        push = request.session.get(self.session_key)
+        if push and push.get("invoice_id") != invoice.pk:
+            push = None
+
+        return {
+            "invoice": invoice,
+            "firm": firm,
+            "form": form,
+            "stk_push": push,
+            "stk_poll_url": reverse(
+                "accounts:shared_invoice_stk_status",
+                kwargs={"token": token},
+            ),
+            "mpesa_live": mpesa_configured(),
+            "can_pay": invoice.is_payable,
+            "pdf_url": reverse(
+                "accounts:invoice_pdf_shared",
+                kwargs={"token": token},
+            ),
+            "firm_name": firm.display_name,
+        }
+
+
+@method_decorator(login_required, name="dispatch")
+class PayInvoiceView(View):
+    """Payments page for an invoice — send M-Pesa STK push."""
+
+    template_name = "accounts/pay_invoice.html"
+    session_key = "invoice_stk_push"
+
+    def get_invoice(self, invoice_id):
+        return get_object_or_404(
+            Invoice.objects.select_related(
+                "client", "created_by", "approved_by"
+            ).prefetch_related("stk_requests"),
+            pk=invoice_id,
+        )
+
+    def get(self, request, role, invoice_id):
+        user, denied = _employee_workspace_guard(request, role)
+        if denied:
+            return denied
+
+        invoice = self.get_invoice(invoice_id)
+        context = self._context(user, invoice, request=request)
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, invoice_id):
+        user, denied = _employee_workspace_guard(request, role)
+        if denied:
+            return denied
+
+        invoice = self.get_invoice(invoice_id)
+        action = (request.POST.get("action") or "stk").strip()
+
+        if invoice.status == Invoice.Status.PAID:
+            messages.info(request, "This invoice is already paid.")
+            return redirect("accounts:view_invoice", role=role, invoice_id=invoice.pk)
+
+        if invoice.status == Invoice.Status.CANCELLED:
+            messages.error(request, "Cancelled invoices cannot be paid.")
+            return redirect("accounts:view_invoice", role=role, invoice_id=invoice.pk)
+
+        if action in {"confirm", "check_status"}:
+            return self._check_payment_status(request, user, invoice)
+
+        form = _stk_form_for_invoice(invoice, request.POST)
+        if not form.is_valid():
+            context = self._context(user, invoice, form=form, request=request)
+            response = render(request, self.template_name, context)
+            return attach_greeting_cookie(response, request)
+
+        from .mpesa import MpesaError
+
+        try:
+            result, stk, live = _start_invoice_stk(
+                invoice,
+                phone=form.cleaned_data["phone"],
+                amount=form.cleaned_data["amount"],
+            )
+            push = _session_stk_payload(stk)
+            push["started_at"] = result.get("started_at") or ""
+            request.session[self.session_key] = push
+            request.session.modified = True
+        except MpesaError as exc:
+            messages.error(request, str(exc))
+            context = self._context(user, invoice, form=form, request=request)
+            response = render(request, self.template_name, context)
+            return attach_greeting_cookie(response, request)
+
+        messages.success(
+            request,
+            result.get("customer_message")
+            or "STK push sent. We are checking payment status live.",
+        )
+        if not live:
+            messages.info(
+                request,
+                "M-Pesa API credentials are not configured, so this STK was simulated — "
+                "status will update automatically.",
+            )
+        return redirect("accounts:pay_invoice", role=role, invoice_id=invoice.pk)
+
+    def _check_payment_status(self, request, user, invoice):
+        from .mpesa import MpesaError
+
+        push = dict(request.session.get(self.session_key) or {})
+        try:
+            outcome = _check_invoice_stk(push, invoice)
+            request.session[self.session_key] = push
+            request.session.modified = True
+        except MpesaError as exc:
+            messages.error(request, str(exc))
+            return redirect(
+                "accounts:pay_invoice",
+                role=user.role_slug,
+                invoice_id=invoice.pk,
+            )
+
+        status = outcome.get("status")
+        if status == "success":
+            receipt = outcome.get("mpesa_receipt") or "—"
+            messages.success(
+                request,
+                f"Payment successful. M-Pesa receipt {receipt}. "
+                f"Invoice is now {outcome.get('invoice_status_label')} "
+                f"(paid KES {outcome.get('amount_paid')}, "
+                f"balance KES {outcome.get('balance_due')}).",
+            )
+            invoice.refresh_from_db()
+            if invoice.status == Invoice.Status.PAID:
+                request.session.pop(self.session_key, None)
+                return redirect(
+                    "accounts:view_invoice",
+                    role=user.role_slug,
+                    invoice_id=invoice.pk,
+                )
+        elif status == "failed":
+            messages.error(
+                request,
+                outcome.get("result_desc") or "M-Pesa payment failed.",
+            )
+        else:
+            messages.info(
+                request,
+                outcome.get("result_desc")
+                or "Payment is still pending. Ask the payer to complete the prompt, then check again.",
+            )
+        return redirect(
+            "accounts:pay_invoice",
+            role=user.role_slug,
+            invoice_id=invoice.pk,
+        )
+
+    def _context(self, user, invoice, *, form=None, request=None):
+        from .mpesa import mpesa_configured
+
+        initial_phone = ""
+        if invoice.client.phone:
+            initial_phone = invoice.client.phone
+        form = form or _stk_form_for_invoice(invoice, phone=initial_phone)
+        push = None
+        if request is not None:
+            push = request.session.get(self.session_key)
+            if push and push.get("invoice_id") != invoice.pk:
+                push = None
+
+        from .models import MpesaStkRequest
+
+        payment_records = list(
+            invoice.stk_requests.filter(status=MpesaStkRequest.Status.SUCCESS)[:50]
+        )
+
+        page_nav_items = []
+
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=f"Pay {invoice.invoice_number}",
+            page_trail=list(PAYMENTS_TRAIL),
+            active_page="payments",
+            page_nav_items=page_nav_items,
+        )
+        context.update(
+            {
+                "invoice": invoice,
+                "form": form,
+                "list_url": _payments_list_url(user),
+                "invoice_url": reverse(
+                    "accounts:view_invoice",
+                    kwargs={"role": user.role_slug, "invoice_id": invoice.pk},
+                ),
+                "stk_push": push,
+                "stk_poll_url": reverse(
+                    "accounts:invoice_stk_status",
+                    kwargs={
+                        "role": user.role_slug,
+                        "invoice_id": invoice.pk,
+                    },
+                ),
+                "mpesa_live": mpesa_configured(),
+                "can_pay": invoice.is_payable,
+                "payment_records": payment_records,
+            }
+        )
+        return context
 
 
 @method_decorator(login_required, name="dispatch")

@@ -1,0 +1,122 @@
+{% extends "layouts/client_portal.html" %}
+{% load static %}
+
+{% block title %}Pay {{ invoice.invoice_number }} — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Finance &amp; Billing</p>
+      <h2>Pay invoice</h2>
+      <p class="page-lead">
+        Pay {{ invoice.invoice_number }} with M-Pesa STK push, then check status for the result.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>{{ invoice.invoice_number }}</h3>
+      <p class="panel__hint">
+        <a href="{{ invoice_url }}">View invoice</a>
+        ·
+        <a href="{{ list_url }}">Back to billing</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <dl class="settings-grid review-grid pay-summary">
+        <div>
+          <dt>Status</dt>
+          <dd>{{ invoice.get_status_display }}</dd>
+        </div>
+        <div>
+          <dt>Due date</dt>
+          <dd>{{ invoice.due_date|date:"d M Y" }}</dd>
+        </div>
+        <div>
+          <dt>Amount due</dt>
+          <dd><strong>KES {{ invoice.total_amount|floatformat:2 }}</strong></dd>
+        </div>
+        <div>
+          <dt>Paid</dt>
+          <dd>KES {{ invoice.amount_paid|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Balance</dt>
+          <dd><strong>KES {{ invoice.balance_due|floatformat:2 }}</strong></dd>
+        </div>
+        {% if invoice.last_mpesa_receipt %}
+        <div>
+          <dt>Last M-Pesa receipt</dt>
+          <dd>{{ invoice.last_mpesa_receipt }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+
+      {% if invoice.status == "paid" %}
+      <div class="empty-state pay-state">
+        <p class="empty-state__title">Fully paid</p>
+        <p class="empty-state__copy">This invoice has been marked as paid. Thank you.</p>
+      </div>
+      {% elif invoice.status == "cancelled" %}
+      <div class="empty-state pay-state">
+        <p class="empty-state__title">Cancelled</p>
+        <p class="empty-state__copy">Cancelled invoices cannot be paid.</p>
+      </div>
+      {% else %}
+      {% if can_pay %}
+      <form method="post" class="workspace-form" id="stk-pay-form" data-stk-loading novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="stk">
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.amount.id_for_label }}">
+            {{ form.amount.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.amount }}
+          {% if form.amount.help_text %}
+          <span class="field-hint">{{ form.amount.help_text }}</span>
+          {% endif %}
+          {% if form.amount.errors %}<span class="field-error">{{ form.amount.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-field">
+          <label for="{{ form.phone.id_for_label }}">
+            {{ form.phone.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.phone }}
+          <span class="field-hint">
+            Safaricom number that will receive the payment prompt.
+            {% if not mpesa_live %}Live M-Pesa credentials are not set — STK will be simulated.{% endif %}
+          </span>
+          {% if form.phone.errors %}<span class="field-error">{{ form.phone.errors.0 }}</span>{% endif %}
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <button
+            type="submit"
+            class="btn btn--primary btn--inline"
+            data-loading-text="Sending M-Pesa prompt…"
+          >Pay with M-Pesa</button>
+        </div>
+      </form>
+      {% endif %}
+
+      {% include "accounts/includes/stk_live_status.html" %}
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/stk-pay.js' %}" defer></script>
+<script src="{% static 'js/stk-live.js' %}" defer></script>
+{% endblock %}

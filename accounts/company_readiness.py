@@ -157,6 +157,12 @@ def analyze_company_information(
             False,
         ),
         FieldCheck("tax_pin", "Tax PIN", _filled(company.tax_pin), False),
+        FieldCheck(
+            "profile_images",
+            "Company images",
+            company.profile_images.exists(),
+            False,
+        ),
     ]
     contact_checks = [
         FieldCheck("email", "Primary email", _filled(company.email), True),
@@ -174,6 +180,12 @@ def analyze_company_information(
             "postal_address",
             "Postal address",
             _filled(company.postal_address),
+            False,
+        ),
+        FieldCheck(
+            "social_media",
+            "Social media profiles",
+            bool(company.social_media_links),
             False,
         ),
     ]
