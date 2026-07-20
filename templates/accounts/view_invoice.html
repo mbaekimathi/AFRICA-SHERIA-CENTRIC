@@ -16,6 +16,11 @@
         <button type="submit" class="btn btn--primary btn--inline">Issue</button>
       </form>
       {% endif %}
+      {% if can_pay %}
+      <a href="{{ pay_url }}" class="btn btn--primary btn--inline">Pay</a>
+      {% endif %}
+      <a href="{{ pdf_url }}" class="btn btn--quiet btn--inline">Download PDF</a>
+      <button type="button" class="btn btn--quiet btn--inline" id="invoice-print-btn">Print</button>
       {% if can_share %}
       <button
         type="button"
@@ -265,6 +270,7 @@
     const openBtn = document.querySelector("[data-open-share]");
     const closeBtn = document.getElementById("invoice-share-close");
     const sharePrintBtn = document.getElementById("invoice-share-print");
+    const printBtn = document.getElementById("invoice-print-btn");
 
     const openModal = () => {
       if (modal && typeof modal.showModal === "function") modal.showModal();
@@ -275,6 +281,7 @@
 
     openBtn?.addEventListener("click", openModal);
     closeBtn?.addEventListener("click", closeModal);
+    printBtn?.addEventListener("click", () => window.print());
     modal?.addEventListener("click", (event) => {
       if (event.target === modal) closeModal();
     });

@@ -6443,6 +6443,7 @@ class ViewInvoiceView(View):
                 in {
                     Invoice.Status.ISSUED,
                     Invoice.Status.GENERATED,
+                    Invoice.Status.PARTIALLY_PAID,
                     Invoice.Status.PAID,
                 },
                 "whatsapp_url": whatsapp_url,
