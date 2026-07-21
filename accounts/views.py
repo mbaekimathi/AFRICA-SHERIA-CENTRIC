@@ -100,6 +100,7 @@ from .google_drive import (
     upload_drive_file,
     validate_oauth_state,
 )
+from .blog_analytics import record_blog_event
 from .blog_share import (
     build_share_intents,
     company_share_accounts,
