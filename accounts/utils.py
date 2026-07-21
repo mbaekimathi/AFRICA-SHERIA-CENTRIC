@@ -30,6 +30,10 @@ def optimize_image(uploaded_file, max_size=1600, quality=78):
 _HEADING_RE = re.compile(r"^(#{2,3})\s+(.+)$")
 _UL_RE = re.compile(r"^[-*]\s+(.+)$")
 _OL_RE = re.compile(r"^(\d+)[.)]\s+(.+)$")
+_QUOTE_RE = re.compile(r"^>\s*(.+)$")
+_INLINE_RE = re.compile(
+    r"\[([^\]]+)\]\((https?://[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*"
+)
 
 
 def _slugify_heading(text: str, used: dict[str, int]) -> str:
@@ -39,11 +43,34 @@ def _slugify_heading(text: str, used: dict[str, int]) -> str:
     return base if count == 1 else f"{base}-{count}"
 
 
+def _inline_markup(text: str) -> str:
+    """Render a small safe subset of inline Markdown."""
+    parts = []
+    cursor = 0
+    for match in _INLINE_RE.finditer(text):
+        parts.append(escape(text[cursor : match.start()]))
+        if match.group(1) is not None:
+            parts.append(
+                '<a href="'
+                + escape(match.group(2), quote=True)
+                + '" target="_blank" rel="noopener noreferrer">'
+                + escape(match.group(1))
+                + "</a>"
+            )
+        elif match.group(3) is not None:
+            parts.append(f"<strong>{escape(match.group(3))}</strong>")
+        else:
+            parts.append(f"<em>{escape(match.group(4))}</em>")
+        cursor = match.end()
+    parts.append(escape(text[cursor:]))
+    return "".join(parts)
+
+
 def render_blog_body(text: str) -> tuple[str, list[dict]]:
     """
     Convert plain blog text with light Markdown into safe HTML.
 
-    Supports ## / ### headings, bullet lists, numbered lists, and paragraphs.
+    Supports headings, lists, quotes, links, bold, italics, and paragraphs.
     Returns (html, toc) where toc is [{id, label, level}, ...].
     """
     raw = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -61,14 +88,16 @@ def render_blog_body(text: str) -> tuple[str, list[dict]]:
     def flush_paragraph():
         nonlocal paragraph
         if paragraph:
-            html_parts.append(f"<p>{' '.join(paragraph)}</p>")
+            html_parts.append(f"<p>{_inline_markup(' '.join(paragraph))}</p>")
             paragraph = []
 
     def flush_list():
         nonlocal list_type, list_items
         if list_type and list_items:
             tag = "ul" if list_type == "ul" else "ol"
-            items = "".join(f"<li>{item}</li>" for item in list_items)
+            items = "".join(
+                f"<li>{_inline_markup(item)}</li>" for item in list_items
+            )
             html_parts.append(f"<{tag}>{items}</{tag}>")
         list_type = None
         list_items = []
@@ -87,7 +116,7 @@ def render_blog_body(text: str) -> tuple[str, list[dict]]:
             hashes, label = heading.group(1), heading.group(2).strip()
             level = len(hashes)
             heading_id = _slugify_heading(label, used_ids)
-            safe_label = escape(label)
+            safe_label = _inline_markup(label)
             html_parts.append(
                 f'<h{level} id="{heading_id}">{safe_label}</h{level}>'
             )
@@ -100,7 +129,7 @@ def render_blog_body(text: str) -> tuple[str, list[dict]]:
             if list_type not in (None, "ul"):
                 flush_list()
             list_type = "ul"
-            list_items.append(escape(ul.group(1).strip()))
+            list_items.append(ul.group(1).strip())
             continue
 
         ol = _OL_RE.match(stripped)
@@ -109,11 +138,20 @@ def render_blog_body(text: str) -> tuple[str, list[dict]]:
             if list_type not in (None, "ol"):
                 flush_list()
             list_type = "ol"
-            list_items.append(escape(ol.group(2).strip()))
+            list_items.append(ol.group(2).strip())
+            continue
+
+        quote = _QUOTE_RE.match(stripped)
+        if quote:
+            flush_paragraph()
+            flush_list()
+            html_parts.append(
+                f"<blockquote>{_inline_markup(quote.group(1).strip())}</blockquote>"
+            )
             continue
 
         flush_list()
-        paragraph.append(escape(stripped))
+        paragraph.append(stripped)
 
     flush_paragraph()
     flush_list()

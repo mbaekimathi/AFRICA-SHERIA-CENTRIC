@@ -1,5 +1,7 @@
 """Workspace navigation helpers for role dashboards."""
 
+from functools import lru_cache
+
 from django.urls import reverse
 from django.utils import timezone
 
@@ -310,17 +312,47 @@ SHARED_UTILITY_LINKS = [
 ]
 
 # Practice hubs — secondary links shown on the dashboard (and their children
-# on allocated pages via PAGE_LOCAL_LINKS).
+# on allocated pages via PAGE_LOCAL_LINKS). Add new modules here; permissions
+# and Roles & Permissions UI pick them up automatically.
+SYSTEM_MODULES = (
+    {
+        "label": "User Management",
+        "slug": "user-management",
+        "icon": ICON_USERS,
+        "hint": "Staff and client account access",
+    },
+    {
+        "label": "Matter Management",
+        "slug": "matter-management",
+        "icon": ICON_BRIEF,
+        "hint": "Litigation and non-litigation matters",
+    },
+    {
+        "label": "Document Management",
+        "slug": "document-management",
+        "icon": ICON_DOC,
+        "hint": "Filings, templates, and shared files",
+    },
+    {
+        "label": "Finance & Billing",
+        "slug": "finance-billing",
+        "icon": ICON_FINANCE,
+        "hint": "Invoices, payments, and accounts",
+    },
+    {
+        "label": "Research & Blogs",
+        "slug": "research-blogs",
+        "icon": ICON_LEARN,
+        "hint": "News research and firm blogs",
+    },
+)
 DASHBOARD_PAGE_LINKS = [
-    ("User Management", "user-management", ICON_USERS),
-    ("Matter Management", "matter-management", ICON_BRIEF),
-    ("Document Management", "document-management", ICON_DOC),
-    ("Finance & Billing", "finance-billing", ICON_FINANCE),
-    ("Research & Blogs", "research-blogs", ICON_LEARN),
+    (module["label"], module["slug"], module["icon"]) for module in SYSTEM_MODULES
 ]
 DASHBOARD_PAGE_SLUGS = {slug for _, slug, _ in DASHBOARD_PAGE_LINKS} | {"dashboard"}
+SYSTEM_MODULE_SLUGS = {slug for _, slug, _ in DASHBOARD_PAGE_LINKS}
 
-# User Management page-only links
+# Roles & Permissions — system modules are listed on the page, not in the sidebar.
 USER_MANAGEMENT_PAGE_LINKS = [
     ("Client Management", "client-management", ICON_USERS),
     ("Employee Management", "employee-management", ICON_USERS),
@@ -371,9 +403,20 @@ FINANCE_BILLING_PAGE_LINKS = [
     ("Company Accounts", "company-accounts", ICON_BRIEF),
 ]
 
+# Employee Accounts page-only links
+EMPLOYEE_ACCOUNTS_PAGE_LINKS = [
+    ("Payroll", "payroll", ICON_FINANCE),
+    ("Employee Advances", "employee-advances", ICON_BRIEF),
+    ("Employee Petty Cashbook", "employee-petty-cashbook", ICON_DOC),
+]
+
+# Client Accounts page-only links
+CLIENT_ACCOUNTS_PAGE_LINKS = [
+    ("Generate Invoice", "generate-invoice", ICON_DOC),
+]
+
 # General Accounts page-only links
 GENERAL_ACCOUNTS_PAGE_LINKS = [
-    ("Invoicing", "invoicing", ICON_DOC),
     ("Payments", "payments", ICON_FINANCE),
     ("Purchasing", "purchasing", ICON_BRIEF),
     ("Inventory", "inventory", ICON_TOOLS),
@@ -390,14 +433,38 @@ INVOICING_PAGE_LINKS = [
     ("Generate Invoice", "generate-invoice", ICON_DOC),
 ]
 
+# Payroll page-only links
+PAYROLL_PAGE_LINKS = [
+    ("Register Payroll", "register-payroll", ICON_DOC),
+]
+
+# Employee Communications page-only links
+EMPLOYEE_COMMUNICATIONS_PAGE_LINKS = [
+    ("Email settings", "email-settings", ICON_SETTINGS),
+]
+
+# Research & Blogs page-only links
+RESEARCH_BLOGS_PAGE_LINKS = [
+    ("Latest News", "latest-news", ICON_LEARN),
+    ("My blogs", "my-blogs", ICON_DOC),
+]
+
 # Shown only on their own hub pages — not inherited by child pages.
-PAGE_LOCAL_LINKS_NO_INHERIT = {"finance-billing", "general-accounts"}
+PAGE_LOCAL_LINKS_NO_INHERIT = {
+    "finance-billing",
+    "general-accounts",
+    "client-accounts",
+    "employee-accounts",
+    "user-management",
+    "employee-management",
+}
 
 SYSTEM_SETTINGS_PAGE_LINKS = [
     ("Website Template", "website-template", ICON_DOC),
     ("Company Information", "company-information", ICON_BRIEF),
     ("Document Settings", "document-settings", ICON_SETTINGS),
     ("Finance Settings", "finance-settings", ICON_FINANCE),
+    ("Communication Settings", "communication-settings", ICON_BELL),
 ]
 
 COMPANY_INFORMATION_PAGE_LINKS = [
@@ -427,11 +494,15 @@ PAGE_LOCAL_LINKS = {
     "non-litigation-matters": NON_LITIGATION_MATTERS_PAGE_LINKS,
     "finance-billing": FINANCE_BILLING_PAGE_LINKS,
     "general-accounts": GENERAL_ACCOUNTS_PAGE_LINKS,
+    "client-accounts": CLIENT_ACCOUNTS_PAGE_LINKS,
+    "employee-accounts": EMPLOYEE_ACCOUNTS_PAGE_LINKS,
     "invoicing": INVOICING_PAGE_LINKS,
+    "payroll": PAYROLL_PAGE_LINKS,
+    "employee-communications": EMPLOYEE_COMMUNICATIONS_PAGE_LINKS,
+    "research-blogs": RESEARCH_BLOGS_PAGE_LINKS,
     "settings": [
         ("My profile", "settings", ICON_SETTINGS),
         ("About me", "about-me", ICON_DOC),
-        ("My blogs", "my-blogs", ICON_DOC),
         ("Notifications", "notification-settings", ICON_BELL),
         ("Theme settings", "theme-settings", ICON_SETTINGS),
     ],
@@ -444,10 +515,16 @@ PAGE_LOCAL_LINKS = {
 SETTINGS_AREA_SLUGS = {
     "settings",
     "about-me",
-    "my-blogs",
-    "my-blogs-new",
     "notification-settings",
     "theme-settings",
+}
+
+# Research & Blogs subtree (sidebar when viewing research and authoring pages)
+RESEARCH_BLOGS_AREA_SLUGS = {
+    "research-blogs",
+    "latest-news",
+    "my-blogs",
+    "my-blogs-new",
 }
 
 # Company Information subtree (sidebar when drilled into Company Information)
@@ -505,6 +582,514 @@ NON_LITIGATION_MATTER_ACTION_SLUGS = {
     slug for _, slug, _ in NON_LITIGATION_MATTER_DETAIL_LINKS
 }
 
+# Extra activities that belong to a system module but are not in PAGE_LOCAL_LINKS.
+MODULE_EXTRA_ACTIVITIES = {
+    "document-management": [
+        ("Upload documents", "upload-documents", ICON_DOC),
+        ("View document activity", "document-activity", ICON_BRIEF),
+        ("Letterhead", "letterhead", ICON_DOC),
+        ("Digital stamp", "digital-stamp", ICON_BRIEF),
+        ("Default signature", "default-signature", ICON_SCALE),
+        ("Google Drive Settings", "google-drive-settings", ICON_SETTINGS),
+    ],
+    "research-blogs": [
+        ("New blog post", "my-blogs-new", ICON_DOC),
+        ("Company blogs", "company-blogs", ICON_DOC),
+    ],
+    "matter-management": [
+        *[(f"Case: {label}", slug, icon) for label, slug, icon in LITIGATION_CASE_DETAIL_LINKS],
+        *[
+            (f"Matter: {label}", slug, icon)
+            for label, slug, icon in NON_LITIGATION_MATTER_DETAIL_LINKS
+        ],
+    ],
+}
+
+
+def collect_module_activities(module_slug: str) -> list[dict]:
+    """
+    Flatten every navigable activity under a system module.
+
+    Walks PAGE_LOCAL_LINKS recursively, then appends MODULE_EXTRA_ACTIVITIES.
+    Skips expanding roles-permissions into other system modules.
+    """
+    activities: list[dict] = []
+    seen: set[str] = set()
+
+    def add_activity(*, label, slug, icon, path_labels, path_slugs, linkable=True):
+        key = "/".join(path_slugs) if path_slugs else slug
+        if key in seen:
+            return
+        seen.add(key)
+        activities.append(
+            {
+                "label": label,
+                "slug": slug,
+                "icon": icon,
+                "path": " / ".join(path_labels),
+                "depth": max(len(path_slugs) - 1, 0),
+                "path_slugs": list(path_slugs),
+                "linkable": linkable,
+            }
+        )
+
+    def walk(parent_slug: str, path_labels: list[str], path_slugs: list[str]):
+        if parent_slug == "roles-permissions":
+            return
+        for label, child_slug, icon in PAGE_LOCAL_LINKS.get(parent_slug) or []:
+            if child_slug in SYSTEM_MODULE_SLUGS:
+                continue
+            next_labels = path_labels + [label]
+            next_slugs = path_slugs + [child_slug]
+            add_activity(
+                label=label,
+                slug=child_slug,
+                icon=icon,
+                path_labels=next_labels,
+                path_slugs=next_slugs,
+                linkable=True,
+            )
+            walk(child_slug, next_labels, next_slugs)
+
+    walk(module_slug, [], [])
+
+    for label, slug, icon in MODULE_EXTRA_ACTIVITIES.get(module_slug) or []:
+        # Case/matter actions are per-record; list them without a module URL.
+        linkable = module_slug != "matter-management" or slug not in (
+            LITIGATION_CASE_ACTION_SLUGS | NON_LITIGATION_MATTER_ACTION_SLUGS
+        )
+        # Document settings live under system-settings, not the module hub.
+        if module_slug == "document-management" and slug in {
+            "letterhead",
+            "digital-stamp",
+            "default-signature",
+            "google-drive-settings",
+            "document-activity",
+            "upload-documents",
+        }:
+            path_slugs = [slug]
+            linkable = slug in {
+                "letterhead",
+                "digital-stamp",
+                "default-signature",
+                "google-drive-settings",
+            }
+        elif module_slug == "research-blogs" and slug in {"company-blogs", "my-blogs-new"}:
+            path_slugs = [slug]
+            linkable = True
+        else:
+            path_slugs = [slug]
+        add_activity(
+            label=label,
+            slug=slug,
+            icon=icon,
+            path_labels=[label],
+            path_slugs=path_slugs,
+            linkable=linkable,
+        )
+
+    return activities
+
+
+def system_module_hint(module_slug: str) -> str:
+    for module in SYSTEM_MODULES:
+        if module["slug"] == module_slug:
+            return module["hint"]
+    return "Configure role access for this module"
+
+
+def system_module_meta(module_slug: str) -> dict | None:
+    for module in SYSTEM_MODULES:
+        if module["slug"] == module_slug:
+            return module
+    return None
+
+
+PERMISSION_ACTION_LABELS = {
+    "view": "View",
+    "register": "Register",
+    "edit": "Edit",
+    "delete": "Delete",
+    "approve": "Approve",
+    "allocate": "Allocate",
+    "task": "Task",
+    "upload": "Upload",
+    "attend": "Attend",
+    "audit": "Audit",
+    "status": "Change status",
+    "generate": "Generate",
+    "pay": "Pay",
+    "communicate": "Communicate",
+}
+
+DEFAULT_ACTIVITY_ACTIONS = ("view", "register", "edit", "delete")
+
+MATTER_HUB_ACTIONS = (
+    "view",
+    "register",
+    "approve",
+    "edit",
+    "delete",
+    "allocate",
+    "task",
+    "upload",
+    "attend",
+    "audit",
+    "status",
+)
+
+FINANCE_LEDGER_ACTIONS = ("view", "register", "edit", "delete")
+
+# Optional per-activity overrides when pattern inference is not enough.
+ACTIVITY_PERMISSION_OVERRIDES: dict[str, tuple[str, ...]] = {}
+
+_DETAIL_SLUG_PERMISSION_ACTIONS = {
+    "update-court-attendance": "attend",
+    "update-matter-attendance": "attend",
+    "create-task": "task",
+    "upload-documents": "upload",
+    "edit-case-details": "edit",
+    "edit-matter-details": "edit",
+    "change-status": "status",
+    "change-allocation": "allocate",
+    "case-audit-progress": "audit",
+    "matter-audit-progress": "audit",
+    "document-activity": "audit",
+}
+
+WORKSPACE_DETAIL_ACTION_MAP = dict(_DETAIL_SLUG_PERMISSION_ACTIONS)
+
+WORKSPACE_PAGE_POST_PREFIX_ACTIONS = (
+    ("register-", "register"),
+    ("approve-", "approve"),
+    ("generate-", "generate"),
+)
+
+WORKSPACE_APPROVE_ACTIVITIES = frozenset(
+    slug
+    for slug in (
+        *(
+            child_slug
+            for links in PAGE_LOCAL_LINKS.values()
+            for _label, child_slug, _icon in links
+        ),
+        *(
+            child_slug
+            for extras in MODULE_EXTRA_ACTIVITIES.values()
+            for _label, child_slug, _icon in extras
+        ),
+    )
+    if slug.startswith("approve-")
+)
+
+WORKSPACE_EDIT_POST_PAGES = frozenset(
+    {
+        "settings",
+        "theme-settings",
+        "notification-settings",
+        "about-me",
+        "my-blogs",
+        "my-blogs-new",
+        "company-profile",
+        "company-contacts",
+        "about-company",
+        "practice-areas",
+        "practice-areas-new",
+        "company-faqs",
+        "company-faqs-new",
+        "company-gallery",
+        "company-gallery-new",
+        "company-terms",
+        "website-template",
+        "finance-settings",
+        "communication-settings",
+        "letterhead",
+        "digital-stamp",
+        "default-signature",
+        "google-drive-settings",
+        "email-settings",
+    }
+)
+
+
+def _iter_nav_link_triples():
+    for links in PAGE_LOCAL_LINKS.values():
+        yield from links
+    for extras in MODULE_EXTRA_ACTIVITIES.values():
+        yield from extras
+    for links in (
+        LITIGATION_CASE_DETAIL_LINKS,
+        NON_LITIGATION_MATTER_DETAIL_LINKS,
+        SYSTEM_SETTINGS_PAGE_LINKS,
+        COMPANY_INFORMATION_PAGE_LINKS,
+        DOCUMENT_SETTINGS_PAGE_LINKS,
+    ):
+        yield from links
+    for module in SYSTEM_MODULES:
+        yield module["label"], module["slug"], module["icon"]
+
+
+def nav_label_for_slug(slug: str) -> str | None:
+    for label, link_slug, _icon in _iter_nav_link_triples():
+        if link_slug == slug:
+            return label
+    return None
+
+
+def page_title_for(slug: str) -> str:
+    return PAGE_TITLES.get(slug) or nav_label_for_slug(slug) or slug.replace(
+        "-", " "
+    ).title()
+
+
+def infer_activity_permission_actions(
+    activity_slug: str, *, module_slug: str | None = None
+) -> tuple[str, ...]:
+    """Derive permission toggles for a workspace activity slug."""
+    if activity_slug in ACTIVITY_PERMISSION_OVERRIDES:
+        return ACTIVITY_PERMISSION_OVERRIDES[activity_slug]
+
+    detail_action = WORKSPACE_DETAIL_ACTION_MAP.get(activity_slug)
+    if detail_action:
+        return ("view", detail_action)
+
+    if activity_slug.startswith("approve-"):
+        return ("view", "approve")
+    if activity_slug.startswith("register-"):
+        return ("view", "register")
+    if activity_slug.endswith("-new") and activity_slug not in {
+        "theme-settings",
+        "notification-settings",
+    }:
+        return ("view", "register", "edit")
+    if activity_slug.startswith("generate-"):
+        return ("view", "generate")
+
+    if activity_slug in {"litigation-matters", "non-litigation-matters"}:
+        return MATTER_HUB_ACTIONS
+    if activity_slug == "client-management":
+        return ("view", "register", "edit", "delete", "approve")
+    if activity_slug == "employee-management":
+        return ("view", "register", "edit", "delete", "approve", "allocate")
+    if activity_slug == "finance-billing":
+        return ("view", "register", "edit", "delete", "pay")
+    if activity_slug == "general-accounts":
+        return ("view", "register", "edit", "delete", "pay")
+    if activity_slug == "invoicing":
+        return ("view", "generate", "edit", "delete", "pay")
+    if activity_slug == "payments":
+        return ("view", "pay")
+    if activity_slug == "banking":
+        return ("view", "register", "edit", "pay")
+    if activity_slug == "accounting":
+        return ("view", "edit", "audit")
+    if activity_slug == "reporting":
+        return ("view", "generate")
+    if activity_slug in FINANCE_LEDGER_ACTIONS and activity_slug in {
+        slug for _label, slug, _icon in GENERAL_ACCOUNTS_PAGE_LINKS
+    }:
+        return FINANCE_LEDGER_ACTIONS
+    if activity_slug in {
+        "payroll",
+        "employee-advances",
+        "employee-petty-cashbook",
+    }:
+        return FINANCE_LEDGER_ACTIONS
+    if activity_slug == "employee-accounts":
+        return ("view", "register", "edit", "delete", "pay")
+    if activity_slug == "client-accounts":
+        return ("view", "register", "edit", "delete", "pay")
+    if activity_slug == "roles-permissions":
+        return ("view", "edit")
+    if activity_slug == "employee-training":
+        return ("view", "register", "edit")
+    if activity_slug == "matter-allocation":
+        return ("view", "allocate", "edit")
+    if activity_slug == "employee-communications":
+        return ("view", "communicate", "edit")
+    if activity_slug == "email-settings":
+        return ("view", "edit")
+    if activity_slug == "performance-compliance":
+        return ("view", "edit", "audit")
+    if activity_slug == "leave-availability":
+        return ("view", "register", "edit", "approve")
+    if activity_slug == "offboarding":
+        return ("view", "edit", "delete")
+    if activity_slug == "latest-news":
+        return ("view", "register")
+    if activity_slug == "my-blogs":
+        return ("view", "register", "edit", "delete", "approve")
+    if activity_slug == "company-blogs":
+        return ("view", "approve", "edit", "delete")
+    if activity_slug == "upload-documents":
+        return ("view", "upload", "delete")
+    if activity_slug == "document-activity":
+        return ("view", "audit")
+    if activity_slug in DOCUMENT_SETTINGS_AREA_SLUGS or activity_slug.endswith(
+        "-settings"
+    ):
+        return ("view", "edit")
+    if activity_slug in {
+        "letterhead",
+        "digital-stamp",
+        "default-signature",
+        "google-drive-settings",
+    }:
+        return ("view", "edit")
+    if activity_slug == "research-blogs":
+        return ("view", "register", "edit")
+    if module_slug == "document-management":
+        return ("view", "edit")
+
+    return DEFAULT_ACTIVITY_ACTIONS
+
+
+def build_activity_permission_registry() -> dict[str, tuple[str, ...]]:
+    """
+    Build permission actions for every activity discovered under system modules.
+
+    New PAGE_LOCAL_LINKS / MODULE_EXTRA_ACTIVITIES entries are included
+    automatically; use ACTIVITY_PERMISSION_OVERRIDES only for exceptions.
+    """
+    registry: dict[str, tuple[str, ...]] = {}
+
+    for module_slug in SYSTEM_MODULE_SLUGS:
+        for activity in collect_module_activities(module_slug):
+            slug = activity["slug"]
+            registry[slug] = infer_activity_permission_actions(
+                slug, module_slug=module_slug
+            )
+
+    for slug in WORKSPACE_DETAIL_ACTION_MAP:
+        registry.setdefault(
+            slug,
+            infer_activity_permission_actions(slug),
+        )
+
+    for _label, slug, _icon in _iter_nav_link_triples():
+        registry.setdefault(slug, infer_activity_permission_actions(slug))
+
+    registry.update(ACTIVITY_PERMISSION_OVERRIDES)
+    return registry
+
+
+@lru_cache(maxsize=1)
+def get_activity_permission_registry() -> dict[str, tuple[str, ...]]:
+    return build_activity_permission_registry()
+
+
+def activity_module_map() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for module_slug in SYSTEM_MODULE_SLUGS:
+        for activity in collect_module_activities(module_slug):
+            mapping.setdefault(activity["slug"], module_slug)
+    return mapping
+
+
+def module_slug_for_activity(activity_slug: str) -> str | None:
+    return activity_module_map().get(activity_slug)
+
+
+def validate_permission_registry() -> list[str]:
+    """
+    Return activity slugs that have no permission mapping.
+
+    Called on startup to catch nav additions that need overrides.
+    """
+    registry = get_activity_permission_registry()
+    missing: list[str] = []
+    for module_slug in SYSTEM_MODULE_SLUGS:
+        for activity in collect_module_activities(module_slug):
+            if activity["slug"] not in registry:
+                missing.append(activity["slug"])
+    return missing
+
+
+ACTIVITY_PERMISSION_ACTIONS = get_activity_permission_registry()
+
+
+def module_slug_for_trail(trail: list[str] | None) -> str | None:
+    return next((seg for seg in (trail or []) if seg in SYSTEM_MODULE_SLUGS), None)
+
+
+def workspace_detail_permission_action(detail_action: str) -> str:
+    return WORKSPACE_DETAIL_ACTION_MAP.get(detail_action, "view")
+
+
+def post_requests_delete(request) -> bool:
+    if not request or request.method != "POST":
+        return False
+    if (request.POST.get("action") or "").strip().lower() in {
+        "delete",
+        "remove",
+        "trash",
+    }:
+        return True
+    return any(
+        key.endswith("-DELETE") and value == "on"
+        for key, value in request.POST.items()
+    )
+
+
+def resolve_workspace_post_action(activity_slug: str, request) -> str:
+    for prefix, action in WORKSPACE_PAGE_POST_PREFIX_ACTIONS:
+        if activity_slug.startswith(prefix):
+            return action
+    if activity_slug == "latest-news":
+        return "register"
+    if (
+        activity_slug.endswith("-new")
+        and activity_slug not in {"theme-settings", "notification-settings"}
+    ):
+        return "register"
+    if activity_slug in WORKSPACE_APPROVE_ACTIVITIES:
+        return "approve"
+    if post_requests_delete(request):
+        return "delete"
+    if activity_slug in WORKSPACE_EDIT_POST_PAGES:
+        return "edit"
+    return "edit"
+
+
+def activity_permission_actions(activity_slug: str) -> list[dict]:
+    """Return labelled actions available for an activity permission page."""
+    slugs = ACTIVITY_PERMISSION_ACTIONS.get(
+        activity_slug, DEFAULT_ACTIVITY_ACTIONS
+    )
+    return [
+        {
+            "slug": slug,
+            "label": PERMISSION_ACTION_LABELS.get(
+                slug, slug.replace("-", " ").title()
+            ),
+        }
+        for slug in slugs
+    ]
+
+
+def module_activity_url(user, module_slug: str, activity: dict) -> str | None:
+    """Build a workspace URL for a module activity when it is linkable."""
+    if not activity.get("linkable"):
+        return None
+    slug = activity["slug"]
+    path_slugs = activity.get("path_slugs") or [slug]
+    if module_slug == "document-management" and slug in {
+        "letterhead",
+        "digital-stamp",
+        "default-signature",
+        "google-drive-settings",
+    }:
+        return user.workspace_url(
+            "dashboard", "system-settings", "document-settings", slug
+        )
+    if module_slug == "research-blogs" and slug == "my-blogs-new":
+        return user.workspace_url("dashboard", "research-blogs", "my-blogs-new")
+    if module_slug == "research-blogs" and slug == "company-blogs":
+        return user.workspace_url(
+            "dashboard", "system-settings", "company-information", "company-blogs"
+        )
+    return user.workspace_url("dashboard", module_slug, *path_slugs)
+
 
 def litigation_case_nav_items(role_slug: str, case_id: int, active_slug: str | None = None):
     """Sidebar actions for a litigation case detail page."""
@@ -556,11 +1141,18 @@ def page_local_links_for(active: str, trail: list[str] | None = None):
 
     When drilled into a child of that page (e.g. register-client under
     client-management), keep showing the parent page's local links —
-    unless the parent is marked no-inherit (e.g. finance-billing /
-    general-accounts hub links stay on that hub page only).
+    unless the parent is marked no-inherit (e.g. finance-billing,
+    general-accounts, user-management, employee-management hub links
+    stay on that hub page only).
     """
+    trail = trail or []
+    # Roles & Permissions uses in-page navigation only — no sidebar section links.
+    if "roles-permissions" in trail:
+        return None
     if active in SETTINGS_AREA_SLUGS:
         return PAGE_LOCAL_LINKS["settings"]
+    if active in RESEARCH_BLOGS_AREA_SLUGS:
+        return PAGE_LOCAL_LINKS["research-blogs"]
     if active in COMPANY_INFORMATION_AREA_SLUGS:
         return PAGE_LOCAL_LINKS["company-information"]
     if active in DOCUMENT_SETTINGS_AREA_SLUGS:
@@ -569,7 +1161,6 @@ def page_local_links_for(active: str, trail: list[str] | None = None):
         return PAGE_LOCAL_LINKS["system-settings"]
     if active in PAGE_LOCAL_LINKS:
         return PAGE_LOCAL_LINKS[active]
-    trail = trail or []
     for segment in reversed(trail[:-1]):
         if segment in PAGE_LOCAL_LINKS_NO_INHERIT:
             continue
@@ -577,6 +1168,32 @@ def page_local_links_for(active: str, trail: list[str] | None = None):
         if links:
             return links
     return None
+
+
+def client_account_page_nav_items(
+    user,
+    trail: list[str],
+    *,
+    client_pk: int | None = None,
+    active_slug: str = "client-accounts",
+):
+    """Sidebar links for client account pages, optionally scoped to one client."""
+    base_trail = [part for part in trail if part and part != "generate-invoice"]
+    items = []
+    for label, slug, icon in CLIENT_ACCOUNTS_PAGE_LINKS:
+        url = user.workspace_url(*extend_page_trail(base_trail, slug))
+        if client_pk and slug == "generate-invoice":
+            url = f"{url}?client={client_pk}"
+        items.append(
+            {
+                "label": label,
+                "slug": slug,
+                "url": url,
+                "icon": icon,
+                "active": active_slug == slug,
+            }
+        )
+    return items
 
 
 def main_hub_is_active(hub_slug: str, active: str, trail: list[str]) -> bool:
@@ -589,6 +1206,7 @@ def main_hub_is_active(hub_slug: str, active: str, trail: list[str]) -> bool:
 PAGE_TITLES = {
     "dashboard": "Dashboard",
     "research-blogs": "Research & Blogs",
+    "latest-news": "Latest News",
     "settings": "My profile",
     "about-me": "About me",
     "my-blogs": "My blogs",
@@ -615,6 +1233,7 @@ PAGE_TITLES = {
     "default-signature": "Default signature",
     "google-drive-settings": "Google Drive Settings",
     "finance-settings": "Finance Settings",
+    "communication-settings": "Communication Settings",
     "messages": "Messages",
     "tasks": "Tasks",
     "reminders": "Reminders",
@@ -631,6 +1250,7 @@ PAGE_TITLES = {
     "employee-training": "Employee Training",
     "matter-allocation": "Matter Allocation & Coverage",
     "employee-communications": "Employee Communications",
+    "email-settings": "Email settings",
     "performance-compliance": "Performance & Compliance",
     "leave-availability": "Leave & Availability",
     "offboarding": "Offboarding",
@@ -657,6 +1277,11 @@ PAGE_TITLES = {
     "reporting": "Reporting",
     "client-accounts": "Client Accounts",
     "employee-accounts": "Employee Accounts",
+    "payroll": "Payroll",
+    "register-payroll": "Register Payroll",
+    "payroll-receipt": "Payroll Receipt",
+    "employee-advances": "Employee Advances",
+    "employee-petty-cashbook": "Employee Petty Cashbook",
     "company-accounts": "Company Accounts",
     "people": "People",
     "firm-settings": "Firm settings",
@@ -736,6 +1361,7 @@ def resolve_workspace_page(role, pages: str):
         "is_my_blogs_new": leaf == "my-blogs-new",
         "is_google_drive_settings": leaf == "google-drive-settings",
         "is_finance_settings": leaf == "finance-settings",
+        "is_communication_settings": leaf == "communication-settings",
         "is_company_information": leaf == "company-information",
         "is_company_profile": leaf == "company-profile",
         "is_website_template": leaf == "website-template",
@@ -748,17 +1374,243 @@ def resolve_workspace_page(role, pages: str):
         "is_company_gallery_new": leaf == "company-gallery-new",
         "is_company_terms": leaf == "company-terms",
         "is_research_blogs": leaf == "research-blogs",
+        "is_latest_news": leaf == "latest-news",
         "is_settings_area": leaf in SETTINGS_AREA_SLUGS,
         "is_system_settings_area": leaf in SYSTEM_SETTINGS_AREA_SLUGS,
         "is_company_information_area": leaf in COMPANY_INFORMATION_AREA_SLUGS,
         "is_dashboard": leaf == "dashboard",
+        "is_roles_module_detail": (
+            leaf in SYSTEM_MODULE_SLUGS and "roles-permissions" in trail[:-1]
+            and trail.index("roles-permissions") == len(trail) - 2
+        ),
+        "is_roles_activity_permission": _is_roles_activity_permission_trail(trail),
+        "roles_module_slug": _roles_module_slug_from_trail(trail),
     }
+
+
+def _roles_module_slug_from_trail(trail: list[str]) -> str | None:
+    if "roles-permissions" not in trail:
+        return None
+    idx = trail.index("roles-permissions")
+    after = trail[idx + 1 :]
+    if not after or after[0] not in SYSTEM_MODULE_SLUGS:
+        return None
+    return after[0]
+
+
+def _is_roles_activity_permission_trail(trail: list[str]) -> bool:
+    if "roles-permissions" not in trail:
+        return False
+    idx = trail.index("roles-permissions")
+    after = trail[idx + 1 :]
+    return (
+        len(after) >= 2
+        and after[0] in SYSTEM_MODULE_SLUGS
+    )
+
+
+def role_activity_is_allowed(role: str, module_slug: str, activity_slug: str) -> bool:
+    """Return whether a role may access an activity (default allow)."""
+    from .models import RoleActivityPermission
+
+    row = (
+        RoleActivityPermission.objects.filter(
+            role=role,
+            module_slug=module_slug,
+            activity_slug=activity_slug,
+        )
+        .only("is_allowed")
+        .first()
+    )
+    if row is None:
+        return True
+    return bool(row.is_allowed)
+
+
+def set_role_activity_permission(
+    *,
+    role: str,
+    module_slug: str,
+    activity_slug: str,
+    is_allowed: bool,
+    updated_by=None,
+):
+    from .models import RoleActivityPermission
+
+    obj, _created = RoleActivityPermission.objects.update_or_create(
+        role=role,
+        module_slug=module_slug,
+        activity_slug=activity_slug,
+        defaults={
+            "is_allowed": is_allowed,
+            "updated_by": updated_by,
+        },
+    )
+    return obj
+
+
+def employee_activity_action_allowed(
+    employee,
+    module_slug: str,
+    activity_slug: str,
+    action: str,
+) -> bool:
+    """Return whether an employee may perform an action (default allow)."""
+    if not role_activity_is_allowed(employee.role, module_slug, activity_slug):
+        return False
+    from .models import EmployeeActivityPermission
+
+    row = (
+        EmployeeActivityPermission.objects.filter(
+            employee_id=employee.pk,
+            module_slug=module_slug,
+            activity_slug=activity_slug,
+            action=action,
+        )
+        .only("is_allowed")
+        .first()
+    )
+    if row is None:
+        return True
+    return bool(row.is_allowed)
+
+
+ACCESS_DENIED_MODAL_SESSION_KEY = "workspace_access_denied_modal"
+
+
+def set_workspace_access_denied_modal(request, *, title: str, message: str) -> None:
+    request.session[ACCESS_DENIED_MODAL_SESSION_KEY] = {
+        "title": title,
+        "message": message,
+    }
+
+
+def pop_workspace_access_denied_modal(request):
+    if request is None:
+        return None
+    return request.session.pop(ACCESS_DENIED_MODAL_SESSION_KEY, None)
+
+
+def workspace_activity_action_permitted(
+    employee, module_slug: str, activity_slug: str, action: str
+) -> bool:
+    if not module_slug:
+        return True
+    if not role_activity_is_allowed(employee.role, module_slug, activity_slug):
+        return False
+    return employee_activity_action_allowed(
+        employee, module_slug, activity_slug, action
+    )
+
+
+def workspace_activity_access_allowed(
+    employee, module_slug: str, activity_slug: str
+) -> bool:
+    """True when role and employee may open this activity page (view)."""
+    return workspace_activity_action_permitted(
+        employee, module_slug, activity_slug, "view"
+    )
+
+
+def workspace_action_denial_copy(
+    employee, module_slug: str, activity_slug: str, action: str = "view"
+) -> tuple[str, str]:
+    activity_label = PAGE_TITLES.get(
+        activity_slug, activity_slug.replace("-", " ").title()
+    )
+    action_label = PERMISSION_ACTION_LABELS.get(
+        action, action.replace("-", " ").title()
+    )
+    if not role_activity_is_allowed(employee.role, module_slug, activity_slug):
+        return (
+            "Role access locked",
+            f"Your role cannot use {activity_label}. "
+            "Ask an administrator to enable it in Roles & Permissions.",
+        )
+    if action == "view":
+        return (
+            "Not permitted",
+            f"You are not allowed to open {activity_label}. "
+            "An administrator can grant access in Roles & Permissions.",
+        )
+    return (
+        "Not permitted",
+        f"You are not allowed to {action_label.lower()} in {activity_label}. "
+        "An administrator can grant access in Roles & Permissions.",
+    )
+
+
+def workspace_activity_denial_copy(
+    employee, module_slug: str, activity_slug: str
+) -> tuple[str, str]:
+    return workspace_action_denial_copy(
+        employee, module_slug, activity_slug, "view"
+    )
+
+
+def redirect_if_workspace_action_denied(
+    request,
+    user,
+    *,
+    module_slug: str | None,
+    activity_slug: str,
+    action: str,
+    redirect_to=None,
+):
+    from django.shortcuts import redirect
+
+    if not module_slug:
+        return None
+    if workspace_activity_action_permitted(
+        user, module_slug, activity_slug, action
+    ):
+        return None
+    title, message = workspace_action_denial_copy(
+        user, module_slug, activity_slug, action
+    )
+    set_workspace_access_denied_modal(
+        request,
+        title=title,
+        message=message,
+    )
+    return redirect(redirect_to or user.dashboard_url)
+
+
+def set_employee_activity_permission(
+    *,
+    employee_id: int,
+    module_slug: str,
+    activity_slug: str,
+    action: str,
+    is_allowed: bool,
+    updated_by=None,
+):
+    from .models import EmployeeActivityPermission
+
+    obj, _created = EmployeeActivityPermission.objects.update_or_create(
+        employee_id=employee_id,
+        module_slug=module_slug,
+        activity_slug=activity_slug,
+        action=action,
+        defaults={
+            "is_allowed": is_allowed,
+            "updated_by": updated_by,
+        },
+    )
+    return obj
+
+
+def roles_activity_permission_url(user, roles_trail: list[str], module_slug: str, activity: dict) -> str:
+    """Permission-management URL nested under Roles & Permissions."""
+    path_slugs = activity.get("path_slugs") or [activity["slug"]]
+    return user.workspace_url(*roles_trail, module_slug, *path_slugs)
 
 
 # Side pages that nest under the current trail but should not stack on each other.
 TRAIL_SIDE_PAGES = (
     {slug for _, slug, _ in SHARED_UTILITY_LINKS}
     | SETTINGS_AREA_SLUGS
+    | RESEARCH_BLOGS_AREA_SLUGS
     | SYSTEM_SETTINGS_AREA_SLUGS
 )
 
@@ -900,6 +1752,8 @@ def workspace_context(
     for item in utility_items:
         item["badge_count"] = notif_ctx["notification_badges"].get(item["slug"], 0)
 
+    access_denied_modal = pop_workspace_access_denied_modal(request)
+
     # Secondary links — dashboard hubs on dashboard; otherwise page-allocated only.
     if page_nav_items is None:
         if is_dashboard:
@@ -949,6 +1803,7 @@ def workspace_context(
         "utility_items": utility_items,
         "page_nav_items": page_nav_items,
         "page_trail": trail,
+        "access_denied_modal": access_denied_modal,
         "active_page": active,
         "crumb_parts": crumb_parts,
         "dashboard_url": dashboard_url,
@@ -966,6 +1821,7 @@ def workspace_context(
         "dashboard_disabled": False,
         "icon_back": ICON_BACK,
         "icon_home": ICON_HOME,
+        "icon_users": ICON_USERS,
         "icon_settings": ICON_SETTINGS,
         "icon_logout": ICON_LOGOUT,
         "welcome_headline": welcome["headline"],
@@ -1084,6 +1940,7 @@ def employee_preactive_context(request, user, *, page_title, active="onboarding"
         "settings_disabled": True,
         "icon_back": ICON_BACK,
         "icon_home": ICON_HOME,
+        "icon_users": ICON_USERS,
         "icon_settings": ICON_SETTINGS,
         "icon_logout": ICON_LOGOUT,
         "welcome_headline": page_title,

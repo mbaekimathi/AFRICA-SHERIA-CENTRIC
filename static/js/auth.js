@@ -11,16 +11,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  const toasts = document.querySelectorAll(".toast");
-  toasts.forEach((toast) => {
-    window.setTimeout(() => {
-      toast.style.opacity = "0";
-      toast.style.transform = "translateY(-8px)";
-      toast.style.transition = "opacity 0.3s ease, transform 0.3s ease";
-      window.setTimeout(() => toast.remove(), 320);
-    }, 4200);
-  });
-
   const suspendedModal = document.getElementById("suspended-modal");
   const closeSuspended = document.getElementById("close-suspended-modal");
   if (suspendedModal && closeSuspended) {

@@ -1,6 +1,7 @@
+from django import forms
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.db.models import Q, Value
@@ -18,7 +19,7 @@ import calendar as calendar_mod
 import json
 import logging
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from django.utils.safestring import mark_safe
 from .appearance import appearance_catalog
 from .client_auth import (
@@ -50,11 +51,14 @@ from .forms import (
     CreateMatterTaskForm,
     EmployeeBlogForm,
     EmployeeOnboardingForm,
+    employees_available_for_payroll,
     FAQForm,
     FinanceSettingsForm,
+    CommunicationSettingsForm,
     GalleryImageForm,
     GenerateInvoiceForm,
     InvoiceStkPaymentForm,
+    LatestNewsScrapeForm,
     LoginForm,
     MatterPartyEditFormSet,
     MatterPartyFormSet,
@@ -63,6 +67,7 @@ from .forms import (
     ProfileSettingsForm,
     RegisterCaseForm,
     RegisterMatterForm,
+    RegisterPayrollForm,
     RejectTaskForm,
     AcceptTaskForm,
     RenameDocumentForm,
@@ -95,6 +100,12 @@ from .google_drive import (
     upload_drive_file,
     validate_oauth_state,
 )
+from .blog_share import (
+    build_share_intents,
+    company_share_accounts,
+    pop_share_intents,
+    stash_share_intents,
+)
 from .case_audit import build_case_audit_events, case_audit_summary
 from .document_tracking import (
     detect_session_behavior,
@@ -108,6 +119,7 @@ from .client_notifications import (
     notify_invoice_issued,
 )
 from .models import (
+    BlogPostEvent,
     CaseParty,
     CaseTask,
     Client,
@@ -120,7 +132,10 @@ from .models import (
     DocumentContentSnapshot,
     DocumentOpenSession,
     Employee,
+    EmployeeActivityPermission,
     EmployeeBlogPost,
+    EmployeeWorkSession,
+    CommunicationSettings,
     FinanceSettings,
     FirmCompanyInformation,
     FirmCompanyProfileImage,
@@ -134,8 +149,14 @@ from .models import (
     MatterAttendance,
     MatterParty,
     MatterTask,
+    NewsSearchJob,
+    NewsWatch,
     NonLitigationMatter,
     Notification,
+    PayrollDeduction,
+    PayrollPayment,
+    PayrollRun,
+    RoleActivityPermission,
     WebsiteTemplateSetting,
 )
 from .notifications import (
@@ -146,19 +167,52 @@ from .notifications import (
     notify_task_accepted,
     notify_task_rejected,
 )
+from .news_blog import build_news_blog_draft
+from .employee_performance import (
+    annotate_employee_performance_summaries,
+    build_employee_performance_analytics,
+    employee_summary_metrics,
+)
+from .employee_sessions import (
+    batch_employee_session_summaries,
+    build_employee_session_analytics,
+    end_employee_session,
+    start_employee_session,
+)
 from .workspace import (
+    activity_permission_actions,
     assign_session_greeting,
     attach_greeting_cookie,
+    client_account_page_nav_items,
+    collect_module_activities,
+    DASHBOARD_PAGE_LINKS,
     employee_preactive_context,
     extend_page_trail,
     litigation_case_nav_items,
     LITIGATION_CASE_ACTION_SLUGS,
     mark_session_start,
+    module_activity_url,
+    module_slug_for_trail,
     non_litigation_matter_nav_items,
     NON_LITIGATION_MATTER_ACTION_SLUGS,
     PAGE_LOCAL_LINKS,
     PAGE_TITLES,
+    redirect_if_workspace_action_denied,
     resolve_workspace_page,
+    resolve_workspace_post_action,
+    role_activity_is_allowed,
+    role_page_slugs,
+    roles_activity_permission_url,
+    set_employee_activity_permission,
+    set_role_activity_permission,
+    set_workspace_access_denied_modal,
+    system_module_hint,
+    SYSTEM_MODULE_SLUGS,
+    workspace_activity_access_allowed,
+    workspace_activity_action_permitted,
+    workspace_action_denial_copy,
+    workspace_activity_denial_copy,
+    workspace_detail_permission_action,
     workspace_context,
 )
 from .utils import optimize_image, render_blog_body, whatsapp_chat_url
@@ -614,6 +668,7 @@ class BlogDetailView(View):
             slug=slug,
             status=EmployeeBlogPost.Status.PUBLISHED,
         )
+        record_blog_event(request, post, BlogPostEvent.EventType.VIEW)
         related = list(
             EmployeeBlogPost.objects.filter(status=EmployeeBlogPost.Status.PUBLISHED)
             .exclude(pk=post.pk)
@@ -674,6 +729,7 @@ class BlogDetailView(View):
                     ),
                 ),
                 "share_url": absolute_url,
+                "blog_track_url": reverse("accounts:blog_event_track", kwargs={"slug": post.slug}),
                 "json_ld": mark_safe(
                     json.dumps(
                         {
@@ -711,6 +767,30 @@ class BlogDetailView(View):
             }
         )
         return render(request, self.template_name, context)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class BlogEventTrackView(View):
+    """Record a public blog CTA / interaction from the website."""
+
+    def post(self, request, slug):
+        post = get_object_or_404(
+            EmployeeBlogPost,
+            slug=slug,
+            status=EmployeeBlogPost.Status.PUBLISHED,
+        )
+        event_type = ""
+        content_type = (request.content_type or "").lower()
+        if "application/json" in content_type:
+            try:
+                payload = json.loads(request.body.decode("utf-8") or "{}")
+            except (TypeError, ValueError, UnicodeDecodeError):
+                payload = {}
+            event_type = str(payload.get("event_type") or "")
+        else:
+            event_type = request.POST.get("event_type", "")
+        stored = record_blog_event(request, post, event_type)
+        return JsonResponse({"ok": bool(stored)})
 
 
 class BlogSitemapView(View):
@@ -888,6 +968,7 @@ class AdvocateLoginView(LoginView):
         login(self.request, user)
         assign_session_greeting(self.request, user)
         mark_session_start(self.request)
+        start_employee_session(self.request, user)
         return redirect_for_employee(self.request, user)
 
     def form_invalid(self, form):
@@ -901,6 +982,18 @@ class AdvocateLoginView(LoginView):
             )
         messages.error(self.request, "Invalid login code or password.")
         return super().form_invalid(form)
+
+
+class EmployeeLogoutView(View):
+    """Sign out and close the tracked employee work session."""
+
+    def post(self, request):
+        end_employee_session(
+            request,
+            kind=EmployeeWorkSession.LogoutKind.MANUAL,
+        )
+        logout(request)
+        return redirect("accounts:login")
 
 
 class SignUpView(View):
@@ -918,6 +1011,7 @@ class SignUpView(View):
             login(request, user)
             assign_session_greeting(request, user)
             mark_session_start(request)
+            start_employee_session(request, user)
             messages.info(
                 request,
                 "Account created. Complete your onboarding details next.",
@@ -1335,7 +1429,7 @@ def _poll_invoice_stk_status(request, invoice, session_key: str) -> dict:
 @require_GET
 def invoice_stk_status(request, role, invoice_id):
     """Live poll: M-Pesa STK result for staff pay invoice page."""
-    user, denied = _employee_workspace_guard(request, role)
+    user, denied = _guard_invoicing(request, role, action="pay")
     if denied:
         return JsonResponse({"error": "forbidden"}, status=403)
 
@@ -2131,6 +2225,91 @@ def workspace_entity_status(request):
 
 
 @login_required
+@require_POST
+def company_contacts_verify(request):
+    """Live-verify firm contact channels (email, phone, website, social)."""
+    user = request.user
+    if user.status != Employee.Status.ACTIVE:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    if "company-contacts" not in role_page_slugs(user.role):
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    from .contact_verification import CHANNEL_SPECS, verify_company_contacts
+
+    overrides: dict[str, str] = {}
+    content_type = (request.content_type or "").lower()
+    if "application/json" in content_type:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return JsonResponse({"error": "invalid_json"}, status=400)
+        if isinstance(payload, dict):
+            values = payload.get("values")
+            if isinstance(values, dict):
+                source = values
+            else:
+                source = payload
+            allowed = {spec["key"] for spec in CHANNEL_SPECS}
+            for key, raw in source.items():
+                if key in allowed:
+                    overrides[key] = "" if raw is None else str(raw)
+    else:
+        allowed = {spec["key"] for spec in CHANNEL_SPECS}
+        for key in allowed:
+            if key in request.POST:
+                overrides[key] = request.POST.get(key) or ""
+
+    result = verify_company_contacts(
+        FirmCompanyInformation.get_solo(),
+        overrides=overrides or None,
+    )
+    return JsonResponse({"ok": True, **result})
+
+
+@login_required
+@require_POST
+def communication_settings_verify(request):
+    """Live-verify email SMTP, SMS, and WhatsApp provider configuration."""
+    user = request.user
+    if user.status != Employee.Status.ACTIVE:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    if "communication-settings" not in role_page_slugs(user.role):
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    from .communication_verification import (
+        OVERRIDE_KEYS,
+        verify_communication_settings,
+    )
+
+    overrides: dict = {}
+    content_type = (request.content_type or "").lower()
+    if "application/json" in content_type:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return JsonResponse({"error": "invalid_json"}, status=400)
+        if isinstance(payload, dict):
+            values = payload.get("values")
+            if isinstance(values, dict):
+                source = values
+            else:
+                source = payload
+            for key, raw in source.items():
+                if key in OVERRIDE_KEYS:
+                    overrides[key] = raw
+    else:
+        for key in OVERRIDE_KEYS:
+            if key in request.POST:
+                overrides[key] = request.POST.get(key)
+
+    result = verify_communication_settings(
+        CommunicationSettings.get_solo(),
+        overrides=overrides or None,
+    )
+    return JsonResponse({"ok": True, **result})
+
+
+@login_required
 @require_GET
 def workspace_client_search(request):
     """Search active clients by name or phone for case registration."""
@@ -2157,7 +2336,13 @@ def workspace_client_search(request):
             full_name=Concat("first_name", Value(" "), "last_name")
         ).filter(name_q)
 
-    qs = qs.order_by("company_name", "first_name", "last_name")[:15]
+    limit = request.GET.get("limit")
+    if limit and str(limit).isdigit():
+        qs = qs.order_by("company_name", "first_name", "last_name")[: int(limit)]
+    elif query:
+        qs = qs.order_by("company_name", "first_name", "last_name")[:15]
+    else:
+        qs = qs.order_by("company_name", "first_name", "last_name")
 
     results = []
     for client in qs:
@@ -2637,6 +2822,93 @@ def group_invoices(invoices, group_by: str = "client"):
     return "client", groups
 
 
+def build_client_account_summaries(clients):
+    """Build per-client invoice account summaries for the client accounts page."""
+    from decimal import Decimal
+
+    if not clients:
+        return []
+
+    client_ids = [client.pk for client in clients]
+    invoices_by_client = defaultdict(list)
+    invoices = (
+        Invoice.objects.filter(client_id__in=client_ids)
+        .exclude(status=Invoice.Status.CANCELLED)
+        .select_related("client")
+        .order_by("-issue_date", "-created_at")
+    )
+    for invoice in invoices:
+        invoices_by_client[invoice.client_id].append(invoice)
+
+    summaries = []
+    for index, client in enumerate(clients):
+        items = invoices_by_client.get(client.pk, [])
+        total_invoiced = sum(
+            (invoice.total_amount for invoice in items),
+            Decimal("0.00"),
+        )
+        total_paid = sum(
+            (invoice.amount_paid for invoice in items),
+            Decimal("0.00"),
+        )
+        balance_due = sum(
+            (invoice.balance_due for invoice in items),
+            Decimal("0.00"),
+        )
+        open_count = sum(
+            1 for invoice in items if invoice.status != Invoice.Status.PAID
+        )
+        search_bits = [
+            client.get_full_name(),
+            client.get_client_type_display(),
+            client.phone or "",
+            client.email or "",
+            *[
+                f"{invoice.invoice_number} {invoice.description} "
+                f"{invoice.get_status_display()}"
+                for invoice in items
+            ],
+        ]
+        summaries.append(
+            {
+                "client": client,
+                "label": client.get_full_name(),
+                "subtitle": (
+                    f"{client.get_client_type_display()} · "
+                    f"{_client_contact_subtitle(client)}"
+                ),
+                "invoices": items,
+                "invoice_count": len(items),
+                "total_invoiced": total_invoiced,
+                "total_paid": total_paid,
+                "balance_due": balance_due,
+                "open_count": open_count,
+                "tone": index % 6,
+                "search_text": " ".join(search_bits).lower(),
+            }
+        )
+    return summaries
+
+
+def _parse_client_ids_param(raw_value):
+    """Parse a comma-separated list of client primary keys from a query string."""
+    if not raw_value:
+        return []
+
+    client_ids = []
+    seen = set()
+    for part in raw_value.split(","):
+        part = part.strip()
+        if not part or not part.isdigit():
+            continue
+        client_id = int(part)
+        if client_id in seen:
+            continue
+        seen.add(client_id)
+        client_ids.append(client_id)
+    return client_ids
+
+
 @method_decorator(login_required, name="dispatch")
 class RoleWorkspaceView(View):
     """
@@ -2684,12 +2956,25 @@ class RoleWorkspaceView(View):
     company_gallery_form_template = "accounts/company_gallery_form.html"
     company_terms_template = "accounts/company_terms.html"
     research_blogs_template = "accounts/research_blogs.html"
+    latest_news_template = "accounts/latest_news.html"
     company_faq_form_template = "accounts/company_faq_form.html"
     website_template_template = "accounts/website_template.html"
+    system_settings_template = "accounts/system_settings.html"
     finance_settings_template = "accounts/finance_settings.html"
+    communication_settings_template = "accounts/communication_settings.html"
     invoicing_template = "accounts/invoicing.html"
     generate_invoice_template = "accounts/generate_invoice.html"
     payments_template = "accounts/payments.html"
+    client_accounts_template = "accounts/client_accounts.html"
+    client_account_detail_template = "accounts/client_account_detail.html"
+    payroll_template = "accounts/payroll.html"
+    employee_payroll_detail_template = "accounts/employee_payroll_detail.html"
+    register_payroll_template = "accounts/register_payroll.html"
+    payroll_receipt_template = "accounts/payroll_receipt.html"
+    roles_permissions_template = "accounts/roles_permissions.html"
+    roles_module_detail_template = "accounts/roles_module_detail.html"
+    roles_activity_permission_template = "accounts/roles_activity_permission.html"
+    performance_compliance_template = "accounts/performance_compliance.html"
     page_template = "accounts/workspace_page.html"
 
     def get(self, request, role, pages="dashboard"):
@@ -2705,6 +2990,13 @@ class RoleWorkspaceView(View):
         if not resolved:
             return redirect(user.dashboard_url)
 
+        # Enforce role and employee activity locks (not on permission UI).
+        denied = self._redirect_if_activity_locked(
+            request, user, resolved, action="view"
+        )
+        if denied is not None:
+            return denied
+
         context = workspace_context(
             user,
             request=request,
@@ -2713,7 +3005,25 @@ class RoleWorkspaceView(View):
             active_page=resolved["leaf"],
         )
 
-        if resolved["is_settings"]:
+        if resolved.get("is_roles_activity_permission"):
+            context.update(self._roles_activity_permission_context(user, resolved))
+            response = render(
+                request, self.roles_activity_permission_template, context
+            )
+        elif resolved.get("is_roles_module_detail"):
+            context.update(self._roles_module_detail_context(user, resolved))
+            response = render(request, self.roles_module_detail_template, context)
+        elif (
+            resolved["leaf"] == "system-settings"
+            and user.role == Employee.Role.IT_SUPPORT
+        ):
+            from .system_analytics import build_system_analytics
+
+            context.update(
+                build_system_analytics(request.GET.get("range", "24h"))
+            )
+            response = render(request, self.system_settings_template, context)
+        elif resolved["is_settings"]:
             context.update(self._settings_context(user))
             response = render(request, self.settings_template, context)
         elif resolved.get("is_theme_settings"):
@@ -2731,7 +3041,22 @@ class RoleWorkspaceView(View):
             context.update(self._my_blogs_context(user))
             response = render(request, self.my_blogs_template, context)
         elif resolved.get("is_my_blogs_new"):
-            context.update(self._my_blog_form_context(user))
+            generated_draft = request.session.pop("news_blog_draft", None)
+            context.update(
+                self._my_blog_form_context(
+                    user,
+                    initial=(
+                        generated_draft.get("initial")
+                        if generated_draft
+                        else None
+                    ),
+                    news_source=(
+                        generated_draft.get("source")
+                        if generated_draft
+                        else None
+                    ),
+                )
+            )
             response = render(request, self.my_blog_form_template, context)
         elif resolved.get("is_google_drive_settings"):
             context.update(self._google_drive_settings_context(request, resolved))
@@ -2744,6 +3069,11 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_finance_settings"):
             context.update(self._finance_settings_context(form=None))
             response = render(request, self.finance_settings_template, context)
+        elif resolved.get("is_communication_settings"):
+            context.update(self._communication_settings_context(form=None))
+            response = render(
+                request, self.communication_settings_template, context
+            )
         elif resolved.get("is_company_information"):
             from .company_readiness import analyze_company_information
 
@@ -2776,7 +3106,7 @@ class RoleWorkspaceView(View):
             context.update(self._company_faq_form_context(user))
             response = render(request, self.company_faq_form_template, context)
         elif resolved.get("is_company_blogs"):
-            context.update(self._company_blogs_context(user))
+            context.update(self._company_blogs_context(user, request=request))
             response = render(request, self.company_blogs_template, context)
         elif resolved.get("is_company_gallery"):
             context.update(self._company_gallery_context(user))
@@ -2792,6 +3122,11 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_research_blogs"):
             context.update(self._research_blogs_context(user))
             response = render(request, self.research_blogs_template, context)
+        elif resolved.get("is_latest_news"):
+            context.update(
+                self._latest_news_context(user=user, request=request)
+            )
+            response = render(request, self.latest_news_template, context)
         elif resolved["leaf"] == "invoicing":
             invoices = list(
                 Invoice.objects.select_related("client", "created_by").order_by(
@@ -2804,7 +3139,20 @@ class RoleWorkspaceView(View):
             context["invoice_groups"] = invoice_groups
             response = render(request, self.invoicing_template, context)
         elif resolved["leaf"] == "generate-invoice":
-            context.update(self._generate_invoice_context(user, resolved))
+            generate_context = self._generate_invoice_context(
+                user, resolved, request=request
+            )
+            context.update(generate_context)
+            if (
+                generate_context.get("selected_client")
+                and "client-accounts" in resolved["trail"]
+            ):
+                context["page_nav_items"] = client_account_page_nav_items(
+                    user,
+                    resolved["trail"],
+                    client_pk=generate_context["selected_client"].pk,
+                    active_slug="generate-invoice",
+                )
             response = render(request, self.generate_invoice_template, context)
         elif resolved["leaf"] == "payments":
             from decimal import Decimal
@@ -2833,6 +3181,38 @@ class RoleWorkspaceView(View):
                 if inv.status != Invoice.Status.PAID
             ]
             response = render(request, self.payments_template, context)
+        elif resolved["leaf"] == "client-accounts":
+            client_context = self._client_accounts_context(
+                request, user=user, resolved=resolved
+            )
+            context.update(client_context)
+            if client_context.get("selected_client"):
+                context["page_nav_items"] = client_account_page_nav_items(
+                    user,
+                    resolved["trail"],
+                    client_pk=client_context["selected_client"].pk,
+                )
+            template = (
+                self.client_account_detail_template
+                if client_context.get("account_detail")
+                else self.client_accounts_template
+            )
+            response = render(request, template, context)
+        elif resolved["leaf"] == "payroll":
+            payroll_context = self._payroll_context(request, user, resolved)
+            context.update(payroll_context)
+            template = (
+                self.employee_payroll_detail_template
+                if payroll_context.get("employee_detail")
+                else self.payroll_template
+            )
+            response = render(request, template, context)
+        elif resolved["leaf"] == "register-payroll":
+            context.update(self._register_payroll_context(user, resolved))
+            response = render(request, self.register_payroll_template, context)
+        elif resolved["leaf"] == "payroll-receipt":
+            context.update(self._payroll_receipt_context(request, user, resolved))
+            response = render(request, self.payroll_receipt_template, context)
         elif resolved["is_dashboard"]:
             response = render(request, self.dashboard_template, context)
         elif resolved["leaf"] == "employee-management":
@@ -2856,6 +3236,22 @@ class RoleWorkspaceView(View):
             ).order_by("status", "date_joined", "first_name", "last_name")
             context["employee_count"] = context["employees"].count()
             response = render(request, self.onboarding_approvals_template, context)
+        elif resolved["leaf"] == "performance-compliance":
+            context.update(self._performance_compliance_context())
+            response = render(request, self.performance_compliance_template, context)
+        elif resolved["leaf"] == "roles-permissions":
+            roles_trail = list(resolved["trail"])
+            context["system_modules"] = [
+                {
+                    "label": label,
+                    "slug": slug,
+                    "icon": icon,
+                    "url": user.workspace_url(*roles_trail, slug),
+                    "hint": system_module_hint(slug),
+                }
+                for label, slug, icon in DASHBOARD_PAGE_LINKS
+            ]
+            response = render(request, self.roles_permissions_template, context)
         elif resolved["leaf"] == "client-management":
             context["clients"] = Client.objects.filter(
                 status__in=[
@@ -2964,6 +3360,34 @@ class RoleWorkspaceView(View):
 
         return attach_greeting_cookie(response, request)
 
+    def _redirect_if_activity_locked(self, request, user, resolved, *, action="view"):
+        if (
+            "roles-permissions" in resolved["trail"]
+            or resolved["leaf"] in SYSTEM_MODULE_SLUGS
+            or resolved["leaf"] == "dashboard"
+        ):
+            return None
+
+        module_slug = module_slug_for_trail(resolved["trail"])
+        if not module_slug:
+            return None
+
+        activity_slug = resolved["leaf"]
+        if workspace_activity_action_permitted(
+            user, module_slug, activity_slug, action
+        ):
+            return None
+
+        title, message = workspace_action_denial_copy(
+            user, module_slug, activity_slug, action
+        )
+        set_workspace_access_denied_modal(
+            request,
+            title=title,
+            message=message,
+        )
+        return redirect(user.dashboard_url)
+
     def post(self, request, role, pages="dashboard"):
         user = request.user
         if user.status != Employee.Status.ACTIVE:
@@ -2974,7 +3398,22 @@ class RoleWorkspaceView(View):
             return redirect(user.workspace_url(*pages.strip("/").split("/")))
 
         resolved = resolve_workspace_page(user.role, pages)
-        if not resolved or resolved["leaf"] not in {
+        if not resolved:
+            return redirect(user.dashboard_url)
+
+        if resolved.get("is_roles_activity_permission"):
+            return self._post_roles_activity_permission(request, user, resolved)
+
+        denied = self._redirect_if_activity_locked(
+            request,
+            user,
+            resolved,
+            action=resolve_workspace_post_action(resolved["leaf"], request),
+        )
+        if denied is not None:
+            return denied
+
+        if resolved["leaf"] not in {
             "settings",
             "theme-settings",
             "notification-settings",
@@ -2993,11 +3432,14 @@ class RoleWorkspaceView(View):
             "company-terms",
             "website-template",
             "finance-settings",
+            "communication-settings",
             "register-case",
             "register-new-matter",
             "register-client",
             "register-employee",
             "generate-invoice",
+            "register-payroll",
+            "latest-news",
         }:
             return redirect(user.dashboard_url)
 
@@ -3016,6 +3458,9 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "finance-settings":
             return self._post_finance_settings(request, user, resolved)
+
+        if resolved["leaf"] == "communication-settings":
+            return self._post_communication_settings(request, user, resolved)
 
         if resolved["leaf"] == "company-profile":
             return self._post_company_profile(request, user, resolved)
@@ -3046,6 +3491,15 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "generate-invoice":
             return self._post_generate_invoice(request, user, resolved)
+
+        if resolved["leaf"] == "payroll":
+            return self._post_payroll(request, user, resolved)
+
+        if resolved["leaf"] == "register-payroll":
+            return self._post_register_payroll(request, user, resolved)
+
+        if resolved["leaf"] == "latest-news":
+            return self._post_latest_news(request, user, resolved)
 
         if resolved["leaf"] == "register-new-matter":
             return self._post_register_matter(request, user, resolved)
@@ -3255,6 +3709,275 @@ class RoleWorkspaceView(View):
         return attach_greeting_cookie(response, request)
 
     @staticmethod
+    def _roles_module_detail_context(user, resolved):
+        leaf = resolved["leaf"]
+        trail = list(resolved["trail"])
+        module_meta = next(
+            (
+                {"label": label, "slug": slug, "icon": icon}
+                for label, slug, icon in DASHBOARD_PAGE_LINKS
+                if slug == leaf
+            ),
+            {
+                "label": PAGE_TITLES.get(leaf, leaf.replace("-", " ").title()),
+                "slug": leaf,
+                "icon": "",
+            },
+        )
+        module_activities = []
+        roles_root = trail[: trail.index("roles-permissions") + 1]
+        for activity in collect_module_activities(leaf):
+            item = dict(activity)
+            item["url"] = roles_activity_permission_url(
+                user, roles_root, leaf, activity
+            )
+            item["open_url"] = module_activity_url(user, leaf, activity)
+            module_activities.append(item)
+        return {
+            "page_title": f"{module_meta['label']} — Roles & Permissions",
+            "module": {
+                **module_meta,
+                "hint": system_module_hint(leaf),
+                "open_url": user.workspace_url("dashboard", leaf),
+            },
+            "module_activities": module_activities,
+            "activity_count": len(module_activities),
+            "roles_permissions_url": user.workspace_url(*roles_root),
+        }
+
+    @staticmethod
+    def _roles_activity_permission_context(user, resolved):
+        trail = list(resolved["trail"])
+        module_slug = resolved.get("roles_module_slug") or ""
+        activity_slug = resolved["leaf"]
+        roles_idx = trail.index("roles-permissions")
+        roles_root = trail[: roles_idx + 1]
+        module_root = trail[: roles_idx + 2]
+
+        module_meta = next(
+            (
+                {"label": label, "slug": slug, "icon": icon}
+                for label, slug, icon in DASHBOARD_PAGE_LINKS
+                if slug == module_slug
+            ),
+            {
+                "label": PAGE_TITLES.get(
+                    module_slug, module_slug.replace("-", " ").title()
+                ),
+                "slug": module_slug,
+                "icon": "",
+            },
+        )
+        activity_meta = next(
+            (
+                activity
+                for activity in collect_module_activities(module_slug)
+                if activity["slug"] == activity_slug
+            ),
+            {
+                "label": PAGE_TITLES.get(
+                    activity_slug, activity_slug.replace("-", " ").title()
+                ),
+                "slug": activity_slug,
+                "icon": "",
+                "path": PAGE_TITLES.get(
+                    activity_slug, activity_slug.replace("-", " ").title()
+                ),
+                "path_slugs": trail[roles_idx + 2 :],
+                "linkable": True,
+            },
+        )
+        open_url = module_activity_url(user, module_slug, activity_meta)
+        activity_actions = activity_permission_actions(activity_slug)
+
+        locked_roles = {
+            row.role
+            for row in RoleActivityPermission.objects.filter(
+                module_slug=module_slug,
+                activity_slug=activity_slug,
+                is_allowed=False,
+            ).only("role")
+        }
+
+        employees = list(
+            Employee.objects.filter(
+                status__in=[
+                    Employee.Status.ACTIVE,
+                    Employee.Status.SUSPENDED,
+                    Employee.Status.PENDING_APPROVAL,
+                    Employee.Status.PENDING_ONBOARDING,
+                ]
+            ).order_by("role", "first_name", "last_name", "login_code")
+        )
+        employees_by_role = {role: [] for role, _label in Employee.Role.choices}
+        for employee in employees:
+            employees_by_role.setdefault(employee.role, []).append(employee)
+
+        employee_ids = [employee.pk for employee in employees]
+        employee_action_rows = {
+            (row.employee_id, row.action): row.is_allowed
+            for row in EmployeeActivityPermission.objects.filter(
+                module_slug=module_slug,
+                activity_slug=activity_slug,
+                employee_id__in=employee_ids,
+            ).only("employee_id", "action", "is_allowed")
+        }
+
+        role_groups = []
+        allowed_count = 0
+        locked_count = 0
+        total_employees = 0
+        for role_value, role_label in Employee.Role.choices:
+            members = employees_by_role.get(role_value, [])
+            is_allowed = role_value not in locked_roles
+            if is_allowed:
+                allowed_count += 1
+            else:
+                locked_count += 1
+            total_employees += len(members)
+
+            member_rows = []
+            for employee in members:
+                actions = []
+                for action in activity_actions:
+                    actions.append(
+                        {
+                            **action,
+                            "is_allowed": employee_action_rows.get(
+                                (employee.pk, action["slug"]), True
+                            ),
+                        }
+                    )
+                member_rows.append(
+                    {
+                        "employee": employee,
+                        "actions": actions,
+                    }
+                )
+
+            role_groups.append(
+                {
+                    "role": role_value,
+                    "label": role_label,
+                    "is_allowed": is_allowed,
+                    "members": member_rows,
+                    "employee_count": len(members),
+                }
+            )
+
+        return {
+            "page_title": f"{activity_meta['label']} — Access",
+            "module": module_meta,
+            "activity": activity_meta,
+            "activity_open_url": open_url,
+            "activity_actions": activity_actions,
+            "role_groups": role_groups,
+            "allowed_role_count": allowed_count,
+            "locked_role_count": locked_count,
+            "total_employee_count": total_employees,
+            "module_url": user.workspace_url(*module_root),
+            "roles_permissions_url": user.workspace_url(*roles_root),
+        }
+
+    def _post_roles_activity_permission(self, request, user, resolved):
+        module_slug = resolved.get("roles_module_slug") or ""
+        activity_slug = resolved["leaf"]
+        permission_action = (request.POST.get("permission_action") or "role").strip()
+
+        if permission_action == "employee_action":
+            return self._post_employee_activity_action(
+                request, user, resolved, module_slug, activity_slug
+            )
+
+        role = (request.POST.get("role") or "").strip()
+        valid_roles = {value for value, _label in Employee.Role.choices}
+        if role not in valid_roles or not module_slug:
+            messages.error(request, "Invalid role permission update.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        is_allowed = request.POST.get("is_allowed") == "1"
+        set_role_activity_permission(
+            role=role,
+            module_slug=module_slug,
+            activity_slug=activity_slug,
+            is_allowed=is_allowed,
+            updated_by=user,
+        )
+        role_label = dict(Employee.Role.choices).get(role, role)
+        if is_allowed:
+            messages.success(
+                request,
+                f"{role_label} can now access this activity.",
+            )
+        else:
+            messages.success(
+                request,
+                f"{role_label} is locked from this activity.",
+            )
+        return redirect(user.workspace_url(*resolved["trail"]))
+
+    def _post_employee_activity_action(
+        self, request, user, resolved, module_slug, activity_slug
+    ):
+        try:
+            employee_id = int(request.POST.get("employee_id", ""))
+        except (TypeError, ValueError):
+            messages.error(request, "Invalid employee permission update.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        action = (request.POST.get("action") or "").strip()
+        valid_actions = {
+            item["slug"] for item in activity_permission_actions(activity_slug)
+        }
+        if action not in valid_actions:
+            messages.error(request, "Invalid action permission update.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        employee = Employee.objects.filter(pk=employee_id).first()
+        if employee is None:
+            messages.error(request, "Employee not found.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        if not role_activity_is_allowed(
+            employee.role, module_slug, activity_slug
+        ):
+            messages.error(
+                request,
+                "Enable this role for the activity before setting employee actions.",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        is_allowed = request.POST.get("is_allowed") == "1"
+        set_employee_activity_permission(
+            employee_id=employee_id,
+            module_slug=module_slug,
+            activity_slug=activity_slug,
+            action=action,
+            is_allowed=is_allowed,
+            updated_by=user,
+        )
+        action_label = next(
+            (
+                item["label"]
+                for item in activity_permission_actions(activity_slug)
+                if item["slug"] == action
+            ),
+            action.replace("-", " ").title(),
+        )
+        employee_name = employee.get_full_name() or employee.login_code
+        if is_allowed:
+            messages.success(
+                request,
+                f"{employee_name} can now {action_label.lower()} in this activity.",
+            )
+        else:
+            messages.success(
+                request,
+                f"{employee_name} is locked from {action_label.lower()}.",
+            )
+        return redirect(user.workspace_url(*resolved["trail"]))
+
+    @staticmethod
     def _settings_context(
         user,
         *,
@@ -3314,13 +4037,15 @@ class RoleWorkspaceView(View):
         }
 
     @staticmethod
-    def _my_blog_form_context(user, *, form=None, post=None):
+    def _my_blog_form_context(
+        user, *, form=None, post=None, initial=None, news_source=None
+    ):
         if form is not None:
             blog_form = form
         elif post is not None:
             blog_form = EmployeeBlogForm(instance=post)
         else:
-            blog_form = EmployeeBlogForm()
+            blog_form = EmployeeBlogForm(initial=initial)
 
         if form is not None and form.is_bound:
             draft = EmployeeBlogPost(
@@ -3342,6 +4067,17 @@ class RoleWorkspaceView(View):
             seo = draft.seo_checklist()
         elif post is not None:
             seo = post.seo_checklist()
+        elif initial:
+            seo = EmployeeBlogPost(
+                title=initial.get("title", ""),
+                body=initial.get("body", ""),
+                excerpt=initial.get("excerpt", ""),
+                meta_title=initial.get("meta_title", ""),
+                meta_description=initial.get("meta_description", ""),
+                focus_keyword=initial.get("focus_keyword", ""),
+                tags=initial.get("tags", ""),
+                slug=initial.get("slug", ""),
+            ).seo_checklist()
         else:
             seo = EmployeeBlogPost(
                 title="",
@@ -3357,6 +4093,7 @@ class RoleWorkspaceView(View):
         return {
             "blog_form": blog_form,
             "blog_post": post,
+            "news_source": news_source,
             "seo_checklist": seo,
             "public_blog_list_url": reverse("accounts:blog_list"),
             "public_post_url": (
@@ -3422,10 +4159,52 @@ class RoleWorkspaceView(View):
 
     @staticmethod
     def _company_contacts_context(*, form=None):
+        from .contact_verification import CHANNEL_SPECS, LABEL_BY_STATUS, TONE_BY_STATUS
+
         company = FirmCompanyInformation.get_solo()
+        # Placeholders so the page paints immediately; JS runs live verification.
+        pending_channels = []
+        for spec in CHANNEL_SPECS:
+            if spec["kind"] not in {"email", "phone", "url"}:
+                continue
+            value = (getattr(company, spec["key"], "") or "").strip()
+            status = "checking" if value else "not_set"
+            pending_channels.append(
+                {
+                    "key": spec["key"],
+                    "label": spec["label"],
+                    "kind": spec["kind"],
+                    "value": value,
+                    "status": status,
+                    "tone": TONE_BY_STATUS.get(status, "suspended"),
+                    "status_label": LABEL_BY_STATUS.get(
+                        status, status.replace("_", " ").title()
+                    ),
+                    "detail": (
+                        "Verifying live connection…"
+                        if value
+                        else f"{spec['label']} is not set."
+                    ),
+                    "required": bool(spec.get("required")),
+                    "href": "",
+                }
+            )
         return {
             "company_information": company,
             "form": form or CompanyContactsForm(instance=company),
+            "contact_verify_url": reverse("accounts:company_contacts_verify"),
+            "contact_connections": {
+                "overall_status": "checking",
+                "overall_tone": "partial",
+                "overall_label": "Verifying connections…",
+                "overall_detail": "Checking email, phone, website, and social profiles.",
+                "connected_count": 0,
+                "problem_count": 0,
+                "not_set_count": 0,
+                "channel_count": len(pending_channels),
+                "connection_channels": pending_channels,
+                "by_key": {c["key"]: c for c in pending_channels},
+            },
         }
 
     @staticmethod
@@ -3634,24 +4413,25 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _research_blogs_context(user):
         my_posts = EmployeeBlogPost.objects.filter(author=user)
-        firm_posts = list(
-            EmployeeBlogPost.objects.exclude(status=EmployeeBlogPost.Status.DRAFT)
-            .select_related("author", "approved_by")
-            .order_by("-updated_at", "-created_at")
+        firm_qs = EmployeeBlogPost.objects.exclude(
+            status=EmployeeBlogPost.Status.DRAFT
+        ).select_related("author", "approved_by")
+        submitted_posts = list(
+            firm_qs.filter(status=EmployeeBlogPost.Status.SUBMITTED).order_by(
+                "-submitted_at", "-updated_at", "-created_at"
+            )
         )
-        pending_count = sum(
-            1
-            for post in firm_posts
-            if post.status == EmployeeBlogPost.Status.SUBMITTED
+        published_posts = list(
+            firm_qs.filter(status=EmployeeBlogPost.Status.PUBLISHED).order_by(
+                "-published_at", "-updated_at", "-created_at"
+            )
         )
-        published_count = sum(
-            1
-            for post in firm_posts
-            if post.status == EmployeeBlogPost.Status.PUBLISHED
-        )
+        pending_count = len(submitted_posts)
+        published_count = len(published_posts)
         return {
-            "firm_blog_posts": firm_posts,
-            "firm_blog_count": len(firm_posts),
+            "submitted_blog_posts": submitted_posts,
+            "published_blog_posts": published_posts,
+            "firm_blog_count": pending_count + published_count,
             "my_blog_count": my_posts.count(),
             "my_draft_count": my_posts.filter(
                 status=EmployeeBlogPost.Status.DRAFT
@@ -3668,10 +4448,123 @@ class RoleWorkspaceView(View):
             "my_blogs_new_url": user.workspace_url("dashboard", "my-blogs-new"),
             "company_blogs_url": RoleWorkspaceView._company_blogs_list_url(user),
             "public_blog_list_url": reverse("accounts:blog_list"),
+            "latest_news_url": user.workspace_url(
+                "dashboard", "research-blogs", "latest-news"
+            ),
         }
 
     @staticmethod
-    def _company_blogs_context(user):
+    def _latest_news_context(*, user=None, request=None, form=None, result=None):
+        job = None
+        selected_watch = None
+        if result is None and user is not None and request is not None:
+            job_id = request.GET.get("job")
+            if job_id and str(job_id).isdigit():
+                job = NewsSearchJob.objects.filter(
+                    pk=job_id,
+                    requested_by=user,
+                    status=NewsSearchJob.Status.SUCCEEDED,
+                ).first()
+                if job:
+                    result = job.result
+            watch_id = request.GET.get("watch")
+            if result is None and watch_id and str(watch_id).isdigit():
+                selected_watch = NewsWatch.objects.filter(
+                    pk=watch_id,
+                    requested_by=user,
+                ).first()
+                if selected_watch:
+                    Notification.objects.filter(
+                        recipient=user,
+                        is_read=False,
+                        source_key__startswith=f"news_watch:{selected_watch.pk}:",
+                    ).update(is_read=True, read_at=timezone.now())
+                    items = list(selected_watch.articles.all()[:30])
+                    article_id = request.GET.get("article")
+                    if article_id and str(article_id).isdigit():
+                        items.sort(
+                            key=lambda item: item.pk != int(article_id)
+                        )
+                    result = {
+                        "country_name": country_name(
+                            selected_watch.filters.get("country_code")
+                        ),
+                        "industry": selected_watch.filters.get("industry", ""),
+                        "requested_details": selected_watch.name,
+                        "period": "Daily watch",
+                        "query": selected_watch.name,
+                        "providers": ["Daily News Watch"],
+                        "retrieved_at": (
+                            selected_watch.last_checked_at.strftime(
+                                "%d %b %Y, %H:%M"
+                            )
+                            if selected_watch.last_checked_at
+                            else ""
+                        ),
+                        "enriched_count": sum(
+                            bool(item.description) for item in items
+                        ),
+                        "articles": [item.article_data for item in items],
+                    }
+        watches = (
+            list(
+                NewsWatch.objects.filter(requested_by=user).order_by(
+                    "-is_active", "-created_at"
+                )
+            )
+            if user is not None
+            else []
+        )
+        if user is not None:
+            for watch in watches:
+                watch.unread_update_count = Notification.objects.filter(
+                    recipient=user,
+                    is_read=False,
+                    source_key__startswith=f"news_watch:{watch.pk}:",
+                ).count()
+
+        return {
+            "form": form or LatestNewsScrapeForm(),
+            "news_result": result,
+            "news_job": job,
+            "selected_news_watch": selected_watch,
+            "news_watches": watches,
+        }
+
+    def _post_latest_news(self, request, user, resolved):
+        from .news_scraper import NewsScrapeError, search_latest_news
+
+        form = LatestNewsScrapeForm(request.POST)
+        result = None
+        if form.is_valid():
+            try:
+                result = search_latest_news(
+                    country_code=form.cleaned_data["country"],
+                    industry=form.cleaned_data["industry"],
+                    requested_details=form.cleaned_data["requested_details"],
+                    period=form.cleaned_data["period"],
+                    language=form.cleaned_data["language"],
+                    sort_by=form.cleaned_data["sort_by"],
+                    exact_phrase=form.cleaned_data["exact_phrase"],
+                    excluded_words=form.cleaned_data["excluded_words"],
+                    source_domain=form.cleaned_data["source_domain"],
+                )
+            except NewsScrapeError as exc:
+                form.add_error(None, str(exc))
+
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        context.update(self._latest_news_context(form=form, result=result))
+        response = render(request, self.latest_news_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_blogs_context(user, request=None):
         pending = list(
             EmployeeBlogPost.objects.filter(
                 status=EmployeeBlogPost.Status.SUBMITTED
@@ -3686,12 +4579,14 @@ class RoleWorkspaceView(View):
             .select_related("author", "approved_by")
             .order_by("-published_at", "-updated_at")
         )
+        share_intents = pop_share_intents(request) if request is not None else []
         return {
             "pending_blog_posts": pending,
             "published_blog_posts": published,
             "pending_blog_count": len(pending),
             "published_blog_count": len(published),
             "public_blog_list_url": reverse("accounts:blog_list"),
+            "blog_share_intents": share_intents,
         }
 
     @staticmethod
@@ -3892,6 +4787,50 @@ class RoleWorkspaceView(View):
         return attach_greeting_cookie(response, request)
 
     @staticmethod
+    def _communication_settings_context(*, form=None):
+        from .communication_verification import pending_connection_snapshot
+
+        setting = CommunicationSettings.get_solo()
+        return {
+            "communication_setting": setting,
+            "form": form or CommunicationSettingsForm(instance=setting),
+            "email_ready": setting.email_ready,
+            "sms_ready": setting.sms_ready,
+            "whatsapp_ready": setting.whatsapp_ready,
+            "communication_verify_url": reverse(
+                "accounts:communication_settings_verify"
+            ),
+            "communication_connections": pending_connection_snapshot(setting),
+        }
+
+    def _post_communication_settings(self, request, user, resolved):
+        setting = CommunicationSettings.get_solo()
+        form = CommunicationSettingsForm(request.POST, instance=setting)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            choice = form.save(commit=False)
+            choice.updated_by = user
+            choice.save()
+            channels = ", ".join(choice.enabled_channels) or "none"
+            messages.success(
+                request,
+                f"Communication settings saved. Enabled channels: {channels}.",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._communication_settings_context(form=form))
+        response = render(
+            request, self.communication_settings_template, context
+        )
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
     def _google_drive_settings_context(request, resolved):
         connection = GoogleDriveConnection.get_solo()
         host = request.get_host()
@@ -4004,6 +4943,379 @@ class RoleWorkspaceView(View):
         }
 
     @staticmethod
+    def _client_accounts_context(request, *, user=None, resolved=None):
+        active_clients_qs = Client.objects.filter(status=Client.Status.ACTIVE).order_by(
+            "company_name", "first_name", "last_name", "email"
+        )
+        list_url = (
+            user.workspace_url(*resolved["trail"])
+            if user is not None and resolved is not None
+            else "."
+        )
+
+        client_param = (request.GET.get("client") or "").strip()
+        if client_param.isdigit():
+            client = active_clients_qs.filter(pk=int(client_param)).first()
+            if client is not None:
+                summaries = build_client_account_summaries([client])
+                return {
+                    "account_detail": summaries[0] if summaries else None,
+                    "selected_client": client,
+                    "back_url": list_url,
+                }
+
+        corporate_clients = list(
+            active_clients_qs.filter(client_type=Client.ClientType.CORPORATE)
+        )
+        individual_clients = list(
+            active_clients_qs.filter(client_type=Client.ClientType.INDIVIDUAL)
+        )
+        return {
+            "corporate_clients": corporate_clients,
+            "individual_clients": individual_clients,
+            "corporate_client_count": len(corporate_clients),
+            "individual_client_count": len(individual_clients),
+            "active_client_count": active_clients_qs.count(),
+            "list_url": list_url,
+            "client_search_url": reverse("accounts:workspace_client_search"),
+        }
+
+    @staticmethod
+    def _payroll_url(user, trail, *, employee_id=None):
+        clean = [
+            part for part in trail
+            if part and part not in ("register-payroll", "payroll-receipt")
+        ]
+        if not clean or clean[-1] != "payroll":
+            clean = extend_page_trail(clean, "payroll")
+        url = user.workspace_url(*clean)
+        if employee_id:
+            url = f"{url}?employee={employee_id}"
+        return url
+
+    @classmethod
+    def _payroll_context(cls, request, user, resolved):
+        from decimal import Decimal
+
+        payroll_base_url = cls._payroll_url(user, resolved["trail"])
+        register_payroll_url = user.workspace_url(
+            "dashboard",
+            "finance-billing",
+            "employee-accounts",
+            "payroll",
+            "register-payroll",
+        )
+        payroll_receipt_base_url = user.workspace_url(
+            "dashboard",
+            "finance-billing",
+            "employee-accounts",
+            "payroll",
+            "payroll-receipt",
+        )
+
+        employee_param = (request.GET.get("employee") or "").strip()
+        if employee_param.isdigit():
+            detail = cls._employee_payroll_detail_context(
+                int(employee_param),
+                user=user,
+                resolved=resolved,
+                payroll_base_url=payroll_base_url,
+                register_payroll_url=register_payroll_url,
+                payroll_receipt_base_url=payroll_receipt_base_url,
+            )
+            if detail is not None:
+                return detail
+
+        employees = list(
+            Employee.objects.filter(
+                status__in=[
+                    Employee.Status.ACTIVE,
+                    Employee.Status.SUSPENDED,
+                    Employee.Status.PENDING_APPROVAL,
+                ]
+            ).order_by("role", "first_name", "last_name", "login_code")
+        )
+
+        employee_rows = []
+        total_monthly_salary = Decimal("0.00")
+        configured_salary_count = 0
+        payroll_run_count = 0
+
+        for employee in employees:
+            if employee.monthly_salary is not None:
+                total_monthly_salary += employee.monthly_salary
+                configured_salary_count += 1
+
+            runs = list(
+                employee.payroll_runs.order_by("-pay_period_start", "-registered_at")
+            )
+            payroll_run_count += len(runs)
+            has_unpaid = any(run.status == PayrollRun.Status.REGISTERED for run in runs)
+
+            if not runs:
+                payroll_status = "not_registered"
+                payroll_status_label = "Not registered"
+            elif has_unpaid:
+                payroll_status = "registered"
+                payroll_status_label = "Awaiting payment"
+            else:
+                payroll_status = "paid"
+                payroll_status_label = "Paid"
+
+            employee_rows.append(
+                {
+                    "employee": employee,
+                    "payroll_status": payroll_status,
+                    "payroll_status_label": payroll_status_label,
+                    "run_count": len(runs),
+                    "detail_url": f"{payroll_base_url}?employee={employee.pk}",
+                }
+            )
+
+        unregistered_rows = [
+            row for row in employee_rows if row["payroll_status"] == "not_registered"
+        ]
+        registered_rows = [
+            row for row in employee_rows if row["payroll_status"] != "not_registered"
+        ]
+
+        return {
+            "employee_rows": employee_rows,
+            "unregistered_rows": unregistered_rows,
+            "registered_rows": registered_rows,
+            "employee_count": len(employee_rows),
+            "configured_salary_count": configured_salary_count,
+            "total_monthly_salary": total_monthly_salary,
+            "payroll_run_count": payroll_run_count,
+            "register_payroll_url": register_payroll_url,
+            "payroll_receipt_base_url": payroll_receipt_base_url,
+        }
+
+    @staticmethod
+    def _employee_payroll_detail_context(
+        employee_id,
+        *,
+        user,
+        resolved,
+        payroll_base_url,
+        register_payroll_url,
+        payroll_receipt_base_url,
+    ):
+        employee = (
+            Employee.objects.filter(
+                pk=employee_id,
+                status__in=[
+                    Employee.Status.ACTIVE,
+                    Employee.Status.SUSPENDED,
+                    Employee.Status.PENDING_APPROVAL,
+                ],
+            )
+            .first()
+        )
+        if employee is None:
+            return None
+
+        payroll_runs = list(
+            PayrollRun.objects.filter(employee=employee)
+            .prefetch_related("deductions", "payments")
+            .order_by("-pay_period_start", "-registered_at")
+        )
+        payments = list(
+            PayrollPayment.objects.filter(payroll_run__employee=employee)
+            .select_related("payroll_run", "recorded_by")
+            .order_by("-paid_at")
+        )
+
+        return {
+            "employee_detail": employee,
+            "selected_employee": employee,
+            "page_title": f"{employee.get_full_name() or employee.login_code} — Payroll account",
+            "payroll_runs": payroll_runs,
+            "payments": payments,
+            "payroll_url": payroll_base_url,
+            "back_url": payroll_base_url,
+            "register_payroll_url": register_payroll_url,
+            "payroll_receipt_base_url": payroll_receipt_base_url,
+        }
+
+    def _post_payroll(self, request, user, resolved):
+        from decimal import Decimal, InvalidOperation
+
+        action = (request.POST.get("action") or "").strip()
+        return_employee_id = (request.POST.get("return_employee_id") or "").strip()
+
+        def payroll_return_url():
+            if return_employee_id.isdigit():
+                return self._payroll_url(
+                    user, resolved["trail"], employee_id=int(return_employee_id)
+                )
+            return self._payroll_url(user, resolved["trail"])
+
+        if action != "pay-payroll":
+            return redirect(payroll_return_url())
+
+        payroll_run_id = request.POST.get("payroll_run_id")
+        payroll_run = get_object_or_404(
+            PayrollRun.objects.select_related("employee"), pk=payroll_run_id
+        )
+
+        if payroll_run.status == PayrollRun.Status.PAID:
+            messages.info(
+                request,
+                f"Payroll for {payroll_run.employee.get_full_name()} is already paid.",
+            )
+            return redirect(payroll_return_url())
+
+        try:
+            amount_paid = Decimal(request.POST.get("amount_paid", "0")).quantize(
+                Decimal("0.01")
+            )
+        except (InvalidOperation, ValueError):
+            amount_paid = Decimal("0")
+
+        reference_code = (request.POST.get("reference_code") or "").strip()
+
+        if amount_paid <= 0:
+            messages.error(request, "Enter a valid payment amount.")
+            return redirect(payroll_return_url())
+        if not reference_code:
+            messages.error(request, "Enter a payment reference code.")
+            return redirect(payroll_return_url())
+
+        payment = PayrollPayment.objects.create(
+            receipt_number=PayrollPayment.next_receipt_number(),
+            payroll_run=payroll_run,
+            amount_paid=amount_paid,
+            reference_code=reference_code,
+            recorded_by=user,
+        )
+
+        payroll_run.status = PayrollRun.Status.PAID
+        payroll_run.save(update_fields=["status", "updated_at"])
+
+        receipt_url = user.workspace_url(
+            "dashboard",
+            "finance-billing",
+            "employee-accounts",
+            "payroll",
+            "payroll-receipt",
+        ) + f"?payment={payment.pk}"
+
+        messages.success(
+            request,
+            f"Payment of KES {amount_paid:,.2f} recorded for "
+            f"{payroll_run.employee.get_full_name()}. "
+            f'<a href="{receipt_url}">View receipt</a>',
+        )
+        return redirect(receipt_url)
+
+    def _payroll_receipt_context(self, request, user, resolved):
+        payment_id = request.GET.get("payment")
+        payment = get_object_or_404(
+            PayrollPayment.objects.select_related(
+                "payroll_run", "payroll_run__employee", "recorded_by"
+            ),
+            pk=payment_id,
+        )
+        firm = FirmCompanyInformation.get_solo()
+        employee = payment.payroll_run.employee
+        return {
+            "payment": payment,
+            "run": payment.payroll_run,
+            "employee": employee,
+            "firm": firm,
+            "payroll_url": self._payroll_url(
+                user, resolved["trail"], employee_id=employee.pk
+            ),
+        }
+
+    @classmethod
+    def _register_payroll_context(cls, user, resolved, form=None):
+        import json
+
+        from .forms import default_pay_period
+        from .payroll_calc import payroll_rate_defaults_json
+
+        period_start, period_end, frequency = default_pay_period()
+        if form is not None:
+            period_start, period_end, frequency = form._resolved_pay_period()
+
+        employees = employees_available_for_payroll(
+            period_start, period_end, frequency
+        )
+        employee_choices = [
+            {
+                "id": employee.pk,
+                "label": employee.get_full_name() or employee.login_code,
+                "salary": (
+                    str(employee.monthly_salary)
+                    if employee.monthly_salary is not None
+                    else ""
+                ),
+            }
+            for employee in Employee.objects.filter(
+                status__in=[
+                    Employee.Status.ACTIVE,
+                    Employee.Status.SUSPENDED,
+                    Employee.Status.PENDING_APPROVAL,
+                ]
+            ).order_by("first_name", "last_name", "login_code")
+        ]
+        registered_map = {}
+        for row in PayrollRun.objects.values(
+            "pay_period_start", "pay_period_end", "pay_frequency", "employee_id"
+        ):
+            key = (
+                f"{row['pay_period_start'].isoformat()}|"
+                f"{row['pay_period_end'].isoformat()}|"
+                f"{row['pay_frequency']}"
+            )
+            registered_map.setdefault(key, []).append(row["employee_id"])
+
+        return {
+            "form": form or RegisterPayrollForm(),
+            "payroll_url": cls._payroll_url(user, resolved["trail"]),
+            "employee_choices_json": json.dumps(employee_choices),
+            "registered_payroll_map_json": json.dumps(registered_map),
+            "payroll_rate_defaults_json": json.dumps(payroll_rate_defaults_json()),
+            "no_eligible_employees": not employees.exists(),
+        }
+
+    def _post_register_payroll(self, request, user, resolved):
+        form = RegisterPayrollForm(request.POST)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+
+        if form.is_valid():
+            payroll_run = form.save(commit=False)
+            employee = payroll_run.employee
+            payroll_run.payment_method = employee.payment_method or ""
+            payroll_run.payment_method_label = (
+                employee.get_payment_method_display()
+                if employee.payment_method
+                else ""
+            )
+            payroll_run.payout_destination = employee.payroll_payout_destination()
+            payroll_run.registered_by = user
+            payroll_run.save()
+            payroll_run.sync_deduction_lines()
+            messages.success(
+                request,
+                f"Payroll registered for {employee.get_full_name()} "
+                f"(net KES {payroll_run.net_pay:,.2f}).",
+            )
+            return redirect(self._payroll_url(user, resolved["trail"]))
+
+        context.update(self._register_payroll_context(user, resolved, form=form))
+        response = render(request, self.register_payroll_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
     def _invoicing_url(user, trail):
         clean = [part for part in trail if part and part != "generate-invoice"]
         if not clean or clean[-1] != "invoicing":
@@ -4011,10 +5323,42 @@ class RoleWorkspaceView(View):
         return user.workspace_url(*clean)
 
     @classmethod
-    def _generate_invoice_context(cls, user, resolved, form=None):
+    def _generate_invoice_context(cls, user, resolved, request=None, form=None):
+        client = None
+        client_param = ""
+        if request is not None:
+            client_param = (request.GET.get("client") or request.POST.get("client") or "").strip()
+        if client_param.isdigit():
+            client = Client.objects.filter(
+                pk=int(client_param),
+                status=Client.Status.ACTIVE,
+            ).first()
+
+        is_client_account_flow = "client-accounts" in resolved["trail"]
+
+        if form is None:
+            initial = {}
+            if client:
+                initial["client"] = client.pk
+            form = GenerateInvoiceForm(initial=initial)
+            if client and is_client_account_flow:
+                form.fields["client"].widget = forms.HiddenInput()
+
+        if is_client_account_flow and client:
+            account_trail = [
+                part for part in resolved["trail"] if part != "generate-invoice"
+            ]
+            back_url = f"{user.workspace_url(*account_trail)}?client={client.pk}"
+        else:
+            back_url = cls._invoicing_url(user, resolved["trail"])
+
         return {
-            "form": form or GenerateInvoiceForm(),
-            "invoicing_url": cls._invoicing_url(user, resolved["trail"]),
+            "form": form,
+            "invoicing_url": back_url,
+            "cancel_url": back_url,
+            "selected_client": client,
+            "client_locked": bool(client and is_client_account_flow),
+            "is_client_account_invoice": is_client_account_flow,
         }
 
     def _post_generate_invoice(self, request, user, resolved):
@@ -4026,6 +5370,19 @@ class RoleWorkspaceView(View):
             page_trail=resolved["trail"],
             active_page=resolved["leaf"],
         )
+        generate_context = self._generate_invoice_context(
+            user, resolved, request=request, form=form
+        )
+        if (
+            generate_context.get("selected_client")
+            and "client-accounts" in resolved["trail"]
+        ):
+            context["page_nav_items"] = client_account_page_nav_items(
+                user,
+                resolved["trail"],
+                client_pk=generate_context["selected_client"].pk,
+                active_slug="generate-invoice",
+            )
 
         if form.is_valid():
             invoice = form.save(commit=False)
@@ -4038,9 +5395,16 @@ class RoleWorkspaceView(View):
                 f"Invoice {invoice.invoice_number} generated for "
                 f"{invoice.client.get_full_name()}.",
             )
+            if "client-accounts" in resolved["trail"]:
+                account_trail = [
+                    part for part in resolved["trail"] if part != "generate-invoice"
+                ]
+                return redirect(
+                    f"{user.workspace_url(*account_trail)}?client={invoice.client_id}"
+                )
             return redirect(self._invoicing_url(user, resolved["trail"]))
 
-        context.update(self._generate_invoice_context(user, resolved, form))
+        context.update(generate_context)
         response = render(request, self.generate_invoice_template, context)
         return attach_greeting_cookie(response, request)
 
@@ -4135,6 +5499,45 @@ class RoleWorkspaceView(View):
                 "accounts:workspace_case_field_suggestions"
             ),
             "selected_client": selected_client,
+        }
+
+    @staticmethod
+    def _performance_compliance_context():
+        employees = list(
+            annotate_employee_performance_summaries(
+                Employee.objects.filter(
+                    status__in=[
+                        Employee.Status.ACTIVE,
+                        Employee.Status.SUSPENDED,
+                    ]
+                )
+            ).order_by("status", "first_name", "last_name", "login_code")
+        )
+        session_summaries = batch_employee_session_summaries(
+            [employee.pk for employee in employees],
+            days=30,
+        )
+        for employee in employees:
+            metrics = employee_summary_metrics(employee)
+            employee.tasks_total = metrics["tasks_total"]
+            employee.tasks_done = metrics["tasks_done"]
+            employee.completion_rate = metrics["completion_rate"]
+            employee.active_workload = metrics["active_workload"]
+            employee.overdue_tasks = metrics["overdue_tasks"]
+            session_summary = session_summaries.get(employee.pk, {})
+            employee.average_login_time = session_summary.get(
+                "average_login_time", "—"
+            )
+            employee.is_online = session_summary.get("is_online", False)
+            employee.working_sessions_count = session_summary.get(
+                "working_sessions_count", 0
+            )
+            employee.active_session_duration = session_summary.get(
+                "active_session_duration", "—"
+            )
+        return {
+            "employees": employees,
+            "employee_count": len(employees),
         }
 
     @staticmethod
@@ -4603,7 +6006,7 @@ ACTIVE_MATTERS_TRAIL = (
 INVOICING_TRAIL = (
     "dashboard",
     "finance-billing",
-    "general-accounts",
+    "client-accounts",
     "invoicing",
 )
 
@@ -4614,14 +6017,660 @@ PAYMENTS_TRAIL = (
     "payments",
 )
 
+_MATTER_MODULE = "matter-management"
+_USER_MODULE = "user-management"
+_FINANCE_MODULE = "finance-billing"
+_RESEARCH_MODULE = "research-blogs"
 
-def _employee_workspace_guard(request, role):
+
+def _employee_workspace_guard(
+    request,
+    role,
+    *,
+    module_slug=None,
+    activity_slug=None,
+    action="view",
+    redirect_to=None,
+):
     user = request.user
     if user.status != Employee.Status.ACTIVE:
         return None, redirect_for_employee(request, user)
     if Employee.role_from_slug(role) is None or role != user.role_slug:
         return None, redirect(user.dashboard_url)
+    if module_slug and activity_slug:
+        denied = redirect_if_workspace_action_denied(
+            request,
+            user,
+            module_slug=module_slug,
+            activity_slug=activity_slug,
+            action=action,
+            redirect_to=redirect_to,
+        )
+        if denied is not None:
+            return None, denied
     return user, None
+
+
+def _guard_perm(request, role, *, module, activity, action, redirect_to=None):
+    return _employee_workspace_guard(
+        request,
+        role,
+        module_slug=module,
+        activity_slug=activity,
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_client_pending(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_USER_MODULE,
+        activity="approve-pending-clients",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_employee_pending(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_USER_MODULE,
+        activity="onboarding-approvals",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_case_approve(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_MATTER_MODULE,
+        activity="approve-registered-cases",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_case_register(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_MATTER_MODULE,
+        activity="register-case",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_litigation(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_MATTER_MODULE,
+        activity="litigation-matters",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_matter_approve(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_MATTER_MODULE,
+        activity="approve-registered-matters",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_matter_register(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_MATTER_MODULE,
+        activity="register-new-matter",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_non_litigation(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_MATTER_MODULE,
+        activity="non-litigation-matters",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_invoicing(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_FINANCE_MODULE,
+        activity="invoicing",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_entity_document(request, role, document, *, action="view", redirect_to=None):
+    if document.case_id:
+        return _guard_litigation(
+            request, role, action=action, redirect_to=redirect_to
+        )
+    if document.matter_id:
+        return _guard_non_litigation(
+            request, role, action=action, redirect_to=redirect_to
+        )
+    return _employee_workspace_guard(request, role)
+
+
+@login_required
+@require_POST
+def latest_news_job_start(request, role):
+    """Validate filters, persist a job, and start background news retrieval."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="register",
+    )
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    form = LatestNewsScrapeForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse(
+            {"errors": form.errors.get_json_data()},
+            status=400,
+        )
+
+    filters = {
+        key: form.cleaned_data[key]
+        for key in (
+            "country",
+            "industry",
+            "requested_details",
+            "period",
+            "language",
+            "sort_by",
+            "exact_phrase",
+            "excluded_words",
+            "source_domain",
+        )
+    }
+    filters["country_code"] = filters.pop("country")
+    job = NewsSearchJob.objects.create(
+        requested_by=user,
+        filters=filters,
+    )
+    from .news_jobs import launch_news_search
+
+    launch_news_search(job.pk)
+    return JsonResponse(
+        {
+            "job_id": job.pk,
+            "status_url": reverse(
+                "accounts:latest_news_job_status",
+                kwargs={"role": role, "job_id": job.pk},
+            ),
+            "cancel_url": reverse(
+                "accounts:latest_news_job_cancel",
+                kwargs={"role": role, "job_id": job.pk},
+            ),
+        },
+        status=202,
+    )
+
+
+@login_required
+@require_GET
+def latest_news_job_status(request, role, job_id):
+    """Return real progress for a search owned by the signed-in employee."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="view",
+    )
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    job = get_object_or_404(NewsSearchJob, pk=job_id, requested_by=user)
+    payload = {
+        "status": job.status,
+        "progress": job.progress,
+        "label": job.progress_label,
+        "error": job.error,
+        "terminal": job.status
+        in {
+            NewsSearchJob.Status.SUCCEEDED,
+            NewsSearchJob.Status.FAILED,
+            NewsSearchJob.Status.CANCELLED,
+        },
+    }
+    if job.status == NewsSearchJob.Status.SUCCEEDED:
+        result_url = user.workspace_url(
+            "dashboard", "research-blogs", "latest-news"
+        )
+        payload["result_url"] = f"{result_url}?job={job.pk}"
+    return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+def latest_news_job_cancel(request, role, job_id):
+    """Request cancellation and immediately stop progress in the UI."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="edit",
+    )
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    job = get_object_or_404(NewsSearchJob, pk=job_id, requested_by=user)
+    if job.status in {NewsSearchJob.Status.QUEUED, NewsSearchJob.Status.RUNNING}:
+        job.cancel_requested = True
+        job.status = NewsSearchJob.Status.CANCELLED
+        job.progress_label = "Search cancelled"
+        job.finished_at = timezone.now()
+        job.save(
+            update_fields=[
+                "cancel_requested",
+                "status",
+                "progress_label",
+                "finished_at",
+                "updated_at",
+            ]
+        )
+    return JsonResponse(
+        {
+            "status": job.status,
+            "progress": job.progress,
+            "label": job.progress_label,
+            "terminal": True,
+        }
+    )
+
+
+@login_required
+@require_POST
+def latest_news_blog_draft(request, role, job_id, article_index):
+    """Generate an attributed editor draft from one owned news result."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="register",
+    )
+    if denied:
+        return denied
+
+    job = get_object_or_404(
+        NewsSearchJob,
+        pk=job_id,
+        requested_by=user,
+        status=NewsSearchJob.Status.SUCCEEDED,
+    )
+    articles = job.result.get("articles") or []
+    if article_index < 0 or article_index >= len(articles):
+        messages.error(request, "That news article is no longer available.")
+        return redirect(
+            user.workspace_url("dashboard", "research-blogs", "latest-news")
+        )
+
+    initial, source = build_news_blog_draft(
+        article=articles[article_index],
+        filters=job.filters,
+        country_name=country_name(job.filters.get("country")),
+    )
+    request.session["news_blog_draft"] = {
+        "initial": initial,
+        "source": source,
+    }
+    messages.success(
+        request,
+        "News article draft generated. Review the facts and wording before saving.",
+    )
+    return redirect(user.workspace_url("dashboard", "my-blogs-new"))
+
+
+@login_required
+@require_POST
+def latest_news_watch_search(request, role, job_id):
+    """Save a completed search for automatic daily update checks."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="edit",
+    )
+    if denied:
+        return denied
+    job = get_object_or_404(
+        NewsSearchJob,
+        pk=job_id,
+        requested_by=user,
+        status=NewsSearchJob.Status.SUCCEEDED,
+    )
+    from .news_watch import seed_watch, watch_key
+
+    filters = dict(job.filters)
+    key = watch_key(NewsWatch.Kind.SEARCH, filters)
+    topic = filters.get("requested_details") or "Latest news"
+    watch, created = NewsWatch.objects.get_or_create(
+        requested_by=user,
+        key=key,
+        defaults={
+            "kind": NewsWatch.Kind.SEARCH,
+            "name": topic[:180],
+            "filters": filters,
+            "last_checked_at": timezone.now(),
+            "next_check_at": timezone.now() + timedelta(days=1),
+        },
+    )
+    if not watch.is_active:
+        watch.is_active = True
+        watch.next_check_at = timezone.now() + timedelta(days=1)
+        watch.save(update_fields=["is_active", "next_check_at", "updated_at"])
+    seed_watch(watch, job.result.get("articles") or [])
+    messages.success(
+        request,
+        (
+            "Search saved. We will check it daily and notify you about new articles."
+            if created
+            else "This search is already in your daily watches."
+        ),
+    )
+    return redirect(
+        f"{user.workspace_url('dashboard', 'research-blogs', 'latest-news')}?job={job.pk}"
+    )
+
+
+@login_required
+@require_POST
+def latest_news_watch_publisher(request, role, job_id, article_index):
+    """Watch the selected publisher for new matching coverage."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="edit",
+    )
+    if denied:
+        return denied
+    job = get_object_or_404(
+        NewsSearchJob,
+        pk=job_id,
+        requested_by=user,
+        status=NewsSearchJob.Status.SUCCEEDED,
+    )
+    articles = job.result.get("articles") or []
+    if article_index < 0 or article_index >= len(articles):
+        messages.error(request, "That publisher is no longer available.")
+        return redirect(
+            user.workspace_url("dashboard", "research-blogs", "latest-news")
+        )
+
+    from .news_watch import publisher_domain, seed_watch, watch_key
+
+    article = articles[article_index]
+    domain = publisher_domain(article.get("url") or "")
+    if not domain:
+        messages.error(request, "The publisher domain could not be identified.")
+        return redirect(
+            f"{user.workspace_url('dashboard', 'research-blogs', 'latest-news')}?job={job.pk}"
+        )
+    filters = dict(job.filters)
+    # A publisher watch follows the source broadly rather than repeating the
+    # original topic query. Country and language still localise the feed.
+    filters["requested_details"] = ""
+    filters["industry"] = "other"
+    filters["exact_phrase"] = ""
+    filters["excluded_words"] = ""
+    filters["sort_by"] = "newest"
+    filters["source_domain"] = domain
+    key = watch_key(NewsWatch.Kind.PUBLISHER, filters, domain)
+    publisher = article.get("source_name") or domain
+    watch, created = NewsWatch.objects.get_or_create(
+        requested_by=user,
+        key=key,
+        defaults={
+            "kind": NewsWatch.Kind.PUBLISHER,
+            "name": publisher[:180],
+            "filters": filters,
+            "publisher_domain": domain,
+            "last_checked_at": timezone.now(),
+            "next_check_at": timezone.now() + timedelta(days=1),
+        },
+    )
+    if not watch.is_active:
+        watch.is_active = True
+        watch.next_check_at = timezone.now() + timedelta(days=1)
+        watch.save(update_fields=["is_active", "next_check_at", "updated_at"])
+    baseline = [
+        item
+        for item in articles
+        if publisher_domain(item.get("url") or "") == domain
+        or item.get("source_name") == article.get("source_name")
+    ]
+    seed_watch(watch, baseline)
+    messages.success(
+        request,
+        (
+            f"{publisher} is now watched daily for new updates."
+            if created
+            else f"{publisher} is already in your daily watches."
+        ),
+    )
+    return redirect(
+        f"{user.workspace_url('dashboard', 'research-blogs', 'latest-news')}?job={job.pk}"
+    )
+
+
+@login_required
+@require_POST
+def latest_news_watch_remove(request, role, watch_id):
+    """Remove a news watch owned by the signed-in employee."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="edit",
+    )
+    if denied:
+        return denied
+    watch = get_object_or_404(NewsWatch, pk=watch_id, requested_by=user)
+    watch.delete()
+    messages.success(request, "Daily news watch removed.")
+    return redirect(
+        user.workspace_url("dashboard", "research-blogs", "latest-news")
+    )
+
+
+@login_required
+@require_POST
+def latest_news_watch_update(request, role, watch_id):
+    """Update the independent check frequency for one owned news watch."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="edit",
+    )
+    if denied:
+        return denied
+    watch = get_object_or_404(NewsWatch, pk=watch_id, requested_by=user)
+    frequency = (request.POST.get("frequency") or "").strip()
+    if frequency not in NewsWatch.Frequency.values:
+        messages.error(request, "Select a valid monitoring frequency.")
+        return redirect(
+            user.workspace_url("dashboard", "research-blogs", "latest-news")
+        )
+
+    from .news_watch import watch_interval
+
+    watch.frequency = frequency
+    watch.next_check_at = timezone.now() + watch_interval(frequency)
+    watch.check_started_at = None
+    watch.save(
+        update_fields=[
+            "frequency",
+            "next_check_at",
+            "check_started_at",
+            "updated_at",
+        ]
+    )
+    messages.success(
+        request,
+        f"Monitoring for “{watch.name}” will run {watch.get_frequency_display().lower()}.",
+    )
+    return redirect(
+        user.workspace_url("dashboard", "research-blogs", "latest-news")
+    )
+
+
+@login_required
+@require_POST
+def latest_news_watch_check(request, role, watch_id):
+    """Start a manual check for one owned news watch."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="register",
+    )
+    if denied:
+        if request.headers.get("Accept") == "application/json":
+            return JsonResponse({"error": "forbidden"}, status=403)
+        return denied
+    watch = get_object_or_404(NewsWatch, pk=watch_id, requested_by=user)
+    from .news_watch import launch_news_watch_now
+
+    state = launch_news_watch_now(watch.pk)
+    wants_json = "application/json" in (request.headers.get("Accept") or "")
+    latest_url = user.workspace_url(
+        "dashboard", "research-blogs", "latest-news"
+    )
+    if state == "busy":
+        if wants_json:
+            return JsonResponse(
+                {
+                    "error": "busy",
+                    "message": f"“{watch.name}” is already being checked.",
+                },
+                status=409,
+            )
+        messages.info(
+            request,
+            f"“{watch.name}” is already being checked. Try again in a moment.",
+        )
+        return redirect(f"{latest_url}?watch={watch.pk}")
+
+    if wants_json:
+        return JsonResponse(
+            {
+                "watch_id": watch.pk,
+                "status_url": reverse(
+                    "accounts:latest_news_watch_status",
+                    kwargs={"role": role, "watch_id": watch.pk},
+                ),
+                "cancel_url": reverse(
+                    "accounts:latest_news_watch_cancel",
+                    kwargs={"role": role, "watch_id": watch.pk},
+                ),
+            },
+            status=202,
+        )
+
+    messages.success(
+        request,
+        f"Checking “{watch.name}” for updates…",
+    )
+    return redirect(f"{latest_url}?watch={watch.pk}")
+
+
+@login_required
+@require_GET
+def latest_news_watch_status(request, role, watch_id):
+    """Return progress for a manual watch check."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="view",
+    )
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    watch = get_object_or_404(NewsWatch, pk=watch_id, requested_by=user)
+    from .news_watch import get_manual_check_status
+
+    status = get_manual_check_status(watch.pk)
+    payload = {
+        "status": status.get("status") or "queued",
+        "progress": status.get("progress") or 0,
+        "label": status.get("label") or "Preparing check…",
+        "error": status.get("error") or "",
+        "found": status.get("found") or 0,
+        "terminal": bool(
+            status.get("terminal")
+            or status.get("status")
+            in {"succeeded", "failed", "cancelled"}
+        ),
+    }
+    if status.get("status") == "succeeded":
+        result_url = status.get("result_url") or (
+            f"{user.workspace_url('dashboard', 'research-blogs', 'latest-news')}"
+            f"?watch={watch.pk}"
+        )
+        payload["result_url"] = result_url
+    return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+def latest_news_watch_cancel(request, role, watch_id):
+    """Request cancellation of a manual watch check."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="edit",
+    )
+    if denied:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    watch = get_object_or_404(NewsWatch, pk=watch_id, requested_by=user)
+    from .news_watch import get_manual_check_status, request_manual_check_cancel
+
+    status = request_manual_check_cancel(watch.pk)
+    current = get_manual_check_status(watch.pk)
+    return JsonResponse(
+        {
+            "status": current.get("status") or "cancelled",
+            "progress": current.get("progress") or 0,
+            "label": status.get("label") or "Cancelling check…",
+            "terminal": bool(current.get("terminal")),
+        }
+    )
 
 
 def _pending_clients_list_url(user):
@@ -4673,7 +6722,7 @@ class AssistClientOnboardingView(View):
         return get_object_or_404(Client, pk=client_id)
 
     def get(self, request, role, client_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_client_pending(request, role, action="edit")
         if denied:
             return denied
 
@@ -4699,7 +6748,7 @@ class AssistClientOnboardingView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, client_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_client_pending(request, role, action="edit")
         if denied:
             return denied
 
@@ -4745,7 +6794,7 @@ class ApproveClientView(View):
         return get_object_or_404(Client, pk=client_id)
 
     def get(self, request, role, client_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_client_pending(request, role, action="view")
         if denied:
             return denied
 
@@ -4771,7 +6820,7 @@ class ApproveClientView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, client_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_client_pending(request, role, action="approve")
         if denied:
             return denied
 
@@ -4854,7 +6903,7 @@ class ApproveLitigationCaseView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_case_approve(request, role, action="view")
         if denied:
             return denied
 
@@ -4868,7 +6917,7 @@ class ApproveLitigationCaseView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_case_approve(request, role, action="approve")
         if denied:
             return denied
 
@@ -4961,7 +7010,7 @@ class EditLitigationCaseView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_case_register(request, role, action="view")
         if denied:
             return denied
 
@@ -4980,7 +7029,7 @@ class EditLitigationCaseView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_case_register(request, role, action="register")
         if denied:
             return denied
 
@@ -5082,7 +7131,7 @@ class EditActiveLitigationCaseView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="view")
         if denied:
             return denied
 
@@ -5101,7 +7150,7 @@ class EditActiveLitigationCaseView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="edit")
         if denied:
             return denied
 
@@ -5223,7 +7272,7 @@ class ApproveNonLitigationMatterView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_matter_approve(request, role, action="view")
         if denied:
             return denied
 
@@ -5237,7 +7286,7 @@ class ApproveNonLitigationMatterView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_matter_approve(request, role, action="approve")
         if denied:
             return denied
 
@@ -5330,7 +7379,7 @@ class EditNonLitigationMatterView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_matter_register(request, role, action="view")
         if denied:
             return denied
 
@@ -5349,7 +7398,7 @@ class EditNonLitigationMatterView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_matter_register(request, role, action="register")
         if denied:
             return denied
 
@@ -5451,7 +7500,7 @@ class EditActiveNonLitigationMatterView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="view")
         if denied:
             return denied
 
@@ -5470,7 +7519,7 @@ class EditActiveNonLitigationMatterView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="edit")
         if denied:
             return denied
 
@@ -5936,6 +7985,8 @@ class ReviewCompanyBlogView(View):
             )
         post = self._post_or_404(post_id)
         trail = ["dashboard", "company-blogs"]
+        company = FirmCompanyInformation.get_solo()
+        share_accounts = company_share_accounts(company)
         context = workspace_context(
             user,
             request=request,
@@ -5952,6 +8003,10 @@ class ReviewCompanyBlogView(View):
                 "seo_checklist": post.seo_checklist(),
                 "public_post_url": (
                     post.get_absolute_url() if post.is_public else ""
+                ),
+                "social_share_accounts": share_accounts,
+                "company_contacts_url": user.workspace_url(
+                    "dashboard", "company-contacts"
                 ),
             }
         )
@@ -5997,9 +8052,29 @@ class ReviewCompanyBlogView(View):
                     "updated_at",
                 ]
             )
+            share_note = ""
+            if request.POST.get("share_on_publish") == "1":
+                selected = request.POST.getlist("share_accounts")
+                intents = build_share_intents(
+                    request=request,
+                    post=post,
+                    selected_field_keys=selected,
+                )
+                if intents:
+                    stash_share_intents(request, intents)
+                    labels = ", ".join(item["label"] for item in intents)
+                    share_note = f" Share ready for {labels}."
+                elif selected:
+                    share_note = (
+                        " No matching social accounts were available to share."
+                    )
+                else:
+                    share_note = (
+                        " Share was enabled but no social accounts were selected."
+                    )
             messages.success(
                 request,
-                f"“{post.title}” is now published on the website.",
+                f"“{post.title}” is now published on the website.{share_note}",
             )
             return redirect(list_url)
 
@@ -6069,7 +8144,7 @@ class AssistEmployeeOnboardingView(View):
         return get_object_or_404(Employee, pk=employee_id)
 
     def get(self, request, role, employee_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_employee_pending(request, role, action="edit")
         if denied:
             return denied
 
@@ -6095,7 +8170,7 @@ class AssistEmployeeOnboardingView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, employee_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_employee_pending(request, role, action="edit")
         if denied:
             return denied
 
@@ -6143,7 +8218,7 @@ class ApproveEmployeeView(View):
         return get_object_or_404(Employee, pk=employee_id)
 
     def get(self, request, role, employee_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_employee_pending(request, role, action="view")
         if denied:
             return denied
 
@@ -6170,7 +8245,7 @@ class ApproveEmployeeView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, employee_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_employee_pending(request, role, action="approve")
         if denied:
             return denied
 
@@ -6227,7 +8302,7 @@ class ViewLitigationCaseView(View):
     template_name = "accounts/view_litigation_case.html"
 
     def get(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="view")
         if denied:
             return denied
 
@@ -6279,7 +8354,7 @@ class ViewInvoiceView(View):
         )
 
     def get(self, request, role, invoice_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_invoicing(request, role, action="view")
         if denied:
             return denied
 
@@ -6289,7 +8364,7 @@ class ViewInvoiceView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, invoice_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_invoicing(request, role, action="edit")
         if denied:
             return denied
 
@@ -6471,7 +8546,7 @@ class InvoicePdfView(View):
     """Authenticated PDF download for an invoice."""
 
     def get(self, request, role, invoice_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_invoicing(request, role, action="view")
         if denied:
             return denied
         invoice = get_object_or_404(
@@ -6674,7 +8749,7 @@ class PayInvoiceView(View):
         )
 
     def get(self, request, role, invoice_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_invoicing(request, role, action="view")
         if denied:
             return denied
 
@@ -6684,7 +8759,7 @@ class PayInvoiceView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, invoice_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_invoicing(request, role, action="pay")
         if denied:
             return denied
 
@@ -6860,7 +8935,7 @@ class UpdateCourtAttendanceView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="attend")
         if denied:
             return denied
 
@@ -6883,7 +8958,7 @@ class UpdateCourtAttendanceView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="attend")
         if denied:
             return denied
 
@@ -7032,7 +9107,7 @@ class CreateCaseTaskView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="task")
         if denied:
             return denied
 
@@ -7055,7 +9130,7 @@ class CreateCaseTaskView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="task")
         if denied:
             return denied
 
@@ -7139,7 +9214,7 @@ class UploadCaseDocumentsView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="upload")
         if denied:
             return denied
 
@@ -7161,7 +9236,7 @@ class UploadCaseDocumentsView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="upload")
         if denied:
             return denied
 
@@ -7411,7 +9486,11 @@ class LitigationCaseActionView(View):
     template_name = "accounts/matter_entity_action.html"
 
     def get(self, request, role, case_id, action):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(
+            request,
+            role,
+            action=workspace_detail_permission_action(action),
+        )
         if denied:
             return denied
         if action == "update-court-attendance":
@@ -7500,7 +9579,7 @@ class ViewNonLitigationMatterView(View):
     template_name = "accounts/view_non_litigation_matter.html"
 
     def get(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="view")
         if denied:
             return denied
 
@@ -7557,7 +9636,7 @@ class UpdateMatterAttendanceView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="attend")
         if denied:
             return denied
 
@@ -7574,7 +9653,7 @@ class UpdateMatterAttendanceView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="attend")
         if denied:
             return denied
 
@@ -7664,7 +9743,7 @@ class CreateMatterTaskView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="task")
         if denied:
             return denied
 
@@ -7687,7 +9766,7 @@ class CreateMatterTaskView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="task")
         if denied:
             return denied
 
@@ -7771,7 +9850,7 @@ class UploadMatterDocumentsView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="upload")
         if denied:
             return denied
 
@@ -7793,7 +9872,7 @@ class UploadMatterDocumentsView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, matter_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="upload")
         if denied:
             return denied
 
@@ -8113,7 +10192,7 @@ class CaseAuditProgressView(View):
     action_slug = "case-audit-progress"
 
     def get(self, request, role, case_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="audit")
         if denied:
             return denied
 
@@ -8166,16 +10245,126 @@ class CaseAuditProgressView(View):
 
 
 @method_decorator(login_required, name="dispatch")
+class EmployeePerformanceAnalyticsView(View):
+    """Detailed performance analytics for a single employee."""
+
+    template_name = "accounts/employee_performance_analytics.html"
+
+    def get(self, request, role, employee_id):
+        user, denied = _guard_perm(
+            request,
+            role,
+            module=_USER_MODULE,
+            activity="performance-compliance",
+            action="view",
+        )
+        if denied:
+            return denied
+
+        employee = get_object_or_404(
+            Employee.objects.filter(
+                status__in=[
+                    Employee.Status.ACTIVE,
+                    Employee.Status.SUSPENDED,
+                ]
+            ),
+            pk=employee_id,
+        )
+        days_raw = (request.GET.get("range") or "90").strip()
+        days = 90
+        if days_raw in {"7", "30", "90"}:
+            days = int(days_raw)
+        active_tab = (request.GET.get("tab") or "overview").strip().lower()
+        if active_tab not in {"overview", "visuals"}:
+            active_tab = "overview"
+        analytics = build_employee_performance_analytics(employee, days=days)
+        trail = [
+            "dashboard",
+            "user-management",
+            "employee-management",
+            "performance-compliance",
+        ]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Employee performance",
+            page_trail=trail,
+            active_page="performance-compliance",
+        )
+        context.update(
+            {
+                "employee": employee,
+                "analytics": analytics,
+                "range_days": days,
+                "active_tab": active_tab,
+                "performance_list_url": user.workspace_url(*trail),
+            }
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
+class BlogPostAnalyticsView(View):
+    """Website conversion and interaction analytics for a published blog post."""
+
+    template_name = "accounts/blog_analytics.html"
+
+    def get(self, request, role, post_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:blog_post_analytics",
+                    kwargs={"role": user.role_slug, "post_id": post_id},
+                )
+            )
+        post = get_object_or_404(
+            EmployeeBlogPost.objects.select_related("author", "approved_by"),
+            pk=post_id,
+            status=EmployeeBlogPost.Status.PUBLISHED,
+        )
+        days_raw = (request.GET.get("range") or "30").strip()
+        days = 30
+        if days_raw in {"7", "30", "90"}:
+            days = int(days_raw)
+        analytics = post.web_analytics(days=days)
+        trail = ["dashboard", "research-blogs"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Blog analytics",
+            page_trail=trail,
+            active_page="research-blogs",
+        )
+        context.update(
+            {
+                "blog_post": post,
+                "analytics": analytics,
+                "range_days": days,
+                "research_blogs_url": user.workspace_url(
+                    "dashboard", "research-blogs"
+                ),
+                "public_post_url": post.get_absolute_url(),
+                "review_url": reverse(
+                    "accounts:review_company_blog",
+                    kwargs={"role": user.role_slug, "post_id": post.pk},
+                ),
+            }
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
 class DocumentActivityAnalyticsView(View):
     """Detailed activity analytics for a single document."""
 
     template_name = "accounts/document_activity.html"
 
     def get(self, request, role, document_id):
-        user, denied = _employee_workspace_guard(request, role)
-        if denied:
-            return denied
-
         document = get_object_or_404(
             Document.objects.select_related(
                 "case",
@@ -8189,6 +10378,12 @@ class DocumentActivityAnalyticsView(View):
             ),
             pk=document_id,
         )
+        user, denied = _guard_entity_document(
+            request, role, document, action="audit"
+        )
+        if denied:
+            return denied
+
         library_url = _document_library_return_url(document, role)
         analytics = document.detailed_analytics()
         page_trail = list(
@@ -8233,14 +10428,16 @@ class OpenDocumentView(View):
     template_name = "accounts/document_open_session.html"
 
     def get(self, request, role, document_id):
-        user, denied = _employee_workspace_guard(request, role)
-        if denied:
-            return denied
-
         document = get_object_or_404(
             Document.objects.select_related("case", "matter", "uploaded_by"),
             pk=document_id,
         )
+        user, denied = _guard_entity_document(
+            request, role, document, action="upload"
+        )
+        if denied:
+            return denied
+
         target_url = (document.open_url or "").strip()
         if not target_url and document.local_file:
             target_url = document.local_file.url
@@ -8303,11 +10500,13 @@ class DownloadDocumentView(View):
     """Log a download, then serve or redirect to the file."""
 
     def get(self, request, role, document_id):
-        user, denied = _employee_workspace_guard(request, role)
+        document = get_object_or_404(Document, pk=document_id)
+        user, denied = _guard_entity_document(
+            request, role, document, action="upload"
+        )
         if denied:
             return denied
 
-        document = get_object_or_404(Document, pk=document_id)
         log_document_activity(
             document,
             user,
@@ -8327,16 +10526,18 @@ class DocumentSessionPingView(View):
     """Heartbeat / end endpoint for an open document session."""
 
     def post(self, request, role, document_id, session_id):
-        user, denied = _employee_workspace_guard(request, role)
-        if denied:
-            return JsonResponse({"ok": False, "error": "unauthorized"}, status=403)
-
         session = get_object_or_404(
             DocumentOpenSession.objects.select_related("document"),
             pk=session_id,
             document_id=document_id,
-            actor=user,
+            actor=request.user,
         )
+        user, denied = _guard_entity_document(
+            request, role, session.document, action="upload"
+        )
+        if denied:
+            return JsonResponse({"ok": False, "error": "unauthorized"}, status=403)
+
         action = (request.POST.get("action") or "ping").strip().lower()
         if action in {"end", "close", "stop"}:
             end_open_session(session, reason=request.POST.get("reason") or "closed")
@@ -8384,7 +10585,11 @@ class NonLitigationMatterActionView(View):
     template_name = "accounts/matter_entity_action.html"
 
     def get(self, request, role, matter_id, action):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(
+            request,
+            role,
+            action=workspace_detail_permission_action(action),
+        )
         if denied:
             return denied
         if action == "update-matter-attendance":
@@ -8481,7 +10686,7 @@ class ViewCaseTaskView(View):
         )
 
     def get(self, request, role, task_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_litigation(request, role, action="task")
         if denied:
             return denied
 
@@ -8529,7 +10734,7 @@ class ViewMatterTaskView(View):
         )
 
     def get(self, request, role, task_id):
-        user, denied = _employee_workspace_guard(request, role)
+        user, denied = _guard_non_litigation(request, role, action="task")
         if denied:
             return denied
 
@@ -8575,7 +10780,12 @@ class RespondCaseTaskView(View):
         return str(task.case)
 
     def post(self, request, role, task_id):
-        user, denied = _employee_workspace_guard(request, role)
+        guard = (
+            _guard_litigation
+            if self.kind == "case"
+            else _guard_non_litigation
+        )
+        user, denied = guard(request, role, action="task")
         if denied:
             return denied
 

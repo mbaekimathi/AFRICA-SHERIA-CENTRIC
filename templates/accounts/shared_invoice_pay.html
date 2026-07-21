@@ -3,6 +3,7 @@
 
 {% block title %}Pay {{ invoice.invoice_number }} — {{ firm_name }}{% endblock %}
 {% block body_class %}auth-page shared-pay-page{% endblock %}
+{% block flash_messages %}{% endblock %}
 {% block extra_head %}
 <link rel="stylesheet" href="{% static 'css/app.css' %}">
 <link rel="stylesheet" href="{% static 'css/site.css' %}">
@@ -18,13 +19,7 @@
         {{ invoice.invoice_number }} · Due {{ invoice.due_date|date:"d M Y" }}
       </p>
 
-      {% if messages %}
-      <div class="toast-stack toast-stack--inline" role="status" aria-live="polite">
-        {% for message in messages %}
-        <div class="toast toast--{{ message.tags|default:'info' }}">{{ message }}</div>
-        {% endfor %}
-      </div>
-      {% endif %}
+      {% include "partials/messages_toast.html" with toast_stack_class="toast-stack--inline" %}
 
       <dl class="settings-grid review-grid pay-summary">
         <div>

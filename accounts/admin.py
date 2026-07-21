@@ -13,7 +13,9 @@ from .models import (
     DocumentContentSnapshot,
     DocumentOpenSession,
     Employee,
+    EmployeeActivityPermission,
     EmployeeBlogPost,
+    CommunicationSettings,
     FirmCompanyInformation,
     FirmCompanyProfileImage,
     FirmFAQ,
@@ -31,6 +33,10 @@ from .models import (
     MpesaStkRequest,
     NonLitigationMatter,
     Notification,
+    PayrollDeduction,
+    PayrollPayment,
+    PayrollRun,
+    RoleActivityPermission,
     WebsiteTemplateSetting,
 )
 
@@ -94,6 +100,7 @@ class EmployeeAdmin(UserAdmin):
                     "mobile_money_number",
                     "bank_name",
                     "bank_account_number",
+                    "monthly_salary",
                 )
             },
         ),
@@ -675,6 +682,63 @@ class FinanceSettingsAdmin(admin.ModelAdmin):
     )
 
 
+@admin.register(CommunicationSettings)
+class CommunicationSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        "email_enabled",
+        "sms_enabled",
+        "whatsapp_enabled",
+        "updated_at",
+        "updated_by",
+    )
+    readonly_fields = ("updated_at", "updated_by")
+    fieldsets = (
+        (
+            "Email (SMTP)",
+            {
+                "fields": (
+                    "email_enabled",
+                    "email_host",
+                    "email_port",
+                    "email_host_user",
+                    "email_host_password",
+                    "email_from_email",
+                    "email_from_name",
+                )
+            },
+        ),
+        (
+            "SMS",
+            {
+                "fields": (
+                    "sms_enabled",
+                    "sms_provider",
+                    "sms_username",
+                    "sms_api_key",
+                    "sms_api_secret",
+                    "sms_sender_id",
+                )
+            },
+        ),
+        (
+            "WhatsApp",
+            {
+                "fields": (
+                    "whatsapp_enabled",
+                    "whatsapp_business_number",
+                    "whatsapp_default_message",
+                    "whatsapp_api_enabled",
+                    "whatsapp_provider",
+                    "whatsapp_api_token",
+                    "whatsapp_phone_number_id",
+                    "whatsapp_webhook_url",
+                )
+            },
+        ),
+        ("Meta", {"fields": ("updated_at", "updated_by")}),
+    )
+
+
 @admin.register(FirmCompanyInformation)
 class FirmCompanyInformationAdmin(admin.ModelAdmin):
     list_display = (
@@ -893,3 +957,87 @@ class MpesaStkRequestAdmin(admin.ModelAdmin):
     )
     readonly_fields = ("created_at", "updated_at")
     raw_id_fields = ("invoice",)
+
+
+@admin.register(EmployeeActivityPermission)
+class EmployeeActivityPermissionAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee",
+        "module_slug",
+        "activity_slug",
+        "action",
+        "is_allowed",
+        "updated_at",
+        "updated_by",
+    )
+    list_filter = ("module_slug", "activity_slug", "action", "is_allowed")
+    search_fields = (
+        "employee__login_code",
+        "employee__first_name",
+        "employee__last_name",
+        "module_slug",
+        "activity_slug",
+        "action",
+    )
+    readonly_fields = ("updated_at",)
+    raw_id_fields = ("employee", "updated_by")
+
+
+class PayrollDeductionInline(admin.TabularInline):
+    model = PayrollDeduction
+    extra = 0
+
+
+@admin.register(PayrollRun)
+class PayrollRunAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee",
+        "pay_frequency",
+        "pay_period_start",
+        "pay_period_end",
+        "gross_salary",
+        "total_deductions",
+        "net_pay",
+        "status",
+        "registered_at",
+    )
+    list_filter = ("status", "pay_frequency", "pay_period_end")
+    search_fields = (
+        "employee__first_name",
+        "employee__last_name",
+        "employee__login_code",
+    )
+    readonly_fields = ("registered_at", "updated_at")
+    raw_id_fields = ("employee", "registered_by")
+    inlines = [PayrollDeductionInline]
+
+
+@admin.register(PayrollPayment)
+class PayrollPaymentAdmin(admin.ModelAdmin):
+    list_display = (
+        "receipt_number",
+        "payroll_run",
+        "amount_paid",
+        "reference_code",
+        "paid_at",
+    )
+    list_filter = ("paid_at",)
+    search_fields = ("receipt_number", "reference_code")
+    readonly_fields = ("paid_at",)
+    raw_id_fields = ("payroll_run", "recorded_by")
+
+
+@admin.register(RoleActivityPermission)
+class RoleActivityPermissionAdmin(admin.ModelAdmin):
+    list_display = (
+        "role",
+        "module_slug",
+        "activity_slug",
+        "is_allowed",
+        "updated_at",
+        "updated_by",
+    )
+    list_filter = ("role", "module_slug", "is_allowed")
+    search_fields = ("module_slug", "activity_slug")
+    readonly_fields = ("updated_at",)
+    raw_id_fields = ("updated_by",)

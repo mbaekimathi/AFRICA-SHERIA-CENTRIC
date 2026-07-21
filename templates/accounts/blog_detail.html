@@ -1,4 +1,5 @@
 {% extends "accounts/firm/base.html" %}
+{% load static %}
 
 {% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
@@ -14,7 +15,7 @@
 {% endblock %}
 
 {% block firm_content %}
-<article class="fw-article">
+<article class="fw-article" data-blog-track-url="{{ blog_track_url }}">
   <div class="fw-article__wrap">
     <p class="fw-article__meta">
       <a href="{% url 'accounts:blog_list' %}">Insights</a>
@@ -40,9 +41,19 @@
 
     <div class="fw-article__actions fw-btn-row">
       {% if whatsapp_url %}
-      <a class="fw-btn fw-btn--primary" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">Enquire on WhatsApp</a>
+      <a
+        class="fw-btn fw-btn--primary"
+        href="{{ whatsapp_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-blog-event="cta_whatsapp"
+      >Enquire on WhatsApp</a>
       {% endif %}
-      <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_contact' %}">Contact the firm</a>
+      <a
+        class="fw-btn fw-btn--outline"
+        href="{% url 'accounts:firm_contact' %}"
+        data-blog-event="cta_contact"
+      >Contact the firm</a>
       <a class="fw-btn fw-btn--outline" href="{% url 'accounts:blog_list' %}">More insights</a>
     </div>
   </div>
@@ -57,7 +68,11 @@
     </div>
     <div class="fw-posts">
       {% for related in related_posts %}
-      <a class="fw-post fw-reveal" href="{{ related.get_absolute_url }}">
+      <a
+        class="fw-post fw-reveal"
+        href="{{ related.get_absolute_url }}"
+        data-blog-event="related_click"
+      >
         <span class="fw-post__meta">{% if related.published_at %}{{ related.published_at|date:"j M Y" }}{% endif %}</span>
         <h3>{{ related.title }}</h3>
       </a>
@@ -66,4 +81,8 @@
   </div>
 </section>
 {% endif %}
+{% endblock %}
+
+{% block firm_scripts %}
+<script src="{% static 'js/blog-track.js' %}" defer></script>
 {% endblock %}

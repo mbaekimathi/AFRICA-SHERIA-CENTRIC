@@ -702,31 +702,171 @@ textarea.form-input {
 
 .toast-stack {
   position: fixed;
-  top: 1rem;
-  right: 1rem;
-  z-index: 50;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  z-index: 80;
   display: grid;
-  gap: 0.5rem;
-  width: min(calc(100vw - 2rem), 22rem);
+  gap: 0.55rem;
+  width: min(calc(100vw - 1.5rem), 24rem);
+  pointer-events: none;
+}
+
+.toast-stack--inline {
+  position: static;
+  left: auto;
+  transform: none;
+  width: 100%;
+  margin: 0 0 1rem;
+  pointer-events: auto;
 }
 
 .toast {
-  padding: 0.85rem 1rem;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  animation: rise-in 0.45s var(--ease) both;
+  --toast-accent: var(--purple-600);
+  --toast-bg: var(--surface);
+  --toast-fg: var(--ink);
+  --toast-icon-bg: color-mix(in srgb, var(--toast-accent) 14%, transparent);
+  --toast-border: color-mix(in srgb, var(--toast-accent) 28%, var(--border));
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 0.7rem 0.75rem;
+  padding: 0.85rem 0.85rem 0.95rem;
+  border-radius: var(--radius);
+  background: var(--toast-bg);
+  color: var(--toast-fg);
+  border: 1px solid var(--toast-border);
+  border-left: 3px solid var(--toast-accent);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  overflow: hidden;
+  pointer-events: auto;
+  animation: toast-in 0.38s var(--ease-out) both;
 }
 
-.toast--error {
-  border-color: rgba(180, 35, 24, 0.25);
-  color: var(--danger);
+.toast.is-leaving {
+  animation: toast-out 0.28s var(--ease) forwards;
+}
+
+.toast__icon {
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  margin-top: 0.05rem;
+  border-radius: 999px;
+  background: var(--toast-icon-bg);
+  color: var(--toast-accent);
+  flex-shrink: 0;
+}
+
+.toast__icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.toast__body {
+  margin: 0;
+  padding-top: 0.2rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+}
+
+.toast__close {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  margin: -0.15rem -0.2rem 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: color-mix(in srgb, var(--toast-fg) 55%, transparent);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toast__close:hover,
+.toast__close:focus-visible {
+  background: color-mix(in srgb, var(--toast-fg) 8%, transparent);
+  color: var(--toast-fg);
+  outline: none;
+}
+
+.toast__close svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.toast__progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  transform-origin: left center;
+  background: color-mix(in srgb, var(--toast-accent) 70%, transparent);
+  opacity: 0.85;
+  transform: scaleX(1);
 }
 
 .toast--success {
-  border-color: rgba(2, 122, 72, 0.25);
-  color: var(--success);
+  --toast-accent: var(--success);
+  --toast-bg: #ecfdf3;
+  --toast-border: rgba(2, 122, 72, 0.22);
+}
+
+.toast--error {
+  --toast-accent: var(--danger);
+  --toast-bg: var(--danger-bg);
+  --toast-border: rgba(180, 35, 24, 0.22);
+}
+
+.toast--warning {
+  --toast-accent: #b54708;
+  --toast-bg: #fffaeb;
+  --toast-border: rgba(181, 71, 8, 0.22);
+  --toast-icon-bg: rgba(181, 71, 8, 0.12);
+}
+
+.toast--info,
+.toast--debug {
+  --toast-accent: #175cd3;
+  --toast-bg: #eff8ff;
+  --toast-border: rgba(23, 92, 211, 0.2);
+  --toast-icon-bg: rgba(23, 92, 211, 0.12);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
+@media (min-width: 720px) {
+  .toast-stack {
+    left: auto;
+    right: max(1rem, env(safe-area-inset-right));
+    transform: none;
+    width: min(calc(100vw - 2rem), 24rem);
+  }
 }
 
 @keyframes rise-in {

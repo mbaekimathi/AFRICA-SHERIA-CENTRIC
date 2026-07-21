@@ -69,28 +69,86 @@
           {{ blog_post.body|linebreaks }}
         </div>
 
-        <form method="post" class="blog-form__actions form-actions form-actions--start">
+        <form method="post" class="blog-review-form" id="blog-review-form">
           {% csrf_token %}
+
           {% if blog_post.status == "submitted" %}
-          <button type="submit" name="blog_review_action" value="approve" class="btn btn--primary btn--inline">
-            Approve &amp; publish
-          </button>
-          <button type="submit" name="blog_review_action" value="return_draft" class="btn btn--quiet btn--inline">
-            Return to draft
-          </button>
-          {% elif blog_post.status == "published" %}
-          <button
-            type="submit"
-            name="blog_review_action"
-            value="unpublish"
-            class="btn btn--quiet btn--inline"
-            onclick="return confirm('Unpublish this post and return it to draft?');"
-          >
-            Unpublish
-          </button>
-          {% else %}
-          <p class="field-hint">This post is not awaiting approval.</p>
+          <fieldset class="blog-share-on-approve">
+            <legend class="blog-share-on-approve__legend">Share when publishing</legend>
+            {% if social_share_accounts %}
+            <label class="settings-toggle" for="id_share_on_publish">
+              <span class="settings-toggle__control">
+                <input
+                  type="checkbox"
+                  name="share_on_publish"
+                  value="1"
+                  id="id_share_on_publish"
+                  class="form-checkbox"
+                >
+              </span>
+              <span class="settings-toggle__copy">
+                <strong>Also share on social media</strong>
+                <span>After publish, open share dialogs for the accounts you check below.</span>
+              </span>
+            </label>
+            <div class="blog-share-accounts" id="blog-share-accounts" hidden>
+              <p class="blog-share-accounts__lead">Accounts to share to</p>
+              <ul class="blog-share-accounts__list">
+                {% for account in social_share_accounts %}
+                <li>
+                  <label class="settings-toggle" for="id_share_account_{{ account.platform }}">
+                    <span class="settings-toggle__control">
+                      <input
+                        type="checkbox"
+                        name="share_accounts"
+                        value="{{ account.field_key }}"
+                        id="id_share_account_{{ account.platform }}"
+                        class="form-checkbox js-share-account"
+                        checked
+                        disabled
+                      >
+                    </span>
+                    <span class="settings-toggle__copy">
+                      <strong>{{ account.label }}</strong>
+                      <span>{{ account.hint }}</span>
+                    </span>
+                  </label>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% else %}
+            <p class="field-hint">
+              No social profiles are configured yet.
+              <a href="{{ company_contacts_url }}">Add them in Company Contacts</a>
+              to share posts when approving.
+            </p>
+            {% endif %}
+          </fieldset>
           {% endif %}
+
+          <div class="blog-form__actions form-actions form-actions--start">
+            {% if blog_post.status == "submitted" %}
+            <button type="submit" name="blog_review_action" value="approve" class="btn btn--primary btn--inline">
+              Approve &amp; publish
+            </button>
+            <button type="submit" name="blog_review_action" value="return_draft" class="btn btn--quiet btn--inline">
+              Return to draft
+            </button>
+            {% elif blog_post.status == "published" %}
+            <button
+              type="submit"
+              name="blog_review_action"
+              value="unpublish"
+              class="btn btn--quiet btn--inline"
+              onclick="return confirm('Unpublish this post and return it to draft?');"
+            >
+              Unpublish
+            </button>
+            {% else %}
+            <p class="field-hint">This post is not awaiting approval.</p>
+            {% endif %}
+          </div>
         </form>
       </div>
     </section>
@@ -119,4 +177,27 @@
     </aside>
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var master = document.getElementById("id_share_on_publish");
+  var panel = document.getElementById("blog-share-accounts");
+  if (!master || !panel) return;
+
+  var accountInputs = panel.querySelectorAll(".js-share-account");
+
+  function syncShareAccounts() {
+    var on = master.checked;
+    panel.hidden = !on;
+    accountInputs.forEach(function (input) {
+      input.disabled = !on;
+    });
+  }
+
+  master.addEventListener("change", syncShareAccounts);
+  syncShareAccounts();
+})();
+</script>
 {% endblock %}

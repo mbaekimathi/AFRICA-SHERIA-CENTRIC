@@ -1,4 +1,3 @@
-from django.contrib.auth.views import LogoutView
 from django.urls import path
 
 from . import views
@@ -25,6 +24,11 @@ urlpatterns = [
     path("contact/", views.FirmContactView.as_view(), name="firm_contact"),
     path("blog/", views.BlogListView.as_view(), name="blog_list"),
     path("blog/<slug:slug>/", views.BlogDetailView.as_view(), name="blog_detail"),
+    path(
+        "blog/<slug:slug>/track/",
+        views.BlogEventTrackView.as_view(),
+        name="blog_event_track",
+    ),
     path("terms/", views.FirmTermsView.as_view(), name="firm_terms"),
     path("blog-sitemap.xml", views.BlogSitemapView.as_view(), name="blog_sitemap"),
     path("robots.txt", views.RobotsTxtView.as_view(), name="robots_txt"),
@@ -57,6 +61,81 @@ urlpatterns = [
         "api/workspace/entity-status/",
         views.workspace_entity_status,
         name="workspace_entity_status",
+    ),
+    path(
+        "api/workspace/company-contacts/verify/",
+        views.company_contacts_verify,
+        name="company_contacts_verify",
+    ),
+    path(
+        "api/workspace/communication-settings/verify/",
+        views.communication_settings_verify,
+        name="communication_settings_verify",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/jobs/start/",
+        views.latest_news_job_start,
+        name="latest_news_job_start",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<int:job_id>/status/",
+        views.latest_news_job_status,
+        name="latest_news_job_status",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<int:job_id>/cancel/",
+        views.latest_news_job_cancel,
+        name="latest_news_job_cancel",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<int:job_id>/articles/<int:article_index>/blog/",
+        views.latest_news_blog_draft,
+        name="latest_news_blog_draft",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<int:job_id>/watch/",
+        views.latest_news_watch_search,
+        name="latest_news_watch_search",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<int:job_id>/articles/<int:article_index>/watch-publisher/",
+        views.latest_news_watch_publisher,
+        name="latest_news_watch_publisher",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<int:watch_id>/remove/",
+        views.latest_news_watch_remove,
+        name="latest_news_watch_remove",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<int:watch_id>/update/",
+        views.latest_news_watch_update,
+        name="latest_news_watch_update",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<int:watch_id>/check/",
+        views.latest_news_watch_check,
+        name="latest_news_watch_check",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<int:watch_id>/status/",
+        views.latest_news_watch_status,
+        name="latest_news_watch_status",
+    ),
+    path(
+        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<int:watch_id>/cancel-check/",
+        views.latest_news_watch_cancel,
+        name="latest_news_watch_cancel",
     ),
     path(
         "<slug:role>/dashboard/finance-billing/general-accounts/payments/"
@@ -96,7 +175,7 @@ urlpatterns = [
         name="employee_pending",
     ),
     path("about-work/", views.AboutWorkView.as_view(), name="about_work"),
-    path("logout/", LogoutView.as_view(), name="logout"),
+    path("logout/", views.EmployeeLogoutView.as_view(), name="logout"),
     # Client auth
     path("client/login/", views.ClientLoginView.as_view(), name="client_login"),
     path("client/signup/", views.ClientSignUpView.as_view(), name="client_signup"),
@@ -241,6 +320,12 @@ urlpatterns = [
         views.ApproveEmployeeView.as_view(),
         name="approve_employee",
     ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
+        "performance-compliance/<int:employee_id>/",
+        views.EmployeePerformanceAnalyticsView.as_view(),
+        name="employee_performance_analytics",
+    ),
     # Case / matter review actions (before role page catch-all)
     path(
         "<slug:role>/dashboard/matter-management/litigation-matters/"
@@ -376,6 +461,11 @@ urlpatterns = [
         name="review_company_blog",
     ),
     path(
+        "<slug:role>/dashboard/research-blogs/<int:post_id>/analytics/",
+        views.BlogPostAnalyticsView.as_view(),
+        name="blog_post_analytics",
+    ),
+    path(
         "<slug:role>/dashboard/practice-areas/<int:area_id>/edit/",
         views.EditPracticeAreaView.as_view(),
         name="edit_practice_area",
@@ -412,13 +502,13 @@ urlpatterns = [
         name="respond_matter_task",
     ),
     path(
-        "<slug:role>/dashboard/finance-billing/general-accounts/invoicing/"
+        "<slug:role>/dashboard/finance-billing/client-accounts/invoicing/"
         "invoice/<int:invoice_id>/",
         views.ViewInvoiceView.as_view(),
         name="view_invoice",
     ),
     path(
-        "<slug:role>/dashboard/finance-billing/general-accounts/invoicing/"
+        "<slug:role>/dashboard/finance-billing/client-accounts/invoicing/"
         "invoice/<int:invoice_id>/pdf/",
         views.InvoicePdfView.as_view(),
         name="invoice_pdf",

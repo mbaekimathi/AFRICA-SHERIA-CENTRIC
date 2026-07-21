@@ -1,0 +1,420 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}Performance — {{ employee.get_full_name }} — Sheria-Centric{% endblock %}
+{% block content %}
+<section class="page research-page blog-analytics-page" id="employee-performance-page">
+  <header class="research-hero">
+    <div class="research-hero__main">
+      <span class="research-hero__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="25" height="25" fill="none">
+          <path d="M4.5 19.5h15M7 16V9.5M12 16V6M17 16v-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="research-hero__copy">
+        <p class="page-kicker">Employee performance</p>
+        <h2>{{ employee.get_full_name|default:employee.login_code }}</h2>
+        <p>
+          Task completion, workload, login sessions, and compliance activity for the last
+          {{ analytics.days }} days.
+        </p>
+      </div>
+    </div>
+    <div class="research-hero__actions">
+      <a href="{{ performance_list_url }}" class="btn btn--quiet btn--inline">Back to employees</a>
+    </div>
+  </header>
+
+  <div class="person-cell">
+    {% if employee.profile_photo %}
+    <img class="avatar avatar--sm" src="{{ employee.profile_photo.url }}" alt="">
+    {% else %}
+    <div class="avatar avatar--sm avatar--placeholder" aria-hidden="true">
+      {{ employee.first_name|slice:":1"|upper }}{{ employee.last_name|slice:":1"|upper }}
+    </div>
+    {% endif %}
+    <div class="person-cell__text">
+      <span class="person-cell__meta">{{ employee.get_role_display }} · {{ employee.login_code }}</span>
+      <span class="person-cell__meta">
+        <span class="status-pill status-pill--{{ employee.status }}">{{ employee.get_status_display }}</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="blog-analytics-ranges" role="group" aria-label="Date range">
+    <a
+      href="?range=7{% if active_tab == 'visuals' %}&amp;tab=visuals{% endif %}"
+      class="btn btn--{% if range_days == 7 %}primary{% else %}quiet{% endif %} btn--inline"
+    >7 days</a>
+    <a
+      href="?range=30{% if active_tab == 'visuals' %}&amp;tab=visuals{% endif %}"
+      class="btn btn--{% if range_days == 30 %}primary{% else %}quiet{% endif %} btn--inline"
+    >30 days</a>
+    <a
+      href="?range=90{% if active_tab == 'visuals' %}&amp;tab=visuals{% endif %}"
+      class="btn btn--{% if range_days == 90 %}primary{% else %}quiet{% endif %} btn--inline"
+    >90 days</a>
+  </div>
+
+  <div class="settings-tabs performance-tabs" role="tablist" aria-label="Performance views">
+    <button
+      type="button"
+      class="settings-tab performance-tab{% if active_tab == 'overview' %} is-active{% endif %}"
+      role="tab"
+      aria-selected="{% if active_tab == 'overview' %}true{% else %}false{% endif %}"
+      data-tab="overview"
+      id="tab-overview"
+    >Overview</button>
+    <button
+      type="button"
+      class="settings-tab performance-tab{% if active_tab == 'visuals' %} is-active{% endif %}"
+      role="tab"
+      aria-selected="{% if active_tab == 'visuals' %}true{% else %}false{% endif %}"
+      data-tab="visuals"
+      id="tab-visuals"
+    >Visuals</button>
+  </div>
+
+  <div id="panel-overview" class="performance-panels"{% if active_tab != 'overview' %} hidden{% endif %}>
+  <div class="metrics metrics--dash research-metrics">
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Average login time</p>
+        <p class="metric__value">{{ analytics.sessions.average_login_time|default:"—" }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Average logout time</p>
+        <p class="metric__value">{{ analytics.sessions.average_logout_time|default:"—" }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Working sessions</p>
+        <p class="metric__value">{{ analytics.sessions.working_sessions_count }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Total working time</p>
+        <p class="metric__value">{{ analytics.sessions.total_working_duration }}</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel research-posts-panel">
+    <div class="panel__head">
+      <h3>Active session</h3>
+      <p class="panel__hint">
+        {% if analytics.sessions.active_session %}
+        Currently signed in
+        {% else %}
+        Not online now
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if analytics.sessions.active_session %}
+      <ul class="blog-analytics-events">
+        <li>
+          <span class="status-pill status-pill--published">Online</span>
+          <span>Logged in {{ analytics.sessions.active_session.login_at|date:"j M Y, H:i" }}</span>
+          <span>Session {{ analytics.sessions.active_session.session_duration }}</span>
+          <span>Working {{ analytics.sessions.active_session.working_duration }}</span>
+          <span>Last active {{ analytics.sessions.active_session.last_active_at|date:"j M Y, H:i" }}</span>
+        </li>
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No active session</p>
+        <p class="empty-state__copy">
+          This employee is not currently signed in to the workspace.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="metrics metrics--dash research-metrics">
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Tasks completed</p>
+        <p class="metric__value">{{ analytics.tasks_done }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Completion rate</p>
+        <p class="metric__value">{{ analytics.completion_rate }}%</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">On-time completion</p>
+        <p class="metric__value">{{ analytics.on_time_rate }}%</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Overdue tasks</p>
+        <p class="metric__value">{{ analytics.tasks_overdue }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics metrics--dash research-metrics">
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Active workload</p>
+        <p class="metric__value">{{ analytics.active_workload }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Court attendances</p>
+        <p class="metric__value">{{ analytics.court_attendances }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Matter attendances</p>
+        <p class="metric__value">{{ analytics.matter_attendances }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Documents uploaded</p>
+        <p class="metric__value">{{ analytics.documents_uploaded }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics metrics--dash research-metrics">
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Open tasks</p>
+        <p class="metric__value">{{ analytics.tasks_pending|add:analytics.tasks_accepted }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Rejected tasks</p>
+        <p class="metric__value">{{ analytics.tasks_rejected }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Cases registered</p>
+        <p class="metric__value">{{ analytics.registered_cases }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Matters registered</p>
+        <p class="metric__value">{{ analytics.registered_matters }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics metrics--dash research-metrics">
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Published blogs</p>
+        <p class="metric__value">{{ analytics.blog_published }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Submitted blogs</p>
+        <p class="metric__value">{{ analytics.blog_submitted }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Draft blogs</p>
+        <p class="metric__value">{{ analytics.blog_drafts }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Published in range</p>
+        <p class="metric__value">{{ analytics.blog_published_in_range }}</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel research-posts-panel">
+    <div class="panel__head">
+      <h3>Login &amp; logout history</h3>
+      <p class="panel__hint">
+        {{ analytics.sessions.total_sessions }} session{{ analytics.sessions.total_sessions|pluralize }}
+        · avg working {{ analytics.sessions.average_working_duration }}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if analytics.sessions.recent_sessions %}
+      <ul class="blog-analytics-events">
+        {% for session in analytics.sessions.recent_sessions %}
+        <li>
+          <span class="status-pill status-pill--{% if session.is_active %}published{% else %}draft{% endif %}">
+            {% if session.is_active %}Active{% else %}Ended{% endif %}
+          </span>
+          <span>Login {{ session.login_at|date:"j M Y, H:i" }}</span>
+          {% if session.logout_at %}
+          <span>Logout {{ session.logout_at|date:"j M Y, H:i" }}</span>
+          {% endif %}
+          <span class="blog-analytics-events__ref">{{ session.logout_label }}</span>
+          <span>Session {{ session.session_duration }}</span>
+          <span>Working {{ session.working_duration }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No sessions logged yet</p>
+        <p class="empty-state__copy">
+          Login, logout, and working session times appear here once this employee uses the workspace.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel research-posts-panel">
+    <div class="panel__head">
+      <h3>Daily task completions</h3>
+      <p class="panel__hint">
+        {% if analytics.daily_completions %}
+        {{ analytics.daily_completions|length }} day{{ analytics.daily_completions|length|pluralize }} with completions
+        {% else %}
+        No completions in this range yet
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if analytics.daily_completions %}
+      <ul class="blog-analytics-days">
+        {% for row in analytics.daily_completions %}
+        <li>
+          <span>{{ row.day|date:"j M Y" }}</span>
+          <strong>{{ row.total }} completed</strong>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No completed tasks in range</p>
+        <p class="empty-state__copy">
+          Task completions will appear here once this employee marks assignments as done.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel research-posts-panel">
+    <div class="panel__head">
+      <h3>Recent assignments</h3>
+      <p class="panel__hint">Latest case and matter tasks</p>
+    </div>
+    <div class="panel__body">
+      {% if analytics.recent_tasks %}
+      <ul class="blog-analytics-events">
+        {% for task in analytics.recent_tasks %}
+        <li>
+            <span class="status-pill status-pill--{% if task.status == 'done' %}published{% elif task.is_overdue %}submitted{% else %}draft{% endif %}">
+            {{ task.status_display }}
+          </span>
+          <span>{{ task.title }}</span>
+          <span class="blog-analytics-events__ref">{{ task.subject }}</span>
+          <span>Due {{ task.due_date|date:"j M Y" }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No tasks assigned</p>
+        <p class="empty-state__copy">
+          Case and matter tasks assigned to this employee will show here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel research-posts-panel">
+    <div class="panel__head">
+      <h3>Recent compliance activity</h3>
+      <p class="panel__hint">Court attendances, matter updates, and document uploads</p>
+    </div>
+    <div class="panel__body">
+      {% if analytics.recent_activity %}
+      <ul class="blog-analytics-events">
+        {% for item in analytics.recent_activity %}
+        <li>
+          <span class="status-pill status-pill--{% if item.kind == 'court' %}published{% elif item.kind == 'matter' %}submitted{% else %}draft{% endif %}">
+            {% if item.kind == "court" %}Court
+            {% elif item.kind == "matter" %}Matter
+            {% else %}Document{% endif %}
+          </span>
+          <span>{{ item.label }}</span>
+          {% if item.subject %}
+          <span class="blog-analytics-events__ref">{{ item.subject }}</span>
+          {% endif %}
+          <span>{{ item.when|date:"j M Y" }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No activity logged</p>
+        <p class="empty-state__copy">
+          Attendance records and document uploads by this employee will appear here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  </div>
+
+  <div id="panel-visuals" class="performance-panels performance-visuals"{% if active_tab != 'visuals' %} hidden{% endif %}>
+    {% for trend in analytics.charts.trends %}
+    <article class="analytics-card analytics-card--wide performance-trend-card" data-trend-chart="{{ trend.id }}">
+      <header class="performance-trend-header">
+        <div class="performance-trend-title">
+          <h3>{{ trend.title }}</h3>
+          <p>{{ trend.subtitle }}</p>
+        </div>
+        <div class="performance-trend-stats">
+          <div class="performance-trend-stat">
+            <span class="performance-trend-stat__value">{{ trend.total }}</span>
+            <span class="performance-trend-stat__label">Total {{ trend.unit }}</span>
+          </div>
+          <div class="performance-trend-stat">
+            <span class="performance-trend-stat__value">{{ trend.peak }}</span>
+            <span class="performance-trend-stat__label">Peak day</span>
+          </div>
+          <div class="performance-trend-stat">
+            <span class="performance-trend-stat__value">{{ trend.streak }}d</span>
+            <span class="performance-trend-stat__label">Best streak</span>
+          </div>
+        </div>
+      </header>
+      <div class="analytics-chart analytics-chart--trend">
+        <canvas
+          id="employee-trend-{{ trend.id }}"
+          role="img"
+          aria-label="{{ trend.title }} trend"
+        ></canvas>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+{{ analytics.charts|json_script:"employee-performance-charts-data" }}
+<script src="{% static 'js/employee-performance-charts.js' %}" defer></script>
+{% endblock %}

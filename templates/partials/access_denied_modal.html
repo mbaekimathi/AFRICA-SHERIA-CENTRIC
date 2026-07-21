@@ -1,0 +1,28 @@
+{% if access_denied_modal %}
+<dialog class="access-denied-modal" id="access-denied-modal" aria-labelledby="access-denied-title">
+  <div class="access-denied-modal__panel" role="document">
+    <button
+      type="button"
+      class="access-denied-modal__close"
+      id="close-access-denied-modal"
+      aria-label="Close"
+    >
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    </button>
+
+    <div class="access-denied-modal__emoji" aria-hidden="true">
+      <span class="access-denied-modal__hand">🙅</span>
+    </div>
+
+    <p class="access-denied-modal__kicker">Access denied</p>
+    <h2 id="access-denied-title">{{ access_denied_modal.title }}</h2>
+    <p class="access-denied-modal__message">{{ access_denied_modal.message }}</p>
+
+    <button type="button" class="btn btn--primary access-denied-modal__ack" id="ack-access-denied-modal">
+      Got it
+    </button>
+  </div>
+</dialog>
+{% endif %}

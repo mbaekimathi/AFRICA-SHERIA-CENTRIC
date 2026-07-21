@@ -27,6 +27,31 @@
     {% endif %}
   </header>
 
+  {% if news_source %}
+  <aside class="blog-news-source" aria-label="Generated draft source">
+    <div class="blog-news-source__icon" aria-hidden="true">N</div>
+    <div class="blog-news-source__copy">
+      <span>News-based draft generated</span>
+      <strong>{{ news_source.title }}</strong>
+      <p>
+        Based on {{ news_source.source_name }}{% if news_source.published_at %},
+        published {{ news_source.published_at }}{% endif %}. Verify the facts,
+        add your professional analysis and rewrite any quoted material before submission.
+      </p>
+      <div class="blog-news-source__stats">
+        <span>{{ news_source.facts_count }} reported fact{{ news_source.facts_count|pluralize }} extracted</span>
+        <span>Editable draft</span>
+        <span>Source attributed</span>
+      </div>
+    </div>
+    {% if news_source.url %}
+    <a href="{{ news_source.url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener noreferrer">
+      Review source
+    </a>
+    {% endif %}
+  </aside>
+  {% endif %}
+
   <div class="blog-editor">
     <section class="panel blog-editor__main">
       <div class="panel__head">
@@ -84,8 +109,23 @@
 
             <div class="form-field">
               <label for="{{ blog_form.body.id_for_label }}">{{ blog_form.body.label }}</label>
+              <div class="blog-writing-tools" role="toolbar" aria-label="Article formatting">
+                <button type="button" data-blog-format="bold">Bold</button>
+                <button type="button" data-blog-format="italic">Italic</button>
+                <button type="button" data-blog-format="heading">Heading</button>
+                <button type="button" data-blog-format="bullet">Bullet list</button>
+                <button type="button" data-blog-format="quote">Quote</button>
+                <button type="button" data-blog-format="link">Source link</button>
+                <span class="blog-writing-tools__spacer"></span>
+                <button type="button" class="is-active" data-blog-view="write">Write</button>
+                <button type="button" data-blog-view="preview">Preview</button>
+              </div>
               {{ blog_form.body }}
-              <span class="field-hint" id="blog-word-count">Write at least 300 words for stronger SEO.</span>
+              <div class="blog-body-preview" id="blog-body-preview" hidden></div>
+              <span class="field-hint blog-body-metrics">
+                <span id="blog-word-count">Write at least 300 words for stronger SEO.</span>
+                <span id="blog-reading-time">1 minute read</span>
+              </span>
               {% if blog_form.body.errors %}
               <p class="field-error">{{ blog_form.body.errors.0 }}</p>
               {% endif %}
@@ -186,6 +226,29 @@
 
     <aside class="blog-seo-coach" aria-label="SEO guidance">
       <div class="blog-seo-coach__card">
+        {% if news_source %}
+        <div class="blog-editorial-check">
+          <p class="blog-seo-tips__title">Source intelligence</p>
+          {% if news_source.facts %}
+          <ol class="blog-source-facts">
+            {% for fact in news_source.facts %}
+            <li>{{ fact }}</li>
+            {% endfor %}
+          </ol>
+          {% else %}
+          <p class="blog-source-facts__empty">
+            No detailed facts were extracted. Open the source before editing.
+          </p>
+          {% endif %}
+          <p class="blog-seo-tips__title blog-editorial-check__subhead">Before publishing</p>
+          <ul>
+            <li>Open and verify the original report.</li>
+            <li>Check names, dates, jurisdiction and procedural status.</li>
+            <li>Clearly separate confirmed facts from your opinion.</li>
+            <li>Add original legal or practical insight.</li>
+          </ul>
+        </div>
+        {% endif %}
         <div class="blog-seo-coach__score">
           <p class="blog-seo-coach__score-label">SEO readiness</p>
           <p class="blog-seo-coach__score-value" id="blog-seo-score">{{ seo_checklist.score }}%</p>

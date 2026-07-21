@@ -1,0 +1,278 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}System Analytics — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page system-analytics" data-reveal-root>
+  <header class="analytics-hero" data-reveal>
+    <div class="analytics-hero__copy">
+      <p class="page-kicker">Live system pulse</p>
+      <h2>What needs attention now</h2>
+      <p>Simple signals for speed, stability, documents, scraping, and content — so you can decide what to fix first.</p>
+      <p class="analytics-updated">Live snapshot · {{ generated_at|date:"M j, Y · H:i" }} · {{ range_label }}</p>
+    </div>
+    <div class="health-score health-score--{{ health_tone }}">
+      <span class="health-score__ring" style="--score: {{ health_score }}">
+        <strong>{{ health_score }}</strong>
+        <small>/ 100</small>
+      </span>
+      <div>
+        <span>Overall health</span>
+        <strong>{{ health_label }}</strong>
+        <em class="health-score__meta">{{ critical_count }} critical · {{ warning_count }} warnings</em>
+      </div>
+    </div>
+  </header>
+
+  <nav class="analytics-range" aria-label="Analytics time range" data-reveal>
+    {% for option in range_options %}
+    <a href="?range={{ option.value }}" class="{% if option.value == range_key %}is-active{% endif %}">
+      {{ option.label }}
+    </a>
+    {% endfor %}
+  </nav>
+
+  <section class="glance-strip" data-reveal aria-label="Status at a glance">
+    {% for key, item in snapshot.items %}
+    <article class="glance-card glance-card--{{ item.tone }}">
+      <span class="glance-card__hint">{{ item.hint }}</span>
+      <strong class="glance-card__value">{{ item.value }}</strong>
+      <span class="glance-card__label">{{ item.label }}</span>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="decision-board" data-reveal>
+    <header class="analytics-section__head">
+      <div>
+        <p class="page-kicker">Decide next</p>
+        <h3>Top actions</h3>
+      </div>
+      <span class="analytics-card__meta">Fix these first</span>
+    </header>
+    <div class="decision-grid">
+      {% for item in top_decisions %}
+      <article class="decision-card decision-card--{{ item.level }}">
+        <div class="decision-card__rank">{{ forloop.counter }}</div>
+        <div>
+          <div class="recommendation__head">
+            <strong>{{ item.title }}</strong>
+            <span class="recommendation__level">{{ item.level }}</span>
+          </div>
+          <p>{{ item.detail }}</p>
+          {% if item.actions %}
+          <p class="decision-card__next"><span>Do now</span> {{ item.actions.0 }}</p>
+          {% endif %}
+        </div>
+      </article>
+      {% empty %}
+      <p class="analytics-empty">No urgent actions. Keep monitoring the live gauges below.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="analytics-chart-grid" data-reveal>
+    <article class="analytics-card analytics-card--wide">
+      <header class="analytics-card__head">
+        <div>
+          <p class="page-kicker">Traffic pulse</p>
+          <h3>Requests vs page speed</h3>
+        </div>
+        <span class="analytics-card__meta">Bars = traffic · Line = slow pages</span>
+      </header>
+      <div class="analytics-chart">
+        <canvas id="performance-trend-chart" role="img" aria-label="Traffic and page speed trend"></canvas>
+      </div>
+      <div class="chart-caption">
+        <span><i class="is-traffic"></i> Request volume</span>
+        <span><i class="is-latency"></i> p95 latency</span>
+        <span>{{ performance.response_mb }} MB served</span>
+      </div>
+    </article>
+
+    <article class="analytics-card">
+      <header class="analytics-card__head">
+        <div>
+          <p class="page-kicker">Response quality</p>
+          <h3>Are pages succeeding?</h3>
+        </div>
+      </header>
+      <div class="analytics-donut-wrap">
+        <canvas id="status-chart" role="img" aria-label="HTTP response status distribution"></canvas>
+        <div class="analytics-legend">
+          <span><i class="is-success"></i>OK <strong>{{ status_counts.success }}</strong></span>
+          <span><i class="is-client"></i>User errors <strong>{{ status_counts.client_error }}</strong></span>
+          <span><i class="is-server"></i>Server faults <strong>{{ status_counts.server_error }}</strong></span>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <section class="analytics-section" data-reveal>
+    <header class="analytics-section__head">
+      <div>
+        <p class="page-kicker">Machine health</p>
+        <h3>Live resource gauges</h3>
+      </div>
+      <span class="health-pill {% if runtime.db_ok %}is-good{% else %}is-critical{% endif %}">
+        Database {% if runtime.db_ok %}online{% else %}down{% endif %}
+      </span>
+    </header>
+    <div class="gauge-grid" id="resource-gauges">
+      {% for item in visual.resources %}
+      <article class="gauge-card gauge-card--{{ item.tone }}" data-gauge data-value="{{ item.value }}" data-display="{{ item.display }}" data-tone="{{ item.tone }}">
+        <canvas class="gauge-card__canvas" width="160" height="160" aria-hidden="true"></canvas>
+        <div class="gauge-card__copy">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.display }}</strong>
+          <small>{{ item.hint }}</small>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="analytics-section" data-reveal>
+    <header class="analytics-section__head">
+      <div>
+        <p class="page-kicker">Operations snapshot</p>
+        <h3>Modules at a glance</h3>
+      </div>
+    </header>
+    <div class="module-visual-grid">
+      {% for module in visual.modules %}
+      <article class="module-visual module-visual--{{ module.tone }}">
+        <header>
+          <div>
+            <p class="page-kicker">{{ module.title }}</p>
+            <strong>{{ module.primary }}</strong>
+            <span>{{ module.primary_label }}</span>
+          </div>
+          <em class="module-visual__tone">{{ module.tone }}</em>
+        </header>
+        <div class="module-visual__bars">
+          {% for bar in module.bars %}
+          <div class="module-bar">
+            <div class="module-bar__meta">
+              <span>{{ bar.label }}</span>
+              <strong>{{ bar.value }}</strong>
+            </div>
+            <div class="module-bar__track" aria-hidden="true">
+              <span style="width: {% widthratio bar.value bar.max 100 %}%;"></span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <footer>{{ module.footer }}</footer>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="analytics-detail-grid">
+    <section class="analytics-card analytics-card--routes" data-reveal>
+      <header class="analytics-card__head">
+        <div>
+          <p class="page-kicker">Bottlenecks</p>
+          <h3>Slowest paths</h3>
+        </div>
+        <span class="analytics-card__meta">Longer bar = slower</span>
+      </header>
+      {% if visual.route_bars %}
+      <div class="route-visual-list">
+        {% for route in visual.route_bars %}
+        <article class="route-visual route-visual--{{ route.tone }}">
+          <div class="route-visual__head">
+            <code title="{{ route.endpoint }}">{{ route.label }}</code>
+            <strong>{{ route.p95_ms|floatformat:0 }} ms</strong>
+          </div>
+          <div class="route-visual__track" aria-hidden="true">
+            <span style="width: {{ route.width }}%;"></span>
+          </div>
+          <div class="route-visual__meta">
+            <span>{{ route.requests }} hits</span>
+            <span class="rate-badge {% if route.error_rate %}is-error{% endif %}">{{ route.error_rate }}% errors</span>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="analytics-empty">No request telemetry yet. Use the app normally, then refresh.</p>
+      {% endif %}
+    </section>
+
+    <aside class="analytics-card recommendations" data-reveal>
+      <header class="analytics-card__head">
+        <div>
+          <p class="page-kicker">Full playbook</p>
+          <h3>All recommendations</h3>
+        </div>
+      </header>
+      <div class="recommendation-list">
+        {% for item in recommendations %}
+        <article class="recommendation recommendation--{{ item.level }}">
+          <span class="recommendation__signal" aria-hidden="true"></span>
+          <div>
+            <div class="recommendation__head">
+              <strong>{{ item.title }}</strong>
+              <span class="recommendation__level">{{ item.level }}</span>
+            </div>
+            <p>{{ item.detail }}</p>
+            {% if item.impact %}
+            <p class="recommendation__impact"><span>Impact</span> {{ item.impact }}</p>
+            {% endif %}
+            {% if item.actions %}
+            <ol class="recommendation__actions">
+              {% for action in item.actions %}
+              <li>{{ action }}</li>
+              {% endfor %}
+            </ol>
+            {% endif %}
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </aside>
+  </div>
+
+  <section class="analytics-section analytics-section--compact" data-reveal>
+    <header class="analytics-section__head">
+      <div>
+        <p class="page-kicker">Integrations</p>
+        <h3>Payments &amp; notifications</h3>
+      </div>
+    </header>
+    <div class="operations-grid">
+      <article>
+        <span>M-Pesa</span>
+        <strong>{{ operations.payment_success }} paid</strong>
+        <small>{{ operations.payment_failed }} failed · {{ operations.payment_pending }} pending</small>
+      </article>
+      <article>
+        <span>Notifications</span>
+        <strong>{{ usage.notification_count }} sent</strong>
+        <small>{{ usage.unread_notifications }} unread · avg read {{ usage.notification_read_hours }}h</small>
+      </article>
+      <article>
+        <span>News watches</span>
+        <strong>{{ operations.active_watches }} active</strong>
+        <small>{{ operations.watch_errors }} errors · {{ operations.overdue_watches }} overdue</small>
+      </article>
+      <article>
+        <span>Scrape jobs</span>
+        <strong>{{ operations.successful_jobs }} ok</strong>
+        <small>{{ operations.failed_jobs }} failed · avg {{ operations.avg_job_seconds }}s</small>
+      </article>
+    </div>
+  </section>
+</section>
+
+{{ trend|json_script:"analytics-trend-data" }}
+{{ status_counts|json_script:"analytics-status-data" }}
+{{ visual.resources|json_script:"analytics-resource-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/system-settings.js' %}" defer></script>
+{% endblock %}

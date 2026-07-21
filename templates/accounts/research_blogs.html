@@ -3,35 +3,62 @@
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
 {% block content %}
-<section class="page page--dashboard" id="research-blogs-page">
-  <header class="page-intro page-intro--split">
-    <div class="page-intro__copy">
-      <p class="page-kicker">{{ session_greeting }}</p>
-      <h2>{{ page_title }}</h2>
-      <p class="page-lead">
-        All employee blog posts that have been submitted or published. Drafts stay private to each author.
-      </p>
+<section class="page page--dashboard research-page" id="research-blogs-page">
+  <header class="research-hero">
+    <div class="research-hero__main">
+      <span class="research-hero__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="25" height="25" fill="none">
+          <path d="M5 4.5h10.5A2.5 2.5 0 0 1 18 7v12.5H7.5A2.5 2.5 0 0 1 5 17V4.5Z" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M8.5 8h6M8.5 11.5h6M8.5 15h3.5M18 7h1a1.5 1.5 0 0 1 1.5 1.5V17a2.5 2.5 0 0 1-2.5 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="research-hero__copy">
+        <p class="page-kicker">{{ session_greeting }}</p>
+        <h2>{{ page_title }}</h2>
+        <p>
+          Review firm knowledge, manage employee publications, and research
+          current developments from one workspace.
+        </p>
+      </div>
     </div>
-    <div class="page-intro__actions">
+    <div class="research-hero__actions">
+      <a href="{{ latest_news_url }}" class="btn btn--quiet btn--inline">Research news</a>
       <a href="{{ my_blogs_new_url }}" class="btn btn--primary btn--inline">New post</a>
       <a href="{{ my_blogs_url }}" class="btn btn--quiet btn--inline">My blogs</a>
     </div>
   </header>
 
-  <div class="metrics metrics--dash">
-    <div class="metric metric--glass">
+  <div class="metrics metrics--dash research-metrics">
+    <div class="metric metric--glass research-metric">
+      <span class="research-metric__icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none">
+          <path d="M4 3.5h8.5A2.5 2.5 0 0 1 15 6v10.5H6.5A2.5 2.5 0 0 1 4 14V3.5Z" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M7 7h5M7 10h5M7 13h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </span>
       <div>
         <p class="metric__label">Firm posts</p>
         <p class="metric__value">{{ firm_blog_count }}</p>
       </div>
     </div>
-    <div class="metric metric--glass">
+    <div class="metric metric--glass research-metric">
+      <span class="research-metric__icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none">
+          <circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M10 6.5v4l2.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </span>
       <div>
         <p class="metric__label">Awaiting approval</p>
         <p class="metric__value">{{ pending_blog_count }}</p>
       </div>
     </div>
-    <div class="metric metric--glass">
+    <div class="metric metric--glass research-metric">
+      <span class="research-metric__icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none">
+          <path d="m4.5 10 3.25 3.25L15.5 5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
       <div>
         <p class="metric__label">Live on website</p>
         <p class="metric__value">{{ published_blog_count }}</p>
@@ -39,36 +66,98 @@
     </div>
   </div>
 
-  <section class="panel">
+  <section class="panel research-posts-panel">
     <div class="panel__head">
-      <h3>Employee blogs</h3>
+      <h3>Awaiting approval</h3>
       <p class="panel__hint">
-        {% if firm_blog_count %}
-        {{ firm_blog_count }} submitted or published
+        {% if pending_blog_count %}
+        {{ pending_blog_count }} submitted
         {% else %}
-        No submitted or published posts yet
+        None waiting
         {% endif %}
       </p>
     </div>
     <div class="panel__body">
-      {% if firm_blog_posts %}
+      {% if submitted_blog_posts %}
       <ul class="blog-post-list">
-        {% for post in firm_blog_posts %}
+        {% for post in submitted_blog_posts %}
         <li class="blog-post-item">
           <div class="blog-post-item__main">
             <p class="blog-post-item__title">{{ post.title }}</p>
             <p class="blog-post-item__meta">
-              <span class="status-pill status-pill--{{ post.status }}">{{ post.get_status_display }}</span>
+              <span class="status-pill status-pill--submitted">Submitted</span>
               <span>{{ post.author.get_full_name }}</span>
               {% if post.focus_keyword %}
               <span>Keyword: {{ post.focus_keyword }}</span>
               {% endif %}
-              {% if post.status == "submitted" and post.submitted_at %}
+              {% if post.submitted_at %}
               <span>Submitted {{ post.submitted_at|date:"j M Y, H:i" }}</span>
-              {% elif post.status == "published" and post.published_at %}
+              {% else %}
+              <span>Updated {{ post.updated_at|date:"j M Y, H:i" }}</span>
+              {% endif %}
+              {% with seo=post.seo_checklist %}
+              <span class="blog-post-item__seo">SEO {{ seo.score }}%</span>
+              {% endwith %}
+            </p>
+            <p class="blog-post-item__excerpt">
+              {% if post.excerpt %}{{ post.excerpt|truncatewords:28 }}{% else %}{{ post.body|truncatewords:28 }}{% endif %}
+            </p>
+          </div>
+          <div class="blog-post-item__actions">
+            <a
+              href="{% url 'accounts:review_company_blog' role=role_slug post_id=post.pk %}"
+              class="btn btn--primary btn--inline"
+            >Review</a>
+            {% if post.author_id == user.id %}
+            <a href="{% url 'accounts:edit_my_blog' role=role_slug post_id=post.pk %}" class="btn btn--quiet btn--inline">Edit</a>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No posts awaiting approval</p>
+        <p class="empty-state__copy">
+          When employees submit posts for review, they will appear here. Drafts remain private to each author.
+        </p>
+        <a href="{{ my_blogs_new_url }}" class="btn btn--primary btn--inline">Write a post</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel research-posts-panel">
+    <div class="panel__head">
+      <h3>Published on the website</h3>
+      <p class="panel__hint">
+        {% if published_blog_count %}
+        {{ published_blog_count }} live
+        {% else %}
+        None live yet
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if published_blog_posts %}
+      <ul class="blog-post-list">
+        {% for post in published_blog_posts %}
+        <li class="blog-post-item">
+          <div class="blog-post-item__main">
+            <p class="blog-post-item__title">{{ post.title }}</p>
+            <p class="blog-post-item__meta">
+              <span class="status-pill status-pill--published">Published</span>
+              <span>{{ post.author.get_full_name }}</span>
+              {% if post.focus_keyword %}
+              <span>Keyword: {{ post.focus_keyword }}</span>
+              {% endif %}
+              {% if post.published_at %}
               <span>Published {{ post.published_at|date:"j M Y" }}</span>
               {% else %}
               <span>Updated {{ post.updated_at|date:"j M Y, H:i" }}</span>
+              {% endif %}
+              {% if post.approved_by %}
+              <span>Approved by {{ post.approved_by.get_full_name }}</span>
               {% endif %}
               {% with seo=post.seo_checklist %}
               <span class="blog-post-item__seo">SEO {{ seo.score }}%</span>
@@ -84,17 +173,10 @@
             {% endif %}
           </div>
           <div class="blog-post-item__actions">
-            {% if post.status == "submitted" or post.status == "published" %}
             <a
-              href="{% url 'accounts:review_company_blog' role=role_slug post_id=post.pk %}"
-              class="btn btn--{% if post.status == 'submitted' %}primary{% else %}quiet{% endif %} btn--inline"
-            >
-              {% if post.status == "submitted" %}Review{% else %}Manage{% endif %}
-            </a>
-            {% endif %}
-            {% if post.is_public %}
-            <a href="{{ post.get_absolute_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">View</a>
-            {% endif %}
+              href="{% url 'accounts:blog_post_analytics' role=role_slug post_id=post.pk %}"
+              class="btn btn--primary btn--inline"
+            >Analytics</a>
             {% if post.author_id == user.id %}
             <a href="{% url 'accounts:edit_my_blog' role=role_slug post_id=post.pk %}" class="btn btn--quiet btn--inline">Edit</a>
             {% endif %}
@@ -104,11 +186,8 @@
       </ul>
       {% else %}
       <div class="empty-state">
-        <p class="empty-state__title">No submitted or published blogs yet</p>
-        <p class="empty-state__copy">
-          When employees submit posts for approval, they will appear here. Drafts remain private to each author.
-        </p>
-        <a href="{{ my_blogs_new_url }}" class="btn btn--primary btn--inline">Write a post</a>
+        <p class="empty-state__title">No published blog posts</p>
+        <p class="empty-state__copy">Approve a submitted post to publish it on the firm website.</p>
       </div>
       {% endif %}
     </div>
@@ -122,6 +201,13 @@
       </div>
     </div>
     <div class="module-grid module-grid--dash">
+      <a href="{{ latest_news_url }}" class="module-card module-card--pro" data-magnetic>
+        <span class="module-card__body">
+          <span class="module-card__label">Latest news research</span>
+          <span class="module-card__hint">Search, rank and analyse current news by country and industry</span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true"><span>Research</span></span>
+      </a>
       <a href="{{ my_blogs_url }}" class="module-card module-card--pro" data-magnetic>
         <span class="module-card__body">
           <span class="module-card__label">My blogs</span>

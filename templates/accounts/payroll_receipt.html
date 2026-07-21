@@ -1,0 +1,205 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ payment.receipt_number }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--invoice">
+  <header class="invoice-toolbar no-print">
+    <div class="invoice-toolbar__copy">
+      <h2>{{ payment.receipt_number }}</h2>
+    </div>
+    <div class="invoice-toolbar__actions">
+      <a href="{{ payroll_url }}" class="btn btn--quiet btn--inline">Back to payroll</a>
+      <button type="button" class="btn btn--quiet btn--inline" id="receipt-print-btn">Print</button>
+    </div>
+  </header>
+
+  <article class="invoice-sheet" aria-label="Payroll receipt {{ payment.receipt_number }}">
+    <header class="invoice-letterhead">
+      <div class="invoice-letterhead__brand">
+        {% if firm.main_image %}
+        <img
+          class="invoice-letterhead__logo"
+          src="{{ firm.main_image.image.url }}"
+          alt=""
+          width="56"
+          height="56"
+        >
+        {% else %}
+        <div class="invoice-letterhead__mark" aria-hidden="true">
+          {{ firm.display_name|slice:":1"|upper }}
+        </div>
+        {% endif %}
+        <div class="invoice-letterhead__identity">
+          <p class="invoice-letterhead__name">{{ firm.display_name }}</p>
+          {% if firm.city %}
+          <p class="invoice-letterhead__place">{{ firm.city }}{% if firm.country %}, {{ firm.country }}{% endif %}</p>
+          {% endif %}
+        </div>
+      </div>
+      <div class="invoice-letterhead__details">
+        {% if firm.phone %}<p>{{ firm.phone }}</p>{% endif %}
+        {% if firm.email %}<p>{{ firm.email }}</p>{% endif %}
+      </div>
+    </header>
+
+    <div class="invoice-sheet__top">
+      <div class="invoice-sheet__title-block">
+        <h1 class="invoice-sheet__title">Payroll Receipt</h1>
+        <p class="invoice-sheet__number">{{ payment.receipt_number }}</p>
+      </div>
+      <dl class="invoice-sheet__meta">
+        <div>
+          <dt>Payment date</dt>
+          <dd>{{ payment.paid_at|date:"d M Y" }}</dd>
+        </div>
+        <div>
+          <dt>Reference</dt>
+          <dd>{{ payment.reference_code }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    <section class="invoice-sheet__parties">
+      <div class="invoice-party">
+        <h2 class="invoice-party__label">Paid to</h2>
+        <p class="invoice-party__name">{{ employee.get_full_name }}</p>
+        {% if employee.get_role_display %}
+        <p class="invoice-party__line">{{ employee.get_role_display }}</p>
+        {% endif %}
+        {% if employee.personal_email %}
+        <p class="invoice-party__line">{{ employee.personal_email }}</p>
+        {% endif %}
+      </div>
+      {% if payment.recorded_by %}
+      <div class="invoice-party">
+        <h2 class="invoice-party__label">Processed by</h2>
+        <p class="invoice-party__name">{{ payment.recorded_by.get_full_name }}</p>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="invoice-sheet__items" aria-label="Pay period details">
+      <table class="invoice-table">
+        <thead>
+          <tr>
+            <th scope="col" class="invoice-table__desc">Description</th>
+            <th scope="col" class="invoice-table__amt">Amount (KES)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="invoice-table__desc">
+              <strong>{{ run.get_pay_frequency_display }} salary</strong><br>
+              Period: {{ run.pay_period_start|date:"j M Y" }} – {{ run.pay_period_end|date:"j M Y" }}
+            </td>
+            <td class="invoice-table__amt">{{ run.gross_salary|floatformat:2 }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="invoice-sheet__items" aria-label="Deductions breakdown">
+      <table class="invoice-table">
+        <thead>
+          <tr>
+            <th scope="col" class="invoice-table__desc">Statutory deductions</th>
+            <th scope="col" class="invoice-table__amt">Amount (KES)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if run.nssf_employee_amount %}
+          <tr>
+            <td class="invoice-table__desc">NSSF (employee {{ run.nssf_employee_rate }}%)</td>
+            <td class="invoice-table__amt">{{ run.nssf_employee_amount|floatformat:2 }}</td>
+          </tr>
+          {% endif %}
+          {% if run.shif_amount %}
+          <tr>
+            <td class="invoice-table__desc">SHIF ({{ run.shif_rate }}%)</td>
+            <td class="invoice-table__amt">{{ run.shif_amount|floatformat:2 }}</td>
+          </tr>
+          {% endif %}
+          {% if run.housing_levy_employee_amount %}
+          <tr>
+            <td class="invoice-table__desc">Housing Levy (employee {{ run.housing_levy_employee_rate }}%)</td>
+            <td class="invoice-table__amt">{{ run.housing_levy_employee_amount|floatformat:2 }}</td>
+          </tr>
+          {% endif %}
+          {% if run.paye_amount %}
+          <tr>
+            <td class="invoice-table__desc">PAYE</td>
+            <td class="invoice-table__amt">{{ run.paye_amount|floatformat:2 }}</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="invoice-sheet__totals" aria-label="Payment summary">
+      <dl class="invoice-totals">
+        <div>
+          <dt>Gross salary</dt>
+          <dd>KES {{ run.gross_salary|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Total deductions</dt>
+          <dd>KES {{ run.total_deductions|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Net pay</dt>
+          <dd>KES {{ run.net_pay|floatformat:2 }}</dd>
+        </div>
+        <div class="invoice-totals__grand">
+          <dt>Amount paid</dt>
+          <dd>KES {{ payment.amount_paid|floatformat:2 }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    {% if run.payment_method_label %}
+    <section class="invoice-sheet__notes">
+      <h2>Payment method</h2>
+      <p>{{ run.payment_method_label }}{% if run.payout_destination %} — {{ run.payout_destination }}{% endif %}</p>
+    </section>
+    {% endif %}
+
+    <div class="invoice-sheet__stamps-row">
+      <div
+        class="invoice-seal invoice-seal--paid"
+        role="img"
+        aria-label="Paid"
+      >
+        <span class="invoice-seal__ring" aria-hidden="true"></span>
+        <span class="invoice-seal__inner">
+          <span class="invoice-seal__status">Paid</span>
+          {% if payment.recorded_by %}
+          <span class="invoice-seal__rule" aria-hidden="true"></span>
+          <span class="invoice-seal__label">Recorded by</span>
+          <span class="invoice-seal__name">{{ payment.recorded_by.get_full_name }}</span>
+          <span class="invoice-seal__date">{{ payment.paid_at|date:"d M Y" }}</span>
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    <footer class="invoice-company-footer">
+      <p class="invoice-company-footer__thanks">Thank you.</p>
+      <p class="invoice-company-footer__line">
+        {{ firm.display_name }}
+        {% if firm.phone %} · {{ firm.phone }}{% endif %}
+        {% if firm.email %} · {{ firm.email }}{% endif %}
+        {% if firm.tax_pin %} · PIN {{ firm.tax_pin }}{% endif %}
+      </p>
+    </footer>
+  </article>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.getElementById("receipt-print-btn")?.addEventListener("click", function () {
+    window.print();
+  });
+</script>
+{% endblock %}

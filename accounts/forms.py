@@ -3,10 +3,12 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.utils.dateparse import parse_date
 from django.utils import timezone
 from decimal import Decimal
 
 from .country_codes import (
+    COUNTRY_DIAL_CODES,
     DEFAULT_COUNTRY,
     countries_for_js,
     country_choices,
@@ -23,6 +25,7 @@ from .models import (
     CourtAttendanceBringUpItem,
     Employee,
     EmployeeBlogPost,
+    CommunicationSettings,
     FinanceSettings,
     FirmCompanyInformation,
     FirmFAQ,
@@ -34,9 +37,148 @@ from .models import (
     MatterParty,
     MatterTask,
     NonLitigationMatter,
+    PayrollDeduction,
+    PayrollRun,
     WebsiteTemplateSetting,
 )
 from .utils import optimize_image, optimize_profile_photo
+
+
+class LatestNewsScrapeForm(forms.Form):
+    INDUSTRY_CHOICES = (
+        ("legal", "Legal and justice"),
+        ("finance", "Finance and banking"),
+        ("technology", "Technology"),
+        ("healthcare", "Healthcare"),
+        ("energy", "Energy"),
+        ("real-estate", "Real estate"),
+        ("agriculture", "Agriculture"),
+        ("manufacturing", "Manufacturing"),
+        ("telecommunications", "Telecommunications"),
+        ("transport", "Transport and logistics"),
+        ("education", "Education"),
+        ("government", "Government and public policy"),
+        ("entertainment", "Media and entertainment"),
+        ("sports", "Sports"),
+        ("other", "Other"),
+    )
+    PERIOD_CHOICES = (
+        ("1d", "Past 24 hours"),
+        ("7d", "Past 7 days"),
+        ("30d", "Past 30 days"),
+    )
+    LANGUAGE_CHOICES = (
+        ("en", "English"),
+        ("sw", "Swahili"),
+        ("fr", "French"),
+        ("ar", "Arabic"),
+        ("de", "German"),
+        ("es", "Spanish"),
+        ("pt", "Portuguese"),
+    )
+    SORT_CHOICES = (
+        ("relevance", "Most relevant"),
+        ("newest", "Newest first"),
+        ("credibility", "Source credibility"),
+    )
+
+    country = forms.ChoiceField(
+        label="Country",
+        choices=[(iso, name) for iso, name, _dial in COUNTRY_DIAL_CODES],
+        initial=DEFAULT_COUNTRY,
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
+    industry = forms.ChoiceField(
+        label="Industry",
+        choices=INDUSTRY_CHOICES,
+        initial="legal",
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
+    period = forms.ChoiceField(
+        label="Published within",
+        choices=PERIOD_CHOICES,
+        initial="7d",
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
+    language = forms.ChoiceField(
+        label="Language",
+        choices=LANGUAGE_CHOICES,
+        initial="en",
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
+    sort_by = forms.ChoiceField(
+        label="Sort results",
+        choices=SORT_CHOICES,
+        initial="relevance",
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
+    requested_details = forms.CharField(
+        label="Topic or details to narrow the news",
+        max_length=500,
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-input",
+                "rows": 3,
+                "placeholder": (
+                    "Example: employment court rulings involving unfair dismissal "
+                    "and compensation awards"
+                ),
+            }
+        ),
+    )
+
+    def clean_requested_details(self):
+        value = " ".join(self.cleaned_data["requested_details"].split())
+        if len(value) < 3:
+            raise ValidationError("Add a topic, keyword or other detail.")
+        return value
+
+    exact_phrase = forms.CharField(
+        label="Exact phrase",
+        max_length=160,
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Example: unfair termination",
+            }
+        ),
+    )
+    excluded_words = forms.CharField(
+        label="Exclude words",
+        max_length=200,
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Separate words with commas",
+            }
+        ),
+    )
+    source_domain = forms.CharField(
+        label="Only show this publisher or domain",
+        max_length=160,
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Example: reuters.com",
+            }
+        ),
+    )
+
+    def clean_exact_phrase(self):
+        return " ".join(self.cleaned_data.get("exact_phrase", "").split())
+
+    def clean_excluded_words(self):
+        raw = self.cleaned_data.get("excluded_words", "")
+        values = [part.strip() for part in raw.replace(";", ",").split(",")]
+        return ", ".join(value for value in values if value)
+
+    def clean_source_domain(self):
+        value = self.cleaned_data.get("source_domain", "").strip().lower()
+        value = value.removeprefix("https://").removeprefix("http://")
+        return value.split("/", 1)[0].removeprefix("www.")
 
 
 ALLOWED_CLIENT_EMAIL_DOMAINS = (
@@ -4167,6 +4309,295 @@ class FinanceSettingsForm(forms.ModelForm):
         return cleaned
 
 
+class CommunicationSettingsForm(forms.ModelForm):
+    """Firm email, SMS, and WhatsApp provider configuration."""
+
+    class Meta:
+        model = CommunicationSettings
+        fields = [
+            "email_enabled",
+            "email_host",
+            "email_port",
+            "email_host_user",
+            "email_host_password",
+            "email_from_email",
+            "email_from_name",
+            "sms_enabled",
+            "sms_provider",
+            "sms_username",
+            "sms_api_key",
+            "sms_api_secret",
+            "sms_sender_id",
+            "whatsapp_enabled",
+            "whatsapp_business_number",
+            "whatsapp_default_message",
+            "whatsapp_api_enabled",
+            "whatsapp_provider",
+            "whatsapp_api_token",
+            "whatsapp_phone_number_id",
+            "whatsapp_webhook_url",
+        ]
+        labels = {
+            "email_enabled": "Enable email",
+            "email_host": "SMTP host",
+            "email_port": "SMTP port",
+            "email_host_user": "SMTP username",
+            "email_host_password": "SMTP password",
+            "email_from_email": "From email address",
+            "email_from_name": "From display name",
+            "sms_enabled": "Enable SMS",
+            "sms_provider": "SMS provider",
+            "sms_username": "API username / Account SID",
+            "sms_api_key": "API key",
+            "sms_api_secret": "API secret / Auth token",
+            "sms_sender_id": "Sender ID / From number",
+            "whatsapp_enabled": "Enable WhatsApp",
+            "whatsapp_business_number": "Business WhatsApp number",
+            "whatsapp_default_message": "Default chat message",
+            "whatsapp_api_enabled": "Enable WhatsApp Business API",
+            "whatsapp_provider": "WhatsApp API provider",
+            "whatsapp_api_token": "API access token (Twilio: AccountSID:AuthToken)",
+            "whatsapp_phone_number_id": "Phone number ID / sender",
+            "whatsapp_webhook_url": "Webhook URL",
+        }
+        help_texts = {
+            "email_port": "465 uses SSL automatically; 587 uses TLS automatically.",
+            "email_from_email": "Address clients and staff see as the sender.",
+            "sms_username": "Africa's Talking username, or Twilio Account SID.",
+            "sms_api_secret": "Required for Twilio (Auth Token).",
+            "sms_sender_id": "Alphanumeric sender ID or E.164 from-number.",
+            "whatsapp_business_number": "Used for click-to-chat links (wa.me).",
+            "whatsapp_default_message": "Optional text pre-filled when opening chat.",
+            "whatsapp_api_enabled": "Turn on when you are ready to send WhatsApp messages via API.",
+            "whatsapp_api_token": "Meta token, or Twilio as AccountSID:AuthToken.",
+            "whatsapp_phone_number_id": "Meta Phone Number ID, or Twilio WhatsApp sender (whatsapp:+254…).",
+            "whatsapp_webhook_url": "HTTPS URL for delivery / inbound webhooks.",
+        }
+        widgets = {
+            "email_enabled": forms.CheckboxInput(),
+            "sms_enabled": forms.CheckboxInput(),
+            "whatsapp_enabled": forms.CheckboxInput(),
+            "whatsapp_api_enabled": forms.CheckboxInput(),
+            "email_host": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "smtp.example.com",
+                    "autocomplete": "off",
+                }
+            ),
+            "email_port": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "587",
+                    "min": "1",
+                    "max": "65535",
+                }
+            ),
+            "email_host_user": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "user@example.com",
+                    "autocomplete": "off",
+                }
+            ),
+            "email_host_password": forms.PasswordInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "SMTP password or app password",
+                    "autocomplete": "new-password",
+                },
+                render_value=True,
+            ),
+            "email_from_email": forms.EmailInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "noreply@yourfirm.com",
+                    "autocomplete": "off",
+                }
+            ),
+            "email_from_name": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Bauni Law Group",
+                    "autocomplete": "off",
+                }
+            ),
+            "sms_provider": forms.Select(attrs={"class": "form-input"}),
+            "sms_username": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "sandbox or Account SID",
+                    "autocomplete": "off",
+                }
+            ),
+            "sms_api_key": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "API key",
+                    "autocomplete": "off",
+                }
+            ),
+            "sms_api_secret": forms.PasswordInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Auth token (Twilio)",
+                    "autocomplete": "new-password",
+                },
+                render_value=True,
+            ),
+            "sms_sender_id": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "SHERIALAW or +2547…",
+                    "autocomplete": "off",
+                }
+            ),
+            "whatsapp_business_number": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "+2547…",
+                    "autocomplete": "off",
+                    "inputmode": "tel",
+                }
+            ),
+            "whatsapp_default_message": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Hello, I would like to enquire…",
+                    "autocomplete": "off",
+                }
+            ),
+            "whatsapp_provider": forms.Select(attrs={"class": "form-input"}),
+            "whatsapp_api_token": forms.PasswordInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Access token",
+                    "autocomplete": "new-password",
+                },
+                render_value=True,
+            ),
+            "whatsapp_phone_number_id": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Phone number ID or whatsapp:+254…",
+                    "autocomplete": "off",
+                }
+            ),
+            "whatsapp_webhook_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://yourdomain.com/integrations/whatsapp/webhook/",
+                    "autocomplete": "off",
+                }
+            ),
+        }
+
+    def clean_email_port(self):
+        port = self.cleaned_data.get("email_port")
+        if port is None:
+            return 587
+        if port < 1 or port > 65535:
+            raise ValidationError("Enter a valid port between 1 and 65535.")
+        return port
+
+    def clean_whatsapp_webhook_url(self):
+        url = (self.cleaned_data.get("whatsapp_webhook_url") or "").strip()
+        if not url:
+            return ""
+        if not url.lower().startswith("https://"):
+            raise ValidationError("Use a public HTTPS webhook URL.")
+        return url
+
+    def clean(self):
+        cleaned = super().clean()
+        email_on = cleaned.get("email_enabled")
+        sms_on = cleaned.get("sms_enabled")
+        wa_on = cleaned.get("whatsapp_enabled")
+        wa_api_on = cleaned.get("whatsapp_api_enabled")
+
+        if email_on:
+            if not (cleaned.get("email_host") or "").strip():
+                self.add_error("email_host", "Enter the SMTP host.")
+            if not (cleaned.get("email_from_email") or "").strip():
+                self.add_error("email_from_email", "Enter the from email address.")
+        else:
+            cleaned["email_enabled"] = False
+
+        if sms_on:
+            provider = cleaned.get("sms_provider")
+            if provider in (
+                None,
+                CommunicationSettings.SmsProvider.NONE,
+                "",
+            ):
+                self.add_error("sms_provider", "Choose an SMS provider.")
+            elif provider == CommunicationSettings.SmsProvider.AFRICASTALKING:
+                if not (cleaned.get("sms_username") or "").strip():
+                    self.add_error("sms_username", "Enter the Africa's Talking username.")
+                if not (cleaned.get("sms_api_key") or "").strip():
+                    self.add_error("sms_api_key", "Enter the API key.")
+                if not (cleaned.get("sms_sender_id") or "").strip():
+                    self.add_error("sms_sender_id", "Enter the sender ID.")
+            elif provider == CommunicationSettings.SmsProvider.TWILIO:
+                if not (cleaned.get("sms_username") or "").strip():
+                    self.add_error("sms_username", "Enter the Twilio Account SID.")
+                if not (cleaned.get("sms_api_secret") or "").strip():
+                    self.add_error("sms_api_secret", "Enter the Twilio Auth Token.")
+                if not (cleaned.get("sms_sender_id") or "").strip():
+                    self.add_error("sms_sender_id", "Enter the from number.")
+        else:
+            cleaned["sms_enabled"] = False
+            cleaned["sms_provider"] = CommunicationSettings.SmsProvider.NONE
+
+        if wa_on:
+            if not (cleaned.get("whatsapp_business_number") or "").strip():
+                self.add_error(
+                    "whatsapp_business_number",
+                    "Enter the business WhatsApp number.",
+                )
+            if wa_api_on:
+                provider = cleaned.get("whatsapp_provider")
+                if provider in (
+                    None,
+                    CommunicationSettings.WhatsAppProvider.NONE,
+                    "",
+                ):
+                    self.add_error(
+                        "whatsapp_provider",
+                        "Choose a WhatsApp API provider.",
+                    )
+                if not (cleaned.get("whatsapp_api_token") or "").strip():
+                    self.add_error("whatsapp_api_token", "Enter the API access token.")
+                if not (cleaned.get("whatsapp_phone_number_id") or "").strip():
+                    self.add_error(
+                        "whatsapp_phone_number_id",
+                        "Enter the phone number ID or sender.",
+                    )
+            else:
+                cleaned["whatsapp_api_enabled"] = False
+                cleaned["whatsapp_provider"] = (
+                    CommunicationSettings.WhatsAppProvider.NONE
+                )
+        else:
+            cleaned["whatsapp_enabled"] = False
+            cleaned["whatsapp_api_enabled"] = False
+            cleaned["whatsapp_provider"] = CommunicationSettings.WhatsAppProvider.NONE
+
+        return cleaned
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        use_tls, use_ssl = CommunicationSettings.smtp_security_for_port(
+            instance.email_port
+        )
+        instance.email_use_tls = use_tls
+        instance.email_use_ssl = use_ssl
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
+
 class CreateGoogleDocumentForm(forms.Form):
     """Name and describe a file, then choose Docs / Excel / Slides."""
 
@@ -4331,7 +4762,7 @@ class RenameDocumentForm(forms.Form):
 
 
 class GenerateInvoiceForm(forms.ModelForm):
-    """Create a new invoice under General Accounts → Invoicing."""
+    """Create a new invoice with multiple service line items and optional tax."""
 
     class Meta:
         model = Invoice
@@ -4349,7 +4780,7 @@ class GenerateInvoiceForm(forms.ModelForm):
             "issue_date": "Issue date",
             "due_date": "Due date",
             "description": "Description",
-            "amount": "Amount",
+            "amount": "Subtotal",
             "tax_amount": "Tax amount",
             "notes": "Notes",
         }
@@ -4374,31 +4805,14 @@ class GenerateInvoiceForm(forms.ModelForm):
                     "id": "id_invoice_due_date",
                 }
             ),
-            "description": forms.Textarea(
-                attrs={
-                    "class": "form-input",
-                    "rows": 4,
-                    "placeholder": "Describe the services or charges…",
-                    "id": "id_invoice_description",
-                }
+            "description": forms.HiddenInput(
+                attrs={"id": "id_invoice_description"}
             ),
-            "amount": forms.NumberInput(
-                attrs={
-                    "class": "form-input",
-                    "min": "0",
-                    "step": "0.01",
-                    "placeholder": "0.00",
-                    "id": "id_invoice_amount",
-                }
+            "amount": forms.HiddenInput(
+                attrs={"id": "id_invoice_amount"}
             ),
-            "tax_amount": forms.NumberInput(
-                attrs={
-                    "class": "form-input",
-                    "min": "0",
-                    "step": "0.01",
-                    "placeholder": "0.00",
-                    "id": "id_invoice_tax_amount",
-                }
+            "tax_amount": forms.HiddenInput(
+                attrs={"id": "id_invoice_tax_amount"}
             ),
             "notes": forms.Textarea(
                 attrs={
@@ -4526,3 +4940,404 @@ class InvoiceStkPaymentForm(forms.Form):
             )
         return amount
 
+
+class PayrollDeductionForm(forms.Form):
+    """One deduction line when registering payroll."""
+
+    deduction_type = forms.ChoiceField(
+        choices=[("", "Select deduction")] + list(PayrollDeduction.DeductionType.choices),
+        widget=forms.Select(
+            attrs={
+                "class": "form-input payroll-deduction-type",
+            }
+        ),
+    )
+    description = forms.CharField(
+        required=False,
+        max_length=120,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input payroll-deduction-description",
+                "placeholder": "Description (for Other)",
+            }
+        ),
+    )
+    amount = forms.DecimalField(
+        required=False,
+        max_digits=14,
+        decimal_places=2,
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input payroll-deduction-amount",
+                "min": "0",
+                "step": "0.01",
+                "placeholder": "0.00",
+            }
+        ),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("DELETE"):
+            return cleaned
+
+        deduction_type = cleaned.get("deduction_type") or ""
+        amount = cleaned.get("amount")
+        if not deduction_type and amount in (None, ""):
+            cleaned["SKIP"] = True
+            return cleaned
+
+        if not deduction_type:
+            self.add_error("deduction_type", "Select a deduction type.")
+        if amount in (None, ""):
+            self.add_error("amount", "Enter the deduction amount.")
+        elif amount is not None and amount <= 0:
+            self.add_error("amount", "Deduction amount must be greater than zero.")
+        if (
+            deduction_type == PayrollDeduction.DeductionType.OTHER
+            and not (cleaned.get("description") or "").strip()
+        ):
+            self.add_error("description", "Enter a description for this deduction.")
+        return cleaned
+
+
+PayrollDeductionFormSet = forms.formset_factory(
+    PayrollDeductionForm,
+    extra=1,
+    min_num=0,
+    validate_min=False,
+    can_delete=True,
+)
+
+
+def _parse_pay_period_date(value):
+    if not value:
+        return None
+    if hasattr(value, "year"):
+        return value
+    return parse_date(str(value))
+
+
+def default_pay_period(frequency=None):
+    from .payroll_calc import DEFAULT_PAY_FREQUENCY, resolve_pay_period
+
+    freq = frequency or DEFAULT_PAY_FREQUENCY
+    start, end, _frequency = resolve_pay_period(None, freq)
+    return start, end, _frequency
+
+
+def payroll_registered_employee_ids(
+    pay_period_start, pay_period_end=None, pay_frequency=None
+):
+    from .payroll_calc import resolve_pay_period
+
+    start = _parse_pay_period_date(pay_period_start)
+    frequency = pay_frequency or PayrollRun.PayFrequency.MONTHLY
+    if not start:
+        return set()
+    start, end, frequency = resolve_pay_period(start, frequency)
+    return set(
+        PayrollRun.objects.filter(
+            pay_period_start=start,
+            pay_frequency=frequency,
+        ).values_list("employee_id", flat=True)
+    )
+
+
+def employees_available_for_payroll(
+    pay_period_start=None, pay_period_end=None, pay_frequency=None
+):
+    from .payroll_calc import resolve_pay_period
+
+    start, end, frequency = resolve_pay_period(
+        _parse_pay_period_date(pay_period_start),
+        pay_frequency,
+    )
+    registered_ids = payroll_registered_employee_ids(start, end, frequency)
+    return Employee.objects.filter(
+        status__in=[
+            Employee.Status.ACTIVE,
+            Employee.Status.SUSPENDED,
+            Employee.Status.PENDING_APPROVAL,
+        ]
+    ).exclude(pk__in=registered_ids).order_by(
+        "first_name", "last_name", "login_code"
+    )
+
+
+class RegisterPayrollForm(forms.ModelForm):
+    """Register payroll with Kenya statutory earnings, deductions, and employer costs."""
+
+    class Meta:
+        model = PayrollRun
+        fields = [
+            "employee",
+            "pay_frequency",
+            "pay_period_start",
+            "basic_salary",
+            "house_allowance",
+            "transport_allowance",
+            "medical_allowance",
+            "other_allowances",
+            "bonuses_overtime_commissions",
+            "nssf_employee_rate",
+            "nssf_employer_rate",
+            "nssf_tier1_limit",
+            "nssf_pensionable_cap",
+            "shif_rate",
+            "housing_levy_employee_rate",
+            "housing_levy_employer_rate",
+            "paye_personal_relief",
+            "paye_band_1_max",
+            "paye_band_1_rate",
+            "paye_band_2_max",
+            "paye_band_2_rate",
+            "paye_band_3_max",
+            "paye_band_3_rate",
+            "paye_band_4_rate",
+            "nita_levy_amount",
+            "wiba_insurance_amount",
+            "notes",
+        ]
+        widgets = {
+            "employee": forms.Select(
+                attrs={"class": "form-input", "id": "id_payroll_employee"}
+            ),
+            "pay_frequency": forms.Select(
+                attrs={
+                    "class": "form-input",
+                    "id": "id_payroll_frequency",
+                }
+            ),
+            "pay_period_start": forms.DateInput(
+                attrs={
+                    "class": "form-input",
+                    "type": "date",
+                    "id": "id_payroll_period_start",
+                }
+            ),
+            "notes": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 2,
+                    "placeholder": "Optional payroll notes",
+                    "id": "id_payroll_notes",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        from .payroll_calc import PAYROLL_RATE_DEFAULTS
+
+        super().__init__(*args, **kwargs)
+        period_start, period_end, frequency = self._resolved_pay_period()
+        employees = employees_available_for_payroll(
+            period_start, period_end, frequency
+        )
+        self.fields["employee"].queryset = employees
+        self.fields["employee"].empty_label = (
+            "Select an employee"
+            if employees.exists()
+            else "No employees available for this pay period"
+        )
+        self.fields["notes"].required = False
+        self.fields["pay_frequency"].choices = PayrollRun.PayFrequency.choices
+
+        money_fields = (
+            "basic_salary",
+            "house_allowance",
+            "transport_allowance",
+            "medical_allowance",
+            "other_allowances",
+            "bonuses_overtime_commissions",
+            "nssf_tier1_limit",
+            "nssf_pensionable_cap",
+            "paye_personal_relief",
+            "paye_band_1_max",
+            "paye_band_2_max",
+            "paye_band_3_max",
+            "nita_levy_amount",
+            "wiba_insurance_amount",
+        )
+        rate_fields = (
+            "nssf_employee_rate",
+            "nssf_employer_rate",
+            "shif_rate",
+            "housing_levy_employee_rate",
+            "housing_levy_employer_rate",
+            "paye_band_1_rate",
+            "paye_band_2_rate",
+            "paye_band_3_rate",
+            "paye_band_4_rate",
+        )
+        for name in money_fields:
+            self.fields[name].required = False
+            self.fields[name].widget.attrs.update(
+                {
+                    "class": "form-input payroll-money",
+                    "min": "0",
+                    "step": "0.01",
+                    "placeholder": "0.00",
+                    "id": f"id_payroll_{name}",
+                }
+            )
+        for name in rate_fields:
+            self.fields[name].widget.attrs.update(
+                {
+                    "class": "form-input payroll-rate",
+                    "min": "0",
+                    "step": "0.01",
+                    "id": f"id_payroll_{name}",
+                }
+            )
+        self.fields["basic_salary"].required = True
+
+        if not self.is_bound:
+            self.fields["pay_period_start"].initial = period_start
+            self.fields["pay_frequency"].initial = frequency
+            for name, value in PAYROLL_RATE_DEFAULTS.items():
+                if name in self.fields and name not in {
+                    "nita_levy_amount",
+                    "wiba_insurance_amount",
+                }:
+                    self.fields[name].initial = value
+            self.fields["nita_levy_amount"].initial = PAYROLL_RATE_DEFAULTS[
+                "nita_levy_amount"
+            ]
+            self.fields["wiba_insurance_amount"].initial = Decimal("0.00")
+
+        self.payroll_breakdown = None
+
+    def _resolved_pay_period(self):
+        from .payroll_calc import resolve_pay_period
+
+        if self.is_bound:
+            start = _parse_pay_period_date(self.data.get("pay_period_start"))
+            frequency = self.data.get("pay_frequency") or PayrollRun.PayFrequency.MONTHLY
+            if start:
+                return resolve_pay_period(start, frequency)
+        initial_start = self.initial.get("pay_period_start")
+        initial_frequency = (
+            self.initial.get("pay_frequency") or PayrollRun.PayFrequency.MONTHLY
+        )
+        start = _parse_pay_period_date(initial_start)
+        if start:
+            return resolve_pay_period(start, initial_frequency)
+        return resolve_pay_period(None, initial_frequency)
+
+    def clean_employee(self):
+        employee = self.cleaned_data.get("employee")
+        if not employee:
+            return employee
+        start, end, frequency = self._resolved_pay_period()
+        if employee.pk in payroll_registered_employee_ids(start, end, frequency):
+            raise ValidationError(
+                "This employee already has payroll registered for the selected period."
+            )
+        return employee
+
+    def clean_basic_salary(self):
+        basic = self.cleaned_data.get("basic_salary")
+        if basic is None:
+            raise ValidationError("Enter the basic salary.")
+        basic = Decimal(basic).quantize(Decimal("0.01"))
+        if basic <= 0:
+            raise ValidationError("Basic salary must be greater than zero.")
+        return basic
+
+    def clean(self):
+        from .payroll_calc import PayrollEarnings, PayrollRates, calculate_payroll
+
+        cleaned = super().clean()
+        from .payroll_calc import pay_period_end_for_frequency
+
+        start = cleaned.get("pay_period_start")
+        frequency = cleaned.get("pay_frequency") or PayrollRun.PayFrequency.MONTHLY
+        employee = cleaned.get("employee")
+        if start:
+            cleaned["pay_period_end"] = pay_period_end_for_frequency(start, frequency)
+        else:
+            return cleaned
+
+        if employee and start:
+            if employee.pk in payroll_registered_employee_ids(
+                start, cleaned["pay_period_end"], frequency
+            ):
+                raise ValidationError(
+                    "Payroll is already registered for this employee and pay period."
+                )
+
+        if self.errors:
+            return cleaned
+
+        earnings = PayrollEarnings(
+            basic_salary=cleaned.get("basic_salary") or Decimal("0"),
+            house_allowance=cleaned.get("house_allowance") or Decimal("0"),
+            transport_allowance=cleaned.get("transport_allowance") or Decimal("0"),
+            medical_allowance=cleaned.get("medical_allowance") or Decimal("0"),
+            other_allowances=cleaned.get("other_allowances") or Decimal("0"),
+            bonuses_overtime_commissions=cleaned.get("bonuses_overtime_commissions")
+            or Decimal("0"),
+        )
+        if earnings.gross_salary <= 0:
+            raise ValidationError("Total earnings must be greater than zero.")
+
+        rates = PayrollRates(
+            nssf_employee_rate=cleaned.get("nssf_employee_rate"),
+            nssf_employer_rate=cleaned.get("nssf_employer_rate"),
+            nssf_tier1_limit=cleaned.get("nssf_tier1_limit"),
+            nssf_pensionable_cap=cleaned.get("nssf_pensionable_cap"),
+            shif_rate=cleaned.get("shif_rate"),
+            housing_levy_employee_rate=cleaned.get("housing_levy_employee_rate"),
+            housing_levy_employer_rate=cleaned.get("housing_levy_employer_rate"),
+            paye_personal_relief=cleaned.get("paye_personal_relief"),
+            paye_band_1_max=cleaned.get("paye_band_1_max"),
+            paye_band_1_rate=cleaned.get("paye_band_1_rate"),
+            paye_band_2_max=cleaned.get("paye_band_2_max"),
+            paye_band_2_rate=cleaned.get("paye_band_2_rate"),
+            paye_band_3_max=cleaned.get("paye_band_3_max"),
+            paye_band_3_rate=cleaned.get("paye_band_3_rate"),
+            paye_band_4_rate=cleaned.get("paye_band_4_rate"),
+            nita_levy_amount=cleaned.get("nita_levy_amount"),
+            wiba_insurance_amount=cleaned.get("wiba_insurance_amount"),
+        )
+        breakdown = calculate_payroll(earnings, rates)
+        if breakdown.net_pay < 0:
+            raise ValidationError(
+                "Total employee deductions exceed gross earnings. "
+                "Adjust earnings or statutory rates."
+            )
+        self.payroll_breakdown = breakdown
+        return cleaned
+
+    def save(self, commit=True):
+        from .payroll_calc import pay_period_end_for_frequency
+
+        payroll_run = super().save(commit=False)
+        start = self.cleaned_data["pay_period_start"]
+        frequency = self.cleaned_data.get("pay_frequency") or PayrollRun.PayFrequency.MONTHLY
+        payroll_run.pay_frequency = frequency
+        payroll_run.pay_period_end = pay_period_end_for_frequency(start, frequency)
+        breakdown = self.payroll_breakdown
+        if breakdown is None:
+            payroll_run.recalculate_totals(save=False)
+        else:
+            payroll_run.gross_salary = breakdown.gross_salary
+            payroll_run.nssf_employee_amount = breakdown.nssf_employee_amount
+            payroll_run.shif_amount = breakdown.shif_amount
+            payroll_run.housing_levy_employee_amount = (
+                breakdown.housing_levy_employee_amount
+            )
+            payroll_run.paye_amount = breakdown.paye_amount
+            payroll_run.taxable_income = breakdown.taxable_income
+            payroll_run.total_deductions = breakdown.total_employee_deductions
+            payroll_run.net_pay = breakdown.net_pay
+            payroll_run.nssf_employer_amount = breakdown.nssf_employer_amount
+            payroll_run.housing_levy_employer_amount = (
+                breakdown.housing_levy_employer_amount
+            )
+            payroll_run.total_employer_cost = breakdown.total_employer_cost
+        if commit:
+            payroll_run.save()
+            payroll_run.sync_deduction_lines()
+        return payroll_run

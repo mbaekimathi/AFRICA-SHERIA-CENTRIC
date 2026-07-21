@@ -100,6 +100,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "accounts.middleware.EmployeeSessionMiddleware",
+    "config.observability.SystemObservabilityMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -186,6 +188,25 @@ MPESA_SHORTCODE = _env("MPESA_SHORTCODE")
 MPESA_PASSKEY = _env("MPESA_PASSKEY")
 MPESA_CALLBACK_URL = _env("MPESA_CALLBACK_URL")
 MPESA_ENV = _env("MPESA_ENV") or "sandbox"
+
+# Email SMTP (optional — prefer Communication Settings in the app).
+EMAIL_HOST = _env("EMAIL_HOST")
+EMAIL_PORT = _env("EMAIL_PORT") or "587"
+EMAIL_HOST_USER = _env("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = _env("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = _env("DEFAULT_FROM_EMAIL") or EMAIL_HOST_USER
+EMAIL_USE_TLS = (_env("EMAIL_USE_TLS") or "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+EMAIL_USE_SSL = (_env("EMAIL_USE_SSL") or "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 FILE_UPLOAD_MAX_MEMORY_SIZE = 15 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024 * 1024

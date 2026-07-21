@@ -1,0 +1,117 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page"
+  id="live-list-page"
+  data-revision-url="{% url 'accounts:workspace_list_revision' %}?list=employees"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Review employee workload, task completion, login activity, and compliance.
+        Select an employee to open detailed performance analytics.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employees</h3>
+      <p class="panel__hint">{{ employee_count }} total · click a row for analytics</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if employees %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Employee</th>
+              <th scope="col">Role</th>
+              <th scope="col">Status</th>
+              <th scope="col">Avg login</th>
+              <th scope="col">Session</th>
+              <th scope="col">Working sessions</th>
+              <th scope="col">Active workload</th>
+              <th scope="col">Tasks done</th>
+              <th scope="col">Completion</th>
+              <th scope="col">Overdue</th>
+              <th scope="col">Published blogs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for employee in employees %}
+            <tr
+              class="is-clickable-row"
+              data-href="{% url 'accounts:employee_performance_analytics' role=role_slug employee_id=employee.pk %}"
+            >
+              <td>
+                <div class="person-cell">
+                  {% if employee.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ employee.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {{ employee.first_name|slice:":1"|upper }}{{ employee.last_name|slice:":1"|upper }}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <span class="person-cell__name">{{ employee.get_full_name|default:employee.login_code }}</span>
+                    <span class="person-cell__meta">{{ employee.login_code }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>{{ employee.get_role_display }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ employee.status }}">
+                  {{ employee.get_status_display }}
+                </span>
+              </td>
+              <td>{{ employee.average_login_time }}</td>
+              <td>
+                {% if employee.is_online %}
+                <span class="status-pill status-pill--published">Online · {{ employee.active_session_duration }}</span>
+                {% else %}
+                Offline
+                {% endif %}
+              </td>
+              <td>{{ employee.working_sessions_count }}</td>
+              <td>{{ employee.active_workload }}</td>
+              <td>{{ employee.tasks_done }} / {{ employee.tasks_total }}</td>
+              <td>
+                {% if employee.tasks_total %}
+                {{ employee.completion_rate }}%
+                {% else %}
+                —
+                {% endif %}
+              </td>
+              <td>
+                {% if employee.overdue_tasks %}
+                <span class="status-pill status-pill--submitted">{{ employee.overdue_tasks }}</span>
+                {% else %}
+                0
+                {% endif %}
+              </td>
+              <td>{{ employee.published_blogs }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No employees found</p>
+        <p class="empty-state__text">
+          There are no active or suspended employee accounts to review yet.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

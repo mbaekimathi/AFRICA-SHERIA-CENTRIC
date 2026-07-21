@@ -1,0 +1,487 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--form-medium"
+  id="communication-settings-page"
+  data-communication-verify-url="{{ communication_verify_url }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">System settings</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Configure how the firm sends Email, SMS, and WhatsApp messages so
+        employee and client communications can run through the system.
+        Connections are verified live against SMTP and provider APIs.
+      </p>
+    </div>
+  </header>
+
+  <section
+    class="panel contact-connections"
+    id="communication-connections-panel"
+    aria-labelledby="communication-connections-heading"
+    aria-live="polite"
+  >
+    <div class="panel__head">
+      <h3 id="communication-connections-heading">Live configuration check</h3>
+      <p class="panel__hint">
+        <span
+          class="status-pill status-pill--{{ communication_connections.overall_tone }} js-comm-overall-pill"
+        >
+          {{ communication_connections.overall_label }}
+        </span>
+      </p>
+    </div>
+    <div class="panel__body">
+      <p class="contact-connections__summary js-comm-overall-detail">
+        {{ communication_connections.overall_detail }}
+      </p>
+      <p class="contact-connections__meta js-comm-verified-at" hidden></p>
+
+      <ul class="contact-connections__list js-comm-connections-list">
+        {% for channel in communication_connections.connection_channels %}
+        <li
+          class="contact-connections__item"
+          data-channel-key="{{ channel.key }}"
+          data-status="{{ channel.status }}"
+        >
+          <div class="contact-connections__item-main">
+            <span class="contact-connections__label">{{ channel.label }}</span>
+            {% if channel.href %}
+            <a
+              class="contact-connections__value"
+              href="{{ channel.href }}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ channel.value|default:"—" }}</a>
+            {% else %}
+            <span class="contact-connections__value">{{ channel.value|default:"—" }}</span>
+            {% endif %}
+          </div>
+          <div class="contact-connections__item-status">
+            <span class="status-pill status-pill--{{ channel.tone }}">
+              {{ channel.status_label }}
+            </span>
+            <span class="contact-connections__detail">{{ channel.detail }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+
+      <div class="form-actions form-actions--start contact-connections__actions">
+        <button
+          type="button"
+          class="btn btn--quiet btn--inline js-comm-verify-btn"
+          id="communication-verify-btn"
+        >
+          <span class="btn-spinner js-comm-verify-spinner" hidden aria-hidden="true"></span>
+          <span class="js-comm-verify-label">Verify configuration</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <form method="post" class="workspace-form communication-settings-form" id="communication-settings-form" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="form-alert" role="alert">
+      {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Channels</h3>
+        <p class="panel__hint">
+          {% if communication_setting.enabled_channels %}
+          {{ communication_setting.enabled_channels|join:", " }}
+          {% else %}
+          None enabled yet
+          {% endif %}
+        </p>
+      </div>
+      <div class="panel__body">
+        <div class="finance-method-grid" role="group" aria-label="Communication channels">
+          <label class="settings-toggle" for="{{ form.email_enabled.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.email_enabled }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.email_enabled.label }}</strong>
+              <span>Outbound mail via SMTP for notices and alerts.</span>
+            </span>
+          </label>
+          <label class="settings-toggle" for="{{ form.sms_enabled.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.sms_enabled }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.sms_enabled.label }}</strong>
+              <span>Text messages through Africa's Talking or Twilio.</span>
+            </span>
+          </label>
+          <label class="settings-toggle" for="{{ form.whatsapp_enabled.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.whatsapp_enabled }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.whatsapp_enabled.label }}</strong>
+              <span>Click-to-chat and optional Business API sending.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="communication-email-panel" {% if not form.email_enabled.value %}hidden{% endif %}>
+      <div class="panel__head">
+        <h3>Email (SMTP)</h3>
+        <p class="panel__hint">
+          <span
+            class="status-pill status-pill--{{ communication_connections.by_key.email.tone }} js-comm-field-status"
+            data-channel-key="email"
+          >{{ communication_connections.by_key.email.status_label }}</span>
+        </p>
+      </div>
+      <div class="panel__body">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.email_host.id_for_label }}">{{ form.email_host.label }}</label>
+            {{ form.email_host }}
+            {% if form.email_host.errors %}
+            <p class="field-error">{{ form.email_host.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.email_port.id_for_label }}">{{ form.email_port.label }}</label>
+            {{ form.email_port }}
+            <p class="field-hint js-email-security-hint">
+              Security: {{ communication_setting.email_security_label }} — set by port automatically.
+            </p>
+            {% if form.email_port.errors %}
+            <p class="field-error">{{ form.email_port.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.email_host_user.id_for_label }}">{{ form.email_host_user.label }}</label>
+            {{ form.email_host_user }}
+            {% if form.email_host_user.errors %}
+            <p class="field-error">{{ form.email_host_user.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.email_host_password.id_for_label }}">{{ form.email_host_password.label }}</label>
+            <div class="password-field">
+              {{ form.email_host_password }}
+              <button
+                type="button"
+                class="password-field__toggle js-password-toggle"
+                data-target="{{ form.email_host_password.id_for_label }}"
+                aria-label="Show password"
+                aria-pressed="false"
+              >
+                <svg class="password-field__icon password-field__icon--show" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+                  <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" stroke="currentColor" stroke-width="1.7"/>
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/>
+                </svg>
+                <svg class="password-field__icon password-field__icon--hide" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true" hidden>
+                  <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M10.6 10.7a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M9.9 5.6A10.5 10.5 0 0 1 12 5.5C18.5 5.5 22 12 22 12a18.6 18.6 0 0 1-3.1 3.9M6.1 6.2A18.4 18.4 0 0 0 2 12s3.5 6.5 10 6.5c1.1 0 2.1-.2 3-.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            {% if form.email_host_password.errors %}
+            <p class="field-error">{{ form.email_host_password.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.email_from_email.id_for_label }}">{{ form.email_from_email.label }}</label>
+            {{ form.email_from_email }}
+            <p class="field-hint">{{ form.email_from_email.help_text }}</p>
+            {% if form.email_from_email.errors %}
+            <p class="field-error">{{ form.email_from_email.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.email_from_name.id_for_label }}">{{ form.email_from_name.label }}</label>
+            {{ form.email_from_name }}
+            {% if form.email_from_name.errors %}
+            <p class="field-error">{{ form.email_from_name.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="communication-sms-panel" {% if not form.sms_enabled.value %}hidden{% endif %}>
+      <div class="panel__head">
+        <h3>SMS</h3>
+        <p class="panel__hint">
+          <span
+            class="status-pill status-pill--{{ communication_connections.by_key.sms.tone }} js-comm-field-status"
+            data-channel-key="sms"
+          >{{ communication_connections.by_key.sms.status_label }}</span>
+        </p>
+      </div>
+      <div class="panel__body">
+        <div class="form-field">
+          <label for="{{ form.sms_provider.id_for_label }}">{{ form.sms_provider.label }}</label>
+          {{ form.sms_provider }}
+          {% if form.sms_provider.errors %}
+          <p class="field-error">{{ form.sms_provider.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.sms_username.id_for_label }}">{{ form.sms_username.label }}</label>
+            {{ form.sms_username }}
+            <p class="field-hint">{{ form.sms_username.help_text }}</p>
+            {% if form.sms_username.errors %}
+            <p class="field-error">{{ form.sms_username.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.sms_sender_id.id_for_label }}">{{ form.sms_sender_id.label }}</label>
+            {{ form.sms_sender_id }}
+            <p class="field-hint">{{ form.sms_sender_id.help_text }}</p>
+            {% if form.sms_sender_id.errors %}
+            <p class="field-error">{{ form.sms_sender_id.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.sms_api_key.id_for_label }}">{{ form.sms_api_key.label }}</label>
+            {{ form.sms_api_key }}
+            {% if form.sms_api_key.errors %}
+            <p class="field-error">{{ form.sms_api_key.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.sms_api_secret.id_for_label }}">{{ form.sms_api_secret.label }}</label>
+            <div class="password-field">
+              {{ form.sms_api_secret }}
+              <button
+                type="button"
+                class="password-field__toggle js-password-toggle"
+                data-target="{{ form.sms_api_secret.id_for_label }}"
+                aria-label="Show password"
+                aria-pressed="false"
+              >
+                <svg class="password-field__icon password-field__icon--show" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+                  <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" stroke="currentColor" stroke-width="1.7"/>
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/>
+                </svg>
+                <svg class="password-field__icon password-field__icon--hide" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true" hidden>
+                  <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M10.6 10.7a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M9.9 5.6A10.5 10.5 0 0 1 12 5.5C18.5 5.5 22 12 22 12a18.6 18.6 0 0 1-3.1 3.9M6.1 6.2A18.4 18.4 0 0 0 2 12s3.5 6.5 10 6.5c1.1 0 2.1-.2 3-.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <p class="field-hint">{{ form.sms_api_secret.help_text }}</p>
+            {% if form.sms_api_secret.errors %}
+            <p class="field-error">{{ form.sms_api_secret.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="communication-whatsapp-panel" {% if not form.whatsapp_enabled.value %}hidden{% endif %}>
+      <div class="panel__head">
+        <h3>WhatsApp</h3>
+        <p class="panel__hint">
+          <span
+            class="status-pill status-pill--{{ communication_connections.by_key.whatsapp.tone }} js-comm-field-status"
+            data-channel-key="whatsapp"
+          >{{ communication_connections.by_key.whatsapp.status_label }}</span>
+        </p>
+      </div>
+      <div class="panel__body">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.whatsapp_business_number.id_for_label }}">{{ form.whatsapp_business_number.label }}</label>
+            {{ form.whatsapp_business_number }}
+            <p class="field-hint">{{ form.whatsapp_business_number.help_text }}</p>
+            {% if form.whatsapp_business_number.errors %}
+            <p class="field-error">{{ form.whatsapp_business_number.errors.0 }}</p>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.whatsapp_default_message.id_for_label }}">{{ form.whatsapp_default_message.label }}</label>
+            {{ form.whatsapp_default_message }}
+            <p class="field-hint">{{ form.whatsapp_default_message.help_text }}</p>
+            {% if form.whatsapp_default_message.errors %}
+            <p class="field-error">{{ form.whatsapp_default_message.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="finance-mpesa-block">
+          <label class="settings-toggle" for="{{ form.whatsapp_api_enabled.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.whatsapp_api_enabled }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.whatsapp_api_enabled.label }}</strong>
+              <span>{{ form.whatsapp_api_enabled.help_text }}</span>
+            </span>
+          </label>
+
+          <div class="finance-mpesa-fields" id="communication-whatsapp-api-fields" {% if not form.whatsapp_api_enabled.value %}hidden{% endif %}>
+            <div class="form-field">
+              <label for="{{ form.whatsapp_provider.id_for_label }}">{{ form.whatsapp_provider.label }}</label>
+              {{ form.whatsapp_provider }}
+              {% if form.whatsapp_provider.errors %}
+              <p class="field-error">{{ form.whatsapp_provider.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.whatsapp_api_token.id_for_label }}">{{ form.whatsapp_api_token.label }}</label>
+                <div class="password-field">
+                  {{ form.whatsapp_api_token }}
+                  <button
+                    type="button"
+                    class="password-field__toggle js-password-toggle"
+                    data-target="{{ form.whatsapp_api_token.id_for_label }}"
+                    aria-label="Show password"
+                    aria-pressed="false"
+                  >
+                    <svg class="password-field__icon password-field__icon--show" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+                      <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" stroke="currentColor" stroke-width="1.7"/>
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/>
+                    </svg>
+                    <svg class="password-field__icon password-field__icon--hide" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true" hidden>
+                      <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                      <path d="M10.6 10.7a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                      <path d="M9.9 5.6A10.5 10.5 0 0 1 12 5.5C18.5 5.5 22 12 22 12a18.6 18.6 0 0 1-3.1 3.9M6.1 6.2A18.4 18.4 0 0 0 2 12s3.5 6.5 10 6.5c1.1 0 2.1-.2 3-.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <p class="field-hint">{{ form.whatsapp_api_token.help_text }}</p>
+                {% if form.whatsapp_api_token.errors %}
+                <p class="field-error">{{ form.whatsapp_api_token.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.whatsapp_phone_number_id.id_for_label }}">{{ form.whatsapp_phone_number_id.label }}</label>
+                {{ form.whatsapp_phone_number_id }}
+                <p class="field-hint">{{ form.whatsapp_phone_number_id.help_text }}</p>
+                {% if form.whatsapp_phone_number_id.errors %}
+                <p class="field-error">{{ form.whatsapp_phone_number_id.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label for="{{ form.whatsapp_webhook_url.id_for_label }}">{{ form.whatsapp_webhook_url.label }}</label>
+              {{ form.whatsapp_webhook_url }}
+              <p class="field-hint">{{ form.whatsapp_webhook_url.help_text }}</p>
+              {% if form.whatsapp_webhook_url.errors %}
+              <p class="field-error">{{ form.whatsapp_webhook_url.errors.0 }}</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="form-actions form-actions--start">
+      <button type="submit" class="btn btn--primary btn--inline">Save communication settings</button>
+    </div>
+
+    {% if communication_setting.updated_at %}
+    <p class="website-template-meta">
+      Last updated {{ communication_setting.updated_at|date:"j M Y, H:i" }}
+      {% if communication_setting.updated_by %}
+      by {{ communication_setting.updated_by.get_full_name|default:communication_setting.updated_by.login_code }}
+      {% endif %}
+    </p>
+    {% endif %}
+  </form>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/communication-settings-verify.js' %}" defer></script>
+<script>
+  (function () {
+    var form = document.getElementById("communication-settings-form");
+    if (!form) return;
+
+    var email = form.querySelector("#id_email_enabled");
+    var sms = form.querySelector("#id_sms_enabled");
+    var whatsapp = form.querySelector("#id_whatsapp_enabled");
+    var whatsappApi = form.querySelector("#id_whatsapp_api_enabled");
+    var emailPanel = document.getElementById("communication-email-panel");
+    var smsPanel = document.getElementById("communication-sms-panel");
+    var whatsappPanel = document.getElementById("communication-whatsapp-panel");
+    var whatsappApiFields = document.getElementById("communication-whatsapp-api-fields");
+    var emailPort = form.querySelector("#id_email_port");
+    var securityHint = form.querySelector(".js-email-security-hint");
+
+    function securityLabelForPort(port) {
+      if (port === 465 || port === 994) return "SSL (auto)";
+      return "TLS (auto)";
+    }
+
+    function syncSecurityHint() {
+      if (!securityHint || !emailPort) return;
+      var port = parseInt(String(emailPort.value || "").trim(), 10) || 587;
+      securityHint.textContent =
+        "Security: " +
+        securityLabelForPort(port) +
+        " — set by port automatically.";
+    }
+
+    function sync() {
+      var emailOn = !!(email && email.checked);
+      var smsOn = !!(sms && sms.checked);
+      var waOn = !!(whatsapp && whatsapp.checked);
+      if (emailPanel) emailPanel.hidden = !emailOn;
+      if (smsPanel) smsPanel.hidden = !smsOn;
+      if (whatsappPanel) whatsappPanel.hidden = !waOn;
+      if (!waOn && whatsappApi) whatsappApi.checked = false;
+      if (whatsappApiFields) {
+        whatsappApiFields.hidden = !(waOn && whatsappApi && whatsappApi.checked);
+      }
+    }
+
+    [email, sms, whatsapp, whatsappApi].forEach(function (el) {
+      if (el) el.addEventListener("change", sync);
+    });
+    if (emailPort) {
+      ["input", "change", "blur"].forEach(function (evt) {
+        emailPort.addEventListener(evt, syncSecurityHint);
+      });
+    }
+    sync();
+    syncSecurityHint();
+
+    form.querySelectorAll(".js-password-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var input = document.getElementById(btn.getAttribute("data-target") || "");
+        if (!input) return;
+        var showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        btn.setAttribute("aria-pressed", String(!showing));
+        btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+        var showIcon = btn.querySelector(".password-field__icon--show");
+        var hideIcon = btn.querySelector(".password-field__icon--hide");
+        if (showIcon) showIcon.hidden = !showing;
+        if (hideIcon) hideIcon.hidden = showing;
+      });
+    });
+  })();
+</script>
+{% endblock %}

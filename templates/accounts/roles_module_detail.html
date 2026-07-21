@@ -1,0 +1,61 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium roles-permissions-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">
+        <a href="{{ roles_permissions_url }}">Roles &amp; Permissions</a>
+      </p>
+      <h2>{{ module.label }}</h2>
+      <p class="page-lead">{{ module.hint }}</p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ module.open_url }}" class="btn btn--quiet btn--inline">Open module</a>
+    </div>
+  </header>
+
+  <section class="panel roles-permissions-panel">
+    <div class="panel__head">
+      <h3>Activities</h3>
+      <p class="panel__hint">{{ activity_count }} activit{{ activity_count|pluralize:"y,ies" }}</p>
+    </div>
+    <div class="panel__body roles-permissions-panel__body">
+      {% if module_activities %}
+      <ul class="roles-module-list roles-activity-list">
+        {% for item in module_activities %}
+        <li>
+          {% if item.url %}
+          <a class="roles-module-row roles-module-row--depth-{{ item.depth }}" href="{{ item.url }}">
+          {% else %}
+          <div class="roles-module-row roles-module-row--static roles-module-row--depth-{{ item.depth }}">
+          {% endif %}
+            <span class="roles-module-row__icon" aria-hidden="true">{{ item.icon|safe }}</span>
+            <span class="roles-module-row__copy">
+              <span class="roles-module-row__label">{{ item.label }}</span>
+              <span class="roles-module-row__hint">{{ item.path }}</span>
+            </span>
+            {% if item.url %}
+            <span class="roles-module-row__go" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            {% endif %}
+          {% if item.url %}
+          </a>
+          {% else %}
+          </div>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="roles-module-detail__empty">No activities are registered for this module yet.</p>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

@@ -1,0 +1,174 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ selected_client.get_full_name }} — {{ page_title }}{% endblock %}
+
+{% block content %}
+<section class="page page--client-accounts page--client-account-detail">
+  <header class="client-account-profile">
+    <div class="client-account-profile__top">
+      <a href="{{ back_url }}" class="client-account-back">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+          <path d="m14.5 6.5-5 5.5 5 5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Back to client list
+      </a>
+      <span class="client-account-type client-account-type--{{ selected_client.client_type }}">
+        {{ selected_client.get_client_type_display }}
+      </span>
+    </div>
+
+    <div class="client-account-profile__main">
+      {% if selected_client.profile_photo %}
+      <img
+        class="client-account-profile__photo"
+        src="{{ selected_client.profile_photo.url }}"
+        alt=""
+      >
+      {% else %}
+      <span
+        class="client-account-profile__avatar client-account-profile__avatar--{{ selected_client.client_type }}"
+        aria-hidden="true"
+      >
+        {% if selected_client.client_type == "corporate" %}
+        {{ selected_client.company_name|default:selected_client.email|slice:":1"|upper }}
+        {% else %}
+        {{ selected_client.first_name|slice:":1"|upper }}{{ selected_client.last_name|slice:":1"|upper }}
+        {% endif %}
+      </span>
+      {% endif %}
+
+      <div class="client-account-profile__copy">
+        <h2>{{ selected_client.get_full_name }}</h2>
+        <p class="client-account-profile__lead">
+          Client account overview for invoices, payments, and outstanding balances.
+        </p>
+        <div class="client-account-profile__meta">
+          <span>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+              <path d="M4.5 6.75h15v10.5h-15z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="m4.5 7.5 7.5 5.25L19.5 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ selected_client.email }}
+          </span>
+          {% if selected_client.phone %}
+          <span>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+              <path d="M8.25 5.5h7.5v13h-7.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="M11 17.25h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            {{ selected_client.phone }}
+          </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </header>
+
+  {% if account_detail %}
+  <div class="client-account-metrics">
+    <article class="client-account-metric">
+      <span class="client-account-metric__label">Invoices</span>
+      <strong class="client-account-metric__value">{{ account_detail.invoice_count }}</strong>
+    </article>
+    <article class="client-account-metric">
+      <span class="client-account-metric__label">Total invoiced</span>
+      <strong class="client-account-metric__value">KES {{ account_detail.total_invoiced|floatformat:2 }}</strong>
+    </article>
+    <article class="client-account-metric client-account-metric--paid">
+      <span class="client-account-metric__label">Total paid</span>
+      <strong class="client-account-metric__value">KES {{ account_detail.total_paid|floatformat:2 }}</strong>
+    </article>
+    <article class="client-account-metric client-account-metric--due{% if account_detail.balance_due %} is-alert{% endif %}">
+      <span class="client-account-metric__label">Balance due</span>
+      <strong class="client-account-metric__value">KES {{ account_detail.balance_due|floatformat:2 }}</strong>
+    </article>
+  </div>
+
+  <section class="client-account-panel">
+    <header class="client-account-panel__head">
+      <div>
+        <h3>Invoice history</h3>
+        <p>{{ account_detail.invoice_count }} invoice{{ account_detail.invoice_count|pluralize }} · {{ account_detail.open_count }} open</p>
+      </div>
+      {% for item in page_nav_items %}
+      {% if item.slug == "generate-invoice" %}
+      <a href="{{ item.url }}" class="btn btn--primary btn--inline">Generate invoice</a>
+      {% endif %}
+      {% endfor %}
+    </header>
+
+    <div class="client-account-panel__body client-account-panel__body--table">
+      {% if account_detail.invoices %}
+      <div class="data-table-wrap">
+        <table class="data-table client-account-invoice-table">
+          <thead>
+            <tr>
+              <th scope="col">Invoice</th>
+              <th scope="col">Description</th>
+              <th scope="col">Issued</th>
+              <th scope="col">Due</th>
+              <th scope="col">Total</th>
+              <th scope="col">Paid</th>
+              <th scope="col">Balance</th>
+              <th scope="col">Status</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for invoice in account_detail.invoices %}
+            <tr>
+              <td>
+                <a
+                  class="table-entity-link mono"
+                  href="{% url 'accounts:view_invoice' role=role_slug invoice_id=invoice.pk %}"
+                >{{ invoice.invoice_number }}</a>
+              </td>
+              <td class="client-account-invoice-table__description">{{ invoice.description|truncatechars:48 }}</td>
+              <td>{{ invoice.issue_date|date:"d M Y" }}</td>
+              <td>{{ invoice.due_date|date:"d M Y" }}</td>
+              <td class="mono">KES {{ invoice.total_amount|floatformat:2 }}</td>
+              <td class="mono">KES {{ invoice.amount_paid|floatformat:2 }}</td>
+              <td class="mono">KES {{ invoice.balance_due|floatformat:2 }}</td>
+              <td>
+                <span class="invoice-status invoice-status--{{ invoice.status }}">
+                  {{ invoice.get_status_display }}
+                </span>
+              </td>
+              <td class="data-table__actions">
+                <a
+                  href="{% url 'accounts:view_invoice' role=role_slug invoice_id=invoice.pk %}"
+                  class="btn btn--quiet btn--inline"
+                >View</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="client-accounts-empty">
+        <span class="client-accounts-empty__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M9 13h6M9 17h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <p class="client-accounts-empty__title">No invoices yet</p>
+        <p class="client-accounts-empty__text">Invoices issued to this client will appear here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% else %}
+  <section class="client-account-panel">
+    <div class="client-account-panel__body">
+      <div class="client-accounts-empty">
+        <p class="client-accounts-empty__title">Account not found</p>
+        <p class="client-accounts-empty__text">This client account could not be loaded.</p>
+        <a href="{{ back_url }}" class="btn btn--quiet btn--inline">Back to client list</a>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+</section>
+{% endblock %}

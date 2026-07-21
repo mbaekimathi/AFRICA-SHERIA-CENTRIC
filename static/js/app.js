@@ -117,14 +117,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.querySelectorAll(".toast").forEach((toast) => {
-    window.setTimeout(() => {
-      toast.style.opacity = "0";
-      toast.style.transition = "opacity 0.3s ease";
-      window.setTimeout(() => toast.remove(), 320);
-    }, 4200);
-  });
-
   const initSessionClock = () => {
     if (!sessionMenu) return;
 

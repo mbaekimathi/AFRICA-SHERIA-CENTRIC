@@ -101,7 +101,10 @@
             </p>
           </div>
           <div class="blog-post-item__actions">
-            <a href="{{ post.get_absolute_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">View</a>
+            <a
+              href="{% url 'accounts:blog_post_analytics' role=role_slug post_id=post.pk %}"
+              class="btn btn--primary btn--inline"
+            >Analytics</a>
             <a
               href="{% url 'accounts:review_company_blog' role=role_slug post_id=post.pk %}"
               class="btn btn--quiet btn--inline"
@@ -119,4 +122,128 @@
     </div>
   </section>
 </section>
+
+{% if blog_share_intents %}
+<dialog
+  class="workspace-modal blog-share-modal"
+  id="blog-share-modal"
+  aria-labelledby="blog-share-modal-title"
+>
+  <div class="workspace-modal__card blog-share-modal__card">
+    <header class="workspace-modal__head">
+      <h2 id="blog-share-modal-title">Share published post</h2>
+      <p>
+        The post is live. Open the selected accounts to share the link
+        {% if blog_share_intents.0.title %}for “{{ blog_share_intents.0.title }}”{% endif %}.
+      </p>
+    </header>
+    <div class="workspace-modal__body">
+      <p class="field-hint blog-share-modal__url">
+        Post URL:
+        <a href="{{ blog_share_intents.0.post_url }}" target="_blank" rel="noopener">{{ blog_share_intents.0.post_url }}</a>
+      </p>
+      <div class="invoice-share-options" role="list">
+        {% for intent in blog_share_intents %}
+        <a
+          class="invoice-share-option"
+          role="listitem"
+          href="{{ intent.url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-share-mode="{{ intent.mode }}"
+          data-post-url="{{ intent.post_url }}"
+        >
+          <span class="invoice-share-option__copy">
+            <strong>{{ intent.label }}</strong>
+            <span>
+              {% if intent.mode == "share" %}
+              Open share dialog
+              {% else %}
+              Open profile (link copied)
+              {% endif %}
+            </span>
+          </span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--primary" id="blog-share-open-all">Open all</button>
+      <button type="button" class="btn btn--quiet" id="blog-share-modal-close">Done</button>
+    </div>
+  </div>
+</dialog>
+{{ blog_share_intents|json_script:"blog-share-intents-data" }}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if blog_share_intents %}
+<script>
+(function () {
+  var modal = document.getElementById("blog-share-modal");
+  var dataEl = document.getElementById("blog-share-intents-data");
+  var openAllBtn = document.getElementById("blog-share-open-all");
+  var closeBtn = document.getElementById("blog-share-modal-close");
+  if (!modal || !dataEl) return;
+
+  var intents = [];
+  try {
+    intents = JSON.parse(dataEl.textContent || "[]") || [];
+  } catch (err) {
+    intents = [];
+  }
+
+  function copyPostUrl() {
+    var postUrl = intents.length ? intents[0].post_url : "";
+    var needsCopy = intents.some(function (item) {
+      return item.mode === "profile";
+    });
+    if (!needsCopy || !postUrl || !navigator.clipboard) return;
+    navigator.clipboard.writeText(postUrl).catch(function () {});
+  }
+
+  function openIntent(intent) {
+    if (!intent || !intent.url) return;
+    window.open(intent.url, "_blank", "noopener,noreferrer");
+  }
+
+  function openAll() {
+    copyPostUrl();
+    intents.forEach(function (intent) {
+      openIntent(intent);
+    });
+  }
+
+  modal.querySelectorAll("a[data-share-mode]").forEach(function (link) {
+    link.addEventListener("click", function () {
+      if (link.getAttribute("data-share-mode") === "profile") {
+        var url = link.getAttribute("data-post-url") || "";
+        if (url && navigator.clipboard) {
+          navigator.clipboard.writeText(url).catch(function () {});
+        }
+      }
+    });
+  });
+
+  if (openAllBtn) {
+    openAllBtn.addEventListener("click", openAll);
+  }
+  if (closeBtn) {
+    closeBtn.addEventListener("click", function () {
+      modal.close();
+    });
+  }
+  modal.addEventListener("click", function (event) {
+    if (event.target === modal) modal.close();
+  });
+
+  if (typeof modal.showModal === "function") {
+    modal.showModal();
+  } else {
+    modal.setAttribute("open", "open");
+  }
+})();
+</script>
+{% endif %}
 {% endblock %}

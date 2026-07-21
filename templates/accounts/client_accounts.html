@@ -1,0 +1,206 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--client-accounts"
+  id="client-accounts-page"
+  data-list-url="{{ list_url }}"
+  data-client-search-url="{{ client_search_url }}"
+>
+  <header class="client-accounts-hero">
+    <div class="client-accounts-hero__main">
+      <span class="client-accounts-hero__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+          <path d="M9 11a3.25 3.25 0 1 0 0-6.5A3.25 3.25 0 0 0 9 11zm6.5-.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5z" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M3.75 19.25v-1.1c0-2.1 2.15-3.65 5.25-3.65s5.25 1.55 5.25 3.65v1.1M14.5 14.75c2.55.2 4.75 1.5 4.75 3.4v1.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div>
+        <p class="page-kicker">{{ session_greeting }}</p>
+        <h2>{{ page_title }}</h2>
+        <p class="client-accounts-hero__lead">
+          Search for a client or browse the lists below, then open their account to view invoices and balances.
+        </p>
+      </div>
+    </div>
+
+    <label class="client-accounts-picker client-search" for="client-accounts-search">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+        <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.7"/>
+        <path d="m16 16 3.25 3.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+      <input
+        id="client-accounts-search"
+        type="search"
+        placeholder="Search clients by name, phone, or email..."
+        autocomplete="off"
+        spellcheck="false"
+        aria-autocomplete="list"
+        aria-controls="client-accounts-results"
+        aria-expanded="false"
+        role="combobox"
+      >
+      <ul class="client-search__results" id="client-accounts-results" role="listbox" hidden></ul>
+    </label>
+
+    <div class="client-accounts-stats" aria-label="Client totals">
+      <div class="client-accounts-stat">
+        <span class="client-accounts-stat__value">{{ active_client_count }}</span>
+        <span class="client-accounts-stat__label">Active clients</span>
+      </div>
+      <div class="client-accounts-stat client-accounts-stat--corporate">
+        <span class="client-accounts-stat__value">{{ corporate_client_count }}</span>
+        <span class="client-accounts-stat__label">Corporate</span>
+      </div>
+      <div class="client-accounts-stat client-accounts-stat--individual">
+        <span class="client-accounts-stat__value">{{ individual_client_count }}</span>
+        <span class="client-accounts-stat__label">Individual</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="client-accounts-categories">
+    <section class="client-accounts-category client-accounts-category--corporate">
+      <header class="client-accounts-category__head">
+        <span class="client-accounts-category__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M4.5 19.5V8.75L12 4.5l7.5 4.25V19.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M9.25 19.5v-5.5h5.5v5.5M9.25 11.5h.01M12 11.5h.01M14.75 11.5h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div class="client-accounts-category__copy">
+          <h3>Corporate clients</h3>
+          <p>{{ corporate_client_count }} registered account{{ corporate_client_count|pluralize }}</p>
+        </div>
+        <span class="client-accounts-category__badge">{{ corporate_client_count }}</span>
+      </header>
+
+      <div class="client-accounts-category__body">
+        {% if corporate_clients %}
+        <label class="client-accounts-filter" for="corporate-client-filter">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.7"/>
+            <path d="m16 16 3.25 3.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+          <input
+            id="corporate-client-filter"
+            type="search"
+            class="client-accounts-filter__input"
+            placeholder="Filter corporate clients..."
+            autocomplete="off"
+            data-filter-list="corporate-client-list"
+          >
+        </label>
+
+        <ul class="client-accounts-list" id="corporate-client-list">
+          {% for client in corporate_clients %}
+          <li class="client-accounts-list__item" data-search="{{ client.get_full_name|lower }} {{ client.phone|default:''|lower }} {{ client.email|lower }}">
+            <a class="client-accounts-row" href="{{ list_url }}?client={{ client.pk }}">
+              <span class="client-accounts-row__avatar client-accounts-row__avatar--corporate" aria-hidden="true">
+                {{ client.company_name|default:client.email|slice:":1"|upper }}
+              </span>
+              <span class="client-accounts-row__main">
+                <strong>{{ client.get_full_name }}</strong>
+                <span>{{ client.phone|default:client.email }}</span>
+              </span>
+              <span class="client-accounts-row__chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                  <path d="m10 7 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="client-accounts-list__empty" id="corporate-client-empty" hidden>No matching corporate clients.</p>
+        {% else %}
+        <div class="client-accounts-empty">
+          <span class="client-accounts-empty__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <path d="M4.5 19.5V8.75L12 4.5l7.5 4.25V19.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <p class="client-accounts-empty__title">No corporate clients yet</p>
+          <p class="client-accounts-empty__text">Approved corporate accounts will appear here.</p>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="client-accounts-category client-accounts-category--individual">
+      <header class="client-accounts-category__head">
+        <span class="client-accounts-category__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <circle cx="12" cy="9" r="3.25" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M5.75 19c.7-3 3.1-4.75 6.25-4.75S17.55 16 18.25 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div class="client-accounts-category__copy">
+          <h3>Individual clients</h3>
+          <p>{{ individual_client_count }} registered account{{ individual_client_count|pluralize }}</p>
+        </div>
+        <span class="client-accounts-category__badge">{{ individual_client_count }}</span>
+      </header>
+
+      <div class="client-accounts-category__body">
+        {% if individual_clients %}
+        <label class="client-accounts-filter" for="individual-client-filter">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.7"/>
+            <path d="m16 16 3.25 3.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+          <input
+            id="individual-client-filter"
+            type="search"
+            class="client-accounts-filter__input"
+            placeholder="Filter individual clients..."
+            autocomplete="off"
+            data-filter-list="individual-client-list"
+          >
+        </label>
+
+        <ul class="client-accounts-list" id="individual-client-list">
+          {% for client in individual_clients %}
+          <li class="client-accounts-list__item" data-search="{{ client.get_full_name|lower }} {{ client.phone|default:''|lower }} {{ client.email|lower }}">
+            <a class="client-accounts-row" href="{{ list_url }}?client={{ client.pk }}">
+              <span class="client-accounts-row__avatar client-accounts-row__avatar--individual" aria-hidden="true">
+                {{ client.first_name|slice:":1"|upper }}{{ client.last_name|slice:":1"|upper }}
+              </span>
+              <span class="client-accounts-row__main">
+                <strong>{{ client.get_full_name }}</strong>
+                <span>{{ client.phone|default:client.email }}</span>
+              </span>
+              <span class="client-accounts-row__chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                  <path d="m10 7 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="client-accounts-list__empty" id="individual-client-empty" hidden>No matching individual clients.</p>
+        {% else %}
+        <div class="client-accounts-empty">
+          <span class="client-accounts-empty__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <circle cx="12" cy="9" r="3.25" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M5.75 19c.7-3 3.1-4.75 6.25-4.75S17.55 16 18.25 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <p class="client-accounts-empty__title">No individual clients yet</p>
+          <p class="client-accounts-empty__text">Approved individual accounts will appear here.</p>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/client-accounts.js' %}" defer></script>
+{% endblock %}

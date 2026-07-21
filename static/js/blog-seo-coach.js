@@ -26,6 +26,8 @@
   const slugPreview = document.getElementById("blog-slug-preview");
   const titleCount = document.getElementById("blog-title-count");
   const wordCount = document.getElementById("blog-word-count");
+  const readingTime = document.getElementById("blog-reading-time");
+  const bodyPreview = document.getElementById("blog-body-preview");
   const metaTitleCount = document.getElementById("blog-meta-title-count");
   const metaDescCount = document.getElementById("blog-meta-desc-count");
   const clearCover = form.querySelector('input[name="clear_cover"]');
@@ -59,6 +61,110 @@
     return hasExistingCover;
   }
 
+  function insertFormatting(type) {
+    const body = fields.body;
+    if (!body) return;
+    const start = body.selectionStart;
+    const end = body.selectionEnd;
+    const selected = body.value.slice(start, end);
+    const formats = {
+      bold: `**${selected || "important text"}**`,
+      italic: `*${selected || "emphasised text"}*`,
+      heading: `\n## ${selected || "Section heading"}\n`,
+      bullet: selected
+        ? `\n${selected
+            .split("\n")
+            .map((line) => `- ${line.replace(/^-\s*/, "")}`)
+            .join("\n")}\n`
+        : "\n- First point\n- Second point\n",
+      quote: `\n> ${selected || "Quoted material — identify the source"}\n`,
+      link: `[${selected || "Source title"}](https://example.com)`,
+    };
+    const replacement = formats[type];
+    if (!replacement) return;
+    body.setRangeText(replacement, start, end, "end");
+    body.focus();
+    body.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function appendInline(parent, text) {
+    const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\(https?:\/\/[^)]+\))/g;
+    let cursor = 0;
+    for (const match of text.matchAll(pattern)) {
+      parent.append(document.createTextNode(text.slice(cursor, match.index)));
+      const token = match[0];
+      let node;
+      if (token.startsWith("**")) {
+        node = document.createElement("strong");
+        node.textContent = token.slice(2, -2);
+      } else if (token.startsWith("*")) {
+        node = document.createElement("em");
+        node.textContent = token.slice(1, -1);
+      } else {
+        const parts = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+        node = document.createElement("a");
+        node.textContent = parts[1];
+        node.href = parts[2];
+        node.target = "_blank";
+        node.rel = "noopener noreferrer";
+      }
+      parent.append(node);
+      cursor = match.index + token.length;
+    }
+    parent.append(document.createTextNode(text.slice(cursor)));
+  }
+
+  function renderBodyPreview() {
+    if (!bodyPreview || !fields.body) return;
+    bodyPreview.replaceChildren();
+    let list = null;
+    val(fields.body)
+      .split("\n")
+      .forEach((rawLine) => {
+        const line = rawLine.trim();
+        if (!line) {
+          list = null;
+          return;
+        }
+        let node;
+        let content = line;
+        if (/^#{2,3}\s/.test(line)) {
+          node = document.createElement(line.startsWith("### ") ? "h3" : "h2");
+          content = line.replace(/^#{2,3}\s+/, "");
+          list = null;
+        } else if (/^-\s/.test(line)) {
+          if (!list) {
+            list = document.createElement("ul");
+            bodyPreview.append(list);
+          }
+          node = document.createElement("li");
+          content = line.replace(/^-\s+/, "");
+          appendInline(node, content);
+          list.append(node);
+          return;
+        } else if (/^>\s?/.test(line)) {
+          node = document.createElement("blockquote");
+          content = line.replace(/^>\s?/, "");
+          list = null;
+        } else {
+          node = document.createElement("p");
+          list = null;
+        }
+        appendInline(node, content);
+        bodyPreview.append(node);
+      });
+  }
+
+  function setEditorView(view) {
+    const previewing = view === "preview";
+    fields.body.hidden = previewing;
+    bodyPreview.hidden = !previewing;
+    document.querySelectorAll("[data-blog-view]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.blogView === view);
+    });
+    if (previewing) renderBodyPreview();
+  }
+
   function evaluate() {
     const title = val(fields.title);
     const slug = val(fields.slug) || slugify(title);
@@ -73,6 +179,11 @@
       .filter(Boolean);
     const words = wordCountOf(body);
     const keywordSlug = keyword.toLowerCase().replace(/\s+/g, "-");
+    const headingCount = (body.match(/^#{2,3}\s+\S/gm) || []).length;
+    const keywordUses = keyword
+      ? body.toLowerCase().split(keyword.toLowerCase()).length - 1
+      : 0;
+    const keywordDensity = words ? (keywordUses / words) * 100 : 0;
 
     const checks = [
       {
@@ -119,6 +230,21 @@
         id: "body_length",
         ok: words >= 300,
         hint: `${words} words — longer, helpful posts tend to rank better.`,
+      },
+      {
+        id: "headings",
+        ok: headingCount >= 2,
+        hint: `${headingCount} headings — use at least two to structure the article.`,
+      },
+      {
+        id: "keyword_density",
+        ok: Boolean(keyword) && keywordDensity >= 0.2 && keywordDensity <= 3,
+        hint: `Used ${keywordUses} time(s) — avoid both omission and repetition.`,
+      },
+      {
+        id: "source_link",
+        ok: /https?:\/\/\S+/.test(body),
+        hint: "Link to a primary or authoritative source where possible.",
       },
       {
         id: "slug",
@@ -177,6 +303,10 @@
     if (wordCount) {
       wordCount.textContent = `${words} words — write at least 300 for stronger SEO.`;
     }
+    if (readingTime) {
+      const minutes = Math.max(1, Math.ceil(words / 200));
+      readingTime.textContent = `${minutes} minute${minutes === 1 ? "" : "s"} read`;
+    }
     if (metaTitleCount) {
       metaTitleCount.textContent = `${metaTitle.length} characters — ideal SEO title is 50–60.`;
     }
@@ -187,5 +317,15 @@
 
   form.addEventListener("input", evaluate);
   form.addEventListener("change", evaluate);
+  document.querySelectorAll("[data-blog-format]").forEach((button) => {
+    button.addEventListener("click", () => {
+      insertFormatting(button.dataset.blogFormat);
+    });
+  });
+  document.querySelectorAll("[data-blog-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setEditorView(button.dataset.blogView);
+    });
+  });
   evaluate();
 })();

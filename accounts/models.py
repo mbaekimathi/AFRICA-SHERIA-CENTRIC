@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.validators import RegexValidator
@@ -224,6 +226,13 @@ class Employee(AbstractUser):
     )
     bank_name = models.CharField(max_length=120, blank=True, default="")
     bank_account_number = models.CharField(max_length=64, blank=True, default="")
+    monthly_salary = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Gross monthly salary used for payroll.",
+    )
 
     # Compliance documents (collected during onboarding)
     employment_contract = models.FileField(
@@ -315,6 +324,31 @@ class Employee(AbstractUser):
             if name and name not in variants:
                 variants.append(name)
         return variants or [self.login_code]
+
+    def payroll_payout_destination(self) -> str:
+        """Human-readable payout destination for payroll listings."""
+        if self.payment_method == self.PaymentMethod.MOBILE:
+            parts = [
+                (self.mobile_money_company or "").strip(),
+                (self.mobile_money_number or "").strip(),
+            ]
+            label = " · ".join(part for part in parts if part)
+            return label or "—"
+        if self.payment_method == self.PaymentMethod.BANK:
+            parts = [
+                (self.bank_name or "").strip(),
+                (self.bank_account_number or "").strip(),
+            ]
+            label = " · ".join(part for part in parts if part)
+            return label or "—"
+        if self.payment_method == self.PaymentMethod.CASH:
+            return "Cash payout"
+        return "—"
+
+    def payroll_salary_display(self) -> str:
+        if self.monthly_salary is None:
+            return "—"
+        return f"KES {self.monthly_salary:,.2f}"
 
     # URL slug for /<role>/... paths
     ROLE_URL_SLUGS = {
@@ -545,6 +579,10 @@ class EmployeeBlogPost(models.Model):
         body_lower = body.lower()
         words = self.word_count
         slug = (self.slug or "").strip()
+        heading_count = len(re.findall(r"^#{2,3}\s+\S", body, flags=re.MULTILINE))
+        keyword_uses = body_lower.count(keyword) if keyword else 0
+        keyword_density = (keyword_uses / words * 100) if words else 0
+        has_source_link = bool(re.search(r"https?://\S+", body))
 
         def has_keyword(haystack: str) -> bool:
             return bool(keyword) and keyword in (haystack or "").lower()
@@ -605,6 +643,26 @@ class EmployeeBlogPost(models.Model):
                 "hint": f"{words} words — longer, helpful posts tend to rank better.",
             },
             {
+                "id": "headings",
+                "label": "Article uses descriptive headings",
+                "ok": heading_count >= 2,
+                "hint": f"{heading_count} headings — use at least two to structure the article.",
+            },
+            {
+                "id": "keyword_density",
+                "label": "Focus keyword usage is natural",
+                "ok": bool(keyword) and 0.2 <= keyword_density <= 3,
+                "hint": (
+                    f"Used {keyword_uses} time(s) — avoid both omission and repetition."
+                ),
+            },
+            {
+                "id": "source_link",
+                "label": "An external source is cited",
+                "ok": has_source_link,
+                "hint": "Link to a primary or authoritative source where possible.",
+            },
+            {
                 "id": "slug",
                 "label": "URL slug is set",
                 "ok": bool(slug),
@@ -633,6 +691,90 @@ class EmployeeBlogPost(models.Model):
         passed = sum(1 for c in checks if c["ok"])
         score = int(round((passed / len(checks)) * 100)) if checks else 0
         return {"checks": checks, "score": score, "passed": passed, "total": len(checks)}
+
+    def web_analytics(self, *, days: int = 30) -> dict:
+        """Aggregate public website views and enquiry conversions for this post."""
+        from datetime import timedelta
+
+        from django.db.models import Count
+        from django.db.models.functions import TruncDate
+        from django.utils import timezone
+
+        since = timezone.now() - timedelta(days=max(1, int(days)))
+        events = BlogPostEvent.objects.filter(post=self, created_at__gte=since)
+        totals = {
+            row["event_type"]: row["total"]
+            for row in events.values("event_type").annotate(total=Count("id"))
+        }
+        views = int(totals.get(BlogPostEvent.EventType.VIEW, 0))
+        whatsapp = int(totals.get(BlogPostEvent.EventType.CTA_WHATSAPP, 0))
+        contact = int(totals.get(BlogPostEvent.EventType.CTA_CONTACT, 0))
+        related = int(totals.get(BlogPostEvent.EventType.RELATED_CLICK, 0))
+        conversions = whatsapp + contact
+        conversion_rate = round((conversions / views) * 100, 1) if views else 0.0
+        unique_visitors = (
+            events.filter(event_type=BlogPostEvent.EventType.VIEW)
+            .exclude(session_key="")
+            .values("session_key")
+            .distinct()
+            .count()
+        )
+        daily_views = list(
+            events.filter(event_type=BlogPostEvent.EventType.VIEW)
+            .annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(total=Count("id"))
+            .order_by("day")
+        )
+        recent = list(
+            events.order_by("-created_at", "-id")[:12].values(
+                "event_type", "created_at", "referrer"
+            )
+        )
+        return {
+            "days": days,
+            "since": since,
+            "views": views,
+            "unique_visitors": unique_visitors,
+            "whatsapp_clicks": whatsapp,
+            "contact_clicks": contact,
+            "related_clicks": related,
+            "interactions": whatsapp + contact + related,
+            "conversions": conversions,
+            "conversion_rate": conversion_rate,
+            "daily_views": daily_views,
+            "recent_events": recent,
+        }
+
+
+class BlogPostEvent(models.Model):
+    """Privacy-safe public website interaction for a published blog post."""
+
+    class EventType(models.TextChoices):
+        VIEW = "view", "Page view"
+        CTA_WHATSAPP = "cta_whatsapp", "WhatsApp enquire"
+        CTA_CONTACT = "cta_contact", "Contact the firm"
+        RELATED_CLICK = "related_click", "Related article click"
+
+    post = models.ForeignKey(
+        EmployeeBlogPost,
+        on_delete=models.CASCADE,
+        related_name="web_events",
+    )
+    event_type = models.CharField(max_length=32, choices=EventType.choices)
+    session_key = models.CharField(max_length=64, blank=True, default="")
+    referrer = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["post", "event_type", "-created_at"]),
+            models.Index(fields=["post", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type} on post {self.post_id}"
 
 
 class Client(models.Model):
@@ -2567,6 +2709,333 @@ class Invoice(models.Model):
         return f"{prefix}{seq:04d}"
 
 
+class PayrollRun(models.Model):
+    """A registered payroll period for an employee with deductions."""
+
+    class Status(models.TextChoices):
+        REGISTERED = "registered", "Registered"
+        PAID = "paid", "Paid"
+
+    class PayFrequency(models.TextChoices):
+        DAILY = "daily", "Daily"
+        WEEKLY = "weekly", "Weekly"
+        MONTHLY = "monthly", "Monthly"
+        ANNUALLY = "annually", "Annually"
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.PROTECT,
+        related_name="payroll_runs",
+    )
+    pay_frequency = models.CharField(
+        max_length=16,
+        choices=PayFrequency.choices,
+        default=PayFrequency.MONTHLY,
+    )
+    pay_period_start = models.DateField()
+    pay_period_end = models.DateField()
+
+    # Earnings (add-ons)
+    basic_salary = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    house_allowance = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    transport_allowance = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    medical_allowance = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    other_allowances = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    bonuses_overtime_commissions = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    gross_salary = models.DecimalField(max_digits=14, decimal_places=2)
+
+    # Editable statutory rates (snapshotted per run)
+    nssf_employee_rate = models.DecimalField(
+        max_digits=6, decimal_places=2, default=6
+    )
+    nssf_employer_rate = models.DecimalField(
+        max_digits=6, decimal_places=2, default=1.5
+    )
+    nssf_tier1_limit = models.DecimalField(
+        max_digits=14, decimal_places=2, default=7000
+    )
+    nssf_pensionable_cap = models.DecimalField(
+        max_digits=14, decimal_places=2, default=36000
+    )
+    shif_rate = models.DecimalField(max_digits=6, decimal_places=2, default=2.75)
+    housing_levy_employee_rate = models.DecimalField(
+        max_digits=6, decimal_places=2, default=1.5
+    )
+    housing_levy_employer_rate = models.DecimalField(
+        max_digits=6, decimal_places=2, default=1.5
+    )
+    paye_personal_relief = models.DecimalField(
+        max_digits=14, decimal_places=2, default=2400
+    )
+    paye_band_1_max = models.DecimalField(
+        max_digits=14, decimal_places=2, default=24000
+    )
+    paye_band_1_rate = models.DecimalField(
+        max_digits=6, decimal_places=2, default=10
+    )
+    paye_band_2_max = models.DecimalField(
+        max_digits=14, decimal_places=2, default=32333
+    )
+    paye_band_2_rate = models.DecimalField(
+        max_digits=6, decimal_places=2, default=25
+    )
+    paye_band_3_max = models.DecimalField(
+        max_digits=14, decimal_places=2, default=500000
+    )
+    paye_band_3_rate = models.DecimalField(
+        max_digits=6, decimal_places=2, default=30
+    )
+    paye_band_4_rate = models.DecimalField(
+        max_digits=6, decimal_places=2, default=35
+    )
+
+    # Calculated employee deductions
+    nssf_employee_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    shif_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    housing_levy_employee_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    paye_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    taxable_income = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    total_deductions = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
+    net_pay = models.DecimalField(max_digits=14, decimal_places=2)
+
+    # Employer-only costs
+    nssf_employer_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    housing_levy_employer_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    nita_levy_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=50
+    )
+    wiba_insurance_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+    total_employer_cost = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
+
+    payment_method = models.CharField(max_length=16, blank=True, default="")
+    payment_method_label = models.CharField(max_length=64, blank=True, default="")
+    payout_destination = models.CharField(max_length=255, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.REGISTERED,
+    )
+    registered_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payroll_runs_registered",
+    )
+    registered_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-pay_period_end", "-registered_at", "-id"]
+        verbose_name = "Payroll run"
+        verbose_name_plural = "Payroll runs"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "pay_frequency", "pay_period_start"],
+                name="unique_payroll_period_per_employee",
+            )
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.employee} · {self.get_pay_frequency_display()} "
+            f"{self.pay_period_start:%d %b %Y} "
+            f"({self.get_status_display()})"
+        )
+
+    def recalculate_totals(self, *, save=True):
+        from .payroll_calc import PayrollEarnings, PayrollRates, calculate_payroll
+
+        breakdown = calculate_payroll(
+            PayrollEarnings(
+                basic_salary=self.basic_salary,
+                house_allowance=self.house_allowance,
+                transport_allowance=self.transport_allowance,
+                medical_allowance=self.medical_allowance,
+                other_allowances=self.other_allowances,
+                bonuses_overtime_commissions=self.bonuses_overtime_commissions,
+            ),
+            PayrollRates(
+                nssf_employee_rate=self.nssf_employee_rate,
+                nssf_employer_rate=self.nssf_employer_rate,
+                nssf_tier1_limit=self.nssf_tier1_limit,
+                nssf_pensionable_cap=self.nssf_pensionable_cap,
+                shif_rate=self.shif_rate,
+                housing_levy_employee_rate=self.housing_levy_employee_rate,
+                housing_levy_employer_rate=self.housing_levy_employer_rate,
+                paye_personal_relief=self.paye_personal_relief,
+                paye_band_1_max=self.paye_band_1_max,
+                paye_band_1_rate=self.paye_band_1_rate,
+                paye_band_2_max=self.paye_band_2_max,
+                paye_band_2_rate=self.paye_band_2_rate,
+                paye_band_3_max=self.paye_band_3_max,
+                paye_band_3_rate=self.paye_band_3_rate,
+                paye_band_4_rate=self.paye_band_4_rate,
+                nita_levy_amount=self.nita_levy_amount,
+                wiba_insurance_amount=self.wiba_insurance_amount,
+            ),
+        )
+        self.gross_salary = breakdown.gross_salary
+        self.nssf_employee_amount = breakdown.nssf_employee_amount
+        self.shif_amount = breakdown.shif_amount
+        self.housing_levy_employee_amount = breakdown.housing_levy_employee_amount
+        self.paye_amount = breakdown.paye_amount
+        self.taxable_income = breakdown.taxable_income
+        self.total_deductions = breakdown.total_employee_deductions
+        self.net_pay = breakdown.net_pay
+        self.nssf_employer_amount = breakdown.nssf_employer_amount
+        self.housing_levy_employer_amount = breakdown.housing_levy_employer_amount
+        self.total_employer_cost = breakdown.total_employer_cost
+        if save:
+            self.save()
+
+    def sync_deduction_lines(self):
+        """Persist statutory amounts as deduction line items."""
+        mapping = [
+            (PayrollDeduction.DeductionType.NSSF, self.nssf_employee_amount),
+            (PayrollDeduction.DeductionType.NHIF_SHIF, self.shif_amount),
+            (PayrollDeduction.DeductionType.OTHER, self.housing_levy_employee_amount, "Housing Levy"),
+            (PayrollDeduction.DeductionType.PAYE, self.paye_amount),
+        ]
+        self.deductions.all().delete()
+        for entry in mapping:
+            if len(entry) == 3:
+                dtype, amount, label = entry
+            else:
+                dtype, amount = entry
+                label = ""
+            if amount and amount > 0:
+                PayrollDeduction.objects.create(
+                    payroll_run=self,
+                    deduction_type=dtype,
+                    description=label,
+                    amount=amount,
+                )
+
+
+class PayrollPayment(models.Model):
+    """A payment record against a payroll run, generating a receipt."""
+
+    receipt_number = models.CharField(max_length=40, unique=True)
+    payroll_run = models.ForeignKey(
+        PayrollRun,
+        on_delete=models.CASCADE,
+        related_name="payments",
+    )
+    amount_paid = models.DecimalField(max_digits=14, decimal_places=2)
+    reference_code = models.CharField(max_length=100)
+    paid_at = models.DateTimeField(auto_now_add=True)
+    recorded_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payroll_payments_recorded",
+    )
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-paid_at"]
+        verbose_name = "Payroll payment"
+        verbose_name_plural = "Payroll payments"
+
+    def __str__(self):
+        return f"{self.receipt_number} — {self.payroll_run.employee}"
+
+    @classmethod
+    def next_receipt_number(cls):
+        today = timezone.localdate()
+        prefix = f"PAY-{today.strftime('%Y%m%d')}-"
+        latest = (
+            cls.objects.filter(receipt_number__startswith=prefix)
+            .order_by("-receipt_number")
+            .values_list("receipt_number", flat=True)
+            .first()
+        )
+        if latest:
+            try:
+                seq = int(latest.rsplit("-", 1)[-1]) + 1
+            except ValueError:
+                seq = 1
+        else:
+            seq = 1
+        return f"{prefix}{seq:04d}"
+
+
+class PayrollDeduction(models.Model):
+    """A deduction line on a payroll run."""
+
+    class DeductionType(models.TextChoices):
+        PAYE = "paye", "PAYE"
+        NSSF = "nssf", "NSSF"
+        NHIF_SHIF = "nhif_shif", "NHIF / SHIF"
+        PENSION = "pension", "Pension"
+        LOAN = "loan", "Loan repayment"
+        ADVANCE = "advance", "Salary advance"
+        OTHER = "other", "Other"
+
+    payroll_run = models.ForeignKey(
+        PayrollRun,
+        on_delete=models.CASCADE,
+        related_name="deductions",
+    )
+    deduction_type = models.CharField(
+        max_length=16,
+        choices=DeductionType.choices,
+    )
+    description = models.CharField(max_length=120, blank=True, default="")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        ordering = ["id"]
+        verbose_name = "Payroll deduction"
+        verbose_name_plural = "Payroll deductions"
+
+    def __str__(self):
+        return f"{self.display_label} — KES {self.amount:,.2f}"
+
+    @property
+    def display_label(self) -> str:
+        if self.deduction_type == self.DeductionType.OTHER and self.description:
+            return self.description
+        return self.get_deduction_type_display()
+
+
 class MpesaStkRequest(models.Model):
     """Tracks an STK push against an invoice until success or failure."""
 
@@ -2604,6 +3073,180 @@ class MpesaStkRequest(models.Model):
 
     def __str__(self):
         return f"{self.checkout_request_id} ({self.status})"
+
+
+class NewsSearchJob(models.Model):
+    """Persistent progress and result state for a cancellable news search."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        SUCCEEDED = "succeeded", "Succeeded"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    requested_by = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="news_search_jobs",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.QUEUED,
+    )
+    progress = models.PositiveSmallIntegerField(default=0)
+    progress_label = models.CharField(max_length=160, blank=True, default="Queued")
+    filters = models.JSONField(default=dict)
+    result = models.JSONField(default=dict, blank=True)
+    error = models.CharField(max_length=500, blank=True, default="")
+    cancel_requested = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["requested_by", "status", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"News search {self.pk} ({self.status}, {self.progress}%)"
+
+
+class SystemRequestMetric(models.Model):
+    """Privacy-safe request and database timing used by IT diagnostics."""
+
+    endpoint = models.CharField(max_length=255)
+    method = models.CharField(max_length=8)
+    status_code = models.PositiveSmallIntegerField()
+    duration_ms = models.FloatField()
+    db_duration_ms = models.FloatField(default=0)
+    db_query_count = models.PositiveIntegerField(default=0)
+    response_bytes = models.PositiveBigIntegerField(default=0)
+    user_role = models.CharField(max_length=32, blank=True, default="")
+    error_type = models.CharField(max_length=120, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["-created_at"],
+                name="system_metric_created_idx",
+            ),
+            models.Index(
+                fields=["endpoint", "-created_at"],
+                name="system_metric_route_idx",
+            ),
+            models.Index(
+                fields=["status_code", "-created_at"],
+                name="system_metric_status_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.method} {self.endpoint} "
+            f"{self.status_code} ({self.duration_ms:.0f} ms)"
+        )
+
+
+class NewsWatch(models.Model):
+    """A saved news search or publisher subscription with its own schedule."""
+
+    class Kind(models.TextChoices):
+        SEARCH = "search", "Saved search"
+        PUBLISHER = "publisher", "Publisher"
+
+    class Frequency(models.TextChoices):
+        HOURLY = "1h", "Every hour"
+        SIX_HOURS = "6h", "Every 6 hours"
+        DAILY = "24h", "Daily"
+
+    requested_by = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="news_watches",
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    name = models.CharField(max_length=180)
+    key = models.CharField(max_length=64)
+    filters = models.JSONField(default=dict)
+    publisher_domain = models.CharField(max_length=180, blank=True, default="")
+    frequency = models.CharField(
+        max_length=8,
+        choices=Frequency.choices,
+        default=Frequency.DAILY,
+    )
+    is_active = models.BooleanField(default=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    next_check_at = models.DateTimeField(null=True, blank=True)
+    check_started_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["requested_by", "key"],
+                name="unique_employee_news_watch",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["is_active", "next_check_at"],
+                name="news_watch_due_idx",
+            ),
+            models.Index(
+                fields=["requested_by", "is_active"],
+                name="news_watch_owner_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_kind_display()})"
+
+
+class NewsWatchArticle(models.Model):
+    """An article already observed for a watch, used for notification deduplication."""
+
+    watch = models.ForeignKey(
+        NewsWatch,
+        on_delete=models.CASCADE,
+        related_name="articles",
+    )
+    fingerprint = models.CharField(max_length=64)
+    title = models.CharField(max_length=500)
+    url = models.URLField(max_length=1000)
+    source_name = models.CharField(max_length=180, blank=True, default="")
+    published_at = models.CharField(max_length=100, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    article_data = models.JSONField(default=dict, blank=True)
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    notified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-first_seen_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["watch", "fingerprint"],
+                name="unique_news_watch_article",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["watch", "-first_seen_at"],
+                name="news_watch_article_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.title} — {self.watch.name}"
 
 
 class FinanceSettings(models.Model):
@@ -2749,3 +3392,351 @@ class FinanceSettings(models.Model):
             and self.mpesa_passkey.strip()
             and self.stk_business_shortcode
         )
+
+
+class CommunicationSettings(models.Model):
+    """
+    Firm-wide email, SMS, and WhatsApp provider configuration (singleton, pk=1).
+    """
+
+    class SmsProvider(models.TextChoices):
+        NONE = "none", "Not set"
+        AFRICASTALKING = "africastalking", "Africa's Talking"
+        TWILIO = "twilio", "Twilio"
+
+    class WhatsAppProvider(models.TextChoices):
+        NONE = "none", "Not set"
+        META = "meta", "Meta Cloud API"
+        TWILIO = "twilio", "Twilio"
+
+    # --- Email (SMTP) ---
+    email_enabled = models.BooleanField(default=False)
+    email_host = models.CharField(max_length=255, blank=True, default="")
+    email_port = models.PositiveIntegerField(default=587)
+    email_use_tls = models.BooleanField(default=True)
+    email_use_ssl = models.BooleanField(default=False)
+    email_host_user = models.CharField(max_length=255, blank=True, default="")
+    email_host_password = models.CharField(max_length=255, blank=True, default="")
+    email_from_email = models.EmailField(blank=True, default="")
+    email_from_name = models.CharField(max_length=120, blank=True, default="")
+
+    @staticmethod
+    def smtp_security_for_port(port: int | None) -> tuple[bool, bool]:
+        """
+        Auto-select SMTP security from port.
+        Returns (use_tls, use_ssl).
+        """
+        try:
+            port_n = int(port or 0)
+        except (TypeError, ValueError):
+            port_n = 0
+        if port_n in {465, 994}:
+            return False, True
+        # 587 / 2587 / 25 and anything else: prefer STARTTLS
+        return True, False
+
+    @staticmethod
+    def smtp_security_label(port: int | None) -> str:
+        use_tls, use_ssl = CommunicationSettings.smtp_security_for_port(port)
+        if use_ssl:
+            return "SSL (auto)"
+        if use_tls:
+            return "TLS (auto)"
+        return "None"
+
+    @property
+    def email_security_label(self) -> str:
+        return self.smtp_security_label(self.email_port)
+
+    # --- SMS ---
+    sms_enabled = models.BooleanField(default=False)
+    sms_provider = models.CharField(
+        max_length=32,
+        choices=SmsProvider.choices,
+        default=SmsProvider.NONE,
+    )
+    sms_username = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Africa's Talking username (or Twilio Account SID).",
+    )
+    sms_api_key = models.CharField(max_length=255, blank=True, default="")
+    sms_api_secret = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Twilio Auth Token when using Twilio.",
+    )
+    sms_sender_id = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Sender ID or from-number shown on SMS.",
+    )
+
+    # --- WhatsApp ---
+    whatsapp_enabled = models.BooleanField(default=False)
+    whatsapp_business_number = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Business WhatsApp number for click-to-chat (e.g. +2547…).",
+    )
+    whatsapp_default_message = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Pre-filled message when opening WhatsApp chat.",
+    )
+    whatsapp_api_enabled = models.BooleanField(default=False)
+    whatsapp_provider = models.CharField(
+        max_length=32,
+        choices=WhatsAppProvider.choices,
+        default=WhatsAppProvider.NONE,
+    )
+    whatsapp_api_token = models.CharField(max_length=512, blank=True, default="")
+    whatsapp_phone_number_id = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Meta Phone Number ID, or Twilio WhatsApp sender.",
+    )
+    whatsapp_webhook_url = models.URLField(blank=True, default="")
+
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="communication_settings_updates",
+    )
+
+    class Meta:
+        verbose_name = "Communication settings"
+        verbose_name_plural = "Communication settings"
+
+    def __str__(self):
+        channels = []
+        if self.email_enabled:
+            channels.append("Email")
+        if self.sms_enabled:
+            channels.append("SMS")
+        if self.whatsapp_enabled:
+            channels.append("WhatsApp")
+        return "Communication settings (" + (", ".join(channels) or "none") + ")"
+
+    @classmethod
+    def get_solo(cls):
+        obj, created = cls.objects.get_or_create(pk=1)
+        if created:
+            from django.conf import settings as django_settings
+
+            host = getattr(django_settings, "EMAIL_HOST", "") or ""
+            user = getattr(django_settings, "EMAIL_HOST_USER", "") or ""
+            password = getattr(django_settings, "EMAIL_HOST_PASSWORD", "") or ""
+            from_email = getattr(django_settings, "DEFAULT_FROM_EMAIL", "") or ""
+            port = getattr(django_settings, "EMAIL_PORT", None)
+            use_tls = getattr(django_settings, "EMAIL_USE_TLS", None)
+            use_ssl = getattr(django_settings, "EMAIL_USE_SSL", None)
+            if host or user or from_email:
+                obj.email_enabled = True
+                obj.email_host = host
+                obj.email_host_user = user
+                obj.email_host_password = password
+                obj.email_from_email = from_email
+                if port is not None:
+                    try:
+                        obj.email_port = int(port)
+                    except (TypeError, ValueError):
+                        pass
+                if use_tls is not None:
+                    obj.email_use_tls = bool(use_tls)
+                if use_ssl is not None:
+                    obj.email_use_ssl = bool(use_ssl)
+                obj.save()
+        return obj
+
+    @property
+    def enabled_channels(self) -> list[str]:
+        labels = []
+        if self.email_enabled:
+            labels.append("Email")
+        if self.sms_enabled:
+            labels.append("SMS")
+        if self.whatsapp_enabled:
+            labels.append("WhatsApp")
+        return labels
+
+    @property
+    def email_ready(self) -> bool:
+        return bool(
+            self.email_enabled
+            and self.email_host.strip()
+            and self.email_from_email.strip()
+            and self.email_port
+        )
+
+    @property
+    def sms_ready(self) -> bool:
+        if not self.sms_enabled:
+            return False
+        if self.sms_provider == self.SmsProvider.AFRICASTALKING:
+            return bool(
+                self.sms_username.strip()
+                and self.sms_api_key.strip()
+                and self.sms_sender_id.strip()
+            )
+        if self.sms_provider == self.SmsProvider.TWILIO:
+            return bool(
+                self.sms_username.strip()
+                and self.sms_api_secret.strip()
+                and self.sms_sender_id.strip()
+            )
+        return False
+
+    @property
+    def whatsapp_ready(self) -> bool:
+        if not self.whatsapp_enabled:
+            return False
+        if self.whatsapp_api_enabled:
+            return bool(
+                self.whatsapp_provider != self.WhatsAppProvider.NONE
+                and self.whatsapp_api_token.strip()
+                and self.whatsapp_phone_number_id.strip()
+            )
+        return bool(self.whatsapp_business_number.strip())
+
+
+class RoleActivityPermission(models.Model):
+    """Per-role lock for a system-module activity (default allow when no row)."""
+
+    role = models.CharField(max_length=32, choices=Employee.Role.choices)
+    module_slug = models.SlugField(max_length=64)
+    activity_slug = models.SlugField(max_length=64)
+    is_allowed = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="role_activity_permission_updates",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["role", "module_slug", "activity_slug"],
+                name="uniq_role_module_activity_permission",
+            )
+        ]
+        ordering = ["module_slug", "activity_slug", "role"]
+        verbose_name = "Role activity permission"
+        verbose_name_plural = "Role activity permissions"
+
+    def __str__(self):
+        state = "allowed" if self.is_allowed else "locked"
+        return f"{self.role} / {self.module_slug}/{self.activity_slug}: {state}"
+
+
+class EmployeeActivityPermission(models.Model):
+    """Per-employee action lock within a system-module activity."""
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="activity_action_permissions",
+    )
+    module_slug = models.SlugField(max_length=64)
+    activity_slug = models.SlugField(max_length=64)
+    action = models.CharField(max_length=32)
+    is_allowed = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="employee_activity_permission_updates",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "module_slug", "activity_slug", "action"],
+                name="uniq_employee_module_activity_action",
+            )
+        ]
+        ordering = ["module_slug", "activity_slug", "employee_id", "action"]
+        verbose_name = "Employee activity permission"
+        verbose_name_plural = "Employee activity permissions"
+
+    def __str__(self):
+        state = "allowed" if self.is_allowed else "locked"
+        return (
+            f"{self.employee_id} / {self.module_slug}/{self.activity_slug}"
+            f"/{self.action}: {state}"
+        )
+
+
+class EmployeeWorkSession(models.Model):
+    """Login, logout, and active working time for an employee workspace session."""
+
+    class LogoutKind(models.TextChoices):
+        MANUAL = "manual", "Signed out"
+        EXPIRED = "expired", "Session expired"
+        REPLACED = "replaced", "New login"
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="work_sessions",
+    )
+    session_key = models.CharField(max_length=64, blank=True, default="")
+    login_at = models.DateTimeField()
+    logout_at = models.DateTimeField(blank=True, null=True)
+    last_active_at = models.DateTimeField()
+    working_seconds = models.PositiveIntegerField(default=0)
+    logout_kind = models.CharField(
+        max_length=16,
+        choices=LogoutKind.choices,
+        blank=True,
+        default="",
+    )
+
+    class Meta:
+        ordering = ["-login_at", "-id"]
+        indexes = [
+            models.Index(fields=["employee", "-login_at"]),
+            models.Index(fields=["session_key", "logout_at"]),
+        ]
+        verbose_name = "Employee work session"
+        verbose_name_plural = "Employee work sessions"
+
+    def __str__(self):
+        label = self.employee.get_full_name() if self.employee_id else "Employee"
+        return f"{label} session from {self.login_at:%Y-%m-%d %H:%M}"
+
+    @property
+    def is_active(self) -> bool:
+        return self.logout_at is None
+
+    @property
+    def duration_seconds(self) -> int:
+        end = self.logout_at or timezone.now()
+        return max(0, int((end - self.login_at).total_seconds()))
+
+    @property
+    def live_working_seconds(self) -> int:
+        total = self.working_seconds or 0
+        if not self.is_active or not self.last_active_at:
+            return total
+        gap = (timezone.now() - self.last_active_at).total_seconds()
+        if gap <= IDLE_TIMEOUT_SECONDS:
+            total += int(gap)
+        return total
+
+
+IDLE_TIMEOUT_SECONDS = 15 * 60

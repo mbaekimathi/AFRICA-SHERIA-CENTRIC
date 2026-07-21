@@ -1,0 +1,136 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page roles-permissions-page roles-access-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <nav class="roles-crumb" aria-label="Breadcrumb">
+        <a href="{{ roles_permissions_url }}">Roles &amp; Permissions</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ module_url }}">{{ module.label }}</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{{ activity.label }}</span>
+      </nav>
+      <p class="page-kicker">{{ module.label }}</p>
+      <h2>{{ activity.label }}</h2>
+      <p class="page-lead">{{ activity.path }}</p>
+      <p class="roles-access-summary">
+        {{ allowed_role_count }} allowed · {{ locked_role_count }} locked ·
+        {{ total_employee_count }} employee{{ total_employee_count|pluralize }}
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ module_url }}" class="btn btn--quiet btn--inline">Back</a>
+      {% if activity_open_url %}
+      <a href="{{ activity_open_url }}" class="btn btn--primary btn--inline">Open activity</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="roles-access-block">
+    <ul class="roles-access-list">
+      {% for group in role_groups %}
+      <li class="roles-access-group{% if not group.is_allowed %} is-locked{% endif %}">
+        <div class="roles-access-group__head">
+          <div class="roles-access-group__title">
+            <strong>{{ group.label }}</strong>
+            <span>{{ group.employee_count }} employee{{ group.employee_count|pluralize }}</span>
+          </div>
+          <form method="post" class="roles-access-toggle">
+            {% csrf_token %}
+            <input type="hidden" name="permission_action" value="role">
+            <input type="hidden" name="role" value="{{ group.role }}">
+            <label class="roles-switch roles-switch--role" title="Toggle {{ group.label }} access">
+              <input
+                type="checkbox"
+                name="is_allowed"
+                value="1"
+                {% if group.is_allowed %}checked{% endif %}
+                onchange="this.form.submit()"
+              >
+              <span class="roles-switch__track" aria-hidden="true"></span>
+              <span class="visually-hidden">
+                {% if group.is_allowed %}Allow{% else %}Lock{% endif %} {{ group.label }}
+              </span>
+            </label>
+          </form>
+        </div>
+
+        {% if group.is_allowed and group.members %}
+        <div class="roles-perm-matrix-wrap">
+          <table class="roles-perm-matrix">
+            <thead>
+              <tr>
+                <th scope="col" class="roles-perm-matrix__name-col">Employee</th>
+                {% for action in activity_actions %}
+                <th scope="col" class="roles-perm-matrix__action-col">
+                  <span class="roles-perm-matrix__action-label">{{ action.label }}</span>
+                </th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for member in group.members %}
+              <tr>
+                <th scope="row" class="roles-perm-matrix__name-col">
+                  <div class="roles-perm-matrix__person">
+                    {% if member.employee.profile_photo %}
+                    <img
+                      class="avatar avatar--xs"
+                      src="{{ member.employee.profile_photo.url }}"
+                      alt=""
+                    >
+                    {% else %}
+                    <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                      {{ member.employee.first_name|slice:":1"|upper }}{{ member.employee.last_name|slice:":1"|upper }}
+                    </div>
+                    {% endif %}
+                    <span class="roles-perm-matrix__person-name">
+                      {{ member.employee.get_full_name|default:member.employee.login_code }}
+                    </span>
+                  </div>
+                </th>
+                {% for action in member.actions %}
+                <td class="roles-perm-matrix__cell{% if action.is_allowed %} is-on{% else %} is-off{% endif %}">
+                  <form method="post" class="roles-action-toggle">
+                    {% csrf_token %}
+                    <input type="hidden" name="permission_action" value="employee_action">
+                    <input type="hidden" name="employee_id" value="{{ member.employee.pk }}">
+                    <input type="hidden" name="action" value="{{ action.slug }}">
+                    <label
+                      class="roles-switch roles-switch--matrix"
+                      title="{{ action.label }} for {{ member.employee.get_full_name|default:member.employee.login_code }}"
+                    >
+                      <input
+                        type="checkbox"
+                        name="is_allowed"
+                        value="1"
+                        {% if action.is_allowed %}checked{% endif %}
+                        onchange="this.form.submit()"
+                      >
+                      <span class="roles-switch__track" aria-hidden="true"></span>
+                      <span class="visually-hidden">
+                        {% if action.is_allowed %}Allow{% else %}Lock{% endif %} {{ action.label }}
+                      </span>
+                    </label>
+                  </form>
+                </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% elif group.is_allowed %}
+        <p class="roles-access-empty">No employees assigned to this role.</p>
+        {% else %}
+        <p class="roles-access-empty">Enable this role to set employee permissions.</p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endblock %}

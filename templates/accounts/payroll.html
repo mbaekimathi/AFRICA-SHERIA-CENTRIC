@@ -1,0 +1,164 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="payroll-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Click an employee row to open their payroll account and view all transactions.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ register_payroll_url }}" class="btn btn--primary btn--inline">Register payroll</a>
+    </div>
+  </header>
+  <div class="metrics metrics--dash">
+    <div class="metric metric--glass">
+      <p class="metric__label">Employees</p>
+      <p class="metric__value">{{ employee_count }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Salaries configured</p>
+      <p class="metric__value">{{ configured_salary_count }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Total monthly payroll</p>
+      <p class="metric__value">KES {{ total_monthly_salary|floatformat:2 }}</p>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Payroll register</h3>
+      <p class="panel__hint">{{ employee_count }} employee(s) &middot; {{ payroll_run_count }} run(s)</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if employee_rows %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Employee</th>
+              <th scope="col">Role</th>
+              <th scope="col">Status</th>
+              <th scope="col">Payroll status</th>
+              <th scope="col">Runs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if unregistered_rows %}
+            <tr class="data-table__section-row">
+              <td colspan="5">
+                <span class="data-table__section-label data-table__section-label--warn">Not registered</span>
+                <span class="data-table__section-count">{{ unregistered_rows|length }}</span>
+              </td>
+            </tr>
+            {% for row in unregistered_rows %}
+            <tr
+              class="is-clickable-row"
+              data-href="{{ row.detail_url }}"
+              tabindex="0"
+              role="link"
+              aria-label="View payroll for {{ row.employee.get_full_name|default:row.employee.login_code }}"
+            >
+              <td>
+                <div class="person-cell">
+                  {% if row.employee.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ row.employee.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {{ row.employee.first_name|slice:":1"|upper }}{{ row.employee.last_name|slice:":1"|upper }}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <a href="{{ row.detail_url }}" class="person-cell__name person-cell__name--link">
+                      {{ row.employee.get_full_name|default:row.employee.login_code }}
+                    </a>
+                    <span class="person-cell__meta">{{ row.employee.personal_email }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>{{ row.employee.get_role_display }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ row.employee.status }}">
+                  {{ row.employee.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <span class="status-pill status-pill--not-registered">{{ row.payroll_status_label }}</span>
+              </td>
+              <td class="muted">—</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+
+            {% if registered_rows %}
+            <tr class="data-table__section-row">
+              <td colspan="5">
+                <span class="data-table__section-label">Registered</span>
+                <span class="data-table__section-count">{{ registered_rows|length }}</span>
+              </td>
+            </tr>
+            {% for row in registered_rows %}
+            <tr
+              class="is-clickable-row"
+              data-href="{{ row.detail_url }}"
+              tabindex="0"
+              role="link"
+              aria-label="View payroll for {{ row.employee.get_full_name|default:row.employee.login_code }}"
+            >
+              <td>
+                <div class="person-cell">
+                  {% if row.employee.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ row.employee.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {{ row.employee.first_name|slice:":1"|upper }}{{ row.employee.last_name|slice:":1"|upper }}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <a href="{{ row.detail_url }}" class="person-cell__name person-cell__name--link">
+                      {{ row.employee.get_full_name|default:row.employee.login_code }}
+                    </a>
+                    <span class="person-cell__meta">{{ row.employee.personal_email }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>{{ row.employee.get_role_display }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ row.employee.status }}">
+                  {{ row.employee.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <span class="status-pill status-pill--{{ row.payroll_status }}">{{ row.payroll_status_label }}</span>
+              </td>
+              <td>{{ row.run_count }}</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No payroll records yet</p>
+        <p class="empty-state__text">
+          Employees appear here once they complete onboarding and are pending approval or active.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/payroll-list.js' %}" defer></script>
+{% endblock %}

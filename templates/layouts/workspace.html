@@ -19,13 +19,9 @@
   data-live-status-url="{% url 'accounts:employee_status' %}"
   data-live-expected-status="{{ user.status }}"
 >
-  {% if messages %}
-  <div class="toast-stack" role="status" aria-live="polite">
-    {% for message in messages %}
-    <div class="toast toast--{{ message.tags|default:'info' }}">{{ message }}</div>
-    {% endfor %}
-  </div>
-  {% endif %}
+  {% block flash_messages %}
+  {% include "partials/messages_toast.html" %}
+  {% endblock %}
 
   <div class="workspace-shell">
     <aside class="sidebar" id="sidebar" aria-label="Main navigation">
@@ -365,7 +361,13 @@
     </div>
   </div>
 
+  {% include "partials/access_denied_modal.html" %}
+
+  <script src="{% static 'js/toasts.js' %}" defer></script>
   <script src="{% static 'js/app.js' %}" defer></script>
+  {% if access_denied_modal %}
+  <script src="{% static 'js/access-denied-modal.js' %}" defer></script>
+  {% endif %}
   <script src="{% static 'js/live-poll.js' %}" defer></script>
   <script src="{% static 'js/live-notifications.js' %}" defer></script>
   <script src="{% static 'js/live-session.js' %}" defer></script>

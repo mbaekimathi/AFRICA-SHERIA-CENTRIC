@@ -297,6 +297,10 @@ def notifications_payload(employee, *, limit: int = 40) -> dict:
     """Build the live-poll payload, grouped by category (latest first)."""
     ensure_task_notifications(employee)
     ensure_due_reminders(employee)
+    # The polling request only claims work; network checks run off-request.
+    from .news_watch import launch_due_news_watches
+
+    launch_due_news_watches(employee_id=employee.pk)
 
     by_category = unread_counts_by_category(employee)
     unread_count = sum(by_category.values())

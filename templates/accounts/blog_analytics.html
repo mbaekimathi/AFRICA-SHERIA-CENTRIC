@@ -1,0 +1,166 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}Analytics — {{ blog_post.title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page research-page blog-analytics-page" id="blog-analytics-page">
+  <header class="research-hero">
+    <div class="research-hero__main">
+      <span class="research-hero__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="25" height="25" fill="none">
+          <path d="M4.5 19.5h15M7 16V9.5M12 16V6M17 16v-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="research-hero__copy">
+        <p class="page-kicker">Website analytics</p>
+        <h2>{{ blog_post.title }}</h2>
+        <p>
+          Public views, enquiry clicks, and conversion for the last
+          {{ analytics.days }} days on the firm website.
+        </p>
+      </div>
+    </div>
+    <div class="research-hero__actions">
+      <a href="{{ research_blogs_url }}" class="btn btn--quiet btn--inline">Back</a>
+      <a href="{{ public_post_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">Open live post</a>
+      <a href="{{ review_url }}" class="btn btn--quiet btn--inline">Review post</a>
+    </div>
+  </header>
+
+  <div class="blog-analytics-ranges" role="group" aria-label="Date range">
+    <a
+      href="?range=7"
+      class="btn btn--{% if range_days == 7 %}primary{% else %}quiet{% endif %} btn--inline"
+    >7 days</a>
+    <a
+      href="?range=30"
+      class="btn btn--{% if range_days == 30 %}primary{% else %}quiet{% endif %} btn--inline"
+    >30 days</a>
+    <a
+      href="?range=90"
+      class="btn btn--{% if range_days == 90 %}primary{% else %}quiet{% endif %} btn--inline"
+    >90 days</a>
+  </div>
+
+  <div class="metrics metrics--dash research-metrics">
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Page views</p>
+        <p class="metric__value">{{ analytics.views }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Unique visitors</p>
+        <p class="metric__value">{{ analytics.unique_visitors }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Conversions</p>
+        <p class="metric__value">{{ analytics.conversions }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Conversion rate</p>
+        <p class="metric__value">{{ analytics.conversion_rate }}%</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="metrics metrics--dash research-metrics">
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">WhatsApp enquiries</p>
+        <p class="metric__value">{{ analytics.whatsapp_clicks }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Contact clicks</p>
+        <p class="metric__value">{{ analytics.contact_clicks }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Related article clicks</p>
+        <p class="metric__value">{{ analytics.related_clicks }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass research-metric">
+      <div>
+        <p class="metric__label">Total interactions</p>
+        <p class="metric__value">{{ analytics.interactions }}</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel research-posts-panel">
+    <div class="panel__head">
+      <h3>Daily page views</h3>
+      <p class="panel__hint">
+        {% if analytics.daily_views %}
+        {{ analytics.daily_views|length }} day{{ analytics.daily_views|length|pluralize }} with traffic
+        {% else %}
+        No views in this range yet
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if analytics.daily_views %}
+      <ul class="blog-analytics-days">
+        {% for row in analytics.daily_views %}
+        <li>
+          <span>{{ row.day|date:"j M Y" }}</span>
+          <strong>{{ row.total }} view{{ row.total|pluralize }}</strong>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No website traffic yet</p>
+        <p class="empty-state__copy">
+          Views and enquiry clicks will appear here once visitors open this post on the public site.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel research-posts-panel">
+    <div class="panel__head">
+      <h3>Recent interactions</h3>
+      <p class="panel__hint">Latest enquiry and navigation events</p>
+    </div>
+    <div class="panel__body">
+      {% if analytics.recent_events %}
+      <ul class="blog-analytics-events">
+        {% for event in analytics.recent_events %}
+        <li>
+          <span class="status-pill status-pill--{% if event.event_type == 'view' %}published{% else %}submitted{% endif %}">
+            {% if event.event_type == "view" %}Page view
+            {% elif event.event_type == "cta_whatsapp" %}WhatsApp enquire
+            {% elif event.event_type == "cta_contact" %}Contact click
+            {% elif event.event_type == "related_click" %}Related article
+            {% else %}{{ event.event_type }}{% endif %}
+          </span>
+          <span>{{ event.created_at|date:"j M Y, H:i" }}</span>
+          {% if event.referrer %}
+          <span class="blog-analytics-events__ref">{{ event.referrer|truncatechars:48 }}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No interactions logged</p>
+        <p class="empty-state__copy">
+          When readers enquire on WhatsApp, open Contact, or follow related articles, those events show here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

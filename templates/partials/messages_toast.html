@@ -1,0 +1,31 @@
+{% if messages %}
+<div class="toast-stack{% if toast_stack_class %} {{ toast_stack_class }}{% endif %}" role="region" aria-label="Notifications" aria-live="polite">
+  {% for message in messages %}
+  {% with tag=message.tags|default:"info" %}
+  <div
+    class="toast toast--{{ tag }}"
+    data-toast
+    data-toast-type="{{ tag }}"
+    role="{% if 'error' in tag %}alert{% else %}status{% endif %}"
+  >
+    <span class="toast__icon" aria-hidden="true">
+      {% if 'success' in tag %}
+      <svg viewBox="0 0 20 20" fill="none"><path d="M16.5 5.5 8.2 14.2 3.5 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {% elif 'error' in tag %}
+      <svg viewBox="0 0 20 20" fill="none"><path d="M10 6.2v5.1M10 13.8h.01M17.5 10a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {% elif 'warning' in tag %}
+      <svg viewBox="0 0 20 20" fill="none"><path d="M10 7.5v3.8M10 13.8h.01M8.3 3.9 1.8 15.2a1.8 1.8 0 0 0 1.6 2.7h13.2a1.8 1.8 0 0 0 1.6-2.7L11.7 3.9a1.8 1.8 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {% else %}
+      <svg viewBox="0 0 20 20" fill="none"><path d="M10 9v4.2M10 6.3h.01M17.5 10a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {% endif %}
+    </span>
+    <p class="toast__body">{{ message }}</p>
+    <button type="button" class="toast__close" data-toast-close aria-label="Dismiss notification">
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+    </button>
+    <span class="toast__progress" aria-hidden="true"></span>
+  </div>
+  {% endwith %}
+  {% endfor %}
+</div>
+{% endif %}

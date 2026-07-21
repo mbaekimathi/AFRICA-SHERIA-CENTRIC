@@ -1,19 +1,89 @@
 {% extends "layouts/workspace.html" %}
+{% load static %}
 
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
 {% block content %}
-<section class="page page--form-medium" id="company-contacts-page">
+<section
+  class="page page--form-medium"
+  id="company-contacts-page"
+  data-contact-verify-url="{{ contact_verify_url }}"
+>
   <header class="page-intro">
     <div class="page-intro__copy">
       <p class="page-kicker">Company information</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
         Register how clients and the public reach the firm — used on the website
-        contact block, footer, and social profiles.
+        contact block, footer, and social profiles. Connections are verified live.
       </p>
     </div>
   </header>
+
+  <section
+    class="panel contact-connections"
+    id="contact-connections-panel"
+    aria-labelledby="contact-connections-heading"
+    aria-live="polite"
+  >
+    <div class="panel__head">
+      <h3 id="contact-connections-heading">Connection status</h3>
+      <p class="panel__hint">
+        <span
+          class="status-pill status-pill--{{ contact_connections.overall_tone }} js-contact-overall-pill"
+        >
+          {{ contact_connections.overall_label }}
+        </span>
+      </p>
+    </div>
+    <div class="panel__body">
+      <p class="contact-connections__summary js-contact-overall-detail">
+        {{ contact_connections.overall_detail }}
+      </p>
+      <p class="contact-connections__meta js-contact-verified-at" hidden></p>
+
+      <ul class="contact-connections__list js-contact-connections-list">
+        {% for channel in contact_connections.connection_channels %}
+        <li
+          class="contact-connections__item"
+          data-channel-key="{{ channel.key }}"
+          data-status="{{ channel.status }}"
+        >
+          <div class="contact-connections__item-main">
+            <span class="contact-connections__label">{{ channel.label }}</span>
+            {% if channel.href %}
+            <a
+              class="contact-connections__value"
+              href="{{ channel.href }}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ channel.value|default:"—" }}</a>
+            {% else %}
+            <span class="contact-connections__value">{{ channel.value|default:"—" }}</span>
+            {% endif %}
+          </div>
+          <div class="contact-connections__item-status">
+            <span class="status-pill status-pill--{{ channel.tone }}">
+              {{ channel.status_label }}
+            </span>
+            <span class="contact-connections__detail">{{ channel.detail }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+
+      <div class="form-actions form-actions--start contact-connections__actions">
+        <button
+          type="button"
+          class="btn btn--quiet btn--inline js-contact-verify-btn"
+          id="contact-verify-btn"
+        >
+          <span class="btn-spinner js-contact-verify-spinner" hidden aria-hidden="true"></span>
+          <span class="js-contact-verify-label">Verify connections</span>
+        </button>
+      </div>
+    </div>
+  </section>
 
   <section class="panel" aria-labelledby="company-contacts-heading">
     <div class="panel__head">
@@ -37,14 +107,26 @@
 
         <div class="form-row">
           <div class="form-field">
-            <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+            <label for="{{ form.email.id_for_label }}">
+              {{ form.email.label }}
+              <span
+                class="field-status status-pill status-pill--{{ contact_connections.by_key.email.tone }} js-field-status"
+                data-field-key="email"
+              >{{ contact_connections.by_key.email.status_label }}</span>
+            </label>
             {{ form.email }}
             {% if form.email.errors %}
             <span class="field-error">{{ form.email.errors.0 }}</span>
             {% endif %}
           </div>
           <div class="form-field">
-            <label for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>
+            <label for="{{ form.phone.id_for_label }}">
+              {{ form.phone.label }}
+              <span
+                class="field-status status-pill status-pill--{{ contact_connections.by_key.phone.tone }} js-field-status"
+                data-field-key="phone"
+              >{{ contact_connections.by_key.phone.status_label }}</span>
+            </label>
             {{ form.phone }}
             {% if form.phone.errors %}
             <span class="field-error">{{ form.phone.errors.0 }}</span>
@@ -53,7 +135,13 @@
         </div>
 
         <div class="form-field">
-          <label for="{{ form.website.id_for_label }}">{{ form.website.label }}</label>
+          <label for="{{ form.website.id_for_label }}">
+            {{ form.website.label }}
+            <span
+              class="field-status status-pill status-pill--{{ contact_connections.by_key.website.tone }} js-field-status"
+              data-field-key="website"
+            >{{ contact_connections.by_key.website.status_label }}</span>
+          </label>
           {{ form.website }}
           {% if form.website.errors %}
           <span class="field-error">{{ form.website.errors.0 }}</span>
@@ -64,17 +152,30 @@
           <legend>Social media</legend>
           <p class="field-hint">
             Optional profile URLs shown on the firm website footer and contact page.
+            Status updates after live verification.
           </p>
           <div class="form-row">
             <div class="form-field">
-              <label for="{{ form.linkedin_url.id_for_label }}">{{ form.linkedin_url.label }}</label>
+              <label for="{{ form.linkedin_url.id_for_label }}">
+                {{ form.linkedin_url.label }}
+                <span
+                  class="field-status status-pill status-pill--{{ contact_connections.by_key.linkedin_url.tone }} js-field-status"
+                  data-field-key="linkedin_url"
+                >{{ contact_connections.by_key.linkedin_url.status_label }}</span>
+              </label>
               {{ form.linkedin_url }}
               {% if form.linkedin_url.errors %}
               <span class="field-error">{{ form.linkedin_url.errors.0 }}</span>
               {% endif %}
             </div>
             <div class="form-field">
-              <label for="{{ form.facebook_url.id_for_label }}">{{ form.facebook_url.label }}</label>
+              <label for="{{ form.facebook_url.id_for_label }}">
+                {{ form.facebook_url.label }}
+                <span
+                  class="field-status status-pill status-pill--{{ contact_connections.by_key.facebook_url.tone }} js-field-status"
+                  data-field-key="facebook_url"
+                >{{ contact_connections.by_key.facebook_url.status_label }}</span>
+              </label>
               {{ form.facebook_url }}
               {% if form.facebook_url.errors %}
               <span class="field-error">{{ form.facebook_url.errors.0 }}</span>
@@ -83,14 +184,26 @@
           </div>
           <div class="form-row">
             <div class="form-field">
-              <label for="{{ form.instagram_url.id_for_label }}">{{ form.instagram_url.label }}</label>
+              <label for="{{ form.instagram_url.id_for_label }}">
+                {{ form.instagram_url.label }}
+                <span
+                  class="field-status status-pill status-pill--{{ contact_connections.by_key.instagram_url.tone }} js-field-status"
+                  data-field-key="instagram_url"
+                >{{ contact_connections.by_key.instagram_url.status_label }}</span>
+              </label>
               {{ form.instagram_url }}
               {% if form.instagram_url.errors %}
               <span class="field-error">{{ form.instagram_url.errors.0 }}</span>
               {% endif %}
             </div>
             <div class="form-field">
-              <label for="{{ form.x_url.id_for_label }}">{{ form.x_url.label }}</label>
+              <label for="{{ form.x_url.id_for_label }}">
+                {{ form.x_url.label }}
+                <span
+                  class="field-status status-pill status-pill--{{ contact_connections.by_key.x_url.tone }} js-field-status"
+                  data-field-key="x_url"
+                >{{ contact_connections.by_key.x_url.status_label }}</span>
+              </label>
               {{ form.x_url }}
               {% if form.x_url.errors %}
               <span class="field-error">{{ form.x_url.errors.0 }}</span>
@@ -98,7 +211,13 @@
             </div>
           </div>
           <div class="form-field">
-            <label for="{{ form.youtube_url.id_for_label }}">{{ form.youtube_url.label }}</label>
+            <label for="{{ form.youtube_url.id_for_label }}">
+              {{ form.youtube_url.label }}
+              <span
+                class="field-status status-pill status-pill--{{ contact_connections.by_key.youtube_url.tone }} js-field-status"
+                data-field-key="youtube_url"
+              >{{ contact_connections.by_key.youtube_url.status_label }}</span>
+            </label>
             {{ form.youtube_url }}
             {% if form.youtube_url.errors %}
             <span class="field-error">{{ form.youtube_url.errors.0 }}</span>
@@ -152,4 +271,8 @@
     </div>
   </section>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/company-contacts-verify.js' %}" defer></script>
 {% endblock %}
