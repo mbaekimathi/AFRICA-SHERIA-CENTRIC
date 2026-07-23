@@ -23,6 +23,21 @@
   {% include "partials/messages_toast.html" %}
   {% endblock %}
 
+  {% if staff_impersonating %}
+  <div class="staff-portal-banner" role="status">
+    <p class="staff-portal-banner__text">
+      Viewing the client portal as <strong>{{ client.get_full_name }}</strong>.
+      Your staff session remains signed in.
+    </p>
+    <form method="post" action="{{ staff_exit_portal_url }}" class="staff-portal-banner__form">
+      {% csrf_token %}
+      <button type="submit" class="staff-portal-banner__exit">
+        Exit portal
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
   <div class="workspace-shell">
     <aside class="sidebar" id="sidebar" aria-label="Client navigation">
       <div class="sidebar__top">
@@ -92,7 +107,7 @@
             {% csrf_token %}
             <button type="submit" class="nav-link nav-link--action">
               <span class="nav-icon" aria-hidden="true">{{ icon_logout|safe }}</span>
-              <span>Log out</span>
+              <span>{% if staff_impersonating %}Exit portal{% else %}Log out{% endif %}</span>
             </button>
           </form>
         </nav>

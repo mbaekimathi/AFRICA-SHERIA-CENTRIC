@@ -62,8 +62,14 @@ def _content_hash(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
+def _sanitize_content_text(text: str) -> str:
+    """Normalize exported Drive text for MySQL-safe storage."""
+    cleaned = (text or "").replace("\ufeff", "").replace("\x00", "")
+    return cleaned
+
+
 def _preview_text(text: str, limit: int = CONTENT_PREVIEW_CHARS) -> str:
-    cleaned = (text or "").strip()
+    cleaned = _sanitize_content_text(text).strip()
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 1].rstrip() + "…"
@@ -146,6 +152,7 @@ def sync_google_document_content(
         logger.info(
             "Content export failed for document %s: %s", document.pk, exc
         )
+    content_text = _sanitize_content_text(content_text)
 
     char_count = len(content_text or "")
     digest = _content_hash(

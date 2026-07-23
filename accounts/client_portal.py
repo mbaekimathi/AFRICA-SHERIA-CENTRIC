@@ -3,6 +3,7 @@
 from django.urls import reverse
 from django.utils import timezone
 
+from .client_auth import is_staff_impersonating
 from .models import Client, ClientNotification, get_firm_display_name
 from .workspace import (
     ICON_BELL,
@@ -116,6 +117,8 @@ def client_portal_context(request, client, *, page_title="My profile", active="p
         {"label": page_title, "url": request.path},
     ]
 
+    staff_impersonating = is_staff_impersonating(request)
+
     return {
         "client": client,
         "theme": "client",
@@ -151,4 +154,6 @@ def client_portal_context(request, client, *, page_title="My profile", active="p
         ),
         "notification_unread_count": unread_count,
         "notification_sound_enabled": True,
+        "staff_impersonating": staff_impersonating,
+        "staff_exit_portal_url": reverse("accounts:client_logout"),
     }

@@ -40,6 +40,46 @@ def _notification_badge_context(user) -> dict:
     }
 
 
+def pending_clients_count() -> int:
+    """Clients awaiting onboarding completion or firm approval."""
+    from .models import Client
+
+    return Client.objects.filter(
+        status__in=[
+            Client.Status.PENDING_ONBOARDING,
+            Client.Status.PENDING_APPROVAL,
+        ]
+    ).count()
+
+
+def pending_employees_count() -> int:
+    """Employees awaiting onboarding completion or firm approval."""
+    return Employee.objects.filter(
+        status__in=[
+            Employee.Status.PENDING_ONBOARDING,
+            Employee.Status.PENDING_APPROVAL,
+        ]
+    ).count()
+
+
+def _attach_page_nav_badges(page_nav_items: list[dict]) -> None:
+    """Attach count badges to section nav items that need them."""
+    if not page_nav_items:
+        return
+    pending_clients = None
+    pending_employees = None
+    for item in page_nav_items:
+        slug = item.get("slug")
+        if slug == "approve-pending-clients":
+            if pending_clients is None:
+                pending_clients = pending_clients_count()
+            item["badge_count"] = pending_clients
+        elif slug == "onboarding-approvals":
+            if pending_employees is None:
+                pending_employees = pending_employees_count()
+            item["badge_count"] = pending_employees
+
+
 def time_of_day_greeting(when=None) -> str:
     moment = timezone.localtime(when) if when else timezone.localtime()
     hour = moment.hour
@@ -360,6 +400,7 @@ USER_MANAGEMENT_PAGE_LINKS = [
 
 # Client Management page-only links
 CLIENT_MANAGEMENT_PAGE_LINKS = [
+    ("Client Portal", "client-profile", ICON_USERS),
     ("Register Client", "register-client", ICON_DOC),
     ("Approve pending clients", "approve-pending-clients", ICON_USERS),
 ]
@@ -558,6 +599,7 @@ EXTRA_PAGE_SLUGS = {
 
 # Litigation case detail sidebar actions
 LITIGATION_CASE_DETAIL_LINKS = [
+    ("Case calendar", "case-calendar", ICON_CALENDAR),
     ("Update court attendance", "update-court-attendance", ICON_CALENDAR),
     ("Create task", "create-task", ICON_TASK),
     ("Upload documents", "upload-documents", ICON_DOC),
@@ -570,6 +612,7 @@ LITIGATION_CASE_ACTION_SLUGS = {slug for _, slug, _ in LITIGATION_CASE_DETAIL_LI
 
 # Non-litigation matter detail sidebar actions
 NON_LITIGATION_MATTER_DETAIL_LINKS = [
+    ("Matter calendar", "matter-calendar", ICON_CALENDAR),
     ("Update matter attendance", "update-matter-attendance", ICON_CALENDAR),
     ("Create task", "create-task", ICON_TASK),
     ("Upload documents", "upload-documents", ICON_DOC),
@@ -744,6 +787,8 @@ FINANCE_LEDGER_ACTIONS = ("view", "register", "edit", "delete")
 ACTIVITY_PERMISSION_OVERRIDES: dict[str, tuple[str, ...]] = {}
 
 _DETAIL_SLUG_PERMISSION_ACTIONS = {
+    "case-calendar": "view",
+    "matter-calendar": "view",
     "update-court-attendance": "attend",
     "update-matter-attendance": "attend",
     "create-task": "task",
@@ -869,6 +914,8 @@ def infer_activity_permission_actions(
         return MATTER_HUB_ACTIONS
     if activity_slug == "client-management":
         return ("view", "register", "edit", "delete", "approve")
+    if activity_slug == "client-profile":
+        return ("view", "edit", "delete")
     if activity_slug == "employee-management":
         return ("view", "register", "edit", "delete", "approve", "allocate")
     if activity_slug == "finance-billing":
@@ -1243,6 +1290,7 @@ PAGE_TITLES = {
     "client-management": "Client Management",
     "register-client": "Register Client",
     "approve-pending-clients": "Approve pending clients",
+    "client-profile": "Client Portal",
     "employee-management": "Employee Management",
     "register-employee": "Register Employee",
     "onboarding-approvals": "Onboarding & Approvals",
@@ -1293,6 +1341,8 @@ PAGE_TITLES = {
     "learning": "Learning",
     "systems": "Systems",
     "users": "Users",
+    "case-calendar": "Case calendar",
+    "matter-calendar": "Matter calendar",
     "update-court-attendance": "Update court attendance",
     "create-task": "Create task",
     "upload-documents": "Upload documents",
@@ -1790,6 +1840,8 @@ def workspace_context(
                 ]
             else:
                 page_nav_items = []
+
+    _attach_page_nav_badges(page_nav_items)
 
     return {
         "page_title": page_title,

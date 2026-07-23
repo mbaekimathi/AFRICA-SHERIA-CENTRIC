@@ -11,6 +11,7 @@
       <h2>View task</h2>
       <p class="page-lead">
         Matter details and your assigned brief for this non-litigation matter.
+        Accept the task from your Tasks list to open the matter and work it.
       </p>
     </div>
   </header>
@@ -99,52 +100,6 @@
           <dd>{{ matter.client_instructions|default:"—"|linebreaksbr }}</dd>
         </div>
       </dl>
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="panel__head">
-      <h3>Parties</h3>
-      <p class="panel__hint">{{ parties|length }} registered</p>
-    </div>
-    <div class="panel__body panel__body--table">
-      {% if parties %}
-      <div class="data-table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th scope="col">Party name</th>
-              <th scope="col">Type</th>
-              <th scope="col">Category</th>
-              <th scope="col">Firm/Agent</th>
-              <th scope="col">Phone</th>
-              <th scope="col">Email</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for party in parties %}
-            <tr>
-              <td>
-                {{ party.party_name }}
-                {% if party.is_client_party %}
-                <span class="status-pill status-pill--active">Client</span>
-                {% endif %}
-              </td>
-              <td>{{ party.get_party_type_display }}</td>
-              <td>{{ party.get_category_display|default:"—" }}</td>
-              <td>{{ party.firm_agent|default:"—" }}</td>
-              <td>{{ party.phone|default:"—" }}</td>
-              <td>{{ party.email|default:"—" }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div class="empty-state">
-        <p class="empty-state__title">No parties listed</p>
-      </div>
-      {% endif %}
     </div>
   </section>
 

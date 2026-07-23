@@ -93,6 +93,39 @@
       </div>
     </section>
 
+    <section class="register-section" aria-labelledby="section-task-access">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M12 3l7 3v5c0 4.4-2.9 8.4-7 9.5C7.9 19.4 5 15.4 5 11V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M9.5 12.2l1.8 1.8 3.4-3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-task-access">Assignee access</h3>
+          <p>Toggle what the assignee can do on the case</p>
+        </div>
+      </header>
+      <div class="register-section__body">
+        <div class="task-access-toggles" role="group" aria-labelledby="section-task-access">
+          {% for row in form.access_permission_rows %}
+          <label class="task-access-toggle" title="{{ row.help_text }}">
+            <span class="task-access-toggle__text">
+              <span class="task-access-toggle__label">{{ row.label }}</span>
+            </span>
+            <span class="task-access-toggle__control">
+              {{ row.field }}
+              <span class="task-access-toggle__track" aria-hidden="true">
+                <span class="task-access-toggle__thumb"></span>
+              </span>
+            </span>
+          </label>
+          {% if row.errors %}<span class="field-error">{{ row.errors.0 }}</span>{% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
     <div class="form-actions form-actions--start">
       <a href="{{ detail_url }}" class="btn btn--quiet">Cancel</a>
       <button type="submit" class="btn btn--primary">Create task</button>
@@ -125,6 +158,7 @@
             <tr>
               <th scope="col">Title</th>
               <th scope="col">Allocated to</th>
+              <th scope="col">Access</th>
               <th scope="col">Due</th>
               <th scope="col">Status</th>
               <th scope="col">Created by</th>
@@ -142,6 +176,15 @@
                 </div>
               </td>
               <td>{{ task.assignee.get_full_name }}</td>
+              <td>
+                <div class="task-access-pills" aria-label="Task access permissions">
+                  <span class="task-access-pill {% if task.allow_view %}is-allow{% else %}is-restrict{% endif %}">View</span>
+                  <span class="task-access-pill {% if task.allow_edit %}is-allow{% else %}is-restrict{% endif %}">Edit</span>
+                  <span class="task-access-pill {% if task.allow_download %}is-allow{% else %}is-restrict{% endif %}">Download</span>
+                  <span class="task-access-pill {% if task.allow_delete %}is-allow{% else %}is-restrict{% endif %}">Delete</span>
+                  <span class="task-access-pill {% if task.allow_upload %}is-allow{% else %}is-restrict{% endif %}">Upload</span>
+                </div>
+              </td>
               <td>{{ task.due_date|date:"d M Y" }}</td>
               <td>
                 <span class="status-pill status-pill--{{ task.status }}">

@@ -16,7 +16,15 @@ from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .models import Client, GoogleDriveConnection, LitigationCase, NonLitigationMatter
+from .models import (
+    Client,
+    Employee,
+    GoogleDriveConnection,
+    LitigationCase,
+    NonLitigationMatter,
+    client_folder_name,
+    employee_folder_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +62,27 @@ GOOGLE_WORKSPACE_TYPES = {
 
 CLIENTS_FOLDER_NAME = "Clients"
 WORK_FOLDER_NAME = "Work"
+PERSONAL_FOLDER_NAME = "Personal"
+PERSONAL_DOCUMENTS_FOLDER_NAME = "Personal Documents"
 LITIGATION_FOLDER_NAME = "Litigation"
 NON_LITIGATION_FOLDER_NAME = "Non-Litigation"
+
+EMPLOYEE_PERSONAL_DETAIL_FIELDS = (
+    ("profile_photo", "Profile Photo"),
+    ("employment_contract", "Employment Contract"),
+    ("national_id_or_passport", "National ID or Passport"),
+    ("kra_pin_certificate", "KRA PIN Certificate"),
+)
+
+CLIENT_PERSONAL_DOCUMENT_FIELDS = (
+    ("profile_photo", "Profile Photo"),
+    ("identification_document", "National ID"),
+    ("alien_document", "Alien Document"),
+    ("business_document", "Business Document"),
+    ("company_registration_document", "Company Registration"),
+    ("kra_pin_document", "KRA PIN Certificate"),
+    ("signed_instruction_note", "Signed Instruction Note"),
+)
 
 # Drive files created/opened by this app + identity for the connected account.
 GOOGLE_DRIVE_SCOPES = (
@@ -81,6 +108,22 @@ EXPORT_MIME_BY_WORKSPACE = {
     GOOGLE_DOC_MIME: "text/plain",
     GOOGLE_SHEET_MIME: "text/csv",
     GOOGLE_SLIDE_MIME: "text/plain",
+}
+
+# Office-friendly downloads for Google Workspace files.
+DOWNLOAD_EXPORT_BY_WORKSPACE = {
+    GOOGLE_DOC_MIME: (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".docx",
+    ),
+    GOOGLE_SHEET_MIME: (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".xlsx",
+    ),
+    GOOGLE_SLIDE_MIME: (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".pptx",
+    ),
 }
 
 
@@ -370,12 +413,61 @@ def export_google_workspace_text(file_id: str, mime_type: str = "") -> str:
         + urllib.parse.urlencode({"mimeType": export_mime})
     )
     raw = _request_bytes("GET", url, access_token=token, timeout=90)
-    text = raw.decode("utf-8", errors="replace")
+    text = raw.decode("utf-8-sig", errors="replace")
+    # Drop leftover BOM / nulls that some exports embed and MySQL rejects on latin1.
+    text = text.replace("\ufeff", "").replace("\x00", "")
     # Keep snapshots bounded for DB/UI.
     max_chars = 120_000
     if len(text) > max_chars:
         text = text[:max_chars] + "\n\n[Content truncated]"
     return text
+
+
+def download_drive_file(
+    file_id: str,
+    *,
+    mime_type: str = "",
+    title: str = "",
+    original_filename: str = "",
+) -> tuple[bytes, str, str]:
+    """
+    Download a Drive file for browser download.
+
+    Google Workspace files are exported to Office formats; other files use
+    binary media download. Returns (content, filename, content_type).
+    """
+    if not file_id:
+        raise GoogleDriveAPIError("Missing Drive file id.")
+
+    token = get_valid_access_token()
+    mime = (mime_type or "").strip()
+    base_name = sanitize_drive_name(title or original_filename or "document")
+    # Strip a trailing extension from the title so we can append the right one.
+    stem = re.sub(r"\.[A-Za-z0-9]{1,8}$", "", base_name).strip() or "document"
+
+    export = DOWNLOAD_EXPORT_BY_WORKSPACE.get(mime)
+    if export:
+        export_mime, extension = export
+        url = (
+            DRIVE_EXPORT_URL.format(file_id=urllib.parse.quote(file_id))
+            + "?"
+            + urllib.parse.urlencode({"mimeType": export_mime})
+        )
+        content = _request_bytes("GET", url, access_token=token, timeout=120)
+        return content, f"{stem}{extension}", export_mime
+
+    url = (
+        f"{DRIVE_FILES_URL}/{urllib.parse.quote(file_id)}"
+        f"?{urllib.parse.urlencode({'alt': 'media'})}"
+    )
+    content = _request_bytes("GET", url, access_token=token, timeout=120)
+    filename = (original_filename or "").strip() or base_name
+    if "." not in filename and mime:
+        guessed = mimetypes.guess_extension(mime) or ""
+        if guessed:
+            filename = f"{stem}{guessed}"
+    content_type = mime or _guess_mime(filename)
+    return content, filename, content_type
 
 
 def parse_drive_datetime(value: str | None):
@@ -398,8 +490,39 @@ def parse_drive_datetime(value: str | None):
     return parsed
 
 
+def _invalidate_dead_google_drive_auth() -> None:
+    """
+    Mark Drive disconnected after permanent OAuth failure.
+
+    Short-lived access tokens renew via refresh_token and must not disconnect
+    the firm. Only call this when refresh is impossible (missing / rejected).
+    Keeps firm folder IDs so reconnect can reuse the existing Drive tree.
+    """
+    connection = GoogleDriveConnection.get_solo()
+    if not connection.is_connected:
+        return
+    logger.warning(
+        "Google Drive auth invalidated; clearing local tokens "
+        "(account=%s).",
+        connection.account_email or "unknown",
+    )
+    connection.clear_tokens(keep_folder_ids=True)
+    try:
+        from .notifications import notify_google_drive_auth_expired
+
+        notify_google_drive_auth_expired()
+    except Exception:
+        logger.exception("Failed to notify employees after Drive auth expiry.")
+
+
 def get_valid_access_token(connection: GoogleDriveConnection | None = None) -> str:
-    """Return a usable access token, refreshing when expired."""
+    """
+    Return a usable access token, refreshing when the short-lived token expires.
+
+    The firm connection itself does not expire while a valid refresh_token
+    exists. Permanent refresh failures disconnect Drive automatically so the
+    UI never stays stuck on a dead “Connected” state.
+    """
     connection = connection or GoogleDriveConnection.get_solo()
     if not connection.is_connected:
         raise GoogleDriveAPIError("Google Drive is not connected.")
@@ -414,19 +537,34 @@ def get_valid_access_token(connection: GoogleDriveConnection | None = None) -> s
 
     refresh = (connection.refresh_token or "").strip()
     if not refresh:
+        _invalidate_dead_google_drive_auth()
         raise GoogleDriveAPIError(
-            "Google Drive access expired. Reconnect Google Drive in settings."
+            "Google Drive was disconnected because authorization expired. "
+            "Connect again in Google Drive Settings."
         )
 
-    payload = _post_form(
-        GOOGLE_TOKEN_URL,
-        {
-            "client_id": settings.GOOGLE_CLIENT_ID,
-            "client_secret": settings.GOOGLE_CLIENT_SECRET,
-            "refresh_token": refresh,
-            "grant_type": "refresh_token",
-        },
-    )
+    try:
+        payload = _post_form(
+            GOOGLE_TOKEN_URL,
+            {
+                "client_id": settings.GOOGLE_CLIENT_ID,
+                "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                "refresh_token": refresh,
+                "grant_type": "refresh_token",
+            },
+        )
+    except GoogleDriveOAuthError as exc:
+        detail = str(exc).lower()
+        if "unauthorized_client" in detail or "invalid_grant" in detail:
+            _invalidate_dead_google_drive_auth()
+            raise GoogleDriveAPIError(
+                "Google Drive was disconnected because authorization expired "
+                "or no longer matches this app's OAuth credentials. "
+                "Connect again in Google Drive Settings."
+            ) from exc
+        raise GoogleDriveAPIError(
+            "Could not refresh Google Drive access right now. Try again shortly."
+        ) from exc
     access_token = (payload.get("access_token") or "").strip()
     if not access_token:
         raise GoogleDriveAPIError("Could not refresh Google Drive access.")
@@ -536,9 +674,131 @@ def ensure_firm_folder_structure(
     return connection
 
 
+def ensure_employee_folder_structure(employee: Employee) -> Employee:
+    """
+    Ensure Work/{Employee Name}/Personal.
+    """
+    connection = GoogleDriveConnection.get_solo()
+    if not connection.is_connected or not connection.work_folder_id:
+        return employee
+
+    token = get_valid_access_token(connection)
+    if not folder_exists(token, connection.work_folder_id):
+        connection = ensure_firm_folder_structure(connection)
+        token = get_valid_access_token(connection)
+
+    parent_id = connection.work_folder_id
+    if not parent_id:
+        return employee
+
+    person_name = sanitize_drive_name(
+        employee_folder_name(employee),
+        fallback=f"Employee {employee.pk}",
+    )
+    employee_folder_id = ensure_folder(
+        token,
+        name=person_name,
+        parent_id=parent_id,
+        existing_id=employee.drive_folder_id,
+    )
+    personal_folder_id = ensure_folder(
+        token,
+        name=PERSONAL_FOLDER_NAME,
+        parent_id=employee_folder_id,
+        existing_id=employee.drive_personal_details_folder_id,
+    )
+
+    employee.drive_folder_id = employee_folder_id
+    employee.drive_personal_details_folder_id = personal_folder_id
+    employee.save(
+        update_fields=[
+            "drive_folder_id",
+            "drive_personal_details_folder_id",
+        ]
+    )
+    return employee
+
+
+def _read_employee_field_bytes(field_file) -> tuple[bytes, str]:
+    """Read local FileField/ImageField content and a usable filename."""
+    name = (getattr(field_file, "name", "") or "upload").replace("\\", "/").split("/")[-1]
+    field_file.open("rb")
+    try:
+        content = field_file.read()
+    finally:
+        field_file.close()
+    return content, name
+
+
+def sync_employee_personal_detail_uploads(
+    employee: Employee,
+    *,
+    field_names: tuple[str, ...] | list[str] | None = None,
+) -> dict:
+    """
+    Upload selected employee personal-detail files into
+    Work/{Name}/Personal on Google Drive.
+
+    Skips quietly when Drive is not connected. Returns a small summary.
+    """
+    summary = {"uploaded": 0, "skipped": 0, "errors": 0}
+    connection = GoogleDriveConnection.get_solo()
+    if not connection.is_connected:
+        return summary
+
+    try:
+        employee = ensure_employee_folder_structure(employee)
+    except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+        logger.warning(
+            "Drive employee folder skipped for %s: %s", employee.pk, exc
+        )
+        summary["errors"] += 1
+        return summary
+
+    parent_id = (employee.drive_personal_details_folder_id or "").strip()
+    if not parent_id:
+        summary["errors"] += 1
+        return summary
+
+    wanted = set(field_names) if field_names is not None else None
+    for field_name, label in EMPLOYEE_PERSONAL_DETAIL_FIELDS:
+        if wanted is not None and field_name not in wanted:
+            continue
+        field_file = getattr(employee, field_name, None)
+        if not field_file:
+            summary["skipped"] += 1
+            continue
+        try:
+            content, original_name = _read_employee_field_bytes(field_file)
+            if not content:
+                summary["skipped"] += 1
+                continue
+            ext = ""
+            if "." in original_name:
+                ext = original_name.rsplit(".", 1)[-1].strip().lower()
+            drive_name = f"{label}.{ext}" if ext else label
+            upload_drive_file(
+                name=drive_name,
+                content=content,
+                mime_type=getattr(field_file, "content_type", "") or "",
+                parent_id=parent_id,
+                original_filename=original_name,
+            )
+            summary["uploaded"] += 1
+        except (GoogleDriveAPIError, GoogleDriveOAuthError, OSError, ValueError) as exc:
+            summary["errors"] += 1
+            logger.warning(
+                "Drive upload failed for employee %s field %s: %s",
+                employee.pk,
+                field_name,
+                exc,
+            )
+    return summary
+
+
 def ensure_client_folder_structure(client: Client) -> Client:
     """
-    Ensure Clients/{Client}/Litigation and Clients/{Client}/Non-Litigation.
+    Ensure Clients/{Client}/Personal Documents, Litigation, and Non-Litigation.
     """
     connection = GoogleDriveConnection.get_solo()
     if not connection.is_connected or not connection.clients_folder_id:
@@ -550,13 +810,20 @@ def ensure_client_folder_structure(client: Client) -> Client:
         token = get_valid_access_token(connection)
 
     client_name = sanitize_drive_name(
-        client.get_full_name(), fallback=f"Client {client.pk}"
+        client_folder_name(client) or client.get_full_name(),
+        fallback=f"Client {client.pk}",
     )
     client_folder_id = ensure_folder(
         token,
         name=client_name,
         parent_id=connection.clients_folder_id,
         existing_id=client.drive_folder_id,
+    )
+    personal_documents_id = ensure_folder(
+        token,
+        name=PERSONAL_DOCUMENTS_FOLDER_NAME,
+        parent_id=client_folder_id,
+        existing_id=client.drive_personal_documents_folder_id,
     )
     litigation_id = ensure_folder(
         token,
@@ -572,16 +839,84 @@ def ensure_client_folder_structure(client: Client) -> Client:
     )
 
     client.drive_folder_id = client_folder_id
+    client.drive_personal_documents_folder_id = personal_documents_id
     client.drive_litigation_folder_id = litigation_id
     client.drive_non_litigation_folder_id = non_litigation_id
     client.save(
         update_fields=[
             "drive_folder_id",
+            "drive_personal_documents_folder_id",
             "drive_litigation_folder_id",
             "drive_non_litigation_folder_id",
         ]
     )
     return client
+
+
+def sync_client_personal_document_uploads(
+    client: Client,
+    *,
+    field_names: tuple[str, ...] | list[str] | None = None,
+) -> dict:
+    """
+    Upload selected client personal documents into
+    Clients/{Name}/Personal Documents on Google Drive.
+
+    Skips quietly when Drive is not connected.
+    """
+    summary = {"uploaded": 0, "skipped": 0, "errors": 0}
+    connection = GoogleDriveConnection.get_solo()
+    if not connection.is_connected:
+        return summary
+
+    try:
+        client = ensure_client_folder_structure(client)
+    except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+        logger.warning(
+            "Drive client folder skipped for %s: %s", client.pk, exc
+        )
+        summary["errors"] += 1
+        return summary
+
+    parent_id = (client.drive_personal_documents_folder_id or "").strip()
+    if not parent_id:
+        summary["errors"] += 1
+        return summary
+
+    wanted = set(field_names) if field_names is not None else None
+    for field_name, label in CLIENT_PERSONAL_DOCUMENT_FIELDS:
+        if wanted is not None and field_name not in wanted:
+            continue
+        field_file = getattr(client, field_name, None)
+        if not field_file:
+            summary["skipped"] += 1
+            continue
+        try:
+            content, original_name = _read_employee_field_bytes(field_file)
+            if not content:
+                summary["skipped"] += 1
+                continue
+            ext = ""
+            if "." in original_name:
+                ext = original_name.rsplit(".", 1)[-1].strip().lower()
+            drive_name = f"{label}.{ext}" if ext else label
+            upload_drive_file(
+                name=drive_name,
+                content=content,
+                mime_type=getattr(field_file, "content_type", "") or "",
+                parent_id=parent_id,
+                original_filename=original_name,
+            )
+            summary["uploaded"] += 1
+        except (GoogleDriveAPIError, GoogleDriveOAuthError, OSError, ValueError) as exc:
+            summary["errors"] += 1
+            logger.warning(
+                "Drive upload failed for client %s field %s: %s",
+                client.pk,
+                field_name,
+                exc,
+            )
+    return summary
 
 
 def ensure_case_drive_folder(case: LitigationCase) -> str:
@@ -800,7 +1135,8 @@ def trash_drive_file(file_id: str) -> None:
 
 def bootstrap_drive_folders(connection: GoogleDriveConnection | None = None) -> dict:
     """
-    Create the firm tree and a folder for every active/suspended client.
+    Create the firm tree, a folder for every active/suspended client,
+    and Work/{Name}/Personal for employees.
     Returns counts for messaging.
     """
     connection = ensure_firm_folder_structure(connection)
@@ -825,10 +1161,36 @@ def bootstrap_drive_folders(connection: GoogleDriveConnection | None = None) -> 
                 client.pk,
                 exc,
             )
+
+    employees_created = 0
+    employees_skipped = 0
+    employees_errors = 0
+    employees = Employee.objects.exclude(
+        status=Employee.Status.SUSPENDED
+    ).order_by("id")
+    for employee in employees.iterator():
+        try:
+            had_folder = bool(employee.drive_folder_id)
+            ensure_employee_folder_structure(employee)
+            if had_folder:
+                employees_skipped += 1
+            else:
+                employees_created += 1
+        except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+            employees_errors += 1
+            logger.warning(
+                "Could not create Drive folders for employee %s: %s",
+                employee.pk,
+                exc,
+            )
+
     return {
         "clients_created": created,
         "clients_existing": skipped,
         "clients_errors": errors,
+        "employees_created": employees_created,
+        "employees_existing": employees_skipped,
+        "employees_errors": employees_errors,
         "root_folder_id": connection.root_folder_id,
         "clients_folder_id": connection.clients_folder_id,
         "work_folder_id": connection.work_folder_id,
@@ -903,15 +1265,20 @@ def disconnect_google_drive(revoke: bool = True) -> None:
         except GoogleDriveOAuthError:
             # Still clear local credentials if revoke fails.
             pass
-    # Clear per-client / case / matter Drive IDs so a later reconnect rebuilds cleanly.
+    # Clear per-client / case / matter / employee Drive IDs so a later reconnect rebuilds cleanly.
     Client.objects.exclude(drive_folder_id="").update(
         drive_folder_id="",
+        drive_personal_documents_folder_id="",
         drive_litigation_folder_id="",
         drive_non_litigation_folder_id="",
     )
     LitigationCase.objects.exclude(drive_folder_id="").update(drive_folder_id="")
     NonLitigationMatter.objects.exclude(drive_folder_id="").update(
         drive_folder_id=""
+    )
+    Employee.objects.exclude(drive_folder_id="").update(
+        drive_folder_id="",
+        drive_personal_details_folder_id="",
     )
     connection.clear_tokens()
 

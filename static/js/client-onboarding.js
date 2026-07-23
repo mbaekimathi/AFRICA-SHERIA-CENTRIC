@@ -41,16 +41,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const corporateReg = document.getElementById("corporate-reg-fields");
   const citizenField = document.getElementById("citizen-id-field");
   const alienField = document.getElementById("alien-id-field");
-  const businessRegField = document.getElementById("business-reg-field");
-  const companyRegField = document.getElementById("company-reg-field");
 
   const syncCorporateKind = () => {
     const kind = document.querySelector(
       'input[name="corporate_kind"]:checked'
     )?.value;
     const isCompany = kind === "company";
-    businessRegField?.classList.toggle("is-hidden", isCompany);
-    companyRegField?.classList.toggle("is-hidden", !isCompany);
     if (corporateNameLabel) {
       corporateNameLabel.textContent = isCompany
         ? "Company name"

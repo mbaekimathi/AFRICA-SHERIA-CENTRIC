@@ -48,6 +48,7 @@
   </div>
   {% endif %}
 
+  {% if not task_access or task_access.allow_upload %}
   <div class="docs-compose">
     <div class="docs-compose__intro">
       <h3>Add to library</h3>
@@ -113,6 +114,12 @@
             {{ upload_form.notes }}
             {% if upload_form.notes.errors %}<span class="field-error">{{ upload_form.notes.errors.0 }}</span>{% endif %}
           </div>
+
+          <div class="docs-field">
+            <label for="{{ upload_form.party_type.id_for_label }}">Party type <span aria-hidden="true">*</span></label>
+            {{ upload_form.party_type }}
+            {% if upload_form.party_type.errors %}<span class="field-error">{{ upload_form.party_type.errors.0 }}</span>{% endif %}
+          </div>
         </div>
 
         <div class="docs-tile__foot">
@@ -123,7 +130,12 @@
         </div>
       </form>
 
-      <form method="post" class="docs-tile docs-tile--google" novalidate>
+      <form
+        method="post"
+        class="docs-tile docs-tile--google"
+        novalidate
+        data-docs-create
+      >
         {% csrf_token %}
         <input type="hidden" name="document_action" value="create_google">
         <div class="docs-tile__head">
@@ -162,7 +174,7 @@
               <label class="docs-type__option docs-type__option--{{ value }}">
                 <input
                   type="radio"
-                  name="{{ create_form.google_type.name }}"
+                  name="{{ create_form.google_type.html_name }}"
                   value="{{ value }}"
                   class="docs-type-input"
                   {% if create_form.google_type.value == value %}checked{% elif not create_form.is_bound and value == "document" %}checked{% endif %}
@@ -178,6 +190,12 @@
             <span class="field-error">{{ create_form.google_type.errors.0 }}</span>
             {% endif %}
           </fieldset>
+
+          <div class="docs-field">
+            <label for="{{ create_form.party_type.id_for_label }}">Party type <span aria-hidden="true">*</span></label>
+            {{ create_form.party_type }}
+            {% if create_form.party_type.errors %}<span class="field-error">{{ create_form.party_type.errors.0 }}</span>{% endif %}
+          </div>
         </div>
 
         <div class="docs-tile__foot">
@@ -189,114 +207,158 @@
       </form>
     </div>
   </div>
+  {% endif %}
 
-  <section class="docs-library" aria-labelledby="docs-library-title">
+  <section class="docs-library" id="docs-library" aria-labelledby="docs-library-title">
     <div class="docs-library__head">
       <div class="docs-library__title">
         <h3 id="docs-library-title">Library</h3>
-        <p class="docs-library__sub">Open starts tracking. Close the document window to stop.</p>
+        <p class="docs-library__sub">
+          Documents grouped by party type — expand a group to view, download, edit, or remove.
+        </p>
       </div>
       <span class="docs-library__count" title="Documents in library">
         {% if documents %}{{ documents|length }}{% else %}0{% endif %}
       </span>
     </div>
 
-    {% if documents %}
-    <ul class="docs-list">
-      {% for document in documents %}
-      {% with summary=document.activity_summary %}
-      <li class="docs-item docs-item--{{ document.source }}">
-        <div class="docs-item__row">
-          <span class="docs-item__icon" aria-hidden="true">
-            {% if document.source == "google_doc" %}
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-              <path d="M8.05 3.5 2.2 13.6h4.95l5.85-10.1H8.05Zm7.9 0-2.9 5.02 2.92 5.08h5.83L15.95 3.5ZM4.55 15.1 2.2 19.15c.45.95 1.2 1.7 2.15 2.2h15.3c.95-.5 1.7-1.25 2.15-2.2L19.45 15.1H4.55Z"/>
+    {% if document_groups %}
+    <div class="docs-party-groups">
+      {% for group in document_groups %}
+      <details
+        class="docs-party-group docs-party-group--{{ group.key }}"
+        {% if forloop.first %}open{% endif %}
+      >
+        <summary class="docs-party-group__summary">
+          <span class="docs-party-group__avatar docs-party-group__avatar--{{ group.key }}" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <circle cx="12" cy="9" r="3.25" stroke="currentColor" stroke-width="1.7"/>
+              <path d="M5.75 19c.7-3 3.1-4.75 6.25-4.75S17.55 16 18.25 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
             </svg>
-            {% else %}
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
-              <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-              <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {% endif %}
           </span>
+          <span class="docs-party-group__main">
+            <strong>{{ group.label }}</strong>
+            <span>
+              {{ group.count }} document{{ group.count|pluralize }}
+            </span>
+          </span>
+          <span class="docs-party-group__stat">
+            <span class="docs-party-group__stat-label">Documents</span>
+            <span class="docs-party-group__stat-value">{{ group.count }}</span>
+          </span>
+          <span class="docs-party-group__chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+              <path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </summary>
+        <ul class="docs-list">
+          {% for document in group.documents %}
+          {% with summary=document.activity_summary %}
+          <li class="docs-item docs-item--{{ document.source }}" id="document-{{ document.pk }}">
+            <div class="docs-item__row">
+              <span class="docs-item__icon" aria-hidden="true">
+                {% if document.source == "google_doc" %}
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M8.05 3.5 2.2 13.6h4.95l5.85-10.1H8.05Zm7.9 0-2.9 5.02 2.92 5.08h5.83L15.95 3.5ZM4.55 15.1 2.2 19.15c.45.95 1.2 1.7 2.15 2.2h15.3c.95-.5 1.7-1.25 2.15-2.2L19.45 15.1H4.55Z"/>
+                </svg>
+                {% else %}
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                  <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                {% endif %}
+              </span>
 
-          <div class="docs-item__main">
-            <div class="docs-item__topline">
-              <h4 class="docs-item__title">{{ document.title }}</h4>
-              <span class="docs-item__type">{{ document.type_label }}</span>
+              <div class="docs-item__main">
+                <div class="docs-item__topline">
+                  <h4 class="docs-item__title">{{ document.title }}</h4>
+                  <span class="docs-item__type">{{ document.type_label }}</span>
+                </div>
+                {% if document.description %}
+                <p class="docs-item__desc">{{ document.description|truncatechars:120 }}</p>
+                {% elif document.notes %}
+                <p class="docs-item__desc docs-item__desc--notes">{{ document.notes|truncatechars:120 }}</p>
+                {% endif %}
+                <div class="docs-item__meta">
+                  <span>{{ document.updated_at|date:"d M Y" }}</span>
+                  {% if document.uploaded_by %}
+                  <span>{{ document.uploaded_by.get_full_name }}</span>
+                  {% endif %}
+                  <span>{{ summary.total_seconds|duration }} total</span>
+                </div>
+              </div>
+
+              <div class="docs-item__actions">
+                {% if document.can_open %}
+                {% if not task_access or task_access.allow_view %}
+                <a
+                  class="btn btn--docs-open btn--inline"
+                  href="{{ document.tracked_open_url|default:document.open_url }}"
+                  data-docs-open-track
+                  data-target-url="{% if document.open_url %}{{ document.open_url }}{% elif document.local_file %}{{ document.local_file.url }}{% endif %}"
+                >
+                  View
+                </a>
+                {% endif %}
+                {% endif %}
+                {% if document.can_download %}
+                {% if not task_access or task_access.allow_download %}
+                <a
+                  class="btn btn--quiet btn--inline"
+                  href="{% url 'accounts:download_document' role=role_slug document_id=document.pk %}"
+                >
+                  Download
+                </a>
+                {% endif %}
+                {% endif %}
+                {% if not task_access or task_access.allow_edit %}
+                <button
+                  type="button"
+                  class="btn btn--quiet btn--inline"
+                  data-docs-edit
+                  data-id="{{ document.pk }}"
+                >
+                  Rename document
+                </button>
+                {% endif %}
+                {% if document.activity_url %}
+                <a
+                  class="btn btn--quiet btn--inline"
+                  href="{{ document.activity_url }}"
+                >
+                  Activity
+                </a>
+                {% endif %}
+                {% if not task_access or task_access.allow_delete %}
+                <form
+                  method="post"
+                  class="docs-item__remove-form"
+                  onsubmit="return confirm('Remove “{{ document.title|escapejs }}”? It will also go to Drive trash.');"
+                >
+                  {% csrf_token %}
+                  <input type="hidden" name="document_action" value="delete">
+                  <input type="hidden" name="document_id" value="{{ document.pk }}">
+                  <button type="submit" class="btn btn--quiet btn--inline docs-item__remove">Delete</button>
+                </form>
+                {% endif %}
+              </div>
             </div>
-            {% if document.description %}
-            <p class="docs-item__desc">{{ document.description|truncatechars:120 }}</p>
-            {% elif document.notes %}
-            <p class="docs-item__desc docs-item__desc--notes">{{ document.notes|truncatechars:120 }}</p>
-            {% endif %}
-            <div class="docs-item__meta">
-              <span>{{ document.updated_at|date:"d M Y" }}</span>
-              {% if document.uploaded_by %}
-              <span>{{ document.uploaded_by.get_full_name }}</span>
-              {% endif %}
-              <span>{{ summary.total_seconds|duration }} total</span>
+
+            <div hidden data-docs-edit-source="{{ document.pk }}">
+              <span data-field="title">{{ document.title }}</span>
+              <span data-field="description">{{ document.description }}</span>
+              <span data-field="notes">{{ document.notes }}</span>
+              <span data-field="type">{{ document.type_label }}</span>
+              <span data-field="party_type">{{ document.party_type }}</span>
             </div>
-          </div>
-
-          <div class="docs-item__actions">
-            {% if document.open_url or document.local_file %}
-            <a
-              class="btn btn--docs-open btn--inline"
-              href="{{ document.tracked_open_url|default:document.open_url }}"
-              data-docs-open-track
-              data-target-url="{% if document.open_url %}{{ document.open_url }}{% elif document.local_file %}{{ document.local_file.url }}{% endif %}"
-            >
-              Open
-            </a>
-            {% endif %}
-            {% if document.local_file %}
-            <a
-              class="btn btn--quiet btn--inline"
-              href="{% url 'accounts:download_document' role=role_slug document_id=document.pk %}"
-            >
-              Download
-            </a>
-            {% endif %}
-            <button
-              type="button"
-              class="btn btn--quiet btn--inline"
-              data-docs-edit
-              data-id="{{ document.pk }}"
-            >
-              Edit details
-            </button>
-            <form
-              method="post"
-              class="docs-item__remove-form"
-              onsubmit="return confirm('Remove “{{ document.title|escapejs }}”? It will also go to Drive trash.');"
-            >
-              {% csrf_token %}
-              <input type="hidden" name="document_action" value="delete">
-              <input type="hidden" name="document_id" value="{{ document.pk }}">
-              <button type="submit" class="btn btn--quiet btn--inline docs-item__remove">Remove</button>
-            </form>
-          </div>
-        </div>
-
-        <div hidden data-docs-edit-source="{{ document.pk }}">
-          <span data-field="title">{{ document.title }}</span>
-          <span data-field="description">{{ document.description }}</span>
-          <span data-field="notes">{{ document.notes }}</span>
-          <span data-field="type">{{ document.type_label }}</span>
-        </div>
-
-        <a
-          class="docs-item__activity-link"
-          href="{{ document.activity_url }}"
-        >
-          <span>Activity</span>
-          <span>{{ summary.total_seconds|duration }} total</span>
-        </a>
-      </li>
-      {% endwith %}
+          </li>
+          {% endwith %}
+          {% endfor %}
+        </ul>
+      </details>
       {% endfor %}
-    </ul>
+    </div>
     {% else %}
     <div class="docs-empty">
       <span class="docs-empty__icon" aria-hidden="true">
@@ -325,7 +387,7 @@
       <div>
         <p class="docs-edit-eyebrow" id="docs-edit-type">Document</p>
         <h2 id="docs-edit-heading">Edit document details</h2>
-        <p>Update the name, description, and notes. Changing the name also renames the file on Google Drive.</p>
+        <p>Update the name, description, notes, and party type. Changing the name also renames the file on Google Drive.</p>
       </div>
       <button type="button" class="btn btn--quiet btn--inline" id="docs-edit-close" aria-label="Close">
         Close
@@ -364,6 +426,11 @@
           placeholder="Optional internal notes"
         ></textarea>
       </div>
+      <div class="docs-field">
+        <label for="{{ edit_form.party_type.id_for_label }}">Party type <span aria-hidden="true">*</span></label>
+        {{ edit_form.party_type }}
+        {% if edit_form.party_type.errors %}<span class="field-error">{{ edit_form.party_type.errors.0 }}</span>{% endif %}
+      </div>
     </div>
     <div class="workspace-modal__actions">
       <button type="button" class="btn btn--quiet" id="docs-edit-cancel">Cancel</button>
@@ -371,9 +438,25 @@
     </div>
   </form>
 </dialog>
+
+<div
+  class="docs-busy-overlay"
+  id="docs-busy-overlay"
+  role="alertdialog"
+  aria-modal="true"
+  aria-labelledby="docs-busy-title"
+  aria-describedby="docs-busy-text"
+  hidden
+>
+  <div class="docs-busy-card">
+    <span class="docs-busy-card__spinner" aria-hidden="true"></span>
+    <h2 id="docs-busy-title">Working on your document</h2>
+    <p id="docs-busy-text">Please wait — do not close or submit again.</p>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/docs-upload.js' %}" defer></script>
+<script src="{% static 'js/docs-upload.js' %}?v=4" defer></script>
 <script src="{% static 'js/docs-open.js' %}" defer></script>
 {% endblock %}

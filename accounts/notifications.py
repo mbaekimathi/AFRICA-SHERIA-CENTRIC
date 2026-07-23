@@ -123,6 +123,52 @@ def notify_task_rejected(task, *, kind: str) -> Notification | None:
     )
 
 
+def _task_entity_url(employee, task, *, kind: str) -> str:
+    """Deep-link the assigner to the related case or matter page."""
+    if kind == "case":
+        return reverse(
+            "accounts:view_litigation_case",
+            kwargs={"role": employee.role_slug, "case_id": task.case_id},
+        )
+    return reverse(
+        "accounts:view_non_litigation_matter",
+        kwargs={"role": employee.role_slug, "matter_id": task.matter_id},
+    )
+
+
+def notify_task_completed(task, *, kind: str) -> Notification | None:
+    """Notify the allocator in their live notification feed that the task is done."""
+    assigner = task.created_by
+    if not assigner:
+        return None
+
+    subject = task.case if kind == "case" else task.matter
+    title_label = (task.title or "").strip() or str(subject)
+    assignee_name = task.assignee.get_full_name()
+    if assigner.pk == task.assignee_id:
+        body = (
+            f"You marked this task as complete on {subject} "
+            f"(due {task.due_date:%d %b %Y})."
+        )
+    else:
+        body = (
+            f"{assignee_name} marked this task as complete on {subject} "
+            f"(due {task.due_date:%d %b %Y})."
+        )
+
+    notification, _created = Notification.objects.get_or_create(
+        recipient=assigner,
+        source_key=f"{kind}_task_completed:{task.pk}",
+        defaults={
+            "category": Notification.Category.TASK,
+            "title": f"Task completed: {title_label}",
+            "body": body,
+            "target_url": _task_entity_url(assigner, task, kind=kind),
+        },
+    )
+    return notification
+
+
 def ensure_due_reminders(employee) -> int:
     """
     Materialise reminder notifications for tasks whose reminder_at has passed.
@@ -227,12 +273,40 @@ def notify_google_drive_disconnected(*, disconnected_by: Employee) -> int:
     Returns the number of notifications created.
     """
     actor = disconnected_by.get_full_name() or disconnected_by.login_code
-    event_key = f"google_drive_disconnected:{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
-    title = "Google Drive disconnected"
-    body = (
-        f"{actor} disconnected the firm Google Drive account. "
-        "Document features that rely on Drive will not work until it is connected again."
+    return _notify_google_drive_disconnected(
+        title="Google Drive disconnected",
+        body=(
+            f"{actor} disconnected the firm Google Drive account. "
+            "Document features that rely on Drive will not work until it is "
+            "connected again."
+        ),
+        event_prefix="google_drive_disconnected",
     )
+
+
+def notify_google_drive_auth_expired() -> int:
+    """
+    Notify employees that Drive was auto-disconnected after auth failure.
+
+    Access tokens renew automatically; this only fires when refresh is
+    permanently rejected (expired grant or OAuth client mismatch).
+    """
+    return _notify_google_drive_disconnected(
+        title="Google Drive disconnected",
+        body=(
+            "Google Drive was automatically disconnected because authorization "
+            "expired or no longer matches this app. Connect again in Google "
+            "Drive Settings. The connection otherwise stays active until "
+            "someone disconnects it."
+        ),
+        event_prefix="google_drive_auth_expired",
+    )
+
+
+def _notify_google_drive_disconnected(
+    *, title: str, body: str, event_prefix: str
+) -> int:
+    event_key = f"{event_prefix}:{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
     created = 0
     for employee in Employee.objects.filter(status=Employee.Status.ACTIVE).iterator():
         settings_url = workspace_reverse(

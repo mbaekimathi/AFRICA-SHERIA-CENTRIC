@@ -1,0 +1,184 @@
+{% if live_tasks %}
+<aside class="live-task-launch" aria-label="Your assigned task">
+  <button
+    type="button"
+    class="live-task-launch__btn open-live-task-modal"
+    aria-haspopup="dialog"
+    aria-controls="live-task-modal"
+  >
+    <span class="live-task-launch__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path
+          d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </span>
+    <span class="live-task-launch__copy">
+      <span class="live-task-launch__title">
+        {% if live_task_count == 1 %}
+          {% with item=live_tasks.0 %}
+            {% if item.task.title %}{{ item.task.title }}{% else %}Your live task{% endif %}
+          {% endwith %}
+        {% else %}
+          {{ live_task_count }} live tasks
+        {% endif %}
+      </span>
+      <span class="live-task-launch__hint">Tap to open brief &amp; mark complete</span>
+    </span>
+    <span class="live-task-launch__chevron" aria-hidden="true">
+      <svg viewBox="0 0 20 20" fill="none">
+        <path
+          d="M7.5 4.5l5 5.5-5 5.5"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </span>
+  </button>
+</aside>
+
+<button
+  type="button"
+  class="live-task-fab open-live-task-modal"
+  id="open-live-task-modal"
+  aria-haspopup="dialog"
+  aria-controls="live-task-modal"
+  aria-label="Open live task{{ live_task_count|pluralize }}"
+  title="Open task to mark complete"
+>
+  <span class="live-task-fab__pulse" aria-hidden="true"></span>
+  <span class="live-task-fab__icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none">
+      <path
+        d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
+  </span>
+  <span class="live-task-fab__label">Task</span>
+  {% if live_task_count > 1 %}
+  <span class="live-task-fab__count">{{ live_task_count }}</span>
+  {% endif %}
+</button>
+
+<dialog
+  class="workspace-modal live-task-view-modal"
+  id="live-task-modal"
+  aria-labelledby="live-task-title"
+>
+  <div class="workspace-modal__card live-task-modal__card">
+    <header class="live-task-modal__head">
+      <div class="live-task-modal__eyebrow">
+        <span class="live-task-modal__kicker" id="live-task-title">
+          {% if live_task_count == 1 %}Your live task{% else %}Your live tasks{% endif %}
+        </span>
+        {% if live_task_kind == "matter" %}
+        <span class="live-task-modal__kind-pill">Matter</span>
+        {% else %}
+        <span class="live-task-modal__kind-pill">Case</span>
+        {% endif %}
+      </div>
+      <h2 class="live-task-modal__heading">
+        {% if live_task_count == 1 %}
+          {% with item=live_tasks.0 %}
+            {% if item.task.title %}{{ item.task.title }}{% else %}Task #{{ item.task.pk }}{% endif %}
+          {% endwith %}
+        {% else %}
+          Active assignments
+        {% endif %}
+      </h2>
+      <p class="live-task-modal__lead">
+        Review the brief, then mark complete when the work is done.
+      </p>
+    </header>
+
+    <div class="workspace-modal__body live-task-modal__body">
+      {% for item in live_tasks %}
+      <article class="live-task-card{% if live_task_count > 1 %} live-task-card--stacked{% endif %}">
+        {% if live_task_count > 1 %}
+        <div class="live-task-card__head">
+          <h3>
+            {% if item.task.title %}
+            {{ item.task.title }}
+            {% else %}
+            Task #{{ item.task.pk }}
+            {% endif %}
+          </h3>
+          <span class="status-pill status-pill--{{ item.task.status }}">
+            {{ item.task.get_status_display }}
+          </span>
+        </div>
+        {% else %}
+        <div class="live-task-card__status-row">
+          <span class="status-pill status-pill--{{ item.task.status }}">
+            {{ item.task.get_status_display }}
+          </span>
+        </div>
+        {% endif %}
+
+        <dl class="live-task-card__meta">
+          <div class="live-task-card__meta-item live-task-card__meta-item--wide">
+            <dt>{{ item.entity_field_label }}</dt>
+            <dd>{{ item.subject }}</dd>
+          </div>
+          <div class="live-task-card__meta-item">
+            <dt>Client</dt>
+            <dd>{{ item.subject_meta }}</dd>
+          </div>
+          <div class="live-task-card__meta-item">
+            <dt>Due</dt>
+            <dd>{{ item.task.due_date|date:"d M Y" }}</dd>
+          </div>
+          <div class="live-task-card__meta-item">
+            <dt>Tasked by</dt>
+            <dd>
+              {% if item.task.created_by %}
+              {{ item.task.created_by.get_full_name }}
+              {% else %}
+              —
+              {% endif %}
+            </dd>
+          </div>
+          {% if item.task.reminder_at %}
+          <div class="live-task-card__meta-item">
+            <dt>Reminder</dt>
+            <dd>{{ item.task.reminder_at|date:"d M Y, H:i" }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+
+        <div class="live-task-card__brief">
+          <p class="live-task-card__label">Instructions / Brief</p>
+          <div class="live-task-card__instructions">
+            {{ item.task.instructions|default:"No additional instructions."|linebreaksbr }}
+          </div>
+        </div>
+
+        <form method="post" action="{{ item.complete_url }}" class="live-task-card__actions live-task-card__actions--entity">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit" class="btn btn--primary btn--inline">
+            Mark complete
+          </button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="live-task-modal__footer live-task-modal__footer--entity">
+      <button type="button" class="btn btn--quiet btn--inline" id="close-live-task-modal">
+        Close
+      </button>
+    </div>
+  </div>
+</dialog>
+{% endif %}

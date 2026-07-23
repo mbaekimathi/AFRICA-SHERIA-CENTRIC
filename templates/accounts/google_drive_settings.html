@@ -11,6 +11,8 @@
       <p class="page-lead">
         Connect a Google account so Sheria-Centric can use Google Drive for
         firm documents such as letterheads, stamps, and signatures.
+        The connection stays active until you disconnect it; access renews
+        automatically in the background.
       </p>
     </div>
   </header>
@@ -73,8 +75,10 @@
         </form>
       </div>
       <p class="gdrive-note">
-        Disconnect only clears the app connection (and notifies employees).
-        Folders already on Google Drive are left in place.
+        Only use Disconnect when you intend to remove firm Drive access.
+        Short-lived Google access tokens renew automatically and do not
+        end this connection. Disconnect clears the app link (and notifies
+        employees); folders already on Google Drive are left in place.
       </p>
 
       <div class="gdrive-tree">
@@ -104,13 +108,19 @@
                   <li>
                     <em>{each client}/</em>
                     <ul>
+                      <li>Personal Documents/ — signup &amp; onboarding uploads</li>
                       <li>Litigation/{case}/ — case documents</li>
                       <li>Non-Litigation/{matter}/ — matter documents</li>
                     </ul>
                   </li>
                 </ul>
               </li>
-              <li><strong>Work/</strong> — internal firm work folders</li>
+              <li>
+                <strong>Work/</strong> — employee personal folders
+                <ul>
+                  <li>{employee name}/Personal/ — signup &amp; onboarding uploads</li>
+                </ul>
+              </li>
             </ul>
           </li>
         </ul>

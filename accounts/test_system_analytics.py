@@ -347,10 +347,12 @@ class SystemAnalyticsTests(TestCase):
         self.assertEqual(docs["edits"], 1)
         self.assertEqual(docs["active_users"], 1)
         self.assertEqual(docs["editing_hours"], 0.5)
-        self.assertTrue(docs["token_expiring_soon"])
+        self.assertFalse(docs["token_expiring_soon"])
+        self.assertFalse(docs["missing_refresh_token"])
         self.assertEqual(docs["route_requests"], 1)
         titles = {item["title"] for item in analytics["recommendations"]}
-        self.assertIn("Refresh Google Drive token soon", titles)
+        self.assertNotIn("Refresh Google Drive token soon", titles)
+        self.assertNotIn("Reconnect Google Drive for lasting access", titles)
 
     @patch("accounts.system_analytics._runtime_snapshot")
     def test_invalid_range_falls_back_and_prunes_old_metrics(self, runtime):

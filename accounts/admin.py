@@ -28,6 +28,8 @@ from .models import (
     Invoice,
     LitigationCase,
     MatterAttendance,
+    MatterAttendanceBringUpItem,
+    MatterAttendanceQuorumMember,
     MatterParty,
     MatterTask,
     MpesaStkRequest,
@@ -111,6 +113,15 @@ class EmployeeAdmin(UserAdmin):
                     "employment_contract",
                     "national_id_or_passport",
                     "kra_pin_certificate",
+                )
+            },
+        ),
+        (
+            "Google Drive",
+            {
+                "fields": (
+                    "drive_folder_id",
+                    "drive_personal_details_folder_id",
                 )
             },
         ),
@@ -224,6 +235,8 @@ class ClientAdmin(admin.ModelAdmin):
                     "business_document",
                     "company_registration_number",
                     "company_registration_document",
+                    "kra_pin_document",
+                    "signed_instruction_note",
                 )
             },
         ),
@@ -233,6 +246,7 @@ class ClientAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "drive_folder_id",
+                    "drive_personal_documents_folder_id",
                     "drive_litigation_folder_id",
                     "drive_non_litigation_folder_id",
                 )
@@ -264,6 +278,11 @@ class CaseTaskInline(admin.TabularInline):
         "due_date",
         "reminder_at",
         "status",
+        "allow_view",
+        "allow_edit",
+        "allow_download",
+        "allow_delete",
+        "allow_upload",
         "instructions",
         "rejection_reason",
         "responded_at",
@@ -327,11 +346,24 @@ class CaseTaskAdmin(admin.ModelAdmin):
         "due_date",
         "reminder_at",
         "status",
+        "allow_view",
+        "allow_edit",
+        "allow_download",
+        "allow_delete",
+        "allow_upload",
         "created_by",
         "responded_at",
         "created_at",
     )
-    list_filter = ("status", "due_date")
+    list_filter = (
+        "status",
+        "due_date",
+        "allow_view",
+        "allow_edit",
+        "allow_download",
+        "allow_delete",
+        "allow_upload",
+    )
     search_fields = (
         "title",
         "instructions",
@@ -341,6 +373,39 @@ class CaseTaskAdmin(admin.ModelAdmin):
         "case__court_case_number",
     )
     readonly_fields = ("created_at", "updated_at", "responded_at")
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "case",
+                    "assignee",
+                    "title",
+                    "instructions",
+                    "due_date",
+                    "reminder_at",
+                    "status",
+                    "rejection_reason",
+                    "responded_at",
+                    "created_by",
+                    "created_at",
+                    "updated_at",
+                )
+            },
+        ),
+        (
+            "Assignee access",
+            {
+                "fields": (
+                    "allow_view",
+                    "allow_edit",
+                    "allow_download",
+                    "allow_delete",
+                    "allow_upload",
+                )
+            },
+        ),
+    )
 
 
 class CourtAttendanceAdvocateInline(admin.TabularInline):
@@ -364,15 +429,17 @@ class CourtAttendanceAdmin(admin.ModelAdmin):
         "presence",
         "judicial_officer",
         "next_court_date",
+        "next_client_attendance",
         "recorded_by",
     )
-    list_filter = ("presence", "attendance_date", "next_court_date")
+    list_filter = ("presence", "next_client_attendance", "attendance_date", "next_court_date")
     search_fields = (
         "activity_type",
         "judicial_officer",
         "court_room",
         "case__court_case_number",
         "description",
+        "virtual_link",
     )
     date_hierarchy = "attendance_date"
     inlines = [CourtAttendanceAdvocateInline, CourtAttendanceBringUpInline]
@@ -386,12 +453,20 @@ class MatterAttendanceAdmin(admin.ModelAdmin):
         "matter",
         "activity_type",
         "attendance_date",
+        "presence",
         "next_attendance_date",
         "recorded_by",
     )
-    list_filter = ("attendance_date", "next_attendance_date")
+    list_filter = (
+        "presence",
+        "next_client_attendance",
+        "attendance_date",
+        "next_attendance_date",
+    )
     search_fields = (
         "activity_type",
+        "contact_person",
+        "location",
         "description",
         "next_action",
         "bring_update",
@@ -399,6 +474,31 @@ class MatterAttendanceAdmin(admin.ModelAdmin):
     )
     date_hierarchy = "attendance_date"
     readonly_fields = ("created_at", "updated_at")
+    inlines = []
+
+
+class MatterAttendanceQuorumInline(admin.TabularInline):
+    model = MatterAttendanceQuorumMember
+    extra = 0
+    fields = ("sort_order", "participant_name", "what_they_said")
+
+
+class MatterAttendanceBringUpInline(admin.TabularInline):
+    model = MatterAttendanceBringUpItem
+    extra = 0
+    fields = (
+        "sort_order",
+        "description",
+        "reminder_frequency",
+        "allocated_to",
+    )
+    autocomplete_fields = ("allocated_to",)
+
+
+MatterAttendanceAdmin.inlines = [
+    MatterAttendanceQuorumInline,
+    MatterAttendanceBringUpInline,
+]
 
 
 class MatterPartyInline(admin.TabularInline):
@@ -424,6 +524,11 @@ class MatterTaskInline(admin.TabularInline):
         "due_date",
         "reminder_at",
         "status",
+        "allow_view",
+        "allow_edit",
+        "allow_download",
+        "allow_delete",
+        "allow_upload",
         "instructions",
         "rejection_reason",
         "responded_at",
@@ -483,11 +588,24 @@ class MatterTaskAdmin(admin.ModelAdmin):
         "due_date",
         "reminder_at",
         "status",
+        "allow_view",
+        "allow_edit",
+        "allow_download",
+        "allow_delete",
+        "allow_upload",
         "created_by",
         "responded_at",
         "created_at",
     )
-    list_filter = ("status", "due_date")
+    list_filter = (
+        "status",
+        "due_date",
+        "allow_view",
+        "allow_edit",
+        "allow_download",
+        "allow_delete",
+        "allow_upload",
+    )
     search_fields = (
         "title",
         "instructions",
@@ -497,6 +615,39 @@ class MatterTaskAdmin(admin.ModelAdmin):
         "matter__matter_title",
     )
     readonly_fields = ("created_at", "updated_at", "responded_at")
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "matter",
+                    "assignee",
+                    "title",
+                    "instructions",
+                    "due_date",
+                    "reminder_at",
+                    "status",
+                    "rejection_reason",
+                    "responded_at",
+                    "created_by",
+                    "created_at",
+                    "updated_at",
+                )
+            },
+        ),
+        (
+            "Assignee access",
+            {
+                "fields": (
+                    "allow_view",
+                    "allow_edit",
+                    "allow_download",
+                    "allow_delete",
+                    "allow_upload",
+                )
+            },
+        ),
+    )
 
 
 @admin.register(EmployeeBlogPost)
@@ -843,21 +994,23 @@ class DocumentAdmin(admin.ModelAdmin):
     list_display = (
         "title",
         "source",
+        "party_type",
         "case",
         "matter",
         "uploaded_by",
         "updated_at",
     )
-    list_filter = ("source",)
+    list_filter = ("source", "party_type")
     search_fields = (
         "title",
         "original_filename",
         "drive_file_id",
+        "party_type",
         "case__court_case_number",
         "matter__matter_title",
     )
     readonly_fields = ("created_at", "updated_at", "drive_file_id", "web_view_link")
-    raw_id_fields = ("case", "matter", "uploaded_by")
+    raw_id_fields = ("case", "matter", "uploaded_by", "linked_client")
 
 
 @admin.register(DocumentActivity)

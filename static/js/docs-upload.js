@@ -1,9 +1,10 @@
 /**
- * Documents upload — dropzone + edit-details modal.
+ * Documents upload — dropzone, edit modal, and submit loading lock.
  */
 document.addEventListener("DOMContentLoaded", () => {
   initDropzone();
   initEditModal();
+  initSubmitLocks();
 });
 
 function initDropzone() {
@@ -70,14 +71,86 @@ function initDropzone() {
   syncFile();
 }
 
+function showDocsBusy(title, message) {
+  const overlay = document.getElementById("docs-busy-overlay");
+  if (!overlay) return;
+
+  const titleEl = document.getElementById("docs-busy-title");
+  const textEl = document.getElementById("docs-busy-text");
+  if (titleEl && title) titleEl.textContent = title;
+  if (textEl && message) textEl.textContent = message;
+
+  overlay.hidden = false;
+  document.body.classList.add("docs-is-busy");
+}
+
+function lockSubmitButtons() {
+  document
+    .querySelectorAll(
+      "[data-docs-upload] button[type='submit'], [data-docs-create] button[type='submit'], #docs-edit-form button[type='submit']"
+    )
+    .forEach((button) => {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    });
+}
+
+function initSubmitLocks() {
+  let isBusy = false;
+
+  const lockAndShow = (kind) => {
+    if (isBusy) return false;
+    isBusy = true;
+    lockSubmitButtons();
+
+    if (kind === "upload") {
+      showDocsBusy(
+        "Uploading document",
+        "Saving your file to Drive. Please wait — do not submit again."
+      );
+    } else if (kind === "create") {
+      showDocsBusy(
+        "Creating Google file",
+        "Setting up your file in Drive. Please wait — do not submit again."
+      );
+    } else {
+      showDocsBusy(
+        "Saving document details",
+        "Updating your document. Please wait — do not submit again."
+      );
+    }
+    return true;
+  };
+
+  const bindForm = (selector, kind) => {
+    const form = document.querySelector(selector);
+    if (!form) return;
+    form.addEventListener("submit", (event) => {
+      if (!lockAndShow(kind)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+  };
+
+  bindForm("[data-docs-upload]", "upload");
+  bindForm("[data-docs-create]", "create");
+  bindForm("#docs-edit-form", "edit");
+}
+
 function initEditModal() {
   const modal = document.getElementById("docs-edit-modal");
   if (!modal) return;
 
+  const form = document.getElementById("docs-edit-form");
   const idInput = document.getElementById("docs-edit-id");
   const nameInput = document.getElementById("docs-edit-name");
   const descriptionInput = document.getElementById("docs-edit-description");
   const notesInput = document.getElementById("docs-edit-notes");
+  const partyTypeInput =
+    form?.querySelector('select[name="party_type"]') ||
+    document.getElementById("id_party_type") ||
+    document.getElementById("edit_party_type");
   const typeLabel = document.getElementById("docs-edit-type");
   const closeBtn = document.getElementById("docs-edit-close");
   const cancelBtn = document.getElementById("docs-edit-cancel");
@@ -101,7 +174,7 @@ function initEditModal() {
 
   const fieldText = (source, name) => {
     const el = source.querySelector(`[data-field="${name}"]`);
-    return el ? el.textContent : "";
+    return el ? el.textContent.trim() : "";
   };
 
   const fillFrom = (documentId) => {
@@ -115,6 +188,9 @@ function initEditModal() {
     nameInput.value = fieldText(source, "title");
     descriptionInput.value = fieldText(source, "description");
     notesInput.value = fieldText(source, "notes");
+    if (partyTypeInput) {
+      partyTypeInput.value = fieldText(source, "party_type") || "";
+    }
     if (typeLabel) {
       typeLabel.textContent = fieldText(source, "type") || "Document";
     }

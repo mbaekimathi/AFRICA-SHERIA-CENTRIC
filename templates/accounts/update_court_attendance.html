@@ -85,7 +85,7 @@
           </svg>
         </span>
         <div>
-          <h3 id="section-advocates">Advocates Present</h3>
+          <h3 id="section-advocates">Quorum</h3>
           <p>Add each advocate and a summary of their submissions</p>
         </div>
       </header>
@@ -218,6 +218,17 @@
           {{ form.next_client_attendance }}
           {% if form.next_client_attendance.errors %}<span class="field-error">{{ form.next_client_attendance.errors.0 }}</span>{% endif %}
         </div>
+        <div
+          class="form-field register-grid__span"
+          id="virtual-link-field"
+          data-virtual-link-field
+          {% if form.next_client_attendance.value != "virtual" %}hidden{% endif %}
+        >
+          <label for="{{ form.virtual_link.id_for_label }}">Virtual hearing link</label>
+          {{ form.virtual_link }}
+          {% if form.virtual_link.errors %}<span class="field-error">{{ form.virtual_link.errors.0 }}</span>{% endif %}
+          <span class="field-hint">Shown on the case calendar when the next appearance is virtual.</span>
+        </div>
       </div>
     </section>
 
@@ -335,7 +346,7 @@
         <h3 id="section-previous-court">Previous court attendances</h3>
         <p>
           {% if previous_attendances %}
-          {{ previous_attendances|length }} recorded for this case
+          {{ previous_attendances|length }} recorded for this case — view or edit any record
           {% else %}
           No attendance recorded yet
           {% endif %}
@@ -346,8 +357,8 @@
       {% if previous_attendances %}
       <div class="attendance-history__list">
         {% for attendance in previous_attendances %}
-        <details class="attendance-history__card">
-          <summary class="attendance-history__summary">
+        <article class="attendance-history__card attendance-history__row" data-attendance-id="{{ attendance.pk }}">
+          <div class="attendance-history__summary">
             <span class="attendance-history__title">
               {{ attendance.activity_type }}
               · {{ attendance.attendance_date|date:"d M Y" }}
@@ -360,85 +371,25 @@
               · {{ attendance.judicial_officer }}
               {% endif %}
             </span>
-          </summary>
-          <div class="attendance-history__body">
-            <dl class="settings-grid review-grid">
-              <div><dt>Court room</dt><dd>{{ attendance.court_room|default:"—" }}</dd></div>
-              <div>
-                <dt>Recorded by</dt>
-                <dd>
-                  {% if attendance.recorded_by %}
-                  {{ attendance.recorded_by.get_full_name }}
-                  {% else %}
-                  —
-                  {% endif %}
-                </dd>
-              </div>
-              <div class="review-grid__full">
-                <dt>Court directions</dt>
-                <dd>{{ attendance.court_directions|default:"—"|linebreaksbr }}</dd>
-              </div>
-              <div class="review-grid__full">
-                <dt>Description</dt>
-                <dd>{{ attendance.description|default:"—"|linebreaksbr }}</dd>
-              </div>
-              <div class="review-grid__full">
-                <dt>Next action</dt>
-                <dd>{{ attendance.next_action|default:"—"|linebreaksbr }}</dd>
-              </div>
-              <div>
-                <dt>Next appearance</dt>
-                <dd>
-                  {% if attendance.next_court_date %}
-                  {{ attendance.next_activity_type|default:"Court" }}
-                  · {{ attendance.next_court_date|date:"d M Y" }}
-                  {% else %}
-                  —
-                  {% endif %}
-                </dd>
-              </div>
-              <div>
-                <dt>Next judicial officer</dt>
-                <dd>{{ attendance.next_judicial_officer|default:"—" }}</dd>
-              </div>
-            </dl>
-
-            {% if attendance.advocates.all %}
-            <div class="attendance-history__block">
-              <h4>Advocates present</h4>
-              <ul class="attendance-history__bullets">
-                {% for advocate in attendance.advocates.all %}
-                <li>
-                  <strong>{{ advocate.advocate_name }}</strong>
-                  {% if advocate.what_they_said %}
-                  — {{ advocate.what_they_said }}
-                  {% endif %}
-                </li>
-                {% endfor %}
-              </ul>
+            <div class="attendance-history__actions">
+              <button
+                type="button"
+                class="btn btn--quiet btn--inline open-view-attendance"
+                data-attendance-id="{{ attendance.pk }}"
+              >
+                View
+              </button>
+              <button
+                type="button"
+                class="btn btn--primary btn--inline open-edit-attendance"
+                data-attendance-id="{{ attendance.pk }}"
+                data-edit-url="{% url 'accounts:edit_court_attendance' role=role_slug case_id=case.pk attendance_id=attendance.pk %}"
+              >
+                Edit
+              </button>
             </div>
-            {% endif %}
-
-            {% if attendance.bring_up_items.all %}
-            <div class="attendance-history__block">
-              <h4>Bring-up items</h4>
-              <ul class="attendance-history__bullets">
-                {% for item in attendance.bring_up_items.all %}
-                <li>
-                  {{ item.description }}
-                  {% if item.reminder_frequency %}
-                  · {{ item.get_reminder_frequency_display }}
-                  {% endif %}
-                  {% if item.allocated_to %}
-                  · {{ item.allocated_to.get_full_name }}
-                  {% endif %}
-                </li>
-                {% endfor %}
-              </ul>
-            </div>
-            {% endif %}
           </div>
-        </details>
+        </article>
         {% endfor %}
       </div>
       {% else %}
@@ -453,8 +404,352 @@
     </div>
   </section>
 </section>
+
+{{ previous_attendances_data|json_script:"previous-attendances-data" }}
+
+<dialog
+  class="workspace-modal court-attendance-modal"
+  id="view-court-attendance-modal"
+  aria-labelledby="view-attendance-title"
+>
+  <div class="workspace-modal__card court-attendance-modal__card">
+    <header class="workspace-modal__head court-attendance-modal__head">
+      <div class="court-attendance-modal__eyebrow">
+        <span class="court-attendance-modal__kicker">Court attendance</span>
+        <span class="status-pill" id="view-attendance-presence">—</span>
+      </div>
+      <h2 id="view-attendance-title">Attendance</h2>
+      <p id="view-attendance-lead" class="court-attendance-modal__lead">—</p>
+    </header>
+    <div class="workspace-modal__body court-attendance-modal__body">
+      <section class="court-attendance-modal__section" aria-labelledby="view-section-attendance">
+        <h3 id="view-section-attendance">Court attendance</h3>
+        <dl class="settings-grid review-grid">
+          <div><dt>Activity Type</dt><dd id="view-attendance-activity">—</dd></div>
+          <div><dt>Judicial Officer</dt><dd id="view-attendance-officer">—</dd></div>
+          <div><dt>Court Room</dt><dd id="view-attendance-room">—</dd></div>
+          <div><dt>Date of Court Attendance</dt><dd id="view-attendance-date">—</dd></div>
+          <div class="review-grid__full"><dt>Court Attendance</dt><dd id="view-attendance-presence-label">—</dd></div>
+          <div class="review-grid__full"><dt>Recorded by</dt><dd id="view-attendance-recorded-by">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="court-attendance-modal__section" id="view-attendance-advocates-wrap" aria-labelledby="view-section-quorum" hidden>
+        <h3 id="view-section-quorum">Quorum</h3>
+        <ul class="attendance-history__bullets" id="view-attendance-advocates"></ul>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="view-section-outcome">
+        <h3 id="view-section-outcome">Directions &amp; outcome</h3>
+        <dl class="settings-grid review-grid">
+          <div class="review-grid__full"><dt>Court Directions</dt><dd id="view-attendance-directions">—</dd></div>
+          <div class="review-grid__full"><dt>Description</dt><dd id="view-attendance-description">—</dd></div>
+          <div class="review-grid__full"><dt>Next Action</dt><dd id="view-attendance-next-action">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="view-section-next">
+        <h3 id="view-section-next">Next Court Appearance</h3>
+        <dl class="settings-grid review-grid">
+          <div><dt>Next Activity Type</dt><dd id="view-attendance-next-activity">—</dd></div>
+          <div><dt>Next Court Date</dt><dd id="view-attendance-next-date">—</dd></div>
+          <div><dt>Next Judicial Officer</dt><dd id="view-attendance-next-officer">—</dd></div>
+          <div><dt>Next Client Attendance</dt><dd id="view-attendance-next-client">—</dd></div>
+          <div class="review-grid__full" id="view-attendance-virtual-wrap" hidden>
+            <dt>Virtual hearing link</dt>
+            <dd id="view-attendance-virtual">—</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="court-attendance-modal__section" id="view-attendance-bringups-wrap" aria-labelledby="view-section-bringup" hidden>
+        <h3 id="view-section-bringup">Bring up date</h3>
+        <ul class="attendance-history__bullets" id="view-attendance-bringups"></ul>
+      </section>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-view-attendance">Close</button>
+      <button type="button" class="btn btn--primary" id="view-to-edit-attendance">Edit</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog
+  class="workspace-modal court-attendance-modal"
+  id="edit-court-attendance-modal"
+  aria-labelledby="edit-attendance-title"
+  {% if open_edit_modal %}open{% endif %}
+>
+  <form
+    method="post"
+    class="workspace-modal__card court-attendance-modal__card"
+    id="edit-court-attendance-form"
+    novalidate
+    {% if editing_attendance %}
+    action="{% url 'accounts:edit_court_attendance' role=role_slug case_id=case.pk attendance_id=editing_attendance.pk %}"
+    {% endif %}
+  >
+    {% csrf_token %}
+    <header class="workspace-modal__head court-attendance-modal__head">
+      <div class="court-attendance-modal__eyebrow">
+        <span class="court-attendance-modal__kicker">Edit attendance</span>
+      </div>
+      <h2 id="edit-attendance-title">Edit court attendance</h2>
+      <p class="court-attendance-modal__lead" id="edit-attendance-lead">
+        Update the record, advocates, and bring-up items.
+      </p>
+    </header>
+
+    <div class="workspace-modal__body court-attendance-modal__body">
+      {% if edit_form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        {% for error in edit_form.non_field_errors %}{{ error }}{% endfor %}
+      </div>
+      {% endif %}
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-attendance">
+        <h3 id="edit-section-attendance">Court attendance</h3>
+        <div class="register-grid register-grid--2">
+          <div class="form-field">
+            <label for="{{ edit_form.activity_type.id_for_label }}">Activity Type <span aria-hidden="true">*</span></label>
+            {{ edit_form.activity_type }}
+            {% if edit_form.activity_type.errors %}<span class="field-error">{{ edit_form.activity_type.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.judicial_officer.id_for_label }}">Judicial Officer <span aria-hidden="true">*</span></label>
+            {{ edit_form.judicial_officer }}
+            {% if edit_form.judicial_officer.errors %}<span class="field-error">{{ edit_form.judicial_officer.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.court_room.id_for_label }}">Court Room</label>
+            {{ edit_form.court_room }}
+            {% if edit_form.court_room.errors %}<span class="field-error">{{ edit_form.court_room.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.attendance_date.id_for_label }}">Date of Court Attendance <span aria-hidden="true">*</span></label>
+            {{ edit_form.attendance_date }}
+            {% if edit_form.attendance_date.errors %}<span class="field-error">{{ edit_form.attendance_date.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field register-grid__span">
+            <label for="{{ edit_form.presence.id_for_label }}">Court Attendance <span aria-hidden="true">*</span></label>
+            {{ edit_form.presence }}
+            {% if edit_form.presence.errors %}<span class="field-error">{{ edit_form.presence.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-advocates">
+        <h3 id="edit-section-advocates">Quorum</h3>
+        {{ edit_advocate_formset.management_form }}
+        <div id="edit-advocates-list" class="parties-list">
+          {% for advocate_form in edit_advocate_formset %}
+          <div class="party-card" data-advocate-index="{{ forloop.counter0 }}">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 12.75a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM5.75 18.5a6.25 6.25 0 0 1 12.5 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Advocate <span class="card-num">{{ forloop.counter }}</span></h4>
+              </div>
+              <label class="party-card__remove">
+                {{ advocate_form.DELETE }}
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="{{ advocate_form.advocate_name.id_for_label }}">Advocate name</label>
+                {{ advocate_form.advocate_name }}
+                {% if advocate_form.advocate_name.errors %}<span class="field-error">{{ advocate_form.advocate_name.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field register-grid__span">
+                <label for="{{ advocate_form.what_they_said.id_for_label }}">What they said</label>
+                {{ advocate_form.what_they_said }}
+                {% if advocate_form.what_they_said.errors %}<span class="field-error">{{ advocate_form.what_they_said.errors.0 }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="parties-actions">
+          <button type="button" class="btn btn--quiet btn--inline" id="edit-add-advocate-btn">Add</button>
+        </div>
+        <template id="edit-advocate-empty-form">
+          <div class="party-card" data-advocate-index="__prefix__">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 12.75a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM5.75 18.5a6.25 6.25 0 0 1 12.5 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Advocate <span class="card-num">__num__</span></h4>
+              </div>
+              <label class="party-card__remove">
+                <input type="checkbox" name="edit-advocates-__prefix__-DELETE" id="id_edit-advocates-__prefix__-DELETE">
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="id_edit-advocates-__prefix__-advocate_name">Advocate name</label>
+                <input type="text" name="edit-advocates-__prefix__-advocate_name" class="form-input" placeholder="NAME OF ADVOCATE" autocomplete="off" id="id_edit-advocates-__prefix__-advocate_name">
+              </div>
+              <div class="form-field register-grid__span">
+                <label for="id_edit-advocates-__prefix__-what_they_said">What they said</label>
+                <textarea name="edit-advocates-__prefix__-what_they_said" class="form-input" rows="3" placeholder="SUMMARY OF SUBMISSIONS OR REMARKS" id="id_edit-advocates-__prefix__-what_they_said"></textarea>
+              </div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-outcome">
+        <h3 id="edit-section-outcome">Directions &amp; outcome</h3>
+        <div class="register-grid register-grid--2">
+          <div class="form-field register-grid__span">
+            <label for="{{ edit_form.court_directions.id_for_label }}">Court Directions</label>
+            {{ edit_form.court_directions }}
+            {% if edit_form.court_directions.errors %}<span class="field-error">{{ edit_form.court_directions.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field register-grid__span">
+            <label for="{{ edit_form.description.id_for_label }}">Description</label>
+            {{ edit_form.description }}
+            {% if edit_form.description.errors %}<span class="field-error">{{ edit_form.description.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field register-grid__span">
+            <label for="{{ edit_form.next_action.id_for_label }}">Next Action</label>
+            {{ edit_form.next_action }}
+            {% if edit_form.next_action.errors %}<span class="field-error">{{ edit_form.next_action.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-next">
+        <h3 id="edit-section-next">Next court appearance</h3>
+        <div class="register-grid register-grid--2">
+          <div class="form-field">
+            <label for="{{ edit_form.next_activity_type.id_for_label }}">Next Activity Type</label>
+            {{ edit_form.next_activity_type }}
+            {% if edit_form.next_activity_type.errors %}<span class="field-error">{{ edit_form.next_activity_type.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.next_court_date.id_for_label }}">Next Court Date</label>
+            {{ edit_form.next_court_date }}
+            {% if edit_form.next_court_date.errors %}<span class="field-error">{{ edit_form.next_court_date.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.next_judicial_officer.id_for_label }}">Next Judicial Officer</label>
+            {{ edit_form.next_judicial_officer }}
+            {% if edit_form.next_judicial_officer.errors %}<span class="field-error">{{ edit_form.next_judicial_officer.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.next_client_attendance.id_for_label }}">Next Client Attendance</label>
+            {{ edit_form.next_client_attendance }}
+            {% if edit_form.next_client_attendance.errors %}<span class="field-error">{{ edit_form.next_client_attendance.errors.0 }}</span>{% endif %}
+          </div>
+          <div
+            class="form-field register-grid__span"
+            data-virtual-link-field
+            {% if edit_form.next_client_attendance.value != "virtual" %}hidden{% endif %}
+          >
+            <label for="{{ edit_form.virtual_link.id_for_label }}">Virtual hearing link</label>
+            {{ edit_form.virtual_link }}
+            {% if edit_form.virtual_link.errors %}<span class="field-error">{{ edit_form.virtual_link.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-bringup">
+        <h3 id="edit-section-bringup">Bring-up items</h3>
+        {{ edit_bringup_formset.management_form }}
+        <div id="edit-bringups-list" class="parties-list">
+          {% for item_form in edit_bringup_formset %}
+          <div class="party-card" data-bringup-index="{{ forloop.counter0 }}">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Item <span class="card-num">{{ forloop.counter }}</span></h4>
+              </div>
+              <label class="party-card__remove">
+                {{ item_form.DELETE }}
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="{{ item_form.description.id_for_label }}">Description</label>
+                {{ item_form.description }}
+                {% if item_form.description.errors %}<span class="field-error">{{ item_form.description.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ item_form.reminder_frequency.id_for_label }}">Frequency to be Reminded</label>
+                {{ item_form.reminder_frequency }}
+                {% if item_form.reminder_frequency.errors %}<span class="field-error">{{ item_form.reminder_frequency.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ item_form.allocated_to.id_for_label }}">Allocated To</label>
+                {{ item_form.allocated_to }}
+                {% if item_form.allocated_to.errors %}<span class="field-error">{{ item_form.allocated_to.errors.0 }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="parties-actions">
+          <button type="button" class="btn btn--quiet btn--inline" id="edit-add-bringup-btn">Add Item</button>
+        </div>
+        <template id="edit-bringup-empty-form">
+          <div class="party-card" data-bringup-index="__prefix__">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Item <span class="card-num">__num__</span></h4>
+              </div>
+              <label class="party-card__remove">
+                <input type="checkbox" name="edit-bringups-__prefix__-DELETE" id="id_edit-bringups-__prefix__-DELETE">
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="id_edit-bringups-__prefix__-description">Description</label>
+                <textarea name="edit-bringups-__prefix__-description" class="form-input" rows="3" placeholder="Enter item description..." id="id_edit-bringups-__prefix__-description"></textarea>
+              </div>
+              <div class="form-field">
+                <label for="id_edit-bringups-__prefix__-reminder_frequency">Frequency to be Reminded</label>
+                <select name="edit-bringups-__prefix__-reminder_frequency" class="form-input" id="id_edit-bringups-__prefix__-reminder_frequency">
+                  <option value="">Select frequency...</option>
+                  {% for value, label in reminder_frequency_choices %}
+                  <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="id_edit-bringups-__prefix__-allocated_to">Allocated To</label>
+                <select name="edit-bringups-__prefix__-allocated_to" class="form-input" id="id_edit-bringups-__prefix__-allocated_to">
+                  <option value="">Search employee...</option>
+                  {% for employee in employee_choices %}
+                  <option value="{{ employee.pk }}">{{ employee.get_full_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+        </template>
+      </section>
+    </div>
+
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-edit-attendance">Cancel</button>
+      <button type="submit" class="btn btn--primary">Save changes</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/update-court-attendance.js' %}" defer></script>
+<script src="{% static 'js/update-court-attendance.js' %}?v=view-form-order-1" defer></script>
 {% endblock %}

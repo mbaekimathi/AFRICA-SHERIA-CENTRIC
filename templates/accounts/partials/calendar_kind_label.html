@@ -1,0 +1,19 @@
+{% comment %}
+Expects: event with .kind
+Outputs a short human label for calendar category chips/rows.
+{% endcomment %}
+{% if event.kind == "case" %}
+Litigation task
+{% elif event.kind == "matter" %}
+Matter task
+{% elif event.kind == "court" %}
+Court appearance
+{% elif event.kind == "filing" %}
+Case filing
+{% elif event.kind == "opened" %}
+Matter opened
+{% elif event.kind == "matter_attendance" %}
+Matter attendance
+{% else %}
+{{ event.kind|default:"Event"|title }}
+{% endif %}

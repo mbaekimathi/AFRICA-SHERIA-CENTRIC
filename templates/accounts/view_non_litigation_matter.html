@@ -4,6 +4,9 @@
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
 {% block content %}
+{# FAB must stay outside .page — page animation transform breaks position:fixed #}
+{% include "accounts/partials/live_entity_task.html" %}
+
 <section class="page">
   <header class="page-intro">
     <div class="page-intro__copy">
@@ -139,4 +142,10 @@
     <a href="{{ list_url }}" class="btn btn--quiet">Back to active matters</a>
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+{% if live_tasks %}
+<script src="{% static 'js/live-entity-task.js' %}?v=5" defer></script>
+{% endif %}
 {% endblock %}

@@ -8,11 +8,13 @@
   <header class="page-intro register-intro">
     <div class="page-intro__copy">
       <p class="page-kicker">{{ session_greeting }}</p>
-      <h2>Update matter attendance</h2>
+      <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Ref: <strong>{{ matter.reference_code }}</strong>
+        Record today’s attendance for
+        <strong>{{ matter.reference_code }}</strong>
         · {{ matter.matter_title }}
-        · {{ matter.client.get_full_name }}
+        · {{ matter.client.get_full_name }}.
+        Next attendance dates are shown on the case calendar.
       </p>
       {% if is_first_attendance %}
       <p class="page-lead">
@@ -41,13 +43,12 @@
       <header class="register-section__head">
         <span class="register-section__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
-            <path d="M7 4.75h7.5L19.25 9.5V19.5H7A1.75 1.75 0 0 1 5.25 17.75V6.5A1.75 1.75 0 0 1 7 4.75z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-            <path d="M9 12.5h6.5M9 15.75h4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M4.5 19.5h15M6 19.5V9.75L12 5.5l6 4.25V19.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
           </svg>
         </span>
         <div>
           <h3 id="section-attendance">Matter attendance</h3>
-          <p>Activity, date, and notes for this attendance</p>
+          <p>Activity, contact, location, and presence</p>
         </div>
       </header>
       <div class="register-section__body register-grid register-grid--2">
@@ -57,9 +58,123 @@
           {% if form.activity_type.errors %}<span class="field-error">{{ form.activity_type.errors.0 }}</span>{% endif %}
         </div>
         <div class="form-field">
+          <label for="{{ form.contact_person.id_for_label }}">Contact Person</label>
+          {{ form.contact_person }}
+          {% if form.contact_person.errors %}<span class="field-error">{{ form.contact_person.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.location.id_for_label }}">Location</label>
+          {{ form.location }}
+          {% if form.location.errors %}<span class="field-error">{{ form.location.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
           <label for="{{ form.attendance_date.id_for_label }}">Date of Attendance <span aria-hidden="true">*</span></label>
           {{ form.attendance_date }}
           {% if form.attendance_date.errors %}<span class="field-error">{{ form.attendance_date.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field register-grid__span">
+          <label for="{{ form.presence.id_for_label }}">Matter Attendance <span aria-hidden="true">*</span></label>
+          {{ form.presence }}
+          {% if form.presence.errors %}<span class="field-error">{{ form.presence.errors.0 }}</span>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="register-section" aria-labelledby="section-quorum">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M9 11a3.25 3.25 0 1 0 0-6.5A3.25 3.25 0 0 0 9 11zm6.5-.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5z" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M3.75 19.25v-1.1c0-2.1 2.15-3.65 5.25-3.65s5.25 1.55 5.25 3.65v1.1M14.5 14.75c2.55.2 4.75 1.5 4.75 3.4v1.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-quorum">Quorum</h3>
+          <p>Add each participant and a summary of what they said</p>
+        </div>
+      </header>
+      <div class="register-section__body">
+        {{ quorum_formset.management_form }}
+        <div id="quorum-list" class="parties-list">
+          {% for quorum_form in quorum_formset %}
+          <div class="party-card" data-quorum-index="{{ forloop.counter0 }}">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 12.75a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM5.75 18.5a6.25 6.25 0 0 1 12.5 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Participant <span class="card-num">{{ forloop.counter }}</span></h4>
+              </div>
+              <label class="party-card__remove">
+                {{ quorum_form.DELETE }}
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="{{ quorum_form.participant_name.id_for_label }}">Participant name <span aria-hidden="true">*</span></label>
+                {{ quorum_form.participant_name }}
+                {% if quorum_form.participant_name.errors %}<span class="field-error">{{ quorum_form.participant_name.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field register-grid__span">
+                <label for="{{ quorum_form.what_they_said.id_for_label }}">What they said</label>
+                {{ quorum_form.what_they_said }}
+                {% if quorum_form.what_they_said.errors %}<span class="field-error">{{ quorum_form.what_they_said.errors.0 }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="parties-actions">
+          <button type="button" class="btn btn--quiet btn--inline" id="add-quorum-btn">Add</button>
+        </div>
+        <template id="quorum-empty-form">
+          <div class="party-card" data-quorum-index="__prefix__">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 12.75a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM5.75 18.5a6.25 6.25 0 0 1 12.5 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Participant <span class="card-num">__num__</span></h4>
+              </div>
+              <label class="party-card__remove">
+                <input type="checkbox" name="quorum-__prefix__-DELETE" id="id_quorum-__prefix__-DELETE">
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="id_quorum-__prefix__-participant_name">Participant name <span aria-hidden="true">*</span></label>
+                <input type="text" name="quorum-__prefix__-participant_name" class="form-input" placeholder="NAME OF PARTICIPANT" autocomplete="off" id="id_quorum-__prefix__-participant_name">
+              </div>
+              <div class="form-field register-grid__span">
+                <label for="id_quorum-__prefix__-what_they_said">What they said</label>
+                <textarea name="quorum-__prefix__-what_they_said" class="form-input" rows="3" placeholder="SUMMARY OF REMARKS" id="id_quorum-__prefix__-what_they_said"></textarea>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <section class="register-section" aria-labelledby="section-outcome">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <path d="M6.5 5.25h11A1.75 1.75 0 0 1 19.25 7v10a1.75 1.75 0 0 1-1.75 1.75h-11A1.75 1.75 0 0 1 4.75 17V7A1.75 1.75 0 0 1 6.5 5.25z" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M8.5 9.25h7M8.5 12.5h7M8.5 15.75h4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-outcome">Outcome</h3>
+          <p>Outcome notes, description, and next action</p>
+        </div>
+      </header>
+      <div class="register-section__body register-grid register-grid--2">
+        <div class="form-field register-grid__span">
+          <label for="{{ form.outcome_notes.id_for_label }}">Outcome / Notes</label>
+          {{ form.outcome_notes }}
+          {% if form.outcome_notes.errors %}<span class="field-error">{{ form.outcome_notes.errors.0 }}</span>{% endif %}
         </div>
         <div class="form-field register-grid__span">
           <label for="{{ form.description.id_for_label }}">Description</label>
@@ -83,7 +198,7 @@
         </span>
         <div>
           <h3 id="section-next">Next Attendance</h3>
-          <p>Schedule the next matter attendance — shown on the case calendar</p>
+          <p>Shown on the case calendar for the allocated employee</p>
         </div>
       </header>
       <div class="register-section__body register-grid register-grid--2">
@@ -97,10 +212,26 @@
           {{ form.next_attendance_date }}
           {% if form.next_attendance_date.errors %}<span class="field-error">{{ form.next_attendance_date.errors.0 }}</span>{% endif %}
         </div>
-        <div class="form-field register-grid__span">
+        <div class="form-field">
+          <label for="{{ form.next_contact_person.id_for_label }}">Next Contact Person</label>
+          {{ form.next_contact_person }}
+          {% if form.next_contact_person.errors %}<span class="field-error">{{ form.next_contact_person.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-field">
           <label for="{{ form.next_client_attendance.id_for_label }}">Next Client Attendance</label>
           {{ form.next_client_attendance }}
           {% if form.next_client_attendance.errors %}<span class="field-error">{{ form.next_client_attendance.errors.0 }}</span>{% endif %}
+        </div>
+        <div
+          class="form-field register-grid__span"
+          id="virtual-link-field"
+          data-virtual-link-field
+          {% if form.next_client_attendance.value != "virtual" %}hidden{% endif %}
+        >
+          <label for="{{ form.virtual_link.id_for_label }}">Virtual meeting link</label>
+          {{ form.virtual_link }}
+          {% if form.virtual_link.errors %}<span class="field-error">{{ form.virtual_link.errors.0 }}</span>{% endif %}
+          <span class="field-hint">Shown on the case calendar when the next attendance is virtual.</span>
         </div>
       </div>
     </section>
@@ -113,16 +244,90 @@
           </svg>
         </span>
         <div>
-          <h3 id="section-bringup">Bring Update</h3>
-          <p>Notes to bring forward on the next attendance</p>
+          <h3 id="section-bringup">Bring up date</h3>
+          <p>Items to follow up, remind, and allocate</p>
         </div>
       </header>
       <div class="register-section__body">
-        <div class="form-field">
-          <label for="{{ form.bring_update.id_for_label }}" class="visually-hidden">Bring Update</label>
-          {{ form.bring_update }}
-          {% if form.bring_update.errors %}<span class="field-error">{{ form.bring_update.errors.0 }}</span>{% endif %}
+        {{ bringup_formset.management_form }}
+        <div id="bringups-list" class="parties-list">
+          {% for item_form in bringup_formset %}
+          <div class="party-card" data-bringup-index="{{ forloop.counter0 }}">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Item <span class="card-num">{{ forloop.counter }}</span></h4>
+              </div>
+              <label class="party-card__remove">
+                {{ item_form.DELETE }}
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="{{ item_form.description.id_for_label }}">Description <span aria-hidden="true">*</span></label>
+                {{ item_form.description }}
+                {% if item_form.description.errors %}<span class="field-error">{{ item_form.description.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ item_form.reminder_frequency.id_for_label }}">Frequency to be Reminded</label>
+                {{ item_form.reminder_frequency }}
+                {% if item_form.reminder_frequency.errors %}<span class="field-error">{{ item_form.reminder_frequency.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ item_form.allocated_to.id_for_label }}">Allocated To</label>
+                {{ item_form.allocated_to }}
+                {% if item_form.allocated_to.errors %}<span class="field-error">{{ item_form.allocated_to.errors.0 }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
         </div>
+        <div class="parties-actions">
+          <button type="button" class="btn btn--quiet btn--inline" id="add-bringup-btn">Add Item</button>
+        </div>
+        <template id="bringup-empty-form">
+          <div class="party-card" data-bringup-index="__prefix__">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Item <span class="card-num">__num__</span></h4>
+              </div>
+              <label class="party-card__remove">
+                <input type="checkbox" name="bringups-__prefix__-DELETE" id="id_bringups-__prefix__-DELETE">
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="id_bringups-__prefix__-description">Description <span aria-hidden="true">*</span></label>
+                <textarea name="bringups-__prefix__-description" class="form-input" rows="3" placeholder="Enter item description..." id="id_bringups-__prefix__-description"></textarea>
+              </div>
+              <div class="form-field">
+                <label for="id_bringups-__prefix__-reminder_frequency">Frequency to be Reminded</label>
+                <select name="bringups-__prefix__-reminder_frequency" class="form-input" id="id_bringups-__prefix__-reminder_frequency">
+                  <option value="">Select frequency...</option>
+                  {% for value, label in reminder_frequency_choices %}
+                  <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="id_bringups-__prefix__-allocated_to">Allocated To</label>
+                <select name="bringups-__prefix__-allocated_to" class="form-input" id="id_bringups-__prefix__-allocated_to">
+                  <option value="">Search employee...</option>
+                  {% for employee in employee_choices %}
+                  <option value="{{ employee.pk }}">{{ employee.get_full_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
     </section>
 
@@ -143,7 +348,7 @@
         <h3 id="section-previous-matter">Previous matter attendances</h3>
         <p>
           {% if previous_attendances %}
-          {{ previous_attendances|length }} recorded for {{ matter.reference_code }}
+          {{ previous_attendances|length }} recorded for {{ matter.reference_code }} — view or edit any record
           {% else %}
           No attendance recorded yet
           {% endif %}
@@ -154,65 +359,39 @@
       {% if previous_attendances %}
       <div class="attendance-history__list">
         {% for attendance in previous_attendances %}
-        <details class="attendance-history__card"{% if forloop.first %} open{% endif %}>
-          <summary class="attendance-history__summary">
+        <article class="attendance-history__card attendance-history__row" data-attendance-id="{{ attendance.pk }}">
+          <div class="attendance-history__summary">
             <span class="attendance-history__title">
               {{ attendance.activity_type }}
               · {{ attendance.attendance_date|date:"d M Y" }}
             </span>
             <span class="attendance-history__meta">
-              {% if attendance.next_attendance_date %}
-              Next · {{ attendance.next_attendance_date|date:"d M Y" }}
-              {% else %}
-              No next date
+              <span class="status-pill status-pill--{{ attendance.presence }}">
+                {{ attendance.get_presence_display }}
+              </span>
+              {% if attendance.contact_person %}
+              · {{ attendance.contact_person }}
               {% endif %}
             </span>
-          </summary>
-          <div class="attendance-history__body">
-            <dl class="settings-grid review-grid">
-              <div>
-                <dt>Recorded by</dt>
-                <dd>
-                  {% if attendance.recorded_by %}
-                  {{ attendance.recorded_by.get_full_name }}
-                  {% else %}
-                  —
-                  {% endif %}
-                </dd>
-              </div>
-              <div>
-                <dt>Next client attendance</dt>
-                <dd>{{ attendance.get_next_client_attendance_display|default:"—" }}</dd>
-              </div>
-              <div class="review-grid__full">
-                <dt>Description</dt>
-                <dd>{{ attendance.description|default:"—"|linebreaksbr }}</dd>
-              </div>
-              <div class="review-grid__full">
-                <dt>Next action</dt>
-                <dd>{{ attendance.next_action|default:"—"|linebreaksbr }}</dd>
-              </div>
-              <div>
-                <dt>Next activity</dt>
-                <dd>{{ attendance.next_activity_type|default:"—" }}</dd>
-              </div>
-              <div>
-                <dt>Next attendance date</dt>
-                <dd>
-                  {% if attendance.next_attendance_date %}
-                  {{ attendance.next_attendance_date|date:"d M Y" }}
-                  {% else %}
-                  —
-                  {% endif %}
-                </dd>
-              </div>
-              <div class="review-grid__full">
-                <dt>Bring update</dt>
-                <dd>{{ attendance.bring_update|default:"—"|linebreaksbr }}</dd>
-              </div>
-            </dl>
+            <div class="attendance-history__actions">
+              <button
+                type="button"
+                class="btn btn--quiet btn--inline open-view-matter-attendance"
+                data-attendance-id="{{ attendance.pk }}"
+              >
+                View
+              </button>
+              <button
+                type="button"
+                class="btn btn--primary btn--inline open-edit-matter-attendance"
+                data-attendance-id="{{ attendance.pk }}"
+                data-edit-url="{% url 'accounts:edit_matter_attendance' role=role_slug matter_id=matter.pk attendance_id=attendance.pk %}"
+              >
+                Edit
+              </button>
+            </div>
           </div>
-        </details>
+        </article>
         {% endfor %}
       </div>
       {% else %}
@@ -227,4 +406,331 @@
     </div>
   </section>
 </section>
+
+{{ previous_attendances_data|json_script:"previous-matter-attendances-data" }}
+
+<dialog
+  class="workspace-modal court-attendance-modal"
+  id="view-matter-attendance-modal"
+  aria-labelledby="view-matter-attendance-title"
+>
+  <div class="workspace-modal__card court-attendance-modal__card">
+    <header class="workspace-modal__head court-attendance-modal__head">
+      <div class="court-attendance-modal__eyebrow">
+        <span class="court-attendance-modal__kicker">Matter attendance</span>
+        <span class="status-pill" id="view-matter-attendance-presence">—</span>
+      </div>
+      <h2 id="view-matter-attendance-title">Attendance</h2>
+      <p id="view-matter-attendance-lead" class="court-attendance-modal__lead">—</p>
+    </header>
+    <div class="workspace-modal__body court-attendance-modal__body">
+      <dl class="settings-grid review-grid" id="view-matter-attendance-grid">
+        <div><dt>Contact</dt><dd id="view-matter-contact">—</dd></div>
+        <div><dt>Location</dt><dd id="view-matter-location">—</dd></div>
+        <div><dt>Recorded by</dt><dd id="view-matter-recorded-by">—</dd></div>
+        <div class="review-grid__full"><dt>Outcome</dt><dd id="view-matter-outcome">—</dd></div>
+        <div class="review-grid__full"><dt>Description</dt><dd id="view-matter-description">—</dd></div>
+        <div class="review-grid__full"><dt>Next action</dt><dd id="view-matter-next-action">—</dd></div>
+        <div><dt>Next appearance</dt><dd id="view-matter-next-appearance">—</dd></div>
+        <div><dt>Next contact</dt><dd id="view-matter-next-contact">—</dd></div>
+        <div><dt>Next client attendance</dt><dd id="view-matter-next-client">—</dd></div>
+        <div class="review-grid__full" id="view-matter-virtual-wrap" hidden>
+          <dt>Virtual meeting link</dt>
+          <dd id="view-matter-virtual">—</dd>
+        </div>
+      </dl>
+      <div class="attendance-history__block" id="view-matter-quorum-wrap" hidden>
+        <h4>Quorum</h4>
+        <ul class="attendance-history__bullets" id="view-matter-quorum"></ul>
+      </div>
+      <div class="attendance-history__block" id="view-matter-bringups-wrap" hidden>
+        <h4>Bring-up items</h4>
+        <ul class="attendance-history__bullets" id="view-matter-bringups"></ul>
+      </div>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-view-matter-attendance">Close</button>
+      <button type="button" class="btn btn--primary" id="view-to-edit-matter-attendance">Edit</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog
+  class="workspace-modal court-attendance-modal"
+  id="edit-matter-attendance-modal"
+  aria-labelledby="edit-matter-attendance-title"
+  {% if open_edit_modal %}open{% endif %}
+>
+  <form
+    method="post"
+    class="workspace-modal__card court-attendance-modal__card"
+    id="edit-matter-attendance-form"
+    novalidate
+    {% if editing_attendance %}
+    action="{% url 'accounts:edit_matter_attendance' role=role_slug matter_id=matter.pk attendance_id=editing_attendance.pk %}"
+    {% endif %}
+  >
+    {% csrf_token %}
+    <header class="workspace-modal__head court-attendance-modal__head">
+      <div class="court-attendance-modal__eyebrow">
+        <span class="court-attendance-modal__kicker">Edit attendance</span>
+      </div>
+      <h2 id="edit-matter-attendance-title">Edit matter attendance</h2>
+      <p class="court-attendance-modal__lead" id="edit-matter-attendance-lead">
+        Update the record, quorum, and bring-up items.
+      </p>
+    </header>
+
+    <div class="workspace-modal__body court-attendance-modal__body">
+      {% if edit_form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        {% for error in edit_form.non_field_errors %}{{ error }}{% endfor %}
+      </div>
+      {% endif %}
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-attendance">
+        <h3 id="edit-section-attendance">Matter attendance</h3>
+        <div class="register-grid register-grid--2">
+          <div class="form-field">
+            <label for="{{ edit_form.activity_type.id_for_label }}">Activity Type <span aria-hidden="true">*</span></label>
+            {{ edit_form.activity_type }}
+            {% if edit_form.activity_type.errors %}<span class="field-error">{{ edit_form.activity_type.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.contact_person.id_for_label }}">Contact Person</label>
+            {{ edit_form.contact_person }}
+            {% if edit_form.contact_person.errors %}<span class="field-error">{{ edit_form.contact_person.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.location.id_for_label }}">Location</label>
+            {{ edit_form.location }}
+            {% if edit_form.location.errors %}<span class="field-error">{{ edit_form.location.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.attendance_date.id_for_label }}">Date of Attendance <span aria-hidden="true">*</span></label>
+            {{ edit_form.attendance_date }}
+            {% if edit_form.attendance_date.errors %}<span class="field-error">{{ edit_form.attendance_date.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field register-grid__span">
+            <label for="{{ edit_form.presence.id_for_label }}">Matter Attendance <span aria-hidden="true">*</span></label>
+            {{ edit_form.presence }}
+            {% if edit_form.presence.errors %}<span class="field-error">{{ edit_form.presence.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-quorum">
+        <h3 id="edit-section-quorum">Quorum</h3>
+        {{ edit_quorum_formset.management_form }}
+        <div id="edit-quorum-list" class="parties-list">
+          {% for quorum_form in edit_quorum_formset %}
+          <div class="party-card" data-quorum-index="{{ forloop.counter0 }}">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 12.75a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM5.75 18.5a6.25 6.25 0 0 1 12.5 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Participant <span class="card-num">{{ forloop.counter }}</span></h4>
+              </div>
+              <label class="party-card__remove">
+                {{ quorum_form.DELETE }}
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="{{ quorum_form.participant_name.id_for_label }}">Participant name</label>
+                {{ quorum_form.participant_name }}
+                {% if quorum_form.participant_name.errors %}<span class="field-error">{{ quorum_form.participant_name.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field register-grid__span">
+                <label for="{{ quorum_form.what_they_said.id_for_label }}">What they said</label>
+                {{ quorum_form.what_they_said }}
+                {% if quorum_form.what_they_said.errors %}<span class="field-error">{{ quorum_form.what_they_said.errors.0 }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="parties-actions">
+          <button type="button" class="btn btn--quiet btn--inline" id="edit-add-quorum-btn">Add</button>
+        </div>
+        <template id="edit-quorum-empty-form">
+          <div class="party-card" data-quorum-index="__prefix__">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 12.75a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5zM5.75 18.5a6.25 6.25 0 0 1 12.5 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Participant <span class="card-num">__num__</span></h4>
+              </div>
+              <label class="party-card__remove">
+                <input type="checkbox" name="edit-quorum-__prefix__-DELETE" id="id_edit-quorum-__prefix__-DELETE">
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="id_edit-quorum-__prefix__-participant_name">Participant name</label>
+                <input type="text" name="edit-quorum-__prefix__-participant_name" class="form-input" placeholder="NAME OF PARTICIPANT" autocomplete="off" id="id_edit-quorum-__prefix__-participant_name">
+              </div>
+              <div class="form-field register-grid__span">
+                <label for="id_edit-quorum-__prefix__-what_they_said">What they said</label>
+                <textarea name="edit-quorum-__prefix__-what_they_said" class="form-input" rows="3" placeholder="SUMMARY OF REMARKS" id="id_edit-quorum-__prefix__-what_they_said"></textarea>
+              </div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-outcome">
+        <h3 id="edit-section-outcome">Outcome</h3>
+        <div class="register-grid register-grid--2">
+          <div class="form-field register-grid__span">
+            <label for="{{ edit_form.outcome_notes.id_for_label }}">Outcome / Notes</label>
+            {{ edit_form.outcome_notes }}
+            {% if edit_form.outcome_notes.errors %}<span class="field-error">{{ edit_form.outcome_notes.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field register-grid__span">
+            <label for="{{ edit_form.description.id_for_label }}">Description</label>
+            {{ edit_form.description }}
+            {% if edit_form.description.errors %}<span class="field-error">{{ edit_form.description.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field register-grid__span">
+            <label for="{{ edit_form.next_action.id_for_label }}">Next Action</label>
+            {{ edit_form.next_action }}
+            {% if edit_form.next_action.errors %}<span class="field-error">{{ edit_form.next_action.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-next">
+        <h3 id="edit-section-next">Next Attendance</h3>
+        <div class="register-grid register-grid--2">
+          <div class="form-field">
+            <label for="{{ edit_form.next_activity_type.id_for_label }}">Next Activity Type</label>
+            {{ edit_form.next_activity_type }}
+            {% if edit_form.next_activity_type.errors %}<span class="field-error">{{ edit_form.next_activity_type.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.next_attendance_date.id_for_label }}">Next Attendance Date</label>
+            {{ edit_form.next_attendance_date }}
+            {% if edit_form.next_attendance_date.errors %}<span class="field-error">{{ edit_form.next_attendance_date.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.next_contact_person.id_for_label }}">Next Contact Person</label>
+            {{ edit_form.next_contact_person }}
+            {% if edit_form.next_contact_person.errors %}<span class="field-error">{{ edit_form.next_contact_person.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ edit_form.next_client_attendance.id_for_label }}">Next Client Attendance</label>
+            {{ edit_form.next_client_attendance }}
+            {% if edit_form.next_client_attendance.errors %}<span class="field-error">{{ edit_form.next_client_attendance.errors.0 }}</span>{% endif %}
+          </div>
+          <div
+            class="form-field register-grid__span"
+            data-virtual-link-field
+            {% if edit_form.next_client_attendance.value != "virtual" %}hidden{% endif %}
+          >
+            <label for="{{ edit_form.virtual_link.id_for_label }}">Virtual meeting link</label>
+            {{ edit_form.virtual_link }}
+            {% if edit_form.virtual_link.errors %}<span class="field-error">{{ edit_form.virtual_link.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="court-attendance-modal__section" aria-labelledby="edit-section-bringup">
+        <h3 id="edit-section-bringup">Bring-up items</h3>
+        {{ edit_bringup_formset.management_form }}
+        <div id="edit-bringups-list" class="parties-list">
+          {% for item_form in edit_bringup_formset %}
+          <div class="party-card" data-bringup-index="{{ forloop.counter0 }}">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Item <span class="card-num">{{ forloop.counter }}</span></h4>
+              </div>
+              <label class="party-card__remove">
+                {{ item_form.DELETE }}
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="{{ item_form.description.id_for_label }}">Description</label>
+                {{ item_form.description }}
+                {% if item_form.description.errors %}<span class="field-error">{{ item_form.description.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ item_form.reminder_frequency.id_for_label }}">Frequency to be Reminded</label>
+                {{ item_form.reminder_frequency }}
+                {% if item_form.reminder_frequency.errors %}<span class="field-error">{{ item_form.reminder_frequency.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ item_form.allocated_to.id_for_label }}">Allocated To</label>
+                {{ item_form.allocated_to }}
+                {% if item_form.allocated_to.errors %}<span class="field-error">{{ item_form.allocated_to.errors.0 }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="parties-actions">
+          <button type="button" class="btn btn--quiet btn--inline" id="edit-add-bringup-btn">Add Item</button>
+        </div>
+        <template id="edit-bringup-empty-form">
+          <div class="party-card" data-bringup-index="__prefix__">
+            <div class="party-card__head">
+              <div class="party-card__title-wrap">
+                <span class="party-card__badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <h4 class="party-card__title">Item <span class="card-num">__num__</span></h4>
+              </div>
+              <label class="party-card__remove">
+                <input type="checkbox" name="edit-bringups-__prefix__-DELETE" id="id_edit-bringups-__prefix__-DELETE">
+                <span>Remove</span>
+              </label>
+            </div>
+            <div class="register-grid register-grid--2">
+              <div class="form-field register-grid__span">
+                <label for="id_edit-bringups-__prefix__-description">Description</label>
+                <textarea name="edit-bringups-__prefix__-description" class="form-input" rows="3" placeholder="Enter item description..." id="id_edit-bringups-__prefix__-description"></textarea>
+              </div>
+              <div class="form-field">
+                <label for="id_edit-bringups-__prefix__-reminder_frequency">Frequency to be Reminded</label>
+                <select name="edit-bringups-__prefix__-reminder_frequency" class="form-input" id="id_edit-bringups-__prefix__-reminder_frequency">
+                  <option value="">Select frequency...</option>
+                  {% for value, label in reminder_frequency_choices %}
+                  <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="id_edit-bringups-__prefix__-allocated_to">Allocated To</label>
+                <select name="edit-bringups-__prefix__-allocated_to" class="form-input" id="id_edit-bringups-__prefix__-allocated_to">
+                  <option value="">Search employee...</option>
+                  {% for employee in employee_choices %}
+                  <option value="{{ employee.pk }}">{{ employee.get_full_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+        </template>
+      </section>
+    </div>
+
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-edit-matter-attendance">Cancel</button>
+      <button type="submit" class="btn btn--primary">Save changes</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/update-matter-attendance.js' %}?v=matter-parity-1" defer></script>
 {% endblock %}

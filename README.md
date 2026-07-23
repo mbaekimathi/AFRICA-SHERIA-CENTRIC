@@ -26,7 +26,7 @@ New signups start as **Employee** + **Pending Approval**.
 
 ## Database
 
-MySQL only. Default name: **`v.2-sheria-centric-db`**
+MySQL only. Default name: **`sheria_centric_v2`** (no dots/hyphens — those break InnoDB on Windows)
 
 On start, missing database/tables are created automatically (once per process).
 
@@ -41,6 +41,19 @@ py manage.py migrate
 py manage.py runserver
 ```
 
+On start the terminal prints:
+
+- **Local** — `http://127.0.0.1:8000/` (this PC)
+- **Network** — `http://192.168.x.x:8000/` (phone/tablet on the same Wi‑Fi)
+
+Share outside your Wi‑Fi (public HTTPS link via ngrok):
+
+```bash
+py manage.py runserver --share
+```
+
+That adds a **Public** URL you can send to anyone. Requires [ngrok](https://ngrok.com/download) on PATH (`ngrok config add-authtoken <token>` once).
+
 - Home: http://127.0.0.1:8000/
 - Employee login: http://127.0.0.1:8000/employee/login/
 - Client login: http://127.0.0.1:8000/client/login/
@@ -49,13 +62,7 @@ py manage.py runserver
 - Approve employees in Django admin: set `status` to Active and assign `role`
 - Manage clients in Django admin: status starts as **Pending Onboarding**
 
-### View on another device (same Wi‑Fi)
-
-`runserver` binds to **all interfaces** and prints a **Network** link in the terminal, for example:
-
-`http://192.168.x.x:8000/`
-
-Open that URL on your phone or tablet. Both devices must be on the same network. If the page does not load, allow Python through Windows Firewall when prompted (or add an inbound rule for port 8000).
+If the Network link does not load, allow Python through Windows Firewall when prompted (or add an inbound rule for port 8000).
 
 Optional Google client sign-in: set `GOOGLE_CLIENT_ID` in `.env` (Google Cloud OAuth Web client ID).
 

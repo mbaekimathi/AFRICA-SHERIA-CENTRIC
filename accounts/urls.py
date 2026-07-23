@@ -307,6 +307,36 @@ urlpatterns = [
         views.ApproveClientView.as_view(),
         name="approve_client",
     ),
+    path(
+        "<slug:role>/dashboard/user-management/client-management/"
+        "approve-pending-clients/decline/<int:client_id>/",
+        views.DeclinePendingClientView.as_view(),
+        name="decline_pending_client",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/client-management/"
+        "client-profile/login-as/<int:client_id>/",
+        views.LoginAsClientView.as_view(),
+        name="login_as_client",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/client-management/"
+        "client-profile/edit/<int:client_id>/",
+        views.EditClientProfileView.as_view(),
+        name="edit_client_profile",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/client-management/"
+        "client-profile/toggle-suspension/<int:client_id>/",
+        views.ToggleClientSuspensionView.as_view(),
+        name="toggle_client_suspension",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/client-management/"
+        "client-profile/delete/<int:client_id>/",
+        views.DeleteClientProfileView.as_view(),
+        name="delete_client_profile",
+    ),
     # Employee review actions (before role page catch-all)
     path(
         "<slug:role>/dashboard/user-management/employee-management/"
@@ -347,6 +377,13 @@ urlpatterns = [
     ),
     path(
         "<slug:role>/dashboard/matter-management/litigation-matters/"
+        "case/<int:case_id>/update-court-attendance/"
+        "<int:attendance_id>/edit/",
+        views.EditCourtAttendanceView.as_view(),
+        name="edit_court_attendance",
+    ),
+    path(
+        "<slug:role>/dashboard/matter-management/litigation-matters/"
         "case/<int:case_id>/upload-documents/",
         views.UploadCaseDocumentsView.as_view(),
         name="upload_case_documents",
@@ -356,6 +393,12 @@ urlpatterns = [
         "case/<int:case_id>/case-audit-progress/",
         views.CaseAuditProgressView.as_view(),
         name="case_audit_progress",
+    ),
+    path(
+        "<slug:role>/dashboard/matter-management/litigation-matters/"
+        "case/<int:case_id>/case-calendar/",
+        views.CaseCalendarView.as_view(),
+        name="case_calendar",
     ),
     path(
         "<slug:role>/dashboard/documents/<int:document_id>/open/",
@@ -422,9 +465,22 @@ urlpatterns = [
     ),
     path(
         "<slug:role>/dashboard/matter-management/non-litigation-matters/"
+        "matter/<int:matter_id>/update-matter-attendance/"
+        "<int:attendance_id>/edit/",
+        views.EditMatterAttendanceView.as_view(),
+        name="edit_matter_attendance",
+    ),
+    path(
+        "<slug:role>/dashboard/matter-management/non-litigation-matters/"
         "matter/<int:matter_id>/upload-documents/",
         views.UploadMatterDocumentsView.as_view(),
         name="upload_matter_documents",
+    ),
+    path(
+        "<slug:role>/dashboard/matter-management/non-litigation-matters/"
+        "matter/<int:matter_id>/matter-calendar/",
+        views.MatterCalendarView.as_view(),
+        name="matter_calendar",
     ),
     path(
         "<slug:role>/dashboard/matter-management/non-litigation-matters/"
@@ -500,6 +556,16 @@ urlpatterns = [
         "<slug:role>/dashboard/tasks/matter/<int:task_id>/respond/",
         views.RespondMatterTaskView.as_view(),
         name="respond_matter_task",
+    ),
+    path(
+        "<slug:role>/dashboard/tasks/case/<int:task_id>/complete/",
+        views.CompleteCaseTaskView.as_view(),
+        name="complete_case_task",
+    ),
+    path(
+        "<slug:role>/dashboard/tasks/matter/<int:task_id>/complete/",
+        views.CompleteMatterTaskView.as_view(),
+        name="complete_matter_task",
     ),
     path(
         "<slug:role>/dashboard/finance-billing/client-accounts/invoicing/"

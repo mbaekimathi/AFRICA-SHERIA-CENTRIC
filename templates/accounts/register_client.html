@@ -123,25 +123,6 @@
         {{ form.countries_json|json_script:"country-codes-data" }}
 
         <div class="form-field">
-          <div class="label-row">
-            <label for="id_client_password1">Password</label>
-            <button type="button" class="link-btn" data-target="id_client_password1" aria-pressed="false">Show</button>
-          </div>
-          {{ form.password1 }}
-          {% if form.password1.errors %}<span class="field-error">{{ form.password1.errors.0 }}</span>{% endif %}
-        </div>
-
-        <div class="form-field">
-          <div class="label-row">
-            <label for="id_client_password2">Confirm password</label>
-            <button type="button" class="link-btn" data-target="id_client_password2" aria-pressed="false">Show</button>
-          </div>
-          {{ form.password2 }}
-          <span class="field-hint" id="password-match-status" aria-live="polite"></span>
-          {% if form.password2.errors %}<span class="field-error">{{ form.password2.errors.0 }}</span>{% endif %}
-        </div>
-
-        <div class="form-field">
           <label for="id_client_profile_photo">Profile photo</label>
           <div class="photo-uploader">
             <div class="photo-preview" id="photo-preview" aria-hidden="true">

@@ -60,18 +60,8 @@
         <div><dt>Joined</dt><dd>{{ client.date_joined|date:"d M Y, H:i" }}</dd></div>
         {% if client.client_type == "individual" %}
         <div><dt>ID type</dt><dd>{{ client.get_id_type_display|default:"—" }}</dd></div>
-        {% if client.id_type == "citizen" %}
-        <div><dt>ID number</dt><dd>{{ client.identification_number|default:"—" }}</dd></div>
-        {% else %}
-        <div><dt>Alien number</dt><dd>{{ client.alien_number|default:"—" }}</dd></div>
-        {% endif %}
         {% else %}
         <div><dt>Corporate kind</dt><dd>{{ client.get_corporate_kind_display|default:"—" }}</dd></div>
-        {% if client.corporate_kind == "business" %}
-        <div><dt>Business number</dt><dd>{{ client.business_number|default:"—" }}</dd></div>
-        {% else %}
-        <div><dt>Company number</dt><dd>{{ client.company_registration_number|default:"—" }}</dd></div>
-        {% endif %}
         {% endif %}
       </dl>
     </div>
@@ -89,7 +79,9 @@
         <li class="doc-list__item">
           <div>
             <p class="doc-list__label">{{ label }}</p>
-            <p class="doc-list__meta">{{ number|default:"No number recorded" }}</p>
+            {% if number %}
+            <p class="doc-list__meta">{{ number }}</p>
+            {% endif %}
           </div>
           {% if file %}
           <a class="btn btn--quiet btn--inline" href="{{ file.url }}" target="_blank" rel="noopener">View upload</a>

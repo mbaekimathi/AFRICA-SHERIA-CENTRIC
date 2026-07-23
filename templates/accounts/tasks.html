@@ -11,7 +11,7 @@
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
         Tasks assigned to you. Accept or reject pending work; after you accept,
-        open View to see the full brief and matter details.
+        use View to open the task, then open the case or matter to work and submit.
       </p>
     </div>
   </header>
@@ -129,14 +129,37 @@
                 {% elif item.task.status == "accepted" %}
                 <div class="row-actions">
                   <a
-                    class="row-action row-action--view"
-                    href="{{ item.view_url }}"
+                    href="{{ item.entity_url }}"
+                    class="row-action row-action--view open-view-modal"
                     title="View task"
                     aria-label="View task {{ item.subject }}"
+                    aria-haspopup="dialog"
+                    aria-controls="task-view-modal"
+                    data-payload-id="task-payload-{{ item.kind }}-{{ item.task.pk }}"
+                    data-task-kind="{{ item.kind }}"
+                    data-task-subject="{{ item.subject }}"
+                    data-task-meta="{{ item.subject_meta }}"
+                    data-task-title="{% if item.task.title %}{{ item.task.title }}{% else %}Task #{{ item.task.pk }}{% endif %}"
+                    data-task-due-label="{{ item.task.due_date|date:'d M Y' }}"
+                    data-task-status="{{ item.task.get_status_display }}"
+                    data-task-status-slug="{{ item.task.status }}"
+                    data-task-by="{% if item.task.created_by %}{{ item.task.created_by.get_full_name }}{% else %}—{% endif %}"
+                    data-task-reminder="{% if item.task.reminder_at %}{{ item.task.reminder_at|date:'d M Y, H:i' }}{% endif %}"
+                    data-task-id="{{ item.task.pk }}"
+                    data-entity-url="{{ item.entity_url }}"
+                    data-entity-label="{{ item.entity_label }}"
+                    data-complete-url="{{ item.complete_url }}"
                   >
                     <span class="row-action__icon" aria-hidden="true">◎</span>
                     View
                   </a>
+                  <div
+                    id="task-payload-{{ item.kind }}-{{ item.task.pk }}"
+                    class="task-view-payload"
+                    hidden
+                  >
+                    {{ item.task.instructions|default:"No additional instructions."|linebreaksbr }}
+                  </div>
                 </div>
                 {% else %}
                 <span class="person-cell__meta">—</span>
@@ -261,8 +284,94 @@
     </div>
   </form>
 </dialog>
+
+<dialog
+  class="workspace-modal live-task-view-modal"
+  id="task-view-modal"
+  aria-labelledby="task-view-task-title"
+  {% if open_view_modal %}open{% endif %}
+>
+  <div class="workspace-modal__card live-task-modal__card">
+    <header class="live-task-modal__head">
+      <div class="live-task-modal__eyebrow">
+        <span class="live-task-modal__kicker" id="task-view-title">Your task</span>
+        <span class="status-pill" id="task-view-status-pill">Accepted</span>
+      </div>
+      <h2 id="task-view-task-title" class="live-task-modal__heading">Task</h2>
+      <p id="task-view-subject" class="live-task-modal__lead">
+        Review the brief, open the case or matter, then submit when done.
+      </p>
+    </header>
+
+    <div class="workspace-modal__body live-task-modal__body">
+      <article class="live-task-card">
+        <dl class="live-task-card__meta">
+          <div class="live-task-card__meta-item live-task-card__meta-item--wide">
+            <dt id="task-view-entity-field-label">Case</dt>
+            <dd>
+              <a
+                href="#"
+                class="live-task-card__link"
+                id="task-view-entity"
+                target="_self"
+              >—</a>
+            </dd>
+          </div>
+          <div class="live-task-card__meta-item">
+            <dt>Client</dt>
+            <dd id="task-view-meta">—</dd>
+          </div>
+          <div class="live-task-card__meta-item">
+            <dt>Due</dt>
+            <dd id="task-view-due">—</dd>
+          </div>
+          <div class="live-task-card__meta-item">
+            <dt>Tasked by</dt>
+            <dd id="task-view-by">—</dd>
+          </div>
+          <div class="live-task-card__meta-item" id="task-view-reminder-wrap" hidden>
+            <dt>Reminder</dt>
+            <dd id="task-view-reminder">—</dd>
+          </div>
+        </dl>
+
+        <div class="live-task-card__brief">
+          <p class="live-task-card__label">Instructions / Brief</p>
+          <div class="live-task-card__instructions" id="task-view-instructions">
+            No additional instructions.
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="live-task-modal__footer">
+      <a href="#" class="live-task-card__open-link" id="task-view-entity-link">
+        <span id="task-view-entity-link-label">Open case</span>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path
+            d="M7.5 4.5H4.5A1.5 1.5 0 0 0 3 6v9.5A1.5 1.5 0 0 0 4.5 17H14a1.5 1.5 0 0 0 1.5-1.5v-3M11 3h6v6M17 3l-8 8"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </a>
+      <form method="post" action="" id="task-view-complete-form" class="live-task-modal__complete">
+        {% csrf_token %}
+        <input type="hidden" name="next" id="task-view-complete-next" value="">
+        <button type="submit" class="btn btn--primary btn--inline">
+          Mark complete
+        </button>
+      </form>
+      <button type="button" class="btn btn--quiet btn--inline" id="close-view-modal">
+        Close
+      </button>
+    </div>
+  </div>
+</dialog>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/tasks.js' %}" defer></script>
+<script src="{% static 'js/tasks.js' %}?v=5" defer></script>
 {% endblock %}

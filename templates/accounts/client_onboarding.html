@@ -127,7 +127,7 @@
         </div>
 
         <fieldset class="form-fieldset" id="individual-id-fields">
-          <legend>Identification</legend>
+          <legend>Identification documents <span class="field-hint">(optional)</span></legend>
           <div class="id-type-options">
             {% for radio in form.id_type %}
             <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
@@ -136,36 +136,20 @@
           {% if form.id_type.errors %}<span class="field-error">{{ form.id_type.errors.0 }}</span>{% endif %}
 
           <div class="form-field" id="citizen-id-field">
-            <label for="id_identification_number">Identification number</label>
-            <div class="input-icon">
-              <span class="input-icon__glyph" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><rect x="3.5" y="5.5" width="17" height="13" rx="2" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="12" r="2.2" stroke="currentColor" stroke-width="1.7"/><path d="M13.5 10.5h4M13.5 13.5h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-              </span>
-              {{ form.identification_number }}
-            </div>
-            {% if form.identification_number.errors %}<span class="field-error">{{ form.identification_number.errors.0 }}</span>{% endif %}
-            <label for="id_identification_document">Upload ID card</label>
+            <label for="id_identification_document">Upload national ID</label>
             {{ form.identification_document }}
             {% if form.identification_document.errors %}<span class="field-error">{{ form.identification_document.errors.0 }}</span>{% endif %}
           </div>
 
           <div class="form-field is-hidden" id="alien-id-field">
-            <label for="id_alien_number">Alien number</label>
-            <div class="input-icon">
-              <span class="input-icon__glyph" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><rect x="3.5" y="5.5" width="17" height="13" rx="2" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="12" r="2.2" stroke="currentColor" stroke-width="1.7"/><path d="M13.5 10.5h4M13.5 13.5h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-              </span>
-              {{ form.alien_number }}
-            </div>
-            {% if form.alien_number.errors %}<span class="field-error">{{ form.alien_number.errors.0 }}</span>{% endif %}
-            <label for="id_alien_document">Upload alien document</label>
+            <label for="id_alien_document">Upload passport</label>
             {{ form.alien_document }}
             {% if form.alien_document.errors %}<span class="field-error">{{ form.alien_document.errors.0 }}</span>{% endif %}
           </div>
         </fieldset>
 
         <fieldset class="form-fieldset is-hidden" id="corporate-reg-fields">
-          <legend>Registration</legend>
+          <legend>Registration documents <span class="field-hint">(optional)</span></legend>
           <div class="id-type-options" id="corporate-kind-options">
             {% for radio in form.corporate_kind %}
             <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
@@ -173,32 +157,25 @@
           </div>
           {% if form.corporate_kind.errors %}<span class="field-error">{{ form.corporate_kind.errors.0 }}</span>{% endif %}
 
-          <div class="form-field" id="business-reg-field">
-            <label for="id_business_number">Business number</label>
-            <div class="input-icon">
-              <span class="input-icon__glyph" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M8 7h8M8 12h8M8 17h5M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-              </span>
-              {{ form.business_number }}
-            </div>
-            {% if form.business_number.errors %}<span class="field-error">{{ form.business_number.errors.0 }}</span>{% endif %}
-            <label for="id_business_document">Upload business document</label>
-            {{ form.business_document }}
-            {% if form.business_document.errors %}<span class="field-error">{{ form.business_document.errors.0 }}</span>{% endif %}
-          </div>
-
-          <div class="form-field is-hidden" id="company-reg-field">
-            <label for="id_company_registration_number">Company number</label>
-            <div class="input-icon">
-              <span class="input-icon__glyph" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M8 7h8M8 12h8M8 17h5M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-              </span>
-              {{ form.company_registration_number }}
-            </div>
-            {% if form.company_registration_number.errors %}<span class="field-error">{{ form.company_registration_number.errors.0 }}</span>{% endif %}
-            <label for="id_company_registration_document">Upload company document</label>
+          <div class="form-field">
+            <label for="id_company_registration_document">Upload CR12</label>
             {{ form.company_registration_document }}
             {% if form.company_registration_document.errors %}<span class="field-error">{{ form.company_registration_document.errors.0 }}</span>{% endif %}
+          </div>
+        </fieldset>
+
+        <fieldset class="form-fieldset" id="shared-doc-fields">
+          <legend>Supporting documents <span class="field-hint">(optional)</span></legend>
+          <div class="form-field">
+            <label for="id_kra_pin_document">Upload KRA PIN</label>
+            {{ form.kra_pin_document }}
+            {% if form.kra_pin_document.errors %}<span class="field-error">{{ form.kra_pin_document.errors.0 }}</span>{% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="id_signed_instruction_note">Upload signed instruction note</label>
+            {{ form.signed_instruction_note }}
+            {% if form.signed_instruction_note.errors %}<span class="field-error">{{ form.signed_instruction_note.errors.0 }}</span>{% endif %}
           </div>
         </fieldset>
 

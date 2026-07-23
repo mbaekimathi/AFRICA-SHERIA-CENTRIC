@@ -9,9 +9,11 @@
     <div class="page-intro__copy">
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
-      <p class="page-lead">
-        {{ calendar_lead|default:"Due dates for tasks assigned to you, plus next court appearances on your cases." }}
-      </p>
+      <p class="page-lead">{{ calendar_lead }}</p>
+    </div>
+    <div class="page-intro__actions">
+      <a class="btn btn--quiet" href="{{ detail_url }}">{{ detail_label }}</a>
+      <a class="btn btn--quiet" href="{{ list_url }}">Back to list</a>
     </div>
   </header>
 
@@ -26,6 +28,7 @@
             {% else %}
             No dates this month
             {% endif %}
+            · {{ client.get_full_name }}
           </p>
         </div>
         <div class="calendar-nav">
@@ -104,9 +107,7 @@
     <section class="panel calendar-list-panel">
       <div class="panel__head">
         <h3>This month</h3>
-        <p class="panel__hint">
-          {{ calendar_list_hint|default:"Your assigned tasks and court appearances" }}
-        </p>
+        <p class="panel__hint">{{ calendar_list_hint }}</p>
       </div>
       <div class="panel__body panel__body--table">
         {% if calendar_upcoming_by_kind %}
@@ -147,9 +148,7 @@
         {% else %}
         <div class="empty-state">
           <p class="empty-state__title">No dates this month</p>
-          <p class="empty-state__copy">
-            {{ calendar_empty_copy|default:"Task due dates and next court appearances on your cases will appear here." }}
-          </p>
+          <p class="empty-state__copy">{{ calendar_empty_copy }}</p>
         </div>
         {% endif %}
       </div>

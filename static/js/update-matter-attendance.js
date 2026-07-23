@@ -135,7 +135,7 @@
   }
 
   function parseAttendanceData() {
-    const node = document.getElementById("previous-attendances-data");
+    const node = document.getElementById("previous-matter-attendances-data");
     if (!node) return {};
     try {
       const rows = JSON.parse(node.textContent || "[]");
@@ -190,17 +190,14 @@
   }
 
   function fillViewModal(data) {
-    const title = document.getElementById("view-attendance-title");
-    const lead = document.getElementById("view-attendance-lead");
-    const presence = document.getElementById("view-attendance-presence");
+    const title = document.getElementById("view-matter-attendance-title");
+    const lead = document.getElementById("view-matter-attendance-lead");
+    const presence = document.getElementById("view-matter-attendance-presence");
     if (title) {
-      title.textContent = data.activity_type || "Court attendance";
+      title.textContent = data.activity_type || "Matter attendance";
     }
     if (lead) {
-      lead.textContent = [
-        data.attendance_date_display,
-        data.judicial_officer,
-      ]
+      lead.textContent = [data.attendance_date_display, data.contact_person]
         .filter(Boolean)
         .join(" · ");
     }
@@ -214,36 +211,34 @@
       if (el) el.textContent = textOrDash(value);
     };
 
-    setText("view-attendance-activity", data.activity_type);
-    setText("view-attendance-officer", data.judicial_officer);
-    setText("view-attendance-room", data.court_room);
-    setText("view-attendance-date", data.attendance_date_display);
-    setText("view-attendance-presence-label", data.presence_display);
-    setText("view-attendance-recorded-by", data.recorded_by);
-
+    setText("view-matter-contact", data.contact_person);
+    setText("view-matter-location", data.location);
+    setText("view-matter-recorded-by", data.recorded_by);
     setMultiline(
-      document.getElementById("view-attendance-directions"),
-      data.court_directions
+      document.getElementById("view-matter-outcome"),
+      data.outcome_notes
     );
     setMultiline(
-      document.getElementById("view-attendance-description"),
+      document.getElementById("view-matter-description"),
       data.description
     );
     setMultiline(
-      document.getElementById("view-attendance-next-action"),
+      document.getElementById("view-matter-next-action"),
       data.next_action
     );
 
-    setText("view-attendance-next-activity", data.next_activity_type);
-    setText("view-attendance-next-date", data.next_court_date_display);
-    setText("view-attendance-next-officer", data.next_judicial_officer);
+    const nextAppearance = data.next_attendance_date_display
+      ? `${data.next_activity_type || "Matter"} · ${data.next_attendance_date_display}`
+      : "";
+    setText("view-matter-next-appearance", nextAppearance);
+    setText("view-matter-next-contact", data.next_contact_person);
     setText(
-      "view-attendance-next-client",
+      "view-matter-next-client",
       data.next_client_attendance_display
     );
 
-    const virtualWrap = document.getElementById("view-attendance-virtual-wrap");
-    const virtualEl = document.getElementById("view-attendance-virtual");
+    const virtualWrap = document.getElementById("view-matter-virtual-wrap");
+    const virtualEl = document.getElementById("view-matter-virtual");
     if (virtualWrap && virtualEl) {
       if (data.next_client_attendance === "virtual") {
         virtualWrap.hidden = false;
@@ -263,44 +258,37 @@
       }
     }
 
-    const advocatesWrap = document.getElementById(
-      "view-attendance-advocates-wrap"
-    );
-    const advocatesList = document.getElementById("view-attendance-advocates");
-    if (advocatesWrap && advocatesList) {
-      advocatesList.textContent = "";
-      const advocates = data.advocates || [];
-      if (advocates.length) {
-        advocatesWrap.hidden = false;
-        advocatesWrap.removeAttribute("hidden");
-        advocates.forEach((advocate) => {
+    const quorumWrap = document.getElementById("view-matter-quorum-wrap");
+    const quorumList = document.getElementById("view-matter-quorum");
+    if (quorumWrap && quorumList) {
+      quorumList.textContent = "";
+      const members = data.quorum_members || [];
+      if (members.length) {
+        quorumWrap.hidden = false;
+        members.forEach((member) => {
           const li = document.createElement("li");
           const strong = document.createElement("strong");
-          strong.textContent = advocate.advocate_name || "Advocate";
+          strong.textContent = member.participant_name || "Participant";
           li.appendChild(strong);
-          if (advocate.what_they_said) {
+          if (member.what_they_said) {
             li.appendChild(
-              document.createTextNode(` — ${advocate.what_they_said}`)
+              document.createTextNode(` — ${member.what_they_said}`)
             );
           }
-          advocatesList.appendChild(li);
+          quorumList.appendChild(li);
         });
       } else {
-        advocatesWrap.hidden = true;
-        advocatesWrap.setAttribute("hidden", "");
+        quorumWrap.hidden = true;
       }
     }
 
-    const bringupsWrap = document.getElementById(
-      "view-attendance-bringups-wrap"
-    );
-    const bringupsList = document.getElementById("view-attendance-bringups");
+    const bringupsWrap = document.getElementById("view-matter-bringups-wrap");
+    const bringupsList = document.getElementById("view-matter-bringups");
     if (bringupsWrap && bringupsList) {
       bringupsList.textContent = "";
       const items = data.bring_up_items || [];
       if (items.length) {
         bringupsWrap.hidden = false;
-        bringupsWrap.removeAttribute("hidden");
         items.forEach((item) => {
           const li = document.createElement("li");
           const parts = [item.description || ""];
@@ -315,7 +303,6 @@
         });
       } else {
         bringupsWrap.hidden = true;
-        bringupsWrap.setAttribute("hidden", "");
       }
     }
   }
@@ -330,42 +317,39 @@
     if (!form || !data) return;
     form.setAttribute("action", data.edit_url || "");
 
-    const lead = document.getElementById("edit-attendance-lead");
+    const lead = document.getElementById("edit-matter-attendance-lead");
     if (lead) {
-      lead.textContent = [
-        data.activity_type,
-        data.attendance_date_display,
-      ]
+      lead.textContent = [data.activity_type, data.attendance_date_display]
         .filter(Boolean)
         .join(" · ");
     }
 
     setFieldValue(form, "activity_type", data.activity_type);
-    setFieldValue(form, "judicial_officer", data.judicial_officer);
-    setFieldValue(form, "court_room", data.court_room);
+    setFieldValue(form, "contact_person", data.contact_person);
+    setFieldValue(form, "location", data.location);
     setFieldValue(form, "attendance_date", data.attendance_date);
     setFieldValue(form, "presence", data.presence);
-    setFieldValue(form, "court_directions", data.court_directions);
+    setFieldValue(form, "outcome_notes", data.outcome_notes);
     setFieldValue(form, "description", data.description);
     setFieldValue(form, "next_action", data.next_action);
     setFieldValue(form, "next_activity_type", data.next_activity_type);
-    setFieldValue(form, "next_court_date", data.next_court_date);
-    setFieldValue(form, "next_judicial_officer", data.next_judicial_officer);
+    setFieldValue(form, "next_attendance_date", data.next_attendance_date);
+    setFieldValue(form, "next_contact_person", data.next_contact_person);
     setFieldValue(form, "next_client_attendance", data.next_client_attendance);
     setFieldValue(form, "virtual_link", data.virtual_link);
 
-    if (lists.advocates) {
-      lists.advocates.clearCards();
-      const advocates = data.advocates || [];
-      if (advocates.length) {
-        advocates.forEach((advocate) => {
-          lists.advocates.addCard({
-            advocate_name: advocate.advocate_name || "",
-            what_they_said: advocate.what_they_said || "",
+    if (lists.quorum) {
+      lists.quorum.clearCards();
+      const members = data.quorum_members || [];
+      if (members.length) {
+        members.forEach((member) => {
+          lists.quorum.addCard({
+            participant_name: member.participant_name || "",
+            what_they_said: member.what_they_said || "",
           });
         });
       } else {
-        lists.advocates.addCard();
+        lists.quorum.addCard();
       }
     }
 
@@ -389,15 +373,15 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    const createAdvocates = setupDynamicList({
-      listId: "advocates-list",
-      addBtnId: "add-advocate-btn",
-      templateId: "advocate-empty-form",
-      totalFormsName: "advocates-TOTAL_FORMS",
+    setupDynamicList({
+      listId: "quorum-list",
+      addBtnId: "add-quorum-btn",
+      templateId: "quorum-empty-form",
+      totalFormsName: "quorum-TOTAL_FORMS",
       cardSelector: ".party-card",
-      indexAttr: "data-advocate-index",
+      indexAttr: "data-quorum-index",
     });
-    const createBringups = setupDynamicList({
+    setupDynamicList({
       listId: "bringups-list",
       addBtnId: "add-bringup-btn",
       templateId: "bringup-empty-form",
@@ -405,13 +389,10 @@
       cardSelector: ".party-card",
       indexAttr: "data-bringup-index",
     });
-    void createAdvocates;
-    void createBringups;
 
-    const createForm = document.getElementById("court-attendance-form");
+    const createForm = document.getElementById("matter-attendance-form");
     setupVirtualLinkToggle(createForm);
 
-    // Catch any Next Client Attendance select, including late-rendered ones.
     document.addEventListener("change", (event) => {
       const select = event.target.closest?.("[data-virtual-toggle]");
       if (!select) return;
@@ -421,20 +402,22 @@
     const attendanceById = parseAttendanceData();
     let activeAttendanceId = null;
 
-    const viewModal = document.getElementById("view-court-attendance-modal");
-    const editModal = document.getElementById("edit-court-attendance-modal");
-    const editForm = document.getElementById("edit-court-attendance-form");
-    const closeViewBtn = document.getElementById("close-view-attendance");
-    const closeEditBtn = document.getElementById("close-edit-attendance");
-    const viewToEditBtn = document.getElementById("view-to-edit-attendance");
+    const viewModal = document.getElementById("view-matter-attendance-modal");
+    const editModal = document.getElementById("edit-matter-attendance-modal");
+    const editForm = document.getElementById("edit-matter-attendance-form");
+    const closeViewBtn = document.getElementById("close-view-matter-attendance");
+    const closeEditBtn = document.getElementById("close-edit-matter-attendance");
+    const viewToEditBtn = document.getElementById(
+      "view-to-edit-matter-attendance"
+    );
 
-    const editAdvocates = setupDynamicList({
-      listId: "edit-advocates-list",
-      addBtnId: "edit-add-advocate-btn",
-      templateId: "edit-advocate-empty-form",
-      totalFormsName: "edit-advocates-TOTAL_FORMS",
+    const editQuorum = setupDynamicList({
+      listId: "edit-quorum-list",
+      addBtnId: "edit-add-quorum-btn",
+      templateId: "edit-quorum-empty-form",
+      totalFormsName: "edit-quorum-TOTAL_FORMS",
       cardSelector: ".party-card",
-      indexAttr: "data-advocate-index",
+      indexAttr: "data-quorum-index",
     });
     const editBringups = setupDynamicList({
       listId: "edit-bringups-list",
@@ -462,7 +445,7 @@
       if (!data || !editModal || !editForm) return;
       activeAttendanceId = String(attendanceId);
       fillEditModal(editForm, data, {
-        advocates: editAdvocates,
+        quorum: editQuorum,
         bringups: editBringups,
       });
       openDialog(editModal);
@@ -471,19 +454,23 @@
       }, 0);
     };
 
-    document.querySelectorAll(".open-view-attendance").forEach((btn) => {
-      btn.addEventListener("click", (event) => {
-        event.preventDefault();
-        openView(btn.dataset.attendanceId);
+    document
+      .querySelectorAll(".open-view-matter-attendance")
+      .forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.preventDefault();
+          openView(btn.dataset.attendanceId);
+        });
       });
-    });
 
-    document.querySelectorAll(".open-edit-attendance").forEach((btn) => {
-      btn.addEventListener("click", (event) => {
-        event.preventDefault();
-        openEdit(btn.dataset.attendanceId);
+    document
+      .querySelectorAll(".open-edit-matter-attendance")
+      .forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.preventDefault();
+          openEdit(btn.dataset.attendanceId);
+        });
       });
-    });
 
     if (closeViewBtn) {
       closeViewBtn.addEventListener("click", () => closeDialog(viewModal));
@@ -507,7 +494,9 @@
         openDialog(editModal);
       }
       window.setTimeout(() => {
-        editForm?.querySelector(".field-error")?.closest(".form-field")
+        editForm
+          ?.querySelector(".field-error")
+          ?.closest(".form-field")
           ?.querySelector("input, select, textarea")
           ?.focus();
       }, 0);

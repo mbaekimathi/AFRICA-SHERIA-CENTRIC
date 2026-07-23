@@ -34,6 +34,8 @@ from .models import (
     Invoice,
     LitigationCase,
     MatterAttendance,
+    MatterAttendanceBringUpItem,
+    MatterAttendanceQuorumMember,
     MatterParty,
     MatterTask,
     NonLitigationMatter,
@@ -353,16 +355,6 @@ class SignUpForm(UserCreationForm):
         initial=DEFAULT_COUNTRY,
         widget=forms.HiddenInput(attrs={"id": "id_id_country"}),
     )
-    identification_number = forms.CharField(
-        required=False,
-        max_length=50,
-        widget=forms.TextInput(
-            attrs={
-                "class": "form-input",
-                "placeholder": "National ID number",
-            }
-        ),
-    )
     alien_number = forms.CharField(
         required=False,
         max_length=50,
@@ -436,7 +428,6 @@ class SignUpForm(UserCreationForm):
             "personal_phone",
             "id_type",
             "id_country",
-            "identification_number",
             "alien_number",
             "login_code",
             "password1",
@@ -448,7 +439,6 @@ class SignUpForm(UserCreationForm):
         "first_name",
         "last_name",
         "personal_phone",
-        "identification_number",
         "alien_number",
         "login_code",
         "password1",
@@ -492,9 +482,6 @@ class SignUpForm(UserCreationForm):
             raise ValidationError("Enter a valid phone number.")
         return digits
 
-    def clean_identification_number(self):
-        return (self.cleaned_data.get("identification_number") or "").strip().upper()
-
     def clean_alien_number(self):
         return (self.cleaned_data.get("alien_number") or "").strip().upper()
 
@@ -527,7 +514,6 @@ class SignUpForm(UserCreationForm):
     def clean(self):
         cleaned = super().clean()
         id_type = cleaned.get("id_type")
-        identification_number = (cleaned.get("identification_number") or "").strip()
         alien_number = (cleaned.get("alien_number") or "").strip()
         password1 = cleaned.get("password1")
         password2 = cleaned.get("password2")
@@ -539,11 +525,6 @@ class SignUpForm(UserCreationForm):
             cleaned["full_personal_phone"] = f"{dial}{local_phone}"
 
         if id_type == Employee.IdType.CITIZEN:
-            if not identification_number:
-                self.add_error(
-                    "identification_number",
-                    "Identification number is required for citizens.",
-                )
             cleaned["alien_number"] = ""
         elif id_type == Employee.IdType.NON_CITIZEN:
             if not alien_number:
@@ -551,7 +532,6 @@ class SignUpForm(UserCreationForm):
                     "alien_number",
                     "Alien number is required for non-citizens.",
                 )
-            cleaned["identification_number"] = ""
 
         if password1 and password2 and password1 != password2:
             self.add_error("password2", "Passwords do not match.")
@@ -569,7 +549,7 @@ class SignUpForm(UserCreationForm):
         )
         user.id_type = self.cleaned_data["id_type"]
         user.id_country = self.cleaned_data.get("id_country", DEFAULT_COUNTRY)
-        user.identification_number = self.cleaned_data.get("identification_number", "")
+        user.identification_number = ""
         user.alien_number = self.cleaned_data.get("alien_number", "")
         user.login_code = self.cleaned_data["login_code"]
         user.role = Employee.Role.EMPLOYEE
@@ -583,7 +563,29 @@ class SignUpForm(UserCreationForm):
 
         if commit:
             user.save()
+            self._sync_signup_drive_uploads(user)
         return user
+
+    @staticmethod
+    def _sync_signup_drive_uploads(user):
+        """Create Work/{Name}/Personal and upload photo."""
+        try:
+            from .google_drive import (
+                GoogleDriveAPIError,
+                GoogleDriveOAuthError,
+                ensure_employee_folder_structure,
+                sync_employee_personal_detail_uploads,
+            )
+        except Exception:
+            return
+        try:
+            ensure_employee_folder_structure(user)
+            if user.profile_photo:
+                sync_employee_personal_detail_uploads(
+                    user, field_names=("profile_photo",)
+                )
+        except (GoogleDriveAPIError, GoogleDriveOAuthError):
+            pass
 
 
 class ClientLoginForm(forms.Form):
@@ -901,6 +903,58 @@ class ClientSignUpForm(forms.Form):
             client.profile_photo = optimize_profile_photo(photo)
         if commit:
             client.save()
+            self._sync_client_signup_drive_uploads(client)
+        return client
+
+    @staticmethod
+    def _sync_client_signup_drive_uploads(client):
+        """Create Clients/{Name}/Personal Documents and upload photo."""
+        try:
+            from .google_drive import (
+                GoogleDriveAPIError,
+                GoogleDriveOAuthError,
+                ensure_client_folder_structure,
+                sync_client_personal_document_uploads,
+            )
+        except Exception:
+            return
+        try:
+            ensure_client_folder_structure(client)
+            if client.profile_photo:
+                sync_client_personal_document_uploads(
+                    client, field_names=("profile_photo",)
+                )
+        except (GoogleDriveAPIError, GoogleDriveOAuthError):
+            pass
+
+
+class StaffRegisterClientForm(ClientSignUpForm):
+    """IT staff register a client without collecting a password."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields.pop("password1", None)
+        self.fields.pop("password2", None)
+
+    def save(self, commit=True):
+        from .models import Client
+
+        client = Client(
+            email=self.cleaned_data["email"],
+            client_type=self.cleaned_data["client_type"],
+            first_name=self.cleaned_data.get("first_name", ""),
+            last_name=self.cleaned_data.get("last_name", ""),
+            company_name=self.cleaned_data.get("company_name", ""),
+            phone=self.cleaned_data.get("full_phone", self.cleaned_data.get("phone", "")),
+            status=Client.Status.PENDING_ONBOARDING,
+        )
+        client.set_password("")
+        photo = self.cleaned_data.get("profile_photo")
+        if photo:
+            client.profile_photo = optimize_profile_photo(photo)
+        if commit:
+            client.save()
+            ClientSignUpForm._sync_client_signup_drive_uploads(client)
         return client
 
 
@@ -982,17 +1036,6 @@ class ClientOnboardingForm(forms.Form):
         choices=[],
         widget=forms.RadioSelect(attrs={"class": "radio-group"}),
     )
-    identification_number = forms.CharField(
-        required=False,
-        max_length=50,
-        widget=forms.TextInput(
-            attrs={
-                "class": "form-input",
-                "placeholder": "National ID number",
-                "id": "id_identification_number",
-            }
-        ),
-    )
     identification_document = forms.FileField(
         required=False,
         widget=forms.FileInput(
@@ -1000,17 +1043,6 @@ class ClientOnboardingForm(forms.Form):
                 "class": "form-input form-input--file",
                 "accept": "image/*,.pdf",
                 "id": "id_identification_document",
-            }
-        ),
-    )
-    alien_number = forms.CharField(
-        required=False,
-        max_length=50,
-        widget=forms.TextInput(
-            attrs={
-                "class": "form-input",
-                "placeholder": "Alien / permit number",
-                "id": "id_alien_number",
             }
         ),
     )
@@ -1029,38 +1061,6 @@ class ClientOnboardingForm(forms.Form):
         choices=[],
         widget=forms.RadioSelect(attrs={"class": "radio-group"}),
     )
-    business_number = forms.CharField(
-        required=False,
-        max_length=80,
-        widget=forms.TextInput(
-            attrs={
-                "class": "form-input",
-                "placeholder": "Business registration number",
-                "id": "id_business_number",
-            }
-        ),
-    )
-    business_document = forms.FileField(
-        required=False,
-        widget=forms.FileInput(
-            attrs={
-                "class": "form-input form-input--file",
-                "accept": "image/*,.pdf",
-                "id": "id_business_document",
-            }
-        ),
-    )
-    company_registration_number = forms.CharField(
-        required=False,
-        max_length=80,
-        widget=forms.TextInput(
-            attrs={
-                "class": "form-input",
-                "placeholder": "Company registration number",
-                "id": "id_company_registration_number",
-            }
-        ),
-    )
     company_registration_document = forms.FileField(
         required=False,
         widget=forms.FileInput(
@@ -1068,6 +1068,26 @@ class ClientOnboardingForm(forms.Form):
                 "class": "form-input form-input--file",
                 "accept": "image/*,.pdf",
                 "id": "id_company_registration_document",
+            }
+        ),
+    )
+    kra_pin_document = forms.FileField(
+        required=False,
+        widget=forms.FileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*,.pdf",
+                "id": "id_kra_pin_document",
+            }
+        ),
+    )
+    signed_instruction_note = forms.FileField(
+        required=False,
+        widget=forms.FileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*,.pdf",
+                "id": "id_signed_instruction_note",
             }
         ),
     )
@@ -1093,17 +1113,9 @@ class ClientOnboardingForm(forms.Form):
             self.fields["phone"].initial = local
             self.fields["physical_address"].initial = (client.physical_address or "").upper()
             self.fields["id_type"].initial = client.id_type or Client.IdType.CITIZEN
-            self.fields["identification_number"].initial = (
-                client.identification_number or ""
-            ).upper()
-            self.fields["alien_number"].initial = (client.alien_number or "").upper()
             self.fields["corporate_kind"].initial = (
                 client.corporate_kind or Client.CorporateKind.BUSINESS
             )
-            self.fields["business_number"].initial = (client.business_number or "").upper()
-            self.fields["company_registration_number"].initial = (
-                client.company_registration_number or ""
-            ).upper()
 
         for name, field in self.fields.items():
             if name in (
@@ -1114,8 +1126,9 @@ class ClientOnboardingForm(forms.Form):
                 "corporate_kind",
                 "identification_document",
                 "alien_document",
-                "business_document",
                 "company_registration_document",
+                "kra_pin_document",
+                "signed_instruction_note",
             ):
                 continue
             widget = field.widget
@@ -1162,20 +1175,6 @@ class ClientOnboardingForm(forms.Form):
             raise ValidationError("Enter a physical address.")
         return address
 
-    def clean_identification_number(self):
-        return (self.cleaned_data.get("identification_number") or "").strip().upper()
-
-    def clean_alien_number(self):
-        return (self.cleaned_data.get("alien_number") or "").strip().upper()
-
-    def clean_business_number(self):
-        return (self.cleaned_data.get("business_number") or "").strip().upper()
-
-    def clean_company_registration_number(self):
-        return (
-            (self.cleaned_data.get("company_registration_number") or "").strip().upper()
-        )
-
     def clean(self):
         from .models import Client
 
@@ -1195,69 +1194,20 @@ class ClientOnboardingForm(forms.Form):
                 self.add_error("last_name", "Confirm your last name.")
             cleaned["company_name"] = ""
             cleaned["corporate_kind"] = ""
-            cleaned["business_number"] = ""
-            cleaned["company_registration_number"] = ""
             id_type = cleaned.get("id_type") or Client.IdType.CITIZEN
             cleaned["id_type"] = id_type
-            if id_type == Client.IdType.CITIZEN:
-                if not cleaned.get("identification_number"):
-                    self.add_error(
-                        "identification_number",
-                        "Identification number is required.",
-                    )
-                doc = cleaned.get("identification_document")
-                if not doc and not (self.client and self.client.identification_document):
-                    self.add_error(
-                        "identification_document",
-                        "Upload your identification card.",
-                    )
-                cleaned["alien_number"] = ""
-            else:
-                if not cleaned.get("alien_number"):
-                    self.add_error("alien_number", "Alien number is required.")
-                doc = cleaned.get("alien_document")
-                if not doc and not (self.client and self.client.alien_document):
-                    self.add_error("alien_document", "Upload your alien document.")
-                cleaned["identification_number"] = ""
         elif client_type == Client.ClientType.CORPORATE:
             if not cleaned.get("company_name"):
                 self.add_error("company_name", "Confirm the business or company name.")
             cleaned["first_name"] = ""
             cleaned["last_name"] = ""
             cleaned["id_type"] = ""
-            cleaned["identification_number"] = ""
-            cleaned["alien_number"] = ""
             kind = cleaned.get("corporate_kind")
             if not kind:
                 self.add_error(
                     "corporate_kind",
                     "Select whether this is a business or a company.",
                 )
-            elif kind == Client.CorporateKind.BUSINESS:
-                cleaned["company_registration_number"] = ""
-                if not cleaned.get("business_number"):
-                    self.add_error("business_number", "Business number is required.")
-                doc = cleaned.get("business_document")
-                if not doc and not (self.client and self.client.business_document):
-                    self.add_error(
-                        "business_document",
-                        "Upload the business registration document.",
-                    )
-            elif kind == Client.CorporateKind.COMPANY:
-                cleaned["business_number"] = ""
-                if not cleaned.get("company_registration_number"):
-                    self.add_error(
-                        "company_registration_number",
-                        "Company number is required.",
-                    )
-                doc = cleaned.get("company_registration_document")
-                if not doc and not (
-                    self.client and self.client.company_registration_document
-                ):
-                    self.add_error(
-                        "company_registration_document",
-                        "Upload the company registration document.",
-                    )
 
         return cleaned
 
@@ -1275,48 +1225,144 @@ class ClientOnboardingForm(forms.Form):
         )
         client.physical_address = self.cleaned_data["physical_address"]
         client.id_type = self.cleaned_data.get("id_type", "")
-        client.identification_number = self.cleaned_data.get(
-            "identification_number", ""
-        )
-        client.alien_number = self.cleaned_data.get("alien_number", "")
         client.corporate_kind = self.cleaned_data.get("corporate_kind", "")
-        client.business_number = self.cleaned_data.get("business_number", "")
-        client.company_registration_number = self.cleaned_data.get(
-            "company_registration_number", ""
-        )
 
+        # Optional document uploads — only overwrite when a new file is provided.
         if self.cleaned_data.get("identification_document"):
             client.identification_document = self.cleaned_data[
                 "identification_document"
             ]
         if self.cleaned_data.get("alien_document"):
             client.alien_document = self.cleaned_data["alien_document"]
-        if self.cleaned_data.get("business_document"):
-            client.business_document = self.cleaned_data["business_document"]
         if self.cleaned_data.get("company_registration_document"):
             client.company_registration_document = self.cleaned_data[
                 "company_registration_document"
             ]
+        if self.cleaned_data.get("kra_pin_document"):
+            client.kra_pin_document = self.cleaned_data["kra_pin_document"]
+        if self.cleaned_data.get("signed_instruction_note"):
+            client.signed_instruction_note = self.cleaned_data[
+                "signed_instruction_note"
+            ]
 
         if client.client_type == Client.ClientType.CORPORATE:
+            client.identification_number = ""
+            client.alien_number = ""
             client.identification_document = None
             client.alien_document = None
-            if client.corporate_kind == Client.CorporateKind.BUSINESS:
-                client.company_registration_document = None
-            else:
-                client.business_document = None
+            client.business_number = ""
+            client.business_document = None
+            client.company_registration_number = ""
         else:
             client.corporate_kind = ""
+            client.business_number = ""
             client.business_document = None
+            client.company_registration_number = ""
             client.company_registration_document = None
+            client.identification_number = ""
+            client.alien_number = ""
             if client.id_type == Client.IdType.CITIZEN:
                 client.alien_document = None
             else:
                 client.identification_document = None
 
         client.status = Client.Status.PENDING_APPROVAL
+        uploaded_fields = [
+            name
+            for name in (
+                "identification_document",
+                "alien_document",
+                "company_registration_document",
+                "kra_pin_document",
+                "signed_instruction_note",
+            )
+            if self.cleaned_data.get(name)
+        ]
         if commit:
             client.save()
+            self._sync_client_onboarding_drive_uploads(client, uploaded_fields)
+        return client
+
+    @staticmethod
+    def _sync_client_onboarding_drive_uploads(client, field_names):
+        """Ensure client Drive folders and upload new personal documents."""
+        try:
+            from .google_drive import (
+                GoogleDriveAPIError,
+                GoogleDriveOAuthError,
+                ensure_client_folder_structure,
+                sync_client_personal_document_uploads,
+            )
+        except Exception:
+            return
+        try:
+            ensure_client_folder_structure(client)
+            if field_names:
+                sync_client_personal_document_uploads(
+                    client, field_names=field_names
+                )
+        except (GoogleDriveAPIError, GoogleDriveOAuthError):
+            pass
+
+
+class StaffClientProfileForm(ClientOnboardingForm):
+    """Staff edit of an active/suspended client without changing approval status."""
+
+    profile_photo = forms.ImageField(
+        required=False,
+        widget=forms.FileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*",
+                "id": "id_client_profile_photo",
+            }
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Keep optional docs optional on staff edit; do not force re-upload.
+        for name in (
+            "identification_document",
+            "alien_document",
+            "company_registration_document",
+            "kra_pin_document",
+            "signed_instruction_note",
+            "profile_photo",
+        ):
+            if name in self.fields:
+                self.fields[name].required = False
+
+    def save(self, commit=True):
+        from .models import Client
+
+        previous_status = self.client.status
+        client = super().save(commit=False)
+        # Preserve active/suspended (or any current) status — do not push to pending.
+        client.status = previous_status
+
+        photo = self.cleaned_data.get("profile_photo")
+        if photo:
+            client.profile_photo = optimize_profile_photo(photo)
+
+        uploaded_fields = [
+            name
+            for name in (
+                "identification_document",
+                "alien_document",
+                "company_registration_document",
+                "kra_pin_document",
+                "signed_instruction_note",
+                "profile_photo",
+            )
+            if self.cleaned_data.get(name)
+        ]
+        if commit:
+            client.save()
+            if uploaded_fields:
+                ClientOnboardingForm._sync_client_onboarding_drive_uploads(
+                    client, uploaded_fields
+                )
         return client
 
 
@@ -1537,9 +1583,40 @@ class EmployeeOnboardingForm(forms.Form):
             employee.bank_account_number = ""
 
         employee.status = Employee.Status.PENDING_APPROVAL
+        uploaded_fields = [
+            name
+            for name in (
+                "employment_contract",
+                "national_id_or_passport",
+                "kra_pin_certificate",
+            )
+            if self.cleaned_data.get(name)
+        ]
         if commit:
             employee.save()
+            self._sync_onboarding_drive_uploads(employee, uploaded_fields)
         return employee
+
+    @staticmethod
+    def _sync_onboarding_drive_uploads(employee, field_names):
+        """Ensure employee Drive folders and upload new onboarding documents."""
+        try:
+            from .google_drive import (
+                GoogleDriveAPIError,
+                GoogleDriveOAuthError,
+                ensure_employee_folder_structure,
+                sync_employee_personal_detail_uploads,
+            )
+        except Exception:
+            return
+        try:
+            ensure_employee_folder_structure(employee)
+            if field_names:
+                sync_employee_personal_detail_uploads(
+                    employee, field_names=field_names
+                )
+        except (GoogleDriveAPIError, GoogleDriveOAuthError):
+            pass
 
 
 class RegisterCaseForm(forms.ModelForm):
@@ -1776,6 +1853,7 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
             "next_court_date",
             "next_judicial_officer",
             "next_client_attendance",
+            "virtual_link",
         )
         widgets = {
             "activity_type": forms.TextInput(
@@ -1851,7 +1929,20 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
                     "autocomplete": "off",
                 }
             ),
-            "next_client_attendance": forms.Select(attrs={"class": "form-input"}),
+            "next_client_attendance": forms.Select(
+                attrs={
+                    "class": "form-input",
+                    "data-virtual-toggle": "true",
+                }
+            ),
+            "virtual_link": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://meet.example.com/hearing-link",
+                    "autocomplete": "off",
+                    "data-virtual-link": "true",
+                }
+            ),
         }
         labels = {
             "activity_type": "Activity Type",
@@ -1866,6 +1957,7 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
             "next_court_date": "Next Court Date",
             "next_judicial_officer": "Next Judicial Officer",
             "next_client_attendance": "Next Client Attendance",
+            "virtual_link": "Virtual hearing link",
         }
 
     def __init__(self, *args, **kwargs):
@@ -1882,6 +1974,7 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
         self.fields["next_court_date"].required = False
         self.fields["next_judicial_officer"].required = False
         self.fields["next_client_attendance"].required = False
+        self.fields["virtual_link"].required = False
         self.fields["next_client_attendance"].choices = [
             ("", "Select attendance..."),
             *CourtAttendance.ClientAttendance.choices,
@@ -1889,6 +1982,20 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
         if not self.is_bound and not self.initial.get("attendance_date"):
             self.initial["attendance_date"] = timezone.localdate()
             self.initial.setdefault("presence", CourtAttendance.Presence.PRESENT)
+
+    def clean(self):
+        cleaned = super().clean()
+        attendance = cleaned.get("next_client_attendance") or ""
+        link = (cleaned.get("virtual_link") or "").strip()
+        if attendance == CourtAttendance.ClientAttendance.VIRTUAL:
+            if not link:
+                self.add_error(
+                    "virtual_link",
+                    "Enter the virtual hearing link when attendance is Virtual.",
+                )
+        else:
+            cleaned["virtual_link"] = ""
+        return cleaned
 
 
 class CourtAttendanceAdvocateForm(forms.ModelForm):
@@ -2007,13 +2114,18 @@ class UpdateMatterAttendanceForm(forms.ModelForm):
         model = MatterAttendance
         fields = (
             "activity_type",
+            "contact_person",
+            "location",
             "attendance_date",
+            "presence",
+            "outcome_notes",
             "description",
             "next_action",
             "next_activity_type",
             "next_attendance_date",
+            "next_contact_person",
             "next_client_attendance",
-            "bring_update",
+            "virtual_link",
         )
         widgets = {
             "activity_type": forms.TextInput(
@@ -2024,11 +2136,33 @@ class UpdateMatterAttendanceForm(forms.ModelForm):
                     "list": "matter-activity-type-suggestions",
                 }
             ),
+            "contact_person": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Enter contact / meeting person...",
+                    "autocomplete": "off",
+                }
+            ),
+            "location": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Boardroom, Client offices",
+                    "autocomplete": "off",
+                }
+            ),
             "attendance_date": forms.DateInput(
                 attrs={
                     "class": "form-input",
                     "type": "date",
                     "autocomplete": "off",
+                }
+            ),
+            "presence": forms.Select(attrs={"class": "form-input"}),
+            "outcome_notes": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Enter outcome notes / directions...",
                 }
             ),
             "description": forms.Textarea(
@@ -2060,46 +2194,221 @@ class UpdateMatterAttendanceForm(forms.ModelForm):
                     "autocomplete": "off",
                 }
             ),
-            "next_client_attendance": forms.Select(attrs={"class": "form-input"}),
-            "bring_update": forms.Textarea(
+            "next_contact_person": forms.TextInput(
                 attrs={
                     "class": "form-input",
-                    "rows": 4,
-                    "placeholder": "Enter bring-up / update notes...",
+                    "placeholder": "Enter next contact person...",
+                    "autocomplete": "off",
+                }
+            ),
+            "next_client_attendance": forms.Select(
+                attrs={
+                    "class": "form-input",
+                    "data-virtual-toggle": "true",
+                }
+            ),
+            "virtual_link": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://meet.example.com/meeting-link",
+                    "autocomplete": "off",
+                    "data-virtual-link": "true",
                 }
             ),
         }
         labels = {
             "activity_type": "Activity Type",
+            "contact_person": "Contact Person",
+            "location": "Location",
             "attendance_date": "Date of Attendance",
+            "presence": "Matter Attendance",
+            "outcome_notes": "Outcome / Notes",
             "description": "Description",
             "next_action": "Next Action",
             "next_activity_type": "Next Activity Type",
             "next_attendance_date": "Next Attendance Date",
+            "next_contact_person": "Next Contact Person",
             "next_client_attendance": "Next Client Attendance",
-            "bring_update": "Bring Update",
+            "virtual_link": "Virtual meeting link",
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["activity_type"].required = True
         self.fields["attendance_date"].required = True
+        self.fields["presence"].required = True
+        self.fields["contact_person"].required = False
+        self.fields["location"].required = False
+        self.fields["outcome_notes"].required = False
         self.fields["description"].required = False
         self.fields["next_action"].required = False
         self.fields["next_activity_type"].required = False
         self.fields["next_attendance_date"].required = False
+        self.fields["next_contact_person"].required = False
         self.fields["next_client_attendance"].required = False
-        self.fields["bring_update"].required = False
+        self.fields["virtual_link"].required = False
         self.fields["next_client_attendance"].choices = [
             ("", "Select attendance..."),
             *MatterAttendance.ClientAttendance.choices,
         ]
         if not self.is_bound and not self.initial.get("attendance_date"):
             self.initial["attendance_date"] = timezone.localdate()
+            self.initial.setdefault("presence", MatterAttendance.Presence.PRESENT)
+
+    def clean(self):
+        cleaned = super().clean()
+        attendance = cleaned.get("next_client_attendance") or ""
+        link = (cleaned.get("virtual_link") or "").strip()
+        if attendance == MatterAttendance.ClientAttendance.VIRTUAL:
+            if not link:
+                self.add_error(
+                    "virtual_link",
+                    "Enter the virtual meeting link when attendance is Virtual.",
+                )
+        else:
+            cleaned["virtual_link"] = ""
+        return cleaned
+
+
+class MatterAttendanceQuorumMemberForm(forms.ModelForm):
+    """One quorum participant at a matter attendance."""
+
+    class Meta:
+        model = MatterAttendanceQuorumMember
+        fields = ("participant_name", "what_they_said")
+        widgets = {
+            "participant_name": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "NAME OF PARTICIPANT",
+                    "autocomplete": "off",
+                }
+            ),
+            "what_they_said": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "SUMMARY OF REMARKS OR CONTRIBUTIONS",
+                }
+            ),
+        }
+        labels = {
+            "participant_name": "Participant name",
+            "what_they_said": "What they said",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["participant_name"].required = False
+        self.fields["what_they_said"].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        name = (cleaned.get("participant_name") or "").strip()
+        remarks = (cleaned.get("what_they_said") or "").strip()
+        if remarks and not name:
+            self.add_error("participant_name", "Enter the participant name.")
+        cleaned["participant_name"] = name
+        cleaned["what_they_said"] = remarks
+        return cleaned
+
+
+MatterAttendanceQuorumFormSet = forms.formset_factory(
+    MatterAttendanceQuorumMemberForm,
+    extra=1,
+    min_num=0,
+    validate_min=False,
+    can_delete=True,
+)
+
+
+class MatterAttendanceBringUpItemForm(forms.ModelForm):
+    """One bring-up item from a matter attendance."""
+
+    class Meta:
+        model = MatterAttendanceBringUpItem
+        fields = ("description", "reminder_frequency", "allocated_to")
+        widgets = {
+            "description": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Enter item description...",
+                }
+            ),
+            "reminder_frequency": forms.Select(attrs={"class": "form-input"}),
+            "allocated_to": forms.Select(attrs={"class": "form-input"}),
+        }
+        labels = {
+            "description": "Description",
+            "reminder_frequency": "Frequency to be Reminded",
+            "allocated_to": "Allocated To",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["description"].required = False
+        self.fields["reminder_frequency"].required = False
+        self.fields["allocated_to"].required = False
+        self.fields["reminder_frequency"].choices = [
+            ("", "Select frequency..."),
+            *MatterAttendanceBringUpItem.ReminderFrequency.choices,
+        ]
+        self.fields["allocated_to"].queryset = Employee.objects.filter(
+            status=Employee.Status.ACTIVE
+        ).order_by("first_name", "last_name", "login_code")
+        self.fields["allocated_to"].empty_label = "Search employee..."
+
+    def clean(self):
+        cleaned = super().clean()
+        description = (cleaned.get("description") or "").strip()
+        frequency = cleaned.get("reminder_frequency") or ""
+        allocated = cleaned.get("allocated_to")
+        if (frequency or allocated) and not description:
+            self.add_error("description", "Enter an item description.")
+        cleaned["description"] = description
+        return cleaned
+
+
+MatterAttendanceBringUpItemFormSet = forms.formset_factory(
+    MatterAttendanceBringUpItemForm,
+    extra=1,
+    min_num=0,
+    validate_min=False,
+    can_delete=True,
+)
 
 
 class CreateCaseTaskForm(forms.Form):
     """Create a follow-up case task for the locked litigation case."""
+
+    TASK_ACCESS_FIELDS = (
+        (
+            "allow_view",
+            "View",
+            "See case details and open documents.",
+        ),
+        (
+            "allow_edit",
+            "Edit",
+            "Edit case details and rename documents.",
+        ),
+        (
+            "allow_download",
+            "Download",
+            "Download documents from this case.",
+        ),
+        (
+            "allow_delete",
+            "Delete",
+            "Remove documents from this case.",
+        ),
+        (
+            "allow_upload",
+            "Upload",
+            "Upload or create documents on this case.",
+        ),
+    )
 
     assigned_to = forms.ModelChoiceField(
         queryset=Employee.objects.none(),
@@ -2142,6 +2451,51 @@ class CreateCaseTaskForm(forms.Form):
         ),
         error_messages={"required": "Select a due date."},
     )
+    allow_view = forms.BooleanField(
+        label="View",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="See case details and open documents.",
+    )
+    allow_edit = forms.BooleanField(
+        label="Edit",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="Edit case details and rename documents.",
+    )
+    allow_download = forms.BooleanField(
+        label="Download",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="Download documents from this case.",
+    )
+    allow_delete = forms.BooleanField(
+        label="Delete",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="Remove documents from this case.",
+    )
+    allow_upload = forms.BooleanField(
+        label="Upload",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="Upload or create documents on this case.",
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2152,9 +2506,60 @@ class CreateCaseTaskForm(forms.Form):
             "Select the employee who will receive and work on this case task."
         )
 
+    def access_permission_rows(self):
+        """Ordered rows for the compact assignee-access toggles."""
+        rows = []
+        for name, label, help_text in self.TASK_ACCESS_FIELDS:
+            field = self[name]
+            rows.append(
+                {
+                    "name": name,
+                    "label": label,
+                    "help_text": help_text,
+                    "field": field,
+                    "errors": field.errors,
+                }
+            )
+        return rows
+
+    def cleaned_access_permissions(self):
+        """Boolean map of allow_* permissions from cleaned_data."""
+        return {
+            name: bool(self.cleaned_data.get(name, False))
+            for name, _label, _help in self.TASK_ACCESS_FIELDS
+        }
+
 
 class CreateMatterTaskForm(forms.Form):
     """Create a follow-up matter task for the locked non-litigation matter."""
+
+    TASK_ACCESS_FIELDS = (
+        (
+            "allow_view",
+            "View",
+            "See matter details and open documents.",
+        ),
+        (
+            "allow_edit",
+            "Edit",
+            "Edit matter details and rename documents.",
+        ),
+        (
+            "allow_download",
+            "Download",
+            "Download documents from this matter.",
+        ),
+        (
+            "allow_delete",
+            "Delete",
+            "Remove documents from this matter.",
+        ),
+        (
+            "allow_upload",
+            "Upload",
+            "Upload or create documents on this matter.",
+        ),
+    )
 
     assigned_to = forms.ModelChoiceField(
         queryset=Employee.objects.none(),
@@ -2197,6 +2602,51 @@ class CreateMatterTaskForm(forms.Form):
         ),
         error_messages={"required": "Select a due date."},
     )
+    allow_view = forms.BooleanField(
+        label="View",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="See matter details and open documents.",
+    )
+    allow_edit = forms.BooleanField(
+        label="Edit",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="Edit matter details and rename documents.",
+    )
+    allow_download = forms.BooleanField(
+        label="Download",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="Download documents from this matter.",
+    )
+    allow_delete = forms.BooleanField(
+        label="Delete",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="Remove documents from this matter.",
+    )
+    allow_upload = forms.BooleanField(
+        label="Upload",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "task-access-toggle__input"}
+        ),
+        help_text="Upload or create documents on this matter.",
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2206,6 +2656,29 @@ class CreateMatterTaskForm(forms.Form):
         self.fields["assigned_to"].help_text = (
             "Select the employee who will receive and work on this matter task."
         )
+
+    def access_permission_rows(self):
+        """Ordered rows for the compact assignee-access toggles."""
+        rows = []
+        for name, label, help_text in self.TASK_ACCESS_FIELDS:
+            field = self[name]
+            rows.append(
+                {
+                    "name": name,
+                    "label": label,
+                    "help_text": help_text,
+                    "field": field,
+                    "errors": field.errors,
+                }
+            )
+        return rows
+
+    def cleaned_access_permissions(self):
+        """Boolean map of allow_* permissions from cleaned_data."""
+        return {
+            name: bool(self.cleaned_data.get(name, False))
+            for name, _label, _help in self.TASK_ACCESS_FIELDS
+        }
 
 
 class ApproveCaseForm(forms.Form):
@@ -2915,6 +3388,8 @@ class ProfileSettingsForm(forms.ModelForm):
             user.set_password(new_password)
         if commit:
             user.save()
+            if photo:
+                SignUpForm._sync_signup_drive_uploads(user)
         return user
 
     def save_with_request(self, request, commit=True):
@@ -4598,7 +5073,32 @@ class CommunicationSettingsForm(forms.ModelForm):
         return instance
 
 
-class CreateGoogleDocumentForm(forms.Form):
+class DocumentPartyTypeMixin:
+    """Require a party type selection for case/matter documents."""
+
+    def _add_party_type_field(self, party_type_choices=None):
+        choices = list(party_type_choices or CaseParty.PartyType.choices)
+        self.fields["party_type"] = forms.ChoiceField(
+            choices=[("", "Select party type…")] + choices,
+            label="Party type",
+            widget=forms.Select(attrs={"class": "form-input"}),
+            error_messages={"required": "Select a party type."},
+        )
+        self._party_type_valid = {key for key, _label in choices}
+
+    def clean_party_type(self):
+        value = (self.cleaned_data.get("party_type") or "").strip()
+        if not value:
+            raise ValidationError("Select a party type.")
+        if value not in self._party_type_valid:
+            raise ValidationError("Select a valid party type.")
+        return value
+
+    def party_type_kwargs(self) -> dict:
+        return {"party_type": self.cleaned_data.get("party_type") or ""}
+
+
+class CreateGoogleDocumentForm(DocumentPartyTypeMixin, forms.Form):
     """Name and describe a file, then choose Docs / Excel / Slides."""
 
     GOOGLE_TYPE_CHOICES = (
@@ -4637,6 +5137,11 @@ class CreateGoogleDocumentForm(forms.Form):
         ),
     )
 
+    def __init__(self, *args, party_type_choices=None, **kwargs):
+        kwargs.pop("default_client", None)
+        super().__init__(*args, **kwargs)
+        self._add_party_type_field(party_type_choices)
+
     def clean_title(self):
         title = (self.cleaned_data.get("title") or "").strip()
         if not title:
@@ -4657,8 +5162,8 @@ class CreateGoogleDocumentForm(forms.Form):
         return value
 
 
-class UploadDocumentForm(forms.Form):
-    """Upload a file, name it, and link it to the current case or matter."""
+class UploadDocumentForm(DocumentPartyTypeMixin, forms.Form):
+    """Upload a file, name it, and assign a party type."""
 
     title = forms.CharField(
         max_length=255,
@@ -4695,6 +5200,11 @@ class UploadDocumentForm(forms.Form):
         ),
     )
 
+    def __init__(self, *args, party_type_choices=None, **kwargs):
+        kwargs.pop("default_client", None)
+        super().__init__(*args, **kwargs)
+        self._add_party_type_field(party_type_choices)
+
     def clean_title(self):
         title = (self.cleaned_data.get("title") or "").strip()
         if not title:
@@ -4711,8 +5221,8 @@ class UploadDocumentForm(forms.Form):
         return uploaded
 
 
-class RenameDocumentForm(forms.Form):
-    """Edit document name, description, and notes (and rename on Drive)."""
+class RenameDocumentForm(DocumentPartyTypeMixin, forms.Form):
+    """Edit document name, description, notes, and party type (and rename on Drive)."""
 
     title = forms.CharField(
         max_length=255,
@@ -4747,6 +5257,11 @@ class RenameDocumentForm(forms.Form):
             }
         ),
     )
+
+    def __init__(self, *args, party_type_choices=None, **kwargs):
+        kwargs.pop("default_client", None)
+        super().__init__(*args, **kwargs)
+        self._add_party_type_field(party_type_choices)
 
     def clean_title(self):
         title = (self.cleaned_data.get("title") or "").strip()

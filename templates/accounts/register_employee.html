@@ -116,12 +116,6 @@
             {% if form.id_country.errors %}<span class="field-error">{{ form.id_country.errors.0 }}</span>{% endif %}
           </div>
 
-          <div class="form-field" id="citizen-id-field">
-            <label for="{{ form.identification_number.id_for_label }}">Identification number</label>
-            {{ form.identification_number }}
-            {% if form.identification_number.errors %}<span class="field-error">{{ form.identification_number.errors.0 }}</span>{% endif %}
-          </div>
-
           <div class="form-field is-hidden" id="alien-id-field">
             <label for="{{ form.alien_number.id_for_label }}">Alien number</label>
             {{ form.alien_number }}

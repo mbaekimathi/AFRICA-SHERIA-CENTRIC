@@ -46,6 +46,65 @@ class EmployeeManager(BaseUserManager):
         return self._create_user(login_code, password, **extra_fields)
 
 
+def employee_folder_name(employee) -> str:
+    """Stable folder label from employee names (Drive + local media)."""
+    name = f"{getattr(employee, 'first_name', '')} {getattr(employee, 'last_name', '')}".strip()
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", name)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    if cleaned:
+        return cleaned[:100]
+    login = (getattr(employee, "login_code", "") or "").strip()
+    pk = getattr(employee, "pk", None)
+    if login:
+        return f"Employee {login}"
+    if pk:
+        return f"Employee {pk}"
+    return "Employee"
+
+
+def employee_personal_details_upload_to(instance, filename):
+    """
+    Local media path:
+    work/{Employee Name}/personal/{file}
+    """
+    folder = employee_folder_name(instance)
+    safe_name = (filename or "upload").replace("\\", "/").split("/")[-1]
+    safe_name = re.sub(r"[^\w.\- ()]+", "_", safe_name).strip("._") or "upload"
+    return f"work/{folder}/personal/{safe_name}"
+
+
+def client_folder_name(client) -> str:
+    """Stable folder label from client display name (Drive + local media)."""
+    if getattr(client, "client_type", "") == "corporate":
+        name = (getattr(client, "company_name", "") or "").strip()
+    else:
+        name = f"{getattr(client, 'first_name', '')} {getattr(client, 'last_name', '')}".strip()
+        if not name:
+            name = (getattr(client, "company_name", "") or "").strip()
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", name)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    if cleaned:
+        return cleaned[:100]
+    email = (getattr(client, "email", "") or "").strip()
+    pk = getattr(client, "pk", None)
+    if email:
+        return email.split("@")[0][:100]
+    if pk:
+        return f"Client {pk}"
+    return "Client"
+
+
+def client_personal_documents_upload_to(instance, filename):
+    """
+    Local media path:
+    clients/{Client Name}/personal-documents/{file}
+    """
+    folder = client_folder_name(instance)
+    safe_name = (filename or "upload").replace("\\", "/").split("/")[-1]
+    safe_name = re.sub(r"[^\w.\- ()]+", "_", safe_name).strip("._") or "upload"
+    return f"clients/{folder}/personal-documents/{safe_name}"
+
+
 class Employee(AbstractUser):
     class Role(models.TextChoices):
         FIRM_ADMIN = "firm_admin", "Firm Administrator"
@@ -190,7 +249,7 @@ class Employee(AbstractUser):
         help_text="Alien / permit number for non-citizens.",
     )
     profile_photo = models.ImageField(
-        upload_to="profiles/",
+        upload_to=employee_personal_details_upload_to,
         blank=True,
         null=True,
     )
@@ -236,19 +295,33 @@ class Employee(AbstractUser):
 
     # Compliance documents (collected during onboarding)
     employment_contract = models.FileField(
-        upload_to="employees/contracts/",
+        upload_to=employee_personal_details_upload_to,
         blank=True,
         null=True,
     )
     national_id_or_passport = models.FileField(
-        upload_to="employees/identity/",
+        upload_to=employee_personal_details_upload_to,
         blank=True,
         null=True,
     )
     kra_pin_certificate = models.FileField(
-        upload_to="employees/kra/",
+        upload_to=employee_personal_details_upload_to,
         blank=True,
         null=True,
+    )
+
+    # Google Drive: Work/{Name}/Personal/
+    drive_folder_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Google Drive folder for this employee under Work/.",
+    )
+    drive_personal_details_folder_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Google Drive Personal subfolder for this employee.",
     )
 
     # Personal workspace appearance (this employee only — not firm-wide)
@@ -824,13 +897,13 @@ class Client(models.Model):
     )
     identification_number = models.CharField(max_length=50, blank=True, default="")
     identification_document = models.FileField(
-        upload_to="clients/docs/id/",
+        upload_to=client_personal_documents_upload_to,
         blank=True,
         null=True,
     )
     alien_number = models.CharField(max_length=50, blank=True, default="")
     alien_document = models.FileField(
-        upload_to="clients/docs/alien/",
+        upload_to=client_personal_documents_upload_to,
         blank=True,
         null=True,
     )
@@ -841,7 +914,7 @@ class Client(models.Model):
         help_text="Business registration number.",
     )
     business_document = models.FileField(
-        upload_to="clients/docs/business/",
+        upload_to=client_personal_documents_upload_to,
         blank=True,
         null=True,
     )
@@ -852,13 +925,26 @@ class Client(models.Model):
         help_text="Company registration number.",
     )
     company_registration_document = models.FileField(
-        upload_to="clients/docs/company/",
+        upload_to=client_personal_documents_upload_to,
         blank=True,
         null=True,
+        help_text="CR12 or company registration document.",
+    )
+    kra_pin_document = models.FileField(
+        upload_to=client_personal_documents_upload_to,
+        blank=True,
+        null=True,
+        help_text="KRA PIN certificate upload.",
+    )
+    signed_instruction_note = models.FileField(
+        upload_to=client_personal_documents_upload_to,
+        blank=True,
+        null=True,
+        help_text="Signed instruction note from the client.",
     )
     password = models.CharField(max_length=128, blank=True, default="")
     profile_photo = models.ImageField(
-        upload_to="clients/profiles/",
+        upload_to=client_personal_documents_upload_to,
         blank=True,
         null=True,
     )
@@ -874,6 +960,12 @@ class Client(models.Model):
         blank=True,
         default="",
         help_text="Google Drive folder for this client under Clients/.",
+    )
+    drive_personal_documents_folder_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Google Drive Personal Documents subfolder for this client.",
     )
     drive_litigation_folder_id = models.CharField(
         max_length=128,
@@ -1163,6 +1255,26 @@ class CaseTask(models.Model):
         null=True,
         help_text="Optional reminder date and time.",
     )
+    allow_view = models.BooleanField(
+        default=True,
+        help_text="Assignee may view case details and documents.",
+    )
+    allow_edit = models.BooleanField(
+        default=True,
+        help_text="Assignee may edit case details and rename documents.",
+    )
+    allow_download = models.BooleanField(
+        default=True,
+        help_text="Assignee may download case documents.",
+    )
+    allow_delete = models.BooleanField(
+        default=True,
+        help_text="Assignee may delete case documents.",
+    )
+    allow_upload = models.BooleanField(
+        default=True,
+        help_text="Assignee may upload or create case documents.",
+    )
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
@@ -1184,6 +1296,14 @@ class CaseTask(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    ACCESS_PERMISSION_KEYS = (
+        "view",
+        "edit",
+        "download",
+        "delete",
+        "upload",
+    )
+
     class Meta:
         ordering = ["due_date", "-created_at"]
         verbose_name = "Case task"
@@ -1192,6 +1312,45 @@ class CaseTask(models.Model):
     def __str__(self):
         label = (self.title or "").strip() or f"Task #{self.pk}"
         return f"{label} — {self.assignee.get_full_name()}"
+
+    def access_allowed(self, permission: str) -> bool:
+        """Return whether this task grants a named access permission."""
+        key = (permission or "").strip().lower()
+        if key not in self.ACCESS_PERMISSION_KEYS:
+            return False
+        return bool(getattr(self, f"allow_{key}", False))
+
+    @classmethod
+    def effective_access_for(cls, employee, case):
+        """
+        Task-level access for an assignee on a case.
+
+        Returns None when the employee has no pending/accepted tasks on the
+        case (workspace permissions alone apply). Otherwise returns a dict of
+        allow_* booleans; a permission is allowed only if every active task
+        grants it (restrict wins).
+        """
+        if employee is None or case is None:
+            return None
+        tasks = list(
+            cls.objects.filter(
+                case_id=getattr(case, "pk", case),
+                assignee_id=getattr(employee, "pk", employee),
+                status__in=(cls.Status.PENDING, cls.Status.ACCEPTED),
+            ).only(
+                "allow_view",
+                "allow_edit",
+                "allow_download",
+                "allow_delete",
+                "allow_upload",
+            )
+        )
+        if not tasks:
+            return None
+        return {
+            f"allow_{key}": all(task.access_allowed(key) for task in tasks)
+            for key in cls.ACCESS_PERMISSION_KEYS
+        }
 
 
 class CourtAttendance(models.Model):
@@ -1206,8 +1365,7 @@ class CourtAttendance(models.Model):
         REQUIRED = "required", "Client required"
         NOT_REQUIRED = "not_required", "Client not required"
         OPTIONAL = "optional", "Client optional"
-        ATTENDED = "attended", "Client attended"
-        DID_NOT_ATTEND = "did_not_attend", "Client did not attend"
+        VIRTUAL = "virtual", "Virtual"
 
     case = models.ForeignKey(
         LitigationCase,
@@ -1235,6 +1393,7 @@ class CourtAttendance(models.Model):
         blank=True,
         default="",
     )
+    virtual_link = models.URLField(max_length=500, blank=True, default="")
     recorded_by = models.ForeignKey(
         Employee,
         on_delete=models.SET_NULL,
@@ -1486,6 +1645,26 @@ class MatterTask(models.Model):
     instructions = models.TextField(blank=True, default="")
     due_date = models.DateField()
     reminder_at = models.DateTimeField(blank=True, null=True)
+    allow_view = models.BooleanField(
+        default=True,
+        help_text="Assignee may view matter details and documents.",
+    )
+    allow_edit = models.BooleanField(
+        default=True,
+        help_text="Assignee may edit matter details and rename documents.",
+    )
+    allow_download = models.BooleanField(
+        default=True,
+        help_text="Assignee may download matter documents.",
+    )
+    allow_delete = models.BooleanField(
+        default=True,
+        help_text="Assignee may delete matter documents.",
+    )
+    allow_upload = models.BooleanField(
+        default=True,
+        help_text="Assignee may upload or create matter documents.",
+    )
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
@@ -1507,6 +1686,14 @@ class MatterTask(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    ACCESS_PERMISSION_KEYS = (
+        "view",
+        "edit",
+        "download",
+        "delete",
+        "upload",
+    )
+
     class Meta:
         ordering = ["due_date", "-created_at"]
         verbose_name = "Matter task"
@@ -1516,16 +1703,59 @@ class MatterTask(models.Model):
         label = (self.title or "").strip() or f"Task #{self.pk}"
         return f"{label} — {self.assignee.get_full_name()}"
 
+    def access_allowed(self, permission: str) -> bool:
+        """Return whether this task grants a named access permission."""
+        key = (permission or "").strip().lower()
+        if key not in self.ACCESS_PERMISSION_KEYS:
+            return False
+        return bool(getattr(self, f"allow_{key}", False))
+
+    @classmethod
+    def effective_access_for(cls, employee, matter):
+        """
+        Task-level access for an assignee on a matter.
+
+        Returns None when the employee has no pending/accepted tasks on the
+        matter (workspace permissions alone apply). Otherwise returns a dict of
+        allow_* booleans; a permission is allowed only if every active task
+        grants it (restrict wins).
+        """
+        if employee is None or matter is None:
+            return None
+        tasks = list(
+            cls.objects.filter(
+                matter_id=getattr(matter, "pk", matter),
+                assignee_id=getattr(employee, "pk", employee),
+                status__in=(cls.Status.PENDING, cls.Status.ACCEPTED),
+            ).only(
+                "allow_view",
+                "allow_edit",
+                "allow_download",
+                "allow_delete",
+                "allow_upload",
+            )
+        )
+        if not tasks:
+            return None
+        return {
+            f"allow_{key}": all(task.access_allowed(key) for task in tasks)
+            for key in cls.ACCESS_PERMISSION_KEYS
+        }
+
 
 class MatterAttendance(models.Model):
     """A recorded attendance / progress update for a non-litigation matter."""
+
+    class Presence(models.TextChoices):
+        PRESENT = "present", "PRESENT"
+        ABSENT = "absent", "ABSENT"
+        PARTIAL = "partial", "PARTIAL"
 
     class ClientAttendance(models.TextChoices):
         REQUIRED = "required", "Client required"
         NOT_REQUIRED = "not_required", "Client not required"
         OPTIONAL = "optional", "Client optional"
-        ATTENDED = "attended", "Client attended"
-        DID_NOT_ATTEND = "did_not_attend", "Client did not attend"
+        VIRTUAL = "virtual", "Virtual"
 
     matter = models.ForeignKey(
         NonLitigationMatter,
@@ -1533,17 +1763,27 @@ class MatterAttendance(models.Model):
         related_name="matter_attendances",
     )
     activity_type = models.CharField(max_length=120)
+    contact_person = models.CharField(max_length=255, blank=True, default="")
+    location = models.CharField(max_length=120, blank=True, default="")
     attendance_date = models.DateField()
+    presence = models.CharField(
+        max_length=16,
+        choices=Presence.choices,
+        default=Presence.PRESENT,
+    )
+    outcome_notes = models.TextField(blank=True, default="")
     description = models.TextField(blank=True, default="")
     next_action = models.TextField(blank=True, default="")
     next_activity_type = models.CharField(max_length=120, blank=True, default="")
     next_attendance_date = models.DateField(blank=True, null=True)
+    next_contact_person = models.CharField(max_length=255, blank=True, default="")
     next_client_attendance = models.CharField(
         max_length=32,
         choices=ClientAttendance.choices,
         blank=True,
         default="",
     )
+    virtual_link = models.URLField(max_length=500, blank=True, default="")
     bring_update = models.TextField(blank=True, default="")
     recorded_by = models.ForeignKey(
         Employee,
@@ -1565,6 +1805,67 @@ class MatterAttendance(models.Model):
             f"{self.activity_type} on {self.attendance_date} — "
             f"{self.matter.reference_code}"
         )
+
+
+class MatterAttendanceQuorumMember(models.Model):
+    """A participant recorded in the quorum for a matter attendance."""
+
+    attendance = models.ForeignKey(
+        MatterAttendance,
+        on_delete=models.CASCADE,
+        related_name="quorum_members",
+    )
+    participant_name = models.CharField(max_length=255)
+    what_they_said = models.TextField(blank=True, default="")
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "pk"]
+        verbose_name = "Matter attendance quorum member"
+        verbose_name_plural = "Matter attendance quorum members"
+
+    def __str__(self):
+        return self.participant_name
+
+
+class MatterAttendanceBringUpItem(models.Model):
+    """A bring-up / reminder item arising from a matter attendance."""
+
+    class ReminderFrequency(models.TextChoices):
+        ONCE = "once", "Once"
+        DAILY = "daily", "Daily"
+        WEEKLY = "weekly", "Weekly"
+        BEFORE_ATTENDANCE = "before_attendance", "Before next attendance"
+        MONTHLY = "monthly", "Monthly"
+
+    attendance = models.ForeignKey(
+        MatterAttendance,
+        on_delete=models.CASCADE,
+        related_name="bring_up_items",
+    )
+    description = models.TextField()
+    reminder_frequency = models.CharField(
+        max_length=32,
+        choices=ReminderFrequency.choices,
+        blank=True,
+        default="",
+    )
+    allocated_to = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="matter_bring_up_items",
+    )
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "pk"]
+        verbose_name = "Matter bring-up item"
+        verbose_name_plural = "Matter bring-up items"
+
+    def __str__(self):
+        return self.description[:80]
 
 
 class Notification(models.Model):
@@ -2103,6 +2404,12 @@ class GoogleDriveConnection(models.Model):
     root_folder_id = models.CharField(max_length=128, blank=True, default="")
     clients_folder_id = models.CharField(max_length=128, blank=True, default="")
     work_folder_id = models.CharField(max_length=128, blank=True, default="")
+    employees_details_folder_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Deprecated. Employee folders now live directly under Work/{Name}/Personal.",
+    )
     connected_by = models.ForeignKey(
         Employee,
         on_delete=models.SET_NULL,
@@ -2137,34 +2444,46 @@ class GoogleDriveConnection(models.Model):
             self.root_folder_id and self.clients_folder_id and self.work_folder_id
         )
 
-    def clear_tokens(self):
+    def clear_tokens(self, *, keep_folder_ids: bool = False):
+        """
+        Clear OAuth credentials so the firm shows as disconnected.
+
+        When keep_folder_ids is True (auth invalidated automatically), firm
+        folder IDs are retained so a later reconnect can reuse the tree.
+        """
         self.access_token = ""
         self.refresh_token = ""
         self.token_expiry = None
         self.scopes = ""
         self.account_email = ""
         self.account_name = ""
-        self.root_folder_id = ""
-        self.clients_folder_id = ""
-        self.work_folder_id = ""
         self.connected_by = None
         self.connected_at = None
-        self.save(
-            update_fields=[
-                "access_token",
-                "refresh_token",
-                "token_expiry",
-                "scopes",
-                "account_email",
-                "account_name",
-                "root_folder_id",
-                "clients_folder_id",
-                "work_folder_id",
-                "connected_by",
-                "connected_at",
-                "updated_at",
-            ]
-        )
+        update_fields = [
+            "access_token",
+            "refresh_token",
+            "token_expiry",
+            "scopes",
+            "account_email",
+            "account_name",
+            "connected_by",
+            "connected_at",
+            "updated_at",
+        ]
+        if not keep_folder_ids:
+            self.root_folder_id = ""
+            self.clients_folder_id = ""
+            self.work_folder_id = ""
+            self.employees_details_folder_id = ""
+            update_fields.extend(
+                [
+                    "root_folder_id",
+                    "clients_folder_id",
+                    "work_folder_id",
+                    "employees_details_folder_id",
+                ]
+            )
+        self.save(update_fields=update_fields)
 
 
 class Document(models.Model):
@@ -2229,6 +2548,37 @@ class Document(models.Model):
         blank=True,
         related_name="uploaded_documents",
     )
+    party_type = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Party type this document relates to (case or matter party roles).",
+    )
+    linked_client = models.ForeignKey(
+        "Client",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="linked_documents",
+        help_text="Registered client this document is linked to.",
+    )
+    linked_client_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Name when linking to an unregistered client.",
+    )
+    linked_client_phone = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Phone when linking to an unregistered client.",
+    )
+    linked_client_email = models.EmailField(
+        blank=True,
+        default="",
+        help_text="Optional email when linking to an unregistered client.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2248,6 +2598,55 @@ class Document(models.Model):
 
     def __str__(self):
         return self.title
+
+    @property
+    def party_type_label(self) -> str:
+        """Human-readable party type for this document's case or matter."""
+        value = (self.party_type or "").strip()
+        if not value:
+            return ""
+        if self.case_id:
+            return dict(CaseParty.PartyType.choices).get(value, value.replace("_", " ").title())
+        if self.matter_id:
+            return dict(MatterParty.PartyType.choices).get(
+                value, value.replace("_", " ").title()
+            )
+        return value.replace("_", " ").title()
+
+    @property
+    def linked_party_label(self) -> str:
+        """Display label for the party this document is linked to."""
+        if self.party_type_label:
+            return self.party_type_label
+        if self.linked_client_id and self.linked_client:
+            return self.linked_client.get_full_name()
+        name = (self.linked_client_name or "").strip()
+        if name:
+            return name
+        return ""
+
+    @property
+    def linked_party_contact(self) -> str:
+        """Phone or email for a legacy linked client (registered or manual)."""
+        if self.linked_client_id and self.linked_client:
+            return self.linked_client.phone or self.linked_client.email or ""
+        phone = (self.linked_client_phone or "").strip()
+        email = (self.linked_client_email or "").strip()
+        return phone or email
+
+    @property
+    def can_open(self) -> bool:
+        """Whether the document can be opened for viewing/editing content."""
+        if (self.open_url or "").strip():
+            return True
+        return bool(self.local_file)
+
+    @property
+    def can_download(self) -> bool:
+        """Whether the document can be downloaded (local copy or Drive file)."""
+        if self.local_file:
+            return True
+        return bool((self.drive_file_id or "").strip())
 
     @property
     def type_label(self) -> str:

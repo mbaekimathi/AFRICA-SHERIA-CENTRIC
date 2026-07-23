@@ -126,7 +126,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # MySQL — defaults suit local MariaDB/MySQL; override only what differs.
-DB_NAME = _env("DB_NAME") or "v.2-sheria-centric-db"
+DB_NAME = _env("DB_NAME") or "sheria_centric_v2"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",

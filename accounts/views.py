@@ -4,9 +4,10 @@ from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
-from django.db.models import Q, Value
+from django.db import transaction
+from django.db.models import ProtectedError, Q, Value
 from django.db.models.functions import Concat
-from django.http import HttpResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -23,10 +24,13 @@ from datetime import date, timedelta
 from django.utils.safestring import mark_safe
 from .appearance import appearance_catalog
 from .client_auth import (
+    end_staff_impersonation,
     get_client,
+    is_staff_impersonating,
     login_client,
     logout_client,
     redirect_for_client,
+    start_staff_impersonation,
 )
 from .client_portal import client_home_url, client_portal_context
 from .country_codes import country_name
@@ -40,6 +44,8 @@ from .forms import (
     ClientLoginForm,
     ClientOnboardingForm,
     ClientSignUpForm,
+    StaffClientProfileForm,
+    StaffRegisterClientForm,
     CompanyInformationForm,
     CompanyContactsForm,
     AboutCompanyForm,
@@ -60,6 +66,8 @@ from .forms import (
     InvoiceStkPaymentForm,
     LatestNewsScrapeForm,
     LoginForm,
+    MatterAttendanceBringUpItemFormSet,
+    MatterAttendanceQuorumFormSet,
     MatterPartyEditFormSet,
     MatterPartyFormSet,
     NotificationSettingsForm,
@@ -98,6 +106,7 @@ from .google_drive import (
     rename_drive_file,
     trash_drive_file,
     upload_drive_file,
+    download_drive_file,
     validate_oauth_state,
 )
 from .blog_analytics import record_blog_event
@@ -148,6 +157,8 @@ from .models import (
     Invoice,
     LitigationCase,
     MatterAttendance,
+    MatterAttendanceBringUpItem,
+    MatterAttendanceQuorumMember,
     MatterParty,
     MatterTask,
     NewsSearchJob,
@@ -166,6 +177,7 @@ from .notifications import (
     notify_google_drive_disconnected,
     notify_matter_task,
     notify_task_accepted,
+    notify_task_completed,
     notify_task_rejected,
 )
 from .news_blog import build_news_blog_draft
@@ -1212,7 +1224,8 @@ def google_drive_callback(request):
             request,
             f"Connected to Google Drive as {label}. "
             f"Created “{root_name}/Clients” and “{root_name}/Work”, "
-            f"with folders for {summary['clients_created']} client(s).",
+            f"with folders for {summary['clients_created']} client(s) and "
+            f"{summary.get('employees_created', 0)} employee(s).",
         )
         if summary["clients_errors"]:
             messages.warning(
@@ -1613,6 +1626,20 @@ def client_status(request):
 
 class ClientLogoutView(View):
     def post(self, request):
+        if is_staff_impersonating(request):
+            return_url = end_staff_impersonation(request)
+            messages.info(
+                request,
+                "You have left the client portal and returned to your staff session.",
+            )
+            if return_url:
+                return redirect(return_url)
+            if request.user.is_authenticated:
+                return redirect(
+                    request.user.workspace_url(*CLIENT_PROFILE_TRAIL)
+                )
+            return redirect("accounts:home")
+
         logout_client(request)
         messages.info(request, "You have been signed out.")
         return redirect("accounts:home")
@@ -2927,6 +2954,7 @@ class RoleWorkspaceView(View):
     employee_management_template = "accounts/employee_management.html"
     client_management_template = "accounts/client_management.html"
     approve_pending_clients_template = "accounts/approve_pending_clients.html"
+    client_profile_template = "accounts/client_profile.html"
     register_client_template = "accounts/register_client.html"
     register_employee_template = "accounts/register_employee.html"
     onboarding_approvals_template = "accounts/onboarding_approvals.html"
@@ -3276,6 +3304,15 @@ class RoleWorkspaceView(View):
             response = render(
                 request, self.approve_pending_clients_template, context
             )
+        elif resolved["leaf"] == "client-profile":
+            context["clients"] = Client.objects.filter(
+                status__in=[
+                    Client.Status.ACTIVE,
+                    Client.Status.SUSPENDED,
+                ]
+            ).order_by("status", "company_name", "first_name", "last_name", "email")
+            context["client_count"] = context["clients"].count()
+            response = render(request, self.client_profile_template, context)
         elif resolved["leaf"] == "litigation-matters":
             cases = list(
                 LitigationCase.objects.filter(
@@ -4864,7 +4901,7 @@ class RoleWorkspaceView(View):
         }
 
     def _post_register_client(self, request, user, resolved):
-        form = ClientSignUpForm(request.POST, request.FILES)
+        form = StaffRegisterClientForm(request.POST, request.FILES)
         context = workspace_context(
             user,
             request=request,
@@ -4895,7 +4932,7 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _register_client_context(user, form=None):
         return {
-            "form": form or ClientSignUpForm(),
+            "form": form or StaffRegisterClientForm(),
             "list_url": user.workspace_url(
                 "dashboard",
                 "user-management",
@@ -5557,6 +5594,15 @@ class RoleWorkspaceView(View):
 
         tasks = []
         for task in case_tasks:
+            entity_url = reverse(
+                "accounts:view_litigation_case",
+                kwargs={
+                    "role": user.role_slug,
+                    "case_id": task.case_id,
+                },
+            )
+            if task.status == CaseTask.Status.ACCEPTED:
+                entity_url = f"{entity_url}?task={task.pk}"
             tasks.append(
                 {
                     "kind": "case",
@@ -5584,9 +5630,27 @@ class RoleWorkspaceView(View):
                             "task_id": task.pk,
                         },
                     ),
+                    "entity_url": entity_url,
+                    "entity_label": "Open case",
+                    "complete_url": reverse(
+                        "accounts:complete_case_task",
+                        kwargs={
+                            "role": user.role_slug,
+                            "task_id": task.pk,
+                        },
+                    ),
                 }
             )
         for task in matter_tasks:
+            entity_url = reverse(
+                "accounts:view_non_litigation_matter",
+                kwargs={
+                    "role": user.role_slug,
+                    "matter_id": task.matter_id,
+                },
+            )
+            if task.status == MatterTask.Status.ACCEPTED:
+                entity_url = f"{entity_url}?task={task.pk}"
             tasks.append(
                 {
                     "kind": "matter",
@@ -5614,6 +5678,15 @@ class RoleWorkspaceView(View):
                             "task_id": task.pk,
                         },
                     ),
+                    "entity_url": entity_url,
+                    "entity_label": "Open matter",
+                    "complete_url": reverse(
+                        "accounts:complete_matter_task",
+                        kwargs={
+                            "role": user.role_slug,
+                            "task_id": task.pk,
+                        },
+                    ),
                 }
             )
 
@@ -5630,6 +5703,16 @@ class RoleWorkspaceView(View):
         pending_count = sum(
             1 for item in tasks if item["task"].status == CaseTask.Status.PENDING
         )
+        open_view_modal = False
+        if highlight_kind and highlight_id:
+            for item in tasks:
+                if (
+                    item["kind"] == highlight_kind
+                    and item["task"].pk == highlight_id
+                    and item["task"].status == CaseTask.Status.ACCEPTED
+                ):
+                    open_view_modal = True
+                    break
 
         return {
             "tasks": tasks,
@@ -5641,13 +5724,19 @@ class RoleWorkspaceView(View):
             "highlight_id": highlight_id,
             "open_accept_modal": False,
             "open_reject_modal": False,
+            "open_view_modal": open_view_modal,
             "accept_target": None,
             "reject_target": None,
         }
 
     @staticmethod
     def _calendar_context(user, request):
-        """Month calendar of this employee's task due dates only."""
+        """Month calendar: tasks for most roles; cases/matters for managing partner."""
+        if user.role == Employee.Role.MANAGING_PARTNER:
+            return RoleWorkspaceView._managing_partner_calendar_context(
+                user, request
+            )
+
         today = timezone.localdate()
         try:
             year = int(request.GET.get("year") or today.year)
@@ -5747,15 +5836,17 @@ class RoleWorkspaceView(View):
                 or attendance.activity_type
                 or "Court appearance"
             )
+            extras = _court_appearance_calendar_extras(attendance)
             by_day.setdefault(appearance_date.day, []).append(
                 {
                     "kind": "court",
                     "task": None,
                     "due_date": appearance_date,
                     "status": "active",
-                    "status_label": "Court date",
+                    "status_label": extras["status_label"],
                     "subject": f"{activity} — {attendance.case}",
                     "subject_meta": attendance.case.client.get_full_name(),
+                    "virtual_link": extras["virtual_link"],
                     "url": reverse(
                         "accounts:view_litigation_case",
                         kwargs={
@@ -5851,6 +5942,23 @@ class RoleWorkspaceView(View):
             for item in by_day[day_num]:
                 upcoming.append(item)
 
+        kind_order = {
+            "court": 0,
+            "matter_attendance": 1,
+            "case": 2,
+            "matter": 3,
+            "filing": 4,
+            "opened": 5,
+        }
+        upcoming_by_kind = sorted(
+            upcoming,
+            key=lambda event: (
+                kind_order.get(event.get("kind"), 99),
+                event.get("due_date") or date.max,
+                event.get("subject") or "",
+            ),
+        )
+
         return {
             "calendar_weeks": calendar_weeks,
             "calendar_year": year,
@@ -5859,13 +5967,215 @@ class RoleWorkspaceView(View):
             "calendar_today": today,
             "calendar_due_count": due_count,
             "calendar_upcoming": upcoming,
+            "calendar_upcoming_by_kind": upcoming_by_kind,
             "calendar_prev_url": f"{base_url}?year={prev_year}&month={prev_month}",
             "calendar_next_url": f"{base_url}?year={next_year}&month={next_month}",
             "calendar_today_url": (
                 f"{base_url}?year={today.year}&month={today.month}"
             ),
             "weekday_labels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            "calendar_lead": (
+                "Due dates for tasks assigned to you, plus next court "
+                "appearances on your cases."
+            ),
+            "calendar_list_hint": "Your assigned tasks and court appearances",
+            "calendar_empty_copy": (
+                "Task due dates and next court appearances on your cases "
+                "will appear here."
+            ),
+            "calendar_shows_cases_matters": False,
         }
+
+    @staticmethod
+    def _managing_partner_calendar_context(user, request):
+        """Firm-wide upcoming cases and matters (no tasks) for managing partner."""
+        today, year, month, month_start, month_end = _calendar_month_from_request(
+            request
+        )
+        role = user.role_slug
+        by_day: dict[int, list] = {}
+
+        active_cases = LitigationCase.objects.filter(
+            status=LitigationCase.Status.ACTIVE
+        ).select_related("client", "assigned_to")
+        case_ids = list(active_cases.values_list("pk", flat=True))
+
+        for case in active_cases.filter(
+            filing_date__gte=month_start,
+            filing_date__lte=month_end,
+        ):
+            assignee = (
+                case.assigned_to.get_full_name()
+                if case.assigned_to_id
+                else "Unassigned"
+            )
+            _append_calendar_event(
+                by_day,
+                case.filing_date,
+                {
+                    "kind": "filing",
+                    "due_date": case.filing_date,
+                    "status": "active",
+                    "status_label": "Filing date",
+                    "subject": f"Filed — {case}",
+                    "subject_meta": f"{case.client.get_full_name()} · {assignee}",
+                    "url": reverse(
+                        "accounts:view_litigation_case",
+                        kwargs={"role": role, "case_id": case.pk},
+                    ),
+                },
+            )
+
+        court_appearances = (
+            CourtAttendance.objects.filter(
+                case_id__in=case_ids,
+                next_court_date__gte=month_start,
+                next_court_date__lte=month_end,
+            )
+            .select_related("case", "case__client", "case__assigned_to")
+            .order_by("next_court_date", "pk")
+        )
+        for attendance in court_appearances:
+            appearance_date = attendance.next_court_date
+            if not appearance_date:
+                continue
+            activity = (
+                attendance.next_activity_type
+                or attendance.activity_type
+                or "Court appearance"
+            )
+            assignee = (
+                attendance.case.assigned_to.get_full_name()
+                if attendance.case.assigned_to_id
+                else "Unassigned"
+            )
+            extras = _court_appearance_calendar_extras(attendance)
+            _append_calendar_event(
+                by_day,
+                appearance_date,
+                {
+                    "kind": "court",
+                    "due_date": appearance_date,
+                    "status": "active",
+                    "status_label": extras["status_label"],
+                    "subject": f"{activity} — {attendance.case}",
+                    "subject_meta": (
+                        f"{attendance.case.client.get_full_name()} · {assignee}"
+                    ),
+                    "virtual_link": extras["virtual_link"],
+                    "url": reverse(
+                        "accounts:view_litigation_case",
+                        kwargs={
+                            "role": role,
+                            "case_id": attendance.case_id,
+                        },
+                    ),
+                },
+            )
+
+        active_matters = NonLitigationMatter.objects.filter(
+            status=NonLitigationMatter.Status.ACTIVE
+        ).select_related("client", "assigned_to")
+        matter_ids = list(active_matters.values_list("pk", flat=True))
+
+        for matter in active_matters.filter(
+            date_opened__gte=month_start,
+            date_opened__lte=month_end,
+        ):
+            assignee = (
+                matter.assigned_to.get_full_name()
+                if matter.assigned_to_id
+                else "Unassigned"
+            )
+            _append_calendar_event(
+                by_day,
+                matter.date_opened,
+                {
+                    "kind": "opened",
+                    "due_date": matter.date_opened,
+                    "status": "active",
+                    "status_label": "Date opened",
+                    "subject": f"Opened — {matter.matter_title}",
+                    "subject_meta": (
+                        f"{matter.client.get_full_name()} · {assignee}"
+                    ),
+                    "url": reverse(
+                        "accounts:view_non_litigation_matter",
+                        kwargs={"role": role, "matter_id": matter.pk},
+                    ),
+                },
+            )
+
+        matter_appearances = (
+            MatterAttendance.objects.filter(
+                matter_id__in=matter_ids,
+                next_attendance_date__gte=month_start,
+                next_attendance_date__lte=month_end,
+            )
+            .select_related("matter", "matter__client", "matter__assigned_to")
+            .order_by("next_attendance_date", "pk")
+        )
+        for attendance in matter_appearances:
+            appearance_date = attendance.next_attendance_date
+            if not appearance_date:
+                continue
+            activity = (
+                attendance.next_activity_type
+                or attendance.activity_type
+                or "Matter attendance"
+            )
+            assignee = (
+                attendance.matter.assigned_to.get_full_name()
+                if attendance.matter.assigned_to_id
+                else "Unassigned"
+            )
+            client_flag = ""
+            if attendance.next_client_attendance:
+                client_flag = (
+                    f" · {attendance.get_next_client_attendance_display()}"
+                )
+            _append_calendar_event(
+                by_day,
+                appearance_date,
+                {
+                    "kind": "matter_attendance",
+                    "due_date": appearance_date,
+                    "status": "active",
+                    "status_label": f"Matter date{client_flag}",
+                    "subject": f"{activity} — {attendance.matter.matter_title}",
+                    "subject_meta": (
+                        f"{attendance.matter.client.get_full_name()} · {assignee}"
+                    ),
+                    "url": reverse(
+                        "accounts:view_non_litigation_matter",
+                        kwargs={
+                            "role": role,
+                            "matter_id": attendance.matter_id,
+                        },
+                    ),
+                },
+            )
+
+        base_url = user.workspace_url("dashboard", "calendar")
+        payload = _calendar_grid_payload(today, year, month, by_day, base_url)
+        payload.update(
+            {
+                "calendar_lead": (
+                    "Upcoming litigation cases and non-litigation matters "
+                    "across the firm — filing dates, court dates, and matter "
+                    "attendances."
+                ),
+                "calendar_list_hint": (
+                    "Active cases and matters with dates this month"
+                ),
+                "calendar_empty_copy": (
+                    "Filing dates, next court appearances, matter opened dates, "
+                    "and next matter attendances will appear here."
+                ),
+                "calendar_shows_cases_matters": True,
+            }
+        )
+        return payload
 
     @staticmethod
     def _reminders_context(user, request):
@@ -5971,6 +6281,19 @@ PENDING_CLIENTS_TRAIL = (
     "approve-pending-clients",
 )
 
+CLIENT_PROFILE_TRAIL = (
+    "dashboard",
+    "user-management",
+    "client-management",
+    "client-profile",
+)
+
+CLIENT_MANAGEMENT_TRAIL = (
+    "dashboard",
+    "user-management",
+    "client-management",
+)
+
 PENDING_EMPLOYEES_TRAIL = (
     "dashboard",
     "user-management",
@@ -6003,6 +6326,399 @@ ACTIVE_MATTERS_TRAIL = (
     "matter-management",
     "non-litigation-matters",
 )
+
+
+def _calendar_month_from_request(request):
+    """Parse year/month query params for workspace calendars."""
+    today = timezone.localdate()
+    try:
+        year = int(request.GET.get("year") or today.year)
+        month = int(request.GET.get("month") or today.month)
+    except (TypeError, ValueError):
+        year, month = today.year, today.month
+
+    if month < 1 or month > 12 or year < 2000 or year > 2100:
+        year, month = today.year, today.month
+
+    month_start = date(year, month, 1)
+    _, last_day = calendar_mod.monthrange(year, month)
+    month_end = date(year, month, last_day)
+    return today, year, month, month_start, month_end
+
+
+def _calendar_grid_payload(today, year, month, by_day, base_url):
+    """Build month grid + navigation URLs from a day→events map."""
+    weeks = calendar_mod.Calendar(firstweekday=0).monthdayscalendar(year, month)
+    calendar_weeks = []
+    for week in weeks:
+        days = []
+        for day_num in week:
+            if day_num == 0:
+                days.append(
+                    {
+                        "day": None,
+                        "is_today": False,
+                        "events": [],
+                        "event_count": 0,
+                    }
+                )
+            else:
+                events = by_day.get(day_num, [])
+                days.append(
+                    {
+                        "day": day_num,
+                        "is_today": (
+                            year == today.year
+                            and month == today.month
+                            and day_num == today.day
+                        ),
+                        "events": events,
+                        "event_count": len(events),
+                    }
+                )
+        calendar_weeks.append(days)
+
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
+
+    month_start = date(year, month, 1)
+    month_label = month_start.strftime("%B %Y")
+    due_count = sum(len(v) for v in by_day.values())
+
+    upcoming = []
+    for day_num in sorted(by_day):
+        upcoming.extend(by_day[day_num])
+
+    # Grouped list (by category, then date) for the agenda panel.
+    kind_order = {
+        "court": 0,
+        "matter_attendance": 1,
+        "case": 2,
+        "matter": 3,
+        "filing": 4,
+        "opened": 5,
+    }
+    upcoming_by_kind = sorted(
+        upcoming,
+        key=lambda event: (
+            kind_order.get(event.get("kind"), 99),
+            event.get("due_date") or date.max,
+            event.get("subject") or "",
+        ),
+    )
+
+    return {
+        "calendar_weeks": calendar_weeks,
+        "calendar_year": year,
+        "calendar_month": month,
+        "calendar_month_label": month_label,
+        "calendar_today": today,
+        "calendar_due_count": due_count,
+        "calendar_upcoming": upcoming,
+        "calendar_upcoming_by_kind": upcoming_by_kind,
+        "calendar_prev_url": f"{base_url}?year={prev_year}&month={prev_month}",
+        "calendar_next_url": f"{base_url}?year={next_year}&month={next_month}",
+        "calendar_today_url": (
+            f"{base_url}?year={today.year}&month={today.month}"
+        ),
+        "weekday_labels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    }
+
+
+def _append_calendar_event(by_day, event_date, event):
+    if not event_date:
+        return
+    by_day.setdefault(event_date.day, []).append(event)
+
+
+def _court_appearance_calendar_extras(attendance):
+    """Status label and virtual link for a next court appearance."""
+    client_flag = ""
+    if attendance.next_client_attendance:
+        client_flag = f" · {attendance.get_next_client_attendance_display()}"
+    virtual_link = ""
+    if (
+        attendance.next_client_attendance
+        == CourtAttendance.ClientAttendance.VIRTUAL
+    ):
+        virtual_link = (attendance.virtual_link or "").strip()
+    return {
+        "status_label": f"Court date{client_flag}",
+        "virtual_link": virtual_link,
+    }
+
+
+def _client_case_calendar_by_day(user, client, month_start, month_end):
+    """Dates for all of a client's litigation cases in the month."""
+    by_day: dict[int, list] = {}
+    role = user.role_slug
+    visible_statuses = (
+        CaseTask.Status.PENDING,
+        CaseTask.Status.ACCEPTED,
+        CaseTask.Status.DONE,
+    )
+    client_cases = LitigationCase.objects.filter(client=client).exclude(
+        status=LitigationCase.Status.PENDING_APPROVAL
+    )
+    case_ids = list(client_cases.values_list("pk", flat=True))
+
+    for case in client_cases.filter(
+        filing_date__gte=month_start,
+        filing_date__lte=month_end,
+    ):
+        _append_calendar_event(
+            by_day,
+            case.filing_date,
+            {
+                "kind": "filing",
+                "due_date": case.filing_date,
+                "status": "active",
+                "status_label": "Filing date",
+                "subject": f"Filed — {case}",
+                "subject_meta": client.get_full_name(),
+                "url": reverse(
+                    "accounts:view_litigation_case",
+                    kwargs={"role": role, "case_id": case.pk},
+                ),
+            },
+        )
+
+    attendances = (
+        CourtAttendance.objects.filter(case_id__in=case_ids)
+        .filter(
+            Q(attendance_date__gte=month_start, attendance_date__lte=month_end)
+            | Q(
+                next_court_date__gte=month_start,
+                next_court_date__lte=month_end,
+            )
+        )
+        .select_related("case", "case__client")
+        .order_by("attendance_date", "pk")
+    )
+    for attendance in attendances:
+        case_url = reverse(
+            "accounts:view_litigation_case",
+            kwargs={"role": role, "case_id": attendance.case_id},
+        )
+        if month_start <= attendance.attendance_date <= month_end:
+            activity = attendance.activity_type or "Court attendance"
+            _append_calendar_event(
+                by_day,
+                attendance.attendance_date,
+                {
+                    "kind": "court",
+                    "due_date": attendance.attendance_date,
+                    "status": "done",
+                    "status_label": "Court attendance",
+                    "subject": f"{activity} — {attendance.case}",
+                    "subject_meta": client.get_full_name(),
+                    "url": case_url,
+                },
+            )
+        if (
+            attendance.next_court_date
+            and month_start <= attendance.next_court_date <= month_end
+        ):
+            activity = (
+                attendance.next_activity_type
+                or attendance.activity_type
+                or "Court appearance"
+            )
+            extras = _court_appearance_calendar_extras(attendance)
+            _append_calendar_event(
+                by_day,
+                attendance.next_court_date,
+                {
+                    "kind": "court",
+                    "due_date": attendance.next_court_date,
+                    "status": "active",
+                    "status_label": extras["status_label"],
+                    "subject": f"{activity} — {attendance.case}",
+                    "subject_meta": client.get_full_name(),
+                    "virtual_link": extras["virtual_link"],
+                    "url": case_url,
+                },
+            )
+
+    case_tasks = (
+        CaseTask.objects.filter(
+            case_id__in=case_ids,
+            status__in=visible_statuses,
+            due_date__gte=month_start,
+            due_date__lte=month_end,
+        )
+        .select_related("case", "case__client")
+        .order_by("due_date", "status")
+    )
+    for task in case_tasks:
+        task_url = reverse(
+            "accounts:view_case_task",
+            kwargs={"role": role, "task_id": task.pk},
+        )
+        if task.status != CaseTask.Status.ACCEPTED:
+            task_url = reverse(
+                "accounts:view_litigation_case",
+                kwargs={"role": role, "case_id": task.case_id},
+            )
+        _append_calendar_event(
+            by_day,
+            task.due_date,
+            {
+                "kind": "case",
+                "due_date": task.due_date,
+                "status": task.status,
+                "status_label": task.get_status_display(),
+                "subject": str(task),
+                "subject_meta": f"{task.case} · {client.get_full_name()}",
+                "url": task_url,
+            },
+        )
+
+    return by_day
+
+
+def _client_matter_calendar_by_day(user, client, month_start, month_end):
+    """Dates for all of a client's non-litigation matters in the month."""
+    by_day: dict[int, list] = {}
+    role = user.role_slug
+    visible_statuses = (
+        MatterTask.Status.PENDING,
+        MatterTask.Status.ACCEPTED,
+        MatterTask.Status.DONE,
+    )
+    client_matters = NonLitigationMatter.objects.filter(client=client).exclude(
+        status=NonLitigationMatter.Status.PENDING_APPROVAL
+    )
+    matter_ids = list(client_matters.values_list("pk", flat=True))
+
+    for matter in client_matters.filter(
+        date_opened__gte=month_start,
+        date_opened__lte=month_end,
+    ):
+        _append_calendar_event(
+            by_day,
+            matter.date_opened,
+            {
+                "kind": "opened",
+                "due_date": matter.date_opened,
+                "status": "active",
+                "status_label": "Date opened",
+                "subject": f"Opened — {matter.matter_title}",
+                "subject_meta": client.get_full_name(),
+                "url": reverse(
+                    "accounts:view_non_litigation_matter",
+                    kwargs={"role": role, "matter_id": matter.pk},
+                ),
+            },
+        )
+
+    attendances = (
+        MatterAttendance.objects.filter(matter_id__in=matter_ids)
+        .filter(
+            Q(
+                attendance_date__gte=month_start,
+                attendance_date__lte=month_end,
+            )
+            | Q(
+                next_attendance_date__gte=month_start,
+                next_attendance_date__lte=month_end,
+            )
+        )
+        .select_related("matter", "matter__client")
+        .order_by("attendance_date", "pk")
+    )
+    for attendance in attendances:
+        matter_url = reverse(
+            "accounts:view_non_litigation_matter",
+            kwargs={"role": role, "matter_id": attendance.matter_id},
+        )
+        if month_start <= attendance.attendance_date <= month_end:
+            activity = attendance.activity_type or "Matter attendance"
+            _append_calendar_event(
+                by_day,
+                attendance.attendance_date,
+                {
+                    "kind": "matter_attendance",
+                    "due_date": attendance.attendance_date,
+                    "status": "done",
+                    "status_label": "Matter attendance",
+                    "subject": f"{activity} — {attendance.matter.matter_title}",
+                    "subject_meta": client.get_full_name(),
+                    "url": matter_url,
+                },
+            )
+        if (
+            attendance.next_attendance_date
+            and month_start <= attendance.next_attendance_date <= month_end
+        ):
+            activity = (
+                attendance.next_activity_type
+                or attendance.activity_type
+                or "Matter attendance"
+            )
+            client_flag = ""
+            if attendance.next_client_attendance:
+                client_flag = (
+                    f" · {attendance.get_next_client_attendance_display()}"
+                )
+            _append_calendar_event(
+                by_day,
+                attendance.next_attendance_date,
+                {
+                    "kind": "matter_attendance",
+                    "due_date": attendance.next_attendance_date,
+                    "status": "active",
+                    "status_label": f"Matter date{client_flag}",
+                    "subject": f"{activity} — {attendance.matter.matter_title}",
+                    "subject_meta": client.get_full_name(),
+                    "url": matter_url,
+                },
+            )
+
+    matter_tasks = (
+        MatterTask.objects.filter(
+            matter_id__in=matter_ids,
+            status__in=visible_statuses,
+            due_date__gte=month_start,
+            due_date__lte=month_end,
+        )
+        .select_related("matter", "matter__client")
+        .order_by("due_date", "status")
+    )
+    for task in matter_tasks:
+        task_url = reverse(
+            "accounts:view_matter_task",
+            kwargs={"role": role, "task_id": task.pk},
+        )
+        if task.status != MatterTask.Status.ACCEPTED:
+            task_url = reverse(
+                "accounts:view_non_litigation_matter",
+                kwargs={"role": role, "matter_id": task.matter_id},
+            )
+        _append_calendar_event(
+            by_day,
+            task.due_date,
+            {
+                "kind": "matter",
+                "due_date": task.due_date,
+                "status": task.status,
+                "status_label": task.get_status_display(),
+                "subject": str(task),
+                "subject_meta": (
+                    f"{task.matter.matter_title} · {client.get_full_name()}"
+                ),
+                "url": task_url,
+            },
+        )
+
+    return by_day
+
 
 INVOICING_TRAIL = (
     "dashboard",
@@ -6074,6 +6790,17 @@ def _guard_client_pending(request, role, *, action="view", redirect_to=None):
     )
 
 
+def _guard_client_profile(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_USER_MODULE,
+        activity="client-profile",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
 def _guard_employee_pending(request, role, *, action="view", redirect_to=None):
     return _guard_perm(
         request,
@@ -6116,6 +6843,145 @@ def _guard_litigation(request, role, *, action="view", redirect_to=None):
         action=action,
         redirect_to=redirect_to,
     )
+
+
+def _case_task_access_denied(request, user, case, permission, *, redirect_to=None):
+    """
+    Block assignees whose active case task restricts a named permission.
+
+    Returns an HttpResponse when denied, otherwise None. Employees without an
+    active task on the case are unaffected.
+    """
+    access = CaseTask.effective_access_for(user, case)
+    if access is None:
+        return None
+    field = f"allow_{(permission or '').strip().lower()}"
+    if access.get(field, True):
+        return None
+    label = (permission or "perform this action").strip().lower() or "perform this action"
+    messages.error(
+        request,
+        f"Your task on this case restricts {label} access.",
+    )
+    if redirect_to is None:
+        if (permission or "").strip().lower() == "view":
+            redirect_to = user.workspace_url("dashboard", "tasks")
+        else:
+            redirect_to = reverse(
+                "accounts:view_litigation_case",
+                kwargs={"role": user.role_slug, "case_id": case.pk},
+            )
+    return redirect(redirect_to)
+
+
+def _matter_task_access_denied(request, user, matter, permission, *, redirect_to=None):
+    """
+    Block assignees whose active matter task restricts a named permission.
+
+    Returns an HttpResponse when denied, otherwise None. Employees without an
+    active task on the matter are unaffected.
+    """
+    access = MatterTask.effective_access_for(user, matter)
+    if access is None:
+        return None
+    field = f"allow_{(permission or '').strip().lower()}"
+    if access.get(field, True):
+        return None
+    label = (permission or "perform this action").strip().lower() or "perform this action"
+    messages.error(
+        request,
+        f"Your task on this matter restricts {label} access.",
+    )
+    if redirect_to is None:
+        if (permission or "").strip().lower() == "view":
+            redirect_to = user.workspace_url("dashboard", "tasks")
+        else:
+            redirect_to = reverse(
+                "accounts:view_non_litigation_matter",
+                kwargs={"role": user.role_slug, "matter_id": matter.pk},
+            )
+    return redirect(redirect_to)
+
+
+def _preferred_task_id(request):
+    raw = (request.GET.get("task") or "").strip()
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _live_case_tasks_for_user(case, user, *, preferred_id=None):
+    """Accepted tasks for this assignee on the case, preferred id first."""
+    tasks = list(
+        CaseTask.objects.filter(
+            case=case,
+            assignee=user,
+            status=CaseTask.Status.ACCEPTED,
+        )
+        .select_related("created_by", "case", "case__client")
+        .order_by("due_date", "pk")
+    )
+    if preferred_id:
+        preferred = next((task for task in tasks if task.pk == preferred_id), None)
+        if preferred:
+            tasks = [preferred] + [task for task in tasks if task.pk != preferred_id]
+    return tasks
+
+
+def _live_matter_tasks_for_user(matter, user, *, preferred_id=None):
+    """Accepted tasks for this assignee on the matter, preferred id first."""
+    tasks = list(
+        MatterTask.objects.filter(
+            matter=matter,
+            assignee=user,
+            status=MatterTask.Status.ACCEPTED,
+        )
+        .select_related("created_by", "matter", "matter__client")
+        .order_by("due_date", "pk")
+    )
+    if preferred_id:
+        preferred = next((task for task in tasks if task.pk == preferred_id), None)
+        if preferred:
+            tasks = [preferred] + [task for task in tasks if task.pk != preferred_id]
+    return tasks
+
+
+def _entity_live_task_context(request, *, kind, tasks, role):
+    """Context for the live task FAB + complete modal on case/matter pages."""
+    live_tasks = []
+    is_case = kind == "case"
+    complete_name = (
+        "accounts:complete_case_task" if is_case else "accounts:complete_matter_task"
+    )
+    entity_field_label = "Case" if is_case else "Matter"
+    for task in tasks:
+        if is_case:
+            subject = str(task.case)
+            subject_meta = task.case.client.get_full_name()
+        else:
+            subject = str(task.matter)
+            subject_meta = task.matter.client.get_full_name()
+        live_tasks.append(
+            {
+                "task": task,
+                "kind": kind,
+                "subject": subject,
+                "subject_meta": subject_meta,
+                "entity_field_label": entity_field_label,
+                "complete_url": reverse(
+                    complete_name,
+                    kwargs={"role": role, "task_id": task.pk},
+                ),
+            }
+        )
+    # Prefer ?task= for ordering only — never auto-open; modal opens on FAB/banner click.
+    return {
+        "live_tasks": live_tasks,
+        "live_task_count": len(live_tasks),
+        "live_task_kind": kind,
+        "open_live_task_modal": False,
+    }
 
 
 def _guard_matter_approve(request, role, *, action="view", redirect_to=None):
@@ -6678,6 +7544,46 @@ def _pending_clients_list_url(user):
     return user.workspace_url(*PENDING_CLIENTS_TRAIL)
 
 
+def _client_profile_list_url(user):
+    return user.workspace_url(*CLIENT_PROFILE_TRAIL)
+
+
+def _client_management_list_url(user):
+    return user.workspace_url(*CLIENT_MANAGEMENT_TRAIL)
+
+
+def _purge_pending_client_account(client):
+    """Delete a client row, then uploaded files and Drive folder (if any)."""
+    file_fields = (
+        "profile_photo",
+        "identification_document",
+        "alien_document",
+        "business_document",
+        "company_registration_document",
+        "kra_pin_document",
+        "signed_instruction_note",
+    )
+    stored_files = []
+    for field_name in file_fields:
+        field_file = getattr(client, field_name, None)
+        if field_file and field_file.name:
+            stored_files.append((field_file.storage, field_file.name))
+
+    drive_folder_id = client.drive_folder_id
+
+    with transaction.atomic():
+        client.delete()
+
+    for storage, name in stored_files:
+        try:
+            storage.delete(name)
+        except Exception:
+            pass
+
+    if drive_folder_id:
+        trash_drive_file(drive_folder_id)
+
+
 def _pending_employees_list_url(user):
     return user.workspace_url(*PENDING_EMPLOYEES_TRAIL)
 
@@ -6855,38 +7761,248 @@ class ApproveClientView(View):
         rows = []
         if client.client_type == Client.ClientType.INDIVIDUAL:
             if client.id_type == Client.IdType.CITIZEN:
-                rows.append(
-                    (
-                        "National ID",
-                        client.identification_number,
-                        client.identification_document,
-                    )
-                )
+                rows.append(("National ID", "", client.identification_document))
             else:
-                rows.append(
-                    (
-                        "Alien document",
-                        client.alien_number,
-                        client.alien_document,
-                    )
-                )
-        elif client.corporate_kind == Client.CorporateKind.BUSINESS:
-            rows.append(
-                (
-                    "Business registration",
-                    client.business_number,
-                    client.business_document,
-                )
+                rows.append(("Passport", "", client.alien_document))
+        else:
+            rows.append(("CR12", "", client.company_registration_document))
+        rows.extend(
+            [
+                ("KRA PIN", "", client.kra_pin_document),
+                ("Signed instruction note", "", client.signed_instruction_note),
+            ]
+        )
+        return rows
+
+
+@method_decorator(login_required, name="dispatch")
+class DeclinePendingClientView(View):
+    """Decline a pending client from the list and permanently delete their account."""
+
+    def post(self, request, role, client_id):
+        user, denied = _guard_client_pending(request, role, action="approve")
+        if denied:
+            return denied
+
+        client = get_object_or_404(Client, pk=client_id)
+        if client.status not in {
+            Client.Status.PENDING_ONBOARDING,
+            Client.Status.PENDING_APPROVAL,
+        }:
+            messages.info(
+                request,
+                "This client is not pending onboarding or approval.",
+            )
+            return redirect(_pending_clients_list_url(user))
+
+        client_name = client.get_full_name()
+        try:
+            _purge_pending_client_account(client)
+        except ProtectedError:
+            messages.error(
+                request,
+                f"Cannot decline {client_name}: linked cases, matters, or "
+                "invoices must be removed first.",
+            )
+            return redirect(_pending_clients_list_url(user))
+
+        messages.success(
+            request,
+            f"Declined {client_name}. Their account and uploaded details "
+            "have been permanently deleted.",
+        )
+        return redirect(_pending_clients_list_url(user))
+
+
+@method_decorator(login_required, name="dispatch")
+class LoginAsClientView(View):
+    """Staff: open the client portal signed in as the selected client."""
+
+    def post(self, request, role, client_id):
+        user, denied = _guard_client_profile(request, role, action="view")
+        if denied:
+            return denied
+
+        client = get_object_or_404(Client, pk=client_id)
+        if client.status != Client.Status.ACTIVE:
+            messages.error(
+                request,
+                "Only active clients can be opened in the client portal.",
+            )
+            return redirect(_client_profile_list_url(user))
+
+        return_url = _client_profile_list_url(user)
+        start_staff_impersonation(request, client, return_url=return_url)
+        messages.info(
+            request,
+            f"You are viewing the client portal as {client.get_full_name()}.",
+        )
+        return redirect_for_client(client)
+
+
+@method_decorator(login_required, name="dispatch")
+class EditClientProfileView(View):
+    """Staff edit all details for an active or suspended client."""
+
+    template_name = "accounts/edit_client_profile.html"
+
+    def get_client(self, client_id):
+        return get_object_or_404(Client, pk=client_id)
+
+    def _managed_statuses(self):
+        return {Client.Status.ACTIVE, Client.Status.SUSPENDED}
+
+    def _document_rows(self, client):
+        return ApproveClientView._document_rows(client)
+
+    def _page_context(self, request, user, client, form):
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Client profile",
+            page_trail=list(CLIENT_MANAGEMENT_TRAIL),
+            active_page="client-management",
+        )
+        context["client"] = client
+        context["form"] = form
+        context["list_url"] = _client_management_list_url(user)
+        context["documents"] = self._document_rows(client)
+        return context
+
+    def get(self, request, role, client_id):
+        user, denied = _guard_client_profile(request, role, action="edit")
+        if denied:
+            return denied
+
+        client = self.get_client(client_id)
+        if client.status not in self._managed_statuses():
+            messages.info(
+                request,
+                "Only active or suspended clients can be edited here.",
+            )
+            return redirect(_client_management_list_url(user))
+
+        context = self._page_context(
+            request, user, client, StaffClientProfileForm(client=client)
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, client_id):
+        user, denied = _guard_client_profile(request, role, action="edit")
+        if denied:
+            return denied
+
+        client = self.get_client(client_id)
+        if client.status not in self._managed_statuses():
+            messages.info(
+                request,
+                "Only active or suspended clients can be edited here.",
+            )
+            return redirect(_client_management_list_url(user))
+
+        form = StaffClientProfileForm(
+            request.POST, request.FILES, client=client
+        )
+        if form.is_valid():
+            form.save()
+            messages.success(
+                request,
+                f"Updated profile for {client.get_full_name()}.",
+            )
+            return redirect(
+                "accounts:edit_client_profile",
+                role=role,
+                client_id=client.pk,
+            )
+
+        context = self._page_context(request, user, client, form)
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
+class ToggleClientSuspensionView(View):
+    """Suspend an active client or restore a suspended client."""
+
+    def post(self, request, role, client_id):
+        user, denied = _guard_client_profile(request, role, action="edit")
+        if denied:
+            return denied
+
+        client = get_object_or_404(Client, pk=client_id)
+        if client.status == Client.Status.ACTIVE:
+            client.status = Client.Status.SUSPENDED
+            client.save(update_fields=["status"])
+            messages.success(
+                request,
+                f"{client.get_full_name()} has been suspended.",
+            )
+        elif client.status == Client.Status.SUSPENDED:
+            client.status = Client.Status.ACTIVE
+            client.save(update_fields=["status"])
+            messages.success(
+                request,
+                f"{client.get_full_name()} has been unsuspended and is active again.",
             )
         else:
-            rows.append(
-                (
-                    "Company registration",
-                    client.company_registration_number,
-                    client.company_registration_document,
-                )
+            messages.info(
+                request,
+                "Only active or suspended clients can be suspended or unsuspended.",
             )
-        return rows
+            return redirect(_client_management_list_url(user))
+
+        next_url = (request.POST.get("next") or "").strip()
+        if next_url == "list":
+            return redirect(_client_profile_list_url(user))
+        return redirect(
+            "accounts:edit_client_profile",
+            role=role,
+            client_id=client.pk,
+        )
+
+
+@method_decorator(login_required, name="dispatch")
+class DeleteClientProfileView(View):
+    """Permanently delete an active or suspended client from the system."""
+
+    def post(self, request, role, client_id):
+        user, denied = _guard_client_profile(request, role, action="delete")
+        if denied:
+            return denied
+
+        client = get_object_or_404(Client, pk=client_id)
+        if client.status not in {
+            Client.Status.ACTIVE,
+            Client.Status.SUSPENDED,
+        }:
+            messages.info(
+                request,
+                "Only active or suspended clients can be deleted here.",
+            )
+            return redirect(_client_management_list_url(user))
+
+        client_name = client.get_full_name()
+        try:
+            _purge_pending_client_account(client)
+        except ProtectedError:
+            messages.error(
+                request,
+                f"Cannot delete {client_name}: linked cases, matters, or "
+                "invoices must be removed first.",
+            )
+            return redirect(
+                "accounts:edit_client_profile",
+                role=role,
+                client_id=client_id,
+            )
+
+        messages.success(
+            request,
+            f"Deleted {client_name}. Their account and uploaded details "
+            "have been permanently removed.",
+        )
+        return redirect(_client_management_list_url(user))
 
 
 @method_decorator(login_required, name="dispatch")
@@ -7141,6 +8257,10 @@ class EditActiveLitigationCaseView(View):
         if redirect_response:
             return redirect_response
 
+        access_denied = _case_task_access_denied(request, user, case, "edit")
+        if access_denied:
+            return access_denied
+
         form = RegisterCaseForm(instance=case)
         party_formset = CasePartyEditFormSet(
             queryset=case.parties.order_by("sort_order", "pk"),
@@ -7159,6 +8279,10 @@ class EditActiveLitigationCaseView(View):
         redirect_response = self._guard(request, role, case)
         if redirect_response:
             return redirect_response
+
+        access_denied = _case_task_access_denied(request, user, case, "edit")
+        if access_denied:
+            return access_denied
 
         form = RegisterCaseForm(request.POST, instance=case)
         party_formset = CasePartyEditFormSet(
@@ -7510,6 +8634,10 @@ class EditActiveNonLitigationMatterView(View):
         if redirect_response:
             return redirect_response
 
+        access_denied = _matter_task_access_denied(request, user, matter, "edit")
+        if access_denied:
+            return access_denied
+
         form = RegisterMatterForm(instance=matter)
         party_formset = MatterPartyEditFormSet(
             queryset=matter.parties.order_by("sort_order", "pk"),
@@ -7528,6 +8656,10 @@ class EditActiveNonLitigationMatterView(View):
         redirect_response = self._guard(request, role, matter)
         if redirect_response:
             return redirect_response
+
+        access_denied = _matter_task_access_denied(request, user, matter, "edit")
+        if access_denied:
+            return access_denied
 
         form = RegisterMatterForm(request.POST, instance=matter)
         party_formset = MatterPartyEditFormSet(
@@ -8323,6 +9455,13 @@ class ViewLitigationCaseView(View):
                 case_id=case.pk,
             )
 
+        access_denied = _case_task_access_denied(request, user, case, "view")
+        if access_denied:
+            return access_denied
+
+        live_tasks = _live_case_tasks_for_user(
+            case, user, preferred_id=_preferred_task_id(request)
+        )
         context = workspace_context(
             user,
             request=request,
@@ -8337,6 +9476,11 @@ class ViewLitigationCaseView(View):
                 "parties": case.parties.all(),
                 "list_url": _active_cases_list_url(user),
             }
+        )
+        context.update(
+            _entity_live_task_context(
+                request, kind="case", tasks=live_tasks, role=role
+            )
         )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
@@ -9047,7 +10191,15 @@ class UpdateCourtAttendanceView(View):
             case_id=case.pk,
         )
 
-    def _context(self, user, case, form, advocate_formset, bringup_formset):
+    def _context(
+        self,
+        user,
+        case,
+        form,
+        advocate_formset,
+        bringup_formset,
+        **kwargs_edit,
+    ):
         detail_url = reverse(
             "accounts:view_litigation_case",
             kwargs={"role": user.role_slug, "case_id": case.pk},
@@ -9062,19 +10214,43 @@ class UpdateCourtAttendanceView(View):
                 user.role_slug, case.pk, active_slug=self.action_slug
             ),
         )
+        previous_attendances = list(
+            case.court_attendances.select_related("recorded_by")
+            .prefetch_related("advocates", "bring_up_items__allocated_to")
+            .all()
+        )
+        edit_form = kwargs_edit.get("edit_form") or UpdateCourtAttendanceForm(
+            prefix="edit"
+        )
+        edit_advocate_formset = kwargs_edit.get(
+            "edit_advocate_formset"
+        ) or CourtAttendanceAdvocateFormSet(prefix="edit-advocates")
+        edit_bringup_formset = kwargs_edit.get(
+            "edit_bringup_formset"
+        ) or CourtAttendanceBringUpItemFormSet(prefix="edit-bringups")
+        editing_attendance = kwargs_edit.get("editing_attendance")
+        open_edit_modal = bool(kwargs_edit.get("open_edit_modal"))
+
+        attendance_payload = [
+            self._serialize_attendance(user, attendance)
+            for attendance in previous_attendances
+        ]
+
         context.update(
             {
                 "case": case,
                 "form": form,
                 "advocate_formset": advocate_formset,
                 "bringup_formset": bringup_formset,
+                "edit_form": edit_form,
+                "edit_advocate_formset": edit_advocate_formset,
+                "edit_bringup_formset": edit_bringup_formset,
+                "editing_attendance": editing_attendance,
+                "open_edit_modal": open_edit_modal,
                 "detail_url": detail_url,
                 "list_url": _active_cases_list_url(user),
-                "previous_attendances": (
-                    case.court_attendances.select_related("recorded_by")
-                    .prefetch_related("advocates", "bring_up_items__allocated_to")
-                    .all()
-                ),
+                "previous_attendances": previous_attendances,
+                "previous_attendances_data": attendance_payload,
                 "activity_type_suggestions": [
                     "Mention",
                     "Hearing",
@@ -9087,9 +10263,285 @@ class UpdateCourtAttendanceView(View):
                 "employee_choices": Employee.objects.filter(
                     status=Employee.Status.ACTIVE
                 ).order_by("first_name", "last_name", "login_code"),
+                "reminder_frequency_choices": (
+                    CourtAttendanceBringUpItem.ReminderFrequency.choices
+                ),
             }
         )
         return context
+
+    def _serialize_attendance(self, user, attendance):
+        edit_url = reverse(
+            "accounts:edit_court_attendance",
+            kwargs={
+                "role": user.role_slug,
+                "case_id": attendance.case_id,
+                "attendance_id": attendance.pk,
+            },
+        )
+        return {
+            "id": attendance.pk,
+            "edit_url": edit_url,
+            "activity_type": attendance.activity_type,
+            "judicial_officer": attendance.judicial_officer,
+            "court_room": attendance.court_room or "",
+            "attendance_date": (
+                attendance.attendance_date.isoformat()
+                if attendance.attendance_date
+                else ""
+            ),
+            "attendance_date_display": (
+                attendance.attendance_date.strftime("%d %b %Y")
+                if attendance.attendance_date
+                else "—"
+            ),
+            "presence": attendance.presence,
+            "presence_display": attendance.get_presence_display(),
+            "court_directions": attendance.court_directions or "",
+            "description": attendance.description or "",
+            "next_action": attendance.next_action or "",
+            "next_activity_type": attendance.next_activity_type or "",
+            "next_court_date": (
+                attendance.next_court_date.isoformat()
+                if attendance.next_court_date
+                else ""
+            ),
+            "next_court_date_display": (
+                attendance.next_court_date.strftime("%d %b %Y")
+                if attendance.next_court_date
+                else ""
+            ),
+            "next_judicial_officer": attendance.next_judicial_officer or "",
+            "next_client_attendance": attendance.next_client_attendance or "",
+            "next_client_attendance_display": (
+                attendance.get_next_client_attendance_display()
+                if attendance.next_client_attendance
+                else ""
+            ),
+            "virtual_link": attendance.virtual_link or "",
+            "recorded_by": (
+                attendance.recorded_by.get_full_name()
+                if attendance.recorded_by
+                else ""
+            ),
+            "advocates": [
+                {
+                    "advocate_name": advocate.advocate_name,
+                    "what_they_said": advocate.what_they_said or "",
+                }
+                for advocate in attendance.advocates.all()
+            ],
+            "bring_up_items": [
+                {
+                    "description": item.description,
+                    "reminder_frequency": item.reminder_frequency or "",
+                    "reminder_frequency_display": (
+                        item.get_reminder_frequency_display()
+                        if item.reminder_frequency
+                        else ""
+                    ),
+                    "allocated_to": item.allocated_to_id or "",
+                    "allocated_to_name": (
+                        item.allocated_to.get_full_name()
+                        if item.allocated_to
+                        else ""
+                    ),
+                }
+                for item in attendance.bring_up_items.all()
+            ],
+        }
+
+
+@method_decorator(login_required, name="dispatch")
+class EditCourtAttendanceView(View):
+    """Update an existing court attendance record for a litigation case."""
+
+    template_name = "accounts/update_court_attendance.html"
+    action_slug = "update-court-attendance"
+
+    def get_case(self, case_id):
+        return get_object_or_404(
+            LitigationCase.objects.select_related(
+                "client", "assigned_to", "registered_by"
+            ),
+            pk=case_id,
+        )
+
+    def get_attendance(self, case, attendance_id):
+        return get_object_or_404(
+            CourtAttendance.objects.select_related("recorded_by").prefetch_related(
+                "advocates", "bring_up_items__allocated_to"
+            ),
+            pk=attendance_id,
+            case=case,
+        )
+
+    def get(self, request, role, case_id, attendance_id):
+        user, denied = _guard_litigation(request, role, action="attend")
+        if denied:
+            return denied
+
+        case = self.get_case(case_id)
+        if case.status == LitigationCase.Status.PENDING_APPROVAL:
+            return redirect(
+                "accounts:approve_litigation_case",
+                role=role,
+                case_id=case.pk,
+            )
+
+        attendance = self.get_attendance(case, attendance_id)
+        create_view = UpdateCourtAttendanceView()
+        create_view.request = request
+        context = create_view._context(
+            user,
+            case,
+            UpdateCourtAttendanceForm(),
+            CourtAttendanceAdvocateFormSet(prefix="advocates"),
+            CourtAttendanceBringUpItemFormSet(prefix="bringups"),
+            edit_form=UpdateCourtAttendanceForm(
+                instance=attendance, prefix="edit"
+            ),
+            edit_advocate_formset=self._advocate_formset(attendance),
+            edit_bringup_formset=self._bringup_formset(attendance),
+            editing_attendance=attendance,
+            open_edit_modal=True,
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, case_id, attendance_id):
+        user, denied = _guard_litigation(request, role, action="attend")
+        if denied:
+            return denied
+
+        case = self.get_case(case_id)
+        if case.status == LitigationCase.Status.PENDING_APPROVAL:
+            return redirect(
+                "accounts:approve_litigation_case",
+                role=role,
+                case_id=case.pk,
+            )
+
+        attendance = self.get_attendance(case, attendance_id)
+        form = UpdateCourtAttendanceForm(
+            request.POST, instance=attendance, prefix="edit"
+        )
+        advocate_formset = CourtAttendanceAdvocateFormSet(
+            request.POST, prefix="edit-advocates"
+        )
+        bringup_formset = CourtAttendanceBringUpItemFormSet(
+            request.POST, prefix="edit-bringups"
+        )
+
+        if not (
+            form.is_valid()
+            and advocate_formset.is_valid()
+            and bringup_formset.is_valid()
+        ):
+            create_view = UpdateCourtAttendanceView()
+            create_view.request = request
+            context = create_view._context(
+                user,
+                case,
+                UpdateCourtAttendanceForm(),
+                CourtAttendanceAdvocateFormSet(prefix="advocates"),
+                CourtAttendanceBringUpItemFormSet(prefix="bringups"),
+                edit_form=form,
+                edit_advocate_formset=advocate_formset,
+                edit_bringup_formset=bringup_formset,
+                editing_attendance=attendance,
+                open_edit_modal=True,
+            )
+            response = render(request, self.template_name, context)
+            return attach_greeting_cookie(response, request)
+
+        with transaction.atomic():
+            form.save()
+            attendance.advocates.all().delete()
+            attendance.bring_up_items.all().delete()
+
+            advocate_count = 0
+            for advocate_form in advocate_formset:
+                if not getattr(advocate_form, "cleaned_data", None):
+                    continue
+                if advocate_form.cleaned_data.get("DELETE"):
+                    continue
+                name = (
+                    advocate_form.cleaned_data.get("advocate_name") or ""
+                ).strip()
+                if not name:
+                    continue
+                CourtAttendanceAdvocate.objects.create(
+                    attendance=attendance,
+                    advocate_name=name,
+                    what_they_said=advocate_form.cleaned_data.get(
+                        "what_they_said"
+                    )
+                    or "",
+                    sort_order=advocate_count,
+                )
+                advocate_count += 1
+
+            item_count = 0
+            for bringup_form in bringup_formset:
+                if not getattr(bringup_form, "cleaned_data", None):
+                    continue
+                if bringup_form.cleaned_data.get("DELETE"):
+                    continue
+                description = (
+                    bringup_form.cleaned_data.get("description") or ""
+                ).strip()
+                if not description:
+                    continue
+                CourtAttendanceBringUpItem.objects.create(
+                    attendance=attendance,
+                    description=description,
+                    reminder_frequency=bringup_form.cleaned_data.get(
+                        "reminder_frequency"
+                    )
+                    or "",
+                    allocated_to=bringup_form.cleaned_data.get("allocated_to"),
+                    sort_order=item_count,
+                )
+                item_count += 1
+
+        messages.success(
+            request,
+            f"Court attendance updated for "
+            f"{attendance.attendance_date.strftime('%d/%m/%Y')}.",
+        )
+        return redirect(
+            "accounts:update_court_attendance",
+            role=role,
+            case_id=case.pk,
+        )
+
+    def _advocate_formset(self, attendance):
+        initial = [
+            {
+                "advocate_name": advocate.advocate_name,
+                "what_they_said": advocate.what_they_said,
+            }
+            for advocate in attendance.advocates.all()
+        ]
+        return CourtAttendanceAdvocateFormSet(
+            prefix="edit-advocates",
+            initial=initial,
+        )
+
+    def _bringup_formset(self, attendance):
+        initial = [
+            {
+                "description": item.description,
+                "reminder_frequency": item.reminder_frequency,
+                "allocated_to": item.allocated_to_id,
+            }
+            for item in attendance.bring_up_items.all()
+        ]
+        return CourtAttendanceBringUpItemFormSet(
+            prefix="edit-bringups",
+            initial=initial,
+        )
 
 
 @method_decorator(login_required, name="dispatch")
@@ -9149,6 +10601,7 @@ class CreateCaseTaskView(View):
             response = render(request, self.template_name, context)
             return attach_greeting_cookie(response, request)
 
+        access = form.cleaned_access_permissions()
         task = CaseTask.objects.create(
             case=case,
             assignee=form.cleaned_data["assigned_to"],
@@ -9156,6 +10609,7 @@ class CreateCaseTaskView(View):
             instructions=form.cleaned_data.get("instructions") or "",
             due_date=form.cleaned_data["due_date"],
             created_by=user,
+            **access,
         )
         notify_case_task(task)
         messages.success(
@@ -9198,6 +10652,42 @@ class CreateCaseTaskView(View):
         return context
 
 
+def _group_documents_by_party_type(documents, party_type_choices):
+    """Group library documents into party-type sections (known order first)."""
+    buckets = {key: [] for key, _label in party_type_choices}
+    uncategorized = []
+    for document in documents:
+        key = (document.party_type or "").strip()
+        if key in buckets:
+            buckets[key].append(document)
+        else:
+            uncategorized.append(document)
+
+    groups = []
+    for key, label in party_type_choices:
+        items = buckets.get(key) or []
+        if not items:
+            continue
+        groups.append(
+            {
+                "key": key,
+                "label": label,
+                "documents": items,
+                "count": len(items),
+            }
+        )
+    if uncategorized:
+        groups.append(
+            {
+                "key": "uncategorized",
+                "label": "Uncategorized",
+                "documents": uncategorized,
+                "count": len(uncategorized),
+            }
+        )
+    return groups
+
+
 @method_decorator(login_required, name="dispatch")
 class UploadCaseDocumentsView(View):
     """Create, upload, rename, and manage documents for a litigation case."""
@@ -9227,11 +10717,33 @@ class UploadCaseDocumentsView(View):
                 case_id=case.pk,
             )
 
+        access_denied = _case_task_access_denied(
+            request,
+            user,
+            case,
+            "view",
+            redirect_to=reverse(
+                "accounts:view_litigation_case",
+                kwargs={"role": role, "case_id": case.pk},
+            ),
+        )
+        if access_denied:
+            return access_denied
+
+        party_type_choices = CaseParty.PartyType.choices
         context = self._context(
             user,
             case,
-            CreateGoogleDocumentForm(auto_id="create_%s"),
-            UploadDocumentForm(auto_id="upload_%s"),
+            CreateGoogleDocumentForm(
+                prefix="create",
+                auto_id="create_%s",
+                party_type_choices=party_type_choices,
+            ),
+            UploadDocumentForm(
+                prefix="upload",
+                auto_id="upload_%s",
+                party_type_choices=party_type_choices,
+            ),
         )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
@@ -9250,79 +10762,87 @@ class UploadCaseDocumentsView(View):
             )
 
         action = (request.POST.get("document_action") or "").strip()
-        create_form = CreateGoogleDocumentForm(auto_id="create_%s")
-        upload_form = UploadDocumentForm(auto_id="upload_%s")
+        permission_by_action = {
+            "create_google": "upload",
+            "upload": "upload",
+            "rename": "edit",
+            "delete": "delete",
+        }
+        needed = permission_by_action.get(action, "upload")
+        library_url = reverse(
+            "accounts:upload_case_documents",
+            kwargs={"role": role, "case_id": case.pk},
+        )
+        access_denied = _case_task_access_denied(
+            request,
+            user,
+            case,
+            needed,
+            redirect_to=f"{library_url}#docs-library",
+        )
+        if access_denied:
+            return access_denied
+
+        party_type_choices = CaseParty.PartyType.choices
+        create_form = CreateGoogleDocumentForm(
+            prefix="create",
+            auto_id="create_%s",
+            party_type_choices=party_type_choices,
+        )
+        upload_form = UploadDocumentForm(
+            prefix="upload",
+            auto_id="upload_%s",
+            party_type_choices=party_type_choices,
+        )
 
         try:
             if action == "create_google":
                 create_form = CreateGoogleDocumentForm(
-                    request.POST, auto_id="create_%s"
+                    request.POST,
+                    prefix="create",
+                    auto_id="create_%s",
+                    party_type_choices=party_type_choices,
                 )
                 if create_form.is_valid():
-                    self._create_google_doc(
-                        user,
-                        case,
-                        create_form.cleaned_data["title"],
-                        create_form.cleaned_data["google_type"],
-                        create_form.cleaned_data["description"],
-                    )
-                    return redirect(
-                        "accounts:upload_case_documents",
-                        role=role,
-                        case_id=case.pk,
-                    )
+                    self._create_google_doc(user, case, create_form)
+                    return self._library_redirect(role, case.pk)
             elif action == "upload":
                 upload_form = UploadDocumentForm(
-                    request.POST, request.FILES, auto_id="upload_%s"
+                    request.POST,
+                    request.FILES,
+                    prefix="upload",
+                    auto_id="upload_%s",
+                    party_type_choices=party_type_choices,
                 )
                 if upload_form.is_valid():
                     self._upload_file(user, case, upload_form)
-                    return redirect(
-                        "accounts:upload_case_documents",
-                        role=role,
-                        case_id=case.pk,
-                    )
+                    return self._library_redirect(role, case.pk)
             elif action == "rename":
                 self._rename_document(request, case)
-                return redirect(
-                    "accounts:upload_case_documents",
-                    role=role,
-                    case_id=case.pk,
-                )
+                return self._library_redirect(role, case.pk)
             elif action == "delete":
                 self._delete_document(request, case)
-                return redirect(
-                    "accounts:upload_case_documents",
-                    role=role,
-                    case_id=case.pk,
-                )
+                return self._library_redirect(role, case.pk)
             else:
                 messages.error(request, "Unknown document action.")
-                return redirect(
-                    "accounts:upload_case_documents",
-                    role=role,
-                    case_id=case.pk,
-                )
-        except GoogleDriveAPIError as exc:
+                return self._library_redirect(role, case.pk)
+        except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
             messages.error(request, str(exc))
-            return redirect(
-                "accounts:upload_case_documents",
-                role=role,
-                case_id=case.pk,
-            )
+            return self._library_redirect(role, case.pk)
 
         context = self._context(user, case, create_form, upload_form)
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
 
-    def _create_google_doc(
-        self, user, case, title, google_type="document", description=""
-    ):
+    def _create_google_doc(self, user, case, form):
         connection = GoogleDriveConnection.get_solo()
         if not connection.is_connected:
             raise GoogleDriveAPIError(
                 "Connect Google Drive in settings before creating documents."
             )
+        title = form.cleaned_data["title"]
+        google_type = form.cleaned_data["google_type"]
+        description = form.cleaned_data["description"]
         folder_id = ensure_case_drive_folder(case)
         created = create_google_workspace_file(
             title, type_key=google_type, parent_id=folder_id
@@ -9338,6 +10858,7 @@ class UploadCaseDocumentsView(View):
             or "application/vnd.google-apps.document",
             description=description or "",
             uploaded_by=user,
+            **form.party_type_kwargs(),
         )
         log_document_activity(
             document,
@@ -9382,6 +10903,7 @@ class UploadCaseDocumentsView(View):
             original_filename=getattr(uploaded, "name", "") or "",
             notes=notes,
             uploaded_by=user,
+            **form.party_type_kwargs(),
         )
         uploaded.seek(0)
         document.local_file.save(
@@ -9404,11 +10926,19 @@ class UploadCaseDocumentsView(View):
 
     def _rename_document(self, request, case):
         document = get_object_or_404(
-            Document, pk=request.POST.get("document_id"), case=case
+            Document,
+            pk=request.POST.get("document_id"),
+            case=case,
         )
-        form = RenameDocumentForm(request.POST)
+        form = RenameDocumentForm(
+            request.POST,
+            party_type_choices=CaseParty.PartyType.choices,
+        )
         if not form.is_valid():
-            messages.error(request, "Enter a valid document name.")
+            messages.error(
+                request,
+                "Enter a valid document name and party type.",
+            )
             return
         title = form.cleaned_data["title"]
         description = form.cleaned_data.get("description") or ""
@@ -9419,7 +10949,16 @@ class UploadCaseDocumentsView(View):
         document.title = title
         document.description = description
         document.notes = notes
-        document.save(update_fields=["title", "description", "notes", "updated_at"])
+        document.party_type = form.cleaned_data.get("party_type") or ""
+        document.save(
+            update_fields=[
+                "title",
+                "description",
+                "notes",
+                "party_type",
+                "updated_at",
+            ]
+        )
         if old_title != title:
             log_document_activity(
                 document,
@@ -9441,6 +10980,13 @@ class UploadCaseDocumentsView(View):
         document.delete()
         messages.success(request, f"“{title}” removed from this case.")
 
+    def _library_redirect(self, role, case_id):
+        url = reverse(
+            "accounts:upload_case_documents",
+            kwargs={"role": role, "case_id": case_id},
+        )
+        return redirect(f"{url}#docs-library")
+
     def _context(self, user, case, create_form, upload_form):
         detail_url = reverse(
             "accounts:view_litigation_case",
@@ -9457,6 +11003,26 @@ class UploadCaseDocumentsView(View):
                 user.role_slug, case.pk, active_slug=self.action_slug
             ),
         )
+        party_type_choices = CaseParty.PartyType.choices
+        edit_form = RenameDocumentForm(
+            auto_id="edit_%s",
+            party_type_choices=party_type_choices,
+        )
+        documents = _documents_with_activity(
+            case.documents.all(),
+            actor=user,
+            sync_google=True,
+            role=user.role_slug,
+        )
+        task_access = CaseTask.effective_access_for(user, case)
+        if task_access is None:
+            task_access = {
+                "allow_view": True,
+                "allow_edit": True,
+                "allow_download": True,
+                "allow_delete": True,
+                "allow_upload": True,
+            }
         context.update(
             {
                 "case": case,
@@ -9465,8 +11031,11 @@ class UploadCaseDocumentsView(View):
                 "entity_label": case.court_case_number or f"Case #{case.pk}",
                 "create_form": create_form,
                 "upload_form": upload_form,
-                "documents": _documents_with_activity(
-                    case.documents, actor=user, sync_google=True, role=user.role_slug
+                "edit_form": edit_form,
+                "party_type_choices": party_type_choices,
+                "documents": documents,
+                "document_groups": _group_documents_by_party_type(
+                    documents, party_type_choices
                 ),
                 "detail_url": detail_url,
                 "detail_label": "Back to case",
@@ -9475,9 +11044,85 @@ class UploadCaseDocumentsView(View):
                 "google_drive_settings_url": user.workspace_url(
                     "dashboard", "google-drive-settings"
                 ),
+                "task_access": task_access,
             }
         )
         return context
+
+
+@method_decorator(login_required, name="dispatch")
+class CaseCalendarView(View):
+    """Month calendar of dates for a client's litigation cases."""
+
+    template_name = "accounts/entity_calendar.html"
+    action_slug = "case-calendar"
+
+    def get(self, request, role, case_id):
+        user, denied = _guard_litigation(request, role, action="view")
+        if denied:
+            return denied
+
+        case = get_object_or_404(
+            LitigationCase.objects.select_related("client"),
+            pk=case_id,
+        )
+        if case.status == LitigationCase.Status.PENDING_APPROVAL:
+            return redirect(
+                "accounts:approve_litigation_case",
+                role=role,
+                case_id=case.pk,
+            )
+
+        today, year, month, month_start, month_end = _calendar_month_from_request(
+            request
+        )
+        by_day = _client_case_calendar_by_day(
+            user, case.client, month_start, month_end
+        )
+        base_url = reverse(
+            "accounts:case_calendar",
+            kwargs={"role": role, "case_id": case.pk},
+        )
+        detail_url = reverse(
+            "accounts:view_litigation_case",
+            kwargs={"role": role, "case_id": case.pk},
+        )
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Case calendar",
+            page_trail=list(ACTIVE_CASES_TRAIL),
+            active_page=self.action_slug,
+            page_nav_items=litigation_case_nav_items(
+                user.role_slug, case.pk, active_slug=self.action_slug
+            ),
+        )
+        context.update(
+            _calendar_grid_payload(today, year, month, by_day, base_url)
+        )
+        context.update(
+            {
+                "case": case,
+                "client": case.client,
+                "detail_url": detail_url,
+                "detail_label": "Back to case",
+                "list_url": _active_cases_list_url(user),
+                "calendar_lead": (
+                    f"Court dates, attendances, and case tasks for "
+                    f"{case.client.get_full_name()}."
+                ),
+                "calendar_list_hint": (
+                    "All litigation dates for this client this month"
+                ),
+                "calendar_empty_copy": (
+                    "Court attendances, next hearing dates, filing dates, "
+                    "and case task due dates for this client will appear here."
+                ),
+                "entity_kind": "case",
+            }
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
 
 
 @method_decorator(login_required, name="dispatch")
@@ -9497,6 +11142,12 @@ class LitigationCaseActionView(View):
         if action == "update-court-attendance":
             return redirect(
                 "accounts:update_court_attendance",
+                role=role,
+                case_id=case_id,
+            )
+        if action == "case-calendar":
+            return redirect(
+                "accounts:case_calendar",
                 role=role,
                 case_id=case_id,
             )
@@ -9600,6 +11251,13 @@ class ViewNonLitigationMatterView(View):
                 matter_id=matter.pk,
             )
 
+        access_denied = _matter_task_access_denied(request, user, matter, "view")
+        if access_denied:
+            return access_denied
+
+        live_tasks = _live_matter_tasks_for_user(
+            matter, user, preferred_id=_preferred_task_id(request)
+        )
         context = workspace_context(
             user,
             request=request,
@@ -9616,6 +11274,11 @@ class ViewNonLitigationMatterView(View):
                 "parties": matter.parties.all(),
                 "list_url": _active_matters_list_url(user),
             }
+        )
+        context.update(
+            _entity_live_task_context(
+                request, kind="matter", tasks=live_tasks, role=role
+            )
         )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
@@ -9649,7 +11312,13 @@ class UpdateMatterAttendanceView(View):
                 matter_id=matter.pk,
             )
 
-        context = self._context(user, matter, UpdateMatterAttendanceForm())
+        context = self._context(
+            user,
+            matter,
+            UpdateMatterAttendanceForm(),
+            MatterAttendanceQuorumFormSet(prefix="quorum"),
+            MatterAttendanceBringUpItemFormSet(prefix="bringups"),
+        )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
 
@@ -9667,15 +11336,29 @@ class UpdateMatterAttendanceView(View):
             )
 
         form = UpdateMatterAttendanceForm(request.POST)
-        if not form.is_valid():
-            context = self._context(user, matter, form)
+        quorum_formset = MatterAttendanceQuorumFormSet(
+            request.POST, prefix="quorum"
+        )
+        bringup_formset = MatterAttendanceBringUpItemFormSet(
+            request.POST, prefix="bringups"
+        )
+        if not (
+            form.is_valid()
+            and quorum_formset.is_valid()
+            and bringup_formset.is_valid()
+        ):
+            context = self._context(
+                user, matter, form, quorum_formset, bringup_formset
+            )
             response = render(request, self.template_name, context)
             return attach_greeting_cookie(response, request)
 
-        attendance = form.save(commit=False)
-        attendance.matter = matter
-        attendance.recorded_by = user
-        attendance.save()
+        with transaction.atomic():
+            attendance = form.save(commit=False)
+            attendance.matter = matter
+            attendance.recorded_by = user
+            attendance.save()
+            self._save_related(attendance, quorum_formset, bringup_formset)
 
         messages.success(
             request,
@@ -9688,14 +11371,85 @@ class UpdateMatterAttendanceView(View):
             matter_id=matter.pk,
         )
 
-    def _context(self, user, matter, form):
+    def _save_related(self, attendance, quorum_formset, bringup_formset):
+        quorum_count = 0
+        for quorum_form in quorum_formset:
+            if not getattr(quorum_form, "cleaned_data", None):
+                continue
+            if quorum_form.cleaned_data.get("DELETE"):
+                continue
+            name = (
+                quorum_form.cleaned_data.get("participant_name") or ""
+            ).strip()
+            if not name:
+                continue
+            MatterAttendanceQuorumMember.objects.create(
+                attendance=attendance,
+                participant_name=name,
+                what_they_said=quorum_form.cleaned_data.get("what_they_said")
+                or "",
+                sort_order=quorum_count,
+            )
+            quorum_count += 1
+
+        item_count = 0
+        for bringup_form in bringup_formset:
+            if not getattr(bringup_form, "cleaned_data", None):
+                continue
+            if bringup_form.cleaned_data.get("DELETE"):
+                continue
+            description = (
+                bringup_form.cleaned_data.get("description") or ""
+            ).strip()
+            if not description:
+                continue
+            MatterAttendanceBringUpItem.objects.create(
+                attendance=attendance,
+                description=description,
+                reminder_frequency=bringup_form.cleaned_data.get(
+                    "reminder_frequency"
+                )
+                or "",
+                allocated_to=bringup_form.cleaned_data.get("allocated_to"),
+                sort_order=item_count,
+            )
+            item_count += 1
+
+    def _context(
+        self,
+        user,
+        matter,
+        form,
+        quorum_formset,
+        bringup_formset,
+        **kwargs_edit,
+    ):
         detail_url = reverse(
             "accounts:view_non_litigation_matter",
             kwargs={"role": user.role_slug, "matter_id": matter.pk},
         )
         prior_attendances = list(
-            matter.matter_attendances.select_related("recorded_by").all()
+            matter.matter_attendances.select_related("recorded_by")
+            .prefetch_related(
+                "quorum_members", "bring_up_items__allocated_to"
+            )
+            .all()
         )
+        edit_form = kwargs_edit.get("edit_form") or UpdateMatterAttendanceForm(
+            prefix="edit"
+        )
+        edit_quorum_formset = kwargs_edit.get(
+            "edit_quorum_formset"
+        ) or MatterAttendanceQuorumFormSet(prefix="edit-quorum")
+        edit_bringup_formset = kwargs_edit.get(
+            "edit_bringup_formset"
+        ) or MatterAttendanceBringUpItemFormSet(prefix="edit-bringups")
+        editing_attendance = kwargs_edit.get("editing_attendance")
+        open_edit_modal = bool(kwargs_edit.get("open_edit_modal"))
+        attendance_payload = [
+            self._serialize_attendance(user, attendance)
+            for attendance in prior_attendances
+        ]
         context = workspace_context(
             user,
             request=self.request,
@@ -9710,9 +11464,17 @@ class UpdateMatterAttendanceView(View):
             {
                 "matter": matter,
                 "form": form,
+                "quorum_formset": quorum_formset,
+                "bringup_formset": bringup_formset,
+                "edit_form": edit_form,
+                "edit_quorum_formset": edit_quorum_formset,
+                "edit_bringup_formset": edit_bringup_formset,
+                "editing_attendance": editing_attendance,
+                "open_edit_modal": open_edit_modal,
                 "detail_url": detail_url,
                 "list_url": _active_matters_list_url(user),
                 "previous_attendances": prior_attendances,
+                "previous_attendances_data": attendance_payload,
                 "is_first_attendance": len(prior_attendances) == 0,
                 "activity_type_suggestions": [
                     "Client meeting",
@@ -9723,9 +11485,246 @@ class UpdateMatterAttendanceView(View):
                     "Signing",
                     "Correspondence",
                 ],
+                "employee_choices": Employee.objects.filter(
+                    status=Employee.Status.ACTIVE
+                ).order_by("first_name", "last_name", "login_code"),
+                "reminder_frequency_choices": (
+                    MatterAttendanceBringUpItem.ReminderFrequency.choices
+                ),
             }
         )
         return context
+
+    def _serialize_attendance(self, user, attendance):
+        edit_url = reverse(
+            "accounts:edit_matter_attendance",
+            kwargs={
+                "role": user.role_slug,
+                "matter_id": attendance.matter_id,
+                "attendance_id": attendance.pk,
+            },
+        )
+        return {
+            "id": attendance.pk,
+            "edit_url": edit_url,
+            "activity_type": attendance.activity_type,
+            "contact_person": attendance.contact_person or "",
+            "location": attendance.location or "",
+            "attendance_date": (
+                attendance.attendance_date.isoformat()
+                if attendance.attendance_date
+                else ""
+            ),
+            "attendance_date_display": (
+                attendance.attendance_date.strftime("%d %b %Y")
+                if attendance.attendance_date
+                else "—"
+            ),
+            "presence": attendance.presence,
+            "presence_display": attendance.get_presence_display(),
+            "outcome_notes": attendance.outcome_notes or "",
+            "description": attendance.description or "",
+            "next_action": attendance.next_action or "",
+            "next_activity_type": attendance.next_activity_type or "",
+            "next_attendance_date": (
+                attendance.next_attendance_date.isoformat()
+                if attendance.next_attendance_date
+                else ""
+            ),
+            "next_attendance_date_display": (
+                attendance.next_attendance_date.strftime("%d %b %Y")
+                if attendance.next_attendance_date
+                else ""
+            ),
+            "next_contact_person": attendance.next_contact_person or "",
+            "next_client_attendance": attendance.next_client_attendance or "",
+            "next_client_attendance_display": (
+                attendance.get_next_client_attendance_display()
+                if attendance.next_client_attendance
+                else ""
+            ),
+            "virtual_link": attendance.virtual_link or "",
+            "recorded_by": (
+                attendance.recorded_by.get_full_name()
+                if attendance.recorded_by
+                else ""
+            ),
+            "quorum_members": [
+                {
+                    "participant_name": member.participant_name,
+                    "what_they_said": member.what_they_said or "",
+                }
+                for member in attendance.quorum_members.all()
+            ],
+            "bring_up_items": [
+                {
+                    "description": item.description,
+                    "reminder_frequency": item.reminder_frequency or "",
+                    "reminder_frequency_display": (
+                        item.get_reminder_frequency_display()
+                        if item.reminder_frequency
+                        else ""
+                    ),
+                    "allocated_to": item.allocated_to_id or "",
+                    "allocated_to_name": (
+                        item.allocated_to.get_full_name()
+                        if item.allocated_to
+                        else ""
+                    ),
+                }
+                for item in attendance.bring_up_items.all()
+            ],
+        }
+
+
+@method_decorator(login_required, name="dispatch")
+class EditMatterAttendanceView(View):
+    """Update an existing matter attendance record."""
+
+    template_name = "accounts/update_matter_attendance.html"
+    action_slug = "update-matter-attendance"
+
+    def get_matter(self, matter_id):
+        return get_object_or_404(
+            NonLitigationMatter.objects.select_related(
+                "client", "assigned_to", "registered_by"
+            ),
+            pk=matter_id,
+        )
+
+    def get_attendance(self, matter, attendance_id):
+        return get_object_or_404(
+            MatterAttendance.objects.select_related("recorded_by").prefetch_related(
+                "quorum_members", "bring_up_items__allocated_to"
+            ),
+            pk=attendance_id,
+            matter=matter,
+        )
+
+    def get(self, request, role, matter_id, attendance_id):
+        user, denied = _guard_non_litigation(request, role, action="attend")
+        if denied:
+            return denied
+
+        matter = self.get_matter(matter_id)
+        if matter.status == NonLitigationMatter.Status.PENDING_APPROVAL:
+            return redirect(
+                "accounts:approve_non_litigation_matter",
+                role=role,
+                matter_id=matter.pk,
+            )
+
+        attendance = self.get_attendance(matter, attendance_id)
+        create_view = UpdateMatterAttendanceView()
+        create_view.request = request
+        context = create_view._context(
+            user,
+            matter,
+            UpdateMatterAttendanceForm(),
+            MatterAttendanceQuorumFormSet(prefix="quorum"),
+            MatterAttendanceBringUpItemFormSet(prefix="bringups"),
+            edit_form=UpdateMatterAttendanceForm(
+                instance=attendance, prefix="edit"
+            ),
+            edit_quorum_formset=self._quorum_formset(attendance),
+            edit_bringup_formset=self._bringup_formset(attendance),
+            editing_attendance=attendance,
+            open_edit_modal=True,
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, matter_id, attendance_id):
+        user, denied = _guard_non_litigation(request, role, action="attend")
+        if denied:
+            return denied
+
+        matter = self.get_matter(matter_id)
+        if matter.status == NonLitigationMatter.Status.PENDING_APPROVAL:
+            return redirect(
+                "accounts:approve_non_litigation_matter",
+                role=role,
+                matter_id=matter.pk,
+            )
+
+        attendance = self.get_attendance(matter, attendance_id)
+        form = UpdateMatterAttendanceForm(
+            request.POST, instance=attendance, prefix="edit"
+        )
+        quorum_formset = MatterAttendanceQuorumFormSet(
+            request.POST, prefix="edit-quorum"
+        )
+        bringup_formset = MatterAttendanceBringUpItemFormSet(
+            request.POST, prefix="edit-bringups"
+        )
+        if not (
+            form.is_valid()
+            and quorum_formset.is_valid()
+            and bringup_formset.is_valid()
+        ):
+            create_view = UpdateMatterAttendanceView()
+            create_view.request = request
+            context = create_view._context(
+                user,
+                matter,
+                UpdateMatterAttendanceForm(),
+                MatterAttendanceQuorumFormSet(prefix="quorum"),
+                MatterAttendanceBringUpItemFormSet(prefix="bringups"),
+                edit_form=form,
+                edit_quorum_formset=quorum_formset,
+                edit_bringup_formset=bringup_formset,
+                editing_attendance=attendance,
+                open_edit_modal=True,
+            )
+            response = render(request, self.template_name, context)
+            return attach_greeting_cookie(response, request)
+
+        with transaction.atomic():
+            form.save()
+            attendance.quorum_members.all().delete()
+            attendance.bring_up_items.all().delete()
+            create_view = UpdateMatterAttendanceView()
+            create_view._save_related(
+                attendance, quorum_formset, bringup_formset
+            )
+
+        messages.success(
+            request,
+            f"Matter attendance updated for "
+            f"{attendance.attendance_date.strftime('%d/%m/%Y')}.",
+        )
+        return redirect(
+            "accounts:update_matter_attendance",
+            role=role,
+            matter_id=matter.pk,
+        )
+
+    def _quorum_formset(self, attendance):
+        initial = [
+            {
+                "participant_name": member.participant_name,
+                "what_they_said": member.what_they_said,
+            }
+            for member in attendance.quorum_members.all()
+        ]
+        return MatterAttendanceQuorumFormSet(
+            prefix="edit-quorum",
+            initial=initial,
+        )
+
+    def _bringup_formset(self, attendance):
+        initial = [
+            {
+                "description": item.description,
+                "reminder_frequency": item.reminder_frequency,
+                "allocated_to": item.allocated_to_id,
+            }
+            for item in attendance.bring_up_items.all()
+        ]
+        return MatterAttendanceBringUpItemFormSet(
+            prefix="edit-bringups",
+            initial=initial,
+        )
 
 
 @method_decorator(login_required, name="dispatch")
@@ -9785,6 +11784,7 @@ class CreateMatterTaskView(View):
             response = render(request, self.template_name, context)
             return attach_greeting_cookie(response, request)
 
+        access = form.cleaned_access_permissions()
         task = MatterTask.objects.create(
             matter=matter,
             assignee=form.cleaned_data["assigned_to"],
@@ -9792,6 +11792,7 @@ class CreateMatterTaskView(View):
             instructions=form.cleaned_data.get("instructions") or "",
             due_date=form.cleaned_data["due_date"],
             created_by=user,
+            **access,
         )
         notify_matter_task(task)
         messages.success(
@@ -9863,11 +11864,33 @@ class UploadMatterDocumentsView(View):
                 matter_id=matter.pk,
             )
 
+        access_denied = _matter_task_access_denied(
+            request,
+            user,
+            matter,
+            "view",
+            redirect_to=reverse(
+                "accounts:view_non_litigation_matter",
+                kwargs={"role": role, "matter_id": matter.pk},
+            ),
+        )
+        if access_denied:
+            return access_denied
+
+        party_type_choices = MatterParty.PartyType.choices
         context = self._context(
             user,
             matter,
-            CreateGoogleDocumentForm(auto_id="create_%s"),
-            UploadDocumentForm(auto_id="upload_%s"),
+            CreateGoogleDocumentForm(
+                prefix="create",
+                auto_id="create_%s",
+                party_type_choices=party_type_choices,
+            ),
+            UploadDocumentForm(
+                prefix="upload",
+                auto_id="upload_%s",
+                party_type_choices=party_type_choices,
+            ),
         )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
@@ -9886,79 +11909,87 @@ class UploadMatterDocumentsView(View):
             )
 
         action = (request.POST.get("document_action") or "").strip()
-        create_form = CreateGoogleDocumentForm(auto_id="create_%s")
-        upload_form = UploadDocumentForm(auto_id="upload_%s")
+        permission_by_action = {
+            "create_google": "upload",
+            "upload": "upload",
+            "rename": "edit",
+            "delete": "delete",
+        }
+        needed = permission_by_action.get(action, "upload")
+        library_url = reverse(
+            "accounts:upload_matter_documents",
+            kwargs={"role": role, "matter_id": matter.pk},
+        )
+        access_denied = _matter_task_access_denied(
+            request,
+            user,
+            matter,
+            needed,
+            redirect_to=f"{library_url}#docs-library",
+        )
+        if access_denied:
+            return access_denied
+
+        party_type_choices = MatterParty.PartyType.choices
+        create_form = CreateGoogleDocumentForm(
+            prefix="create",
+            auto_id="create_%s",
+            party_type_choices=party_type_choices,
+        )
+        upload_form = UploadDocumentForm(
+            prefix="upload",
+            auto_id="upload_%s",
+            party_type_choices=party_type_choices,
+        )
 
         try:
             if action == "create_google":
                 create_form = CreateGoogleDocumentForm(
-                    request.POST, auto_id="create_%s"
+                    request.POST,
+                    prefix="create",
+                    auto_id="create_%s",
+                    party_type_choices=party_type_choices,
                 )
                 if create_form.is_valid():
-                    self._create_google_doc(
-                        user,
-                        matter,
-                        create_form.cleaned_data["title"],
-                        create_form.cleaned_data["google_type"],
-                        create_form.cleaned_data["description"],
-                    )
-                    return redirect(
-                        "accounts:upload_matter_documents",
-                        role=role,
-                        matter_id=matter.pk,
-                    )
+                    self._create_google_doc(user, matter, create_form)
+                    return self._library_redirect(role, matter.pk)
             elif action == "upload":
                 upload_form = UploadDocumentForm(
-                    request.POST, request.FILES, auto_id="upload_%s"
+                    request.POST,
+                    request.FILES,
+                    prefix="upload",
+                    auto_id="upload_%s",
+                    party_type_choices=party_type_choices,
                 )
                 if upload_form.is_valid():
                     self._upload_file(user, matter, upload_form)
-                    return redirect(
-                        "accounts:upload_matter_documents",
-                        role=role,
-                        matter_id=matter.pk,
-                    )
+                    return self._library_redirect(role, matter.pk)
             elif action == "rename":
                 self._rename_document(request, matter)
-                return redirect(
-                    "accounts:upload_matter_documents",
-                    role=role,
-                    matter_id=matter.pk,
-                )
+                return self._library_redirect(role, matter.pk)
             elif action == "delete":
                 self._delete_document(request, matter)
-                return redirect(
-                    "accounts:upload_matter_documents",
-                    role=role,
-                    matter_id=matter.pk,
-                )
+                return self._library_redirect(role, matter.pk)
             else:
                 messages.error(request, "Unknown document action.")
-                return redirect(
-                    "accounts:upload_matter_documents",
-                    role=role,
-                    matter_id=matter.pk,
-                )
-        except GoogleDriveAPIError as exc:
+                return self._library_redirect(role, matter.pk)
+        except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
             messages.error(request, str(exc))
-            return redirect(
-                "accounts:upload_matter_documents",
-                role=role,
-                matter_id=matter.pk,
-            )
+            return self._library_redirect(role, matter.pk)
 
         context = self._context(user, matter, create_form, upload_form)
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
 
-    def _create_google_doc(
-        self, user, matter, title, google_type="document", description=""
-    ):
+    def _create_google_doc(self, user, matter, form):
         connection = GoogleDriveConnection.get_solo()
         if not connection.is_connected:
             raise GoogleDriveAPIError(
                 "Connect Google Drive in settings before creating documents."
             )
+        title = form.cleaned_data["title"]
+        google_type = form.cleaned_data["google_type"]
+        description = form.cleaned_data["description"]
         folder_id = ensure_matter_drive_folder(matter)
         created = create_google_workspace_file(
             title, type_key=google_type, parent_id=folder_id
@@ -9974,6 +12005,7 @@ class UploadMatterDocumentsView(View):
             or "application/vnd.google-apps.document",
             description=description or "",
             uploaded_by=user,
+            **form.party_type_kwargs(),
         )
         log_document_activity(
             document,
@@ -10018,6 +12050,7 @@ class UploadMatterDocumentsView(View):
             original_filename=getattr(uploaded, "name", "") or "",
             notes=notes,
             uploaded_by=user,
+            **form.party_type_kwargs(),
         )
         uploaded.seek(0)
         document.local_file.save(
@@ -10040,11 +12073,19 @@ class UploadMatterDocumentsView(View):
 
     def _rename_document(self, request, matter):
         document = get_object_or_404(
-            Document, pk=request.POST.get("document_id"), matter=matter
+            Document,
+            pk=request.POST.get("document_id"),
+            matter=matter,
         )
-        form = RenameDocumentForm(request.POST)
+        form = RenameDocumentForm(
+            request.POST,
+            party_type_choices=MatterParty.PartyType.choices,
+        )
         if not form.is_valid():
-            messages.error(request, "Enter a valid document name.")
+            messages.error(
+                request,
+                "Enter a valid document name and party type.",
+            )
             return
         title = form.cleaned_data["title"]
         description = form.cleaned_data.get("description") or ""
@@ -10055,7 +12096,16 @@ class UploadMatterDocumentsView(View):
         document.title = title
         document.description = description
         document.notes = notes
-        document.save(update_fields=["title", "description", "notes", "updated_at"])
+        document.party_type = form.cleaned_data.get("party_type") or ""
+        document.save(
+            update_fields=[
+                "title",
+                "description",
+                "notes",
+                "party_type",
+                "updated_at",
+            ]
+        )
         if old_title != title:
             log_document_activity(
                 document,
@@ -10077,6 +12127,13 @@ class UploadMatterDocumentsView(View):
         document.delete()
         messages.success(request, f"“{title}” removed from this matter.")
 
+    def _library_redirect(self, role, matter_id):
+        url = reverse(
+            "accounts:upload_matter_documents",
+            kwargs={"role": role, "matter_id": matter_id},
+        )
+        return redirect(f"{url}#docs-library")
+
     def _context(self, user, matter, create_form, upload_form):
         detail_url = reverse(
             "accounts:view_non_litigation_matter",
@@ -10093,6 +12150,26 @@ class UploadMatterDocumentsView(View):
                 user.role_slug, matter.pk, active_slug=self.action_slug
             ),
         )
+        party_type_choices = MatterParty.PartyType.choices
+        edit_form = RenameDocumentForm(
+            auto_id="edit_%s",
+            party_type_choices=party_type_choices,
+        )
+        documents = _documents_with_activity(
+            matter.documents.all(),
+            actor=user,
+            sync_google=True,
+            role=user.role_slug,
+        )
+        task_access = MatterTask.effective_access_for(user, matter)
+        if task_access is None:
+            task_access = {
+                "allow_view": True,
+                "allow_edit": True,
+                "allow_download": True,
+                "allow_delete": True,
+                "allow_upload": True,
+            }
         context.update(
             {
                 "case": None,
@@ -10101,8 +12178,11 @@ class UploadMatterDocumentsView(View):
                 "entity_label": matter.matter_title,
                 "create_form": create_form,
                 "upload_form": upload_form,
-                "documents": _documents_with_activity(
-                    matter.documents, actor=user, sync_google=True, role=user.role_slug
+                "edit_form": edit_form,
+                "party_type_choices": party_type_choices,
+                "documents": documents,
+                "document_groups": _group_documents_by_party_type(
+                    documents, party_type_choices
                 ),
                 "detail_url": detail_url,
                 "detail_label": "Back to matter",
@@ -10111,6 +12191,7 @@ class UploadMatterDocumentsView(View):
                 "google_drive_settings_url": user.workspace_url(
                     "dashboard", "google-drive-settings"
                 ),
+                "task_access": task_access,
             }
         )
         return context
@@ -10439,6 +12520,27 @@ class OpenDocumentView(View):
         if denied:
             return denied
 
+        if document.case_id:
+            access_denied = _case_task_access_denied(
+                request,
+                user,
+                document.case,
+                "view",
+                redirect_to=_document_library_return_url(document, role),
+            )
+            if access_denied:
+                return access_denied
+        elif document.matter_id:
+            access_denied = _matter_task_access_denied(
+                request,
+                user,
+                document.matter,
+                "view",
+                redirect_to=_document_library_return_url(document, role),
+            )
+            if access_denied:
+                return access_denied
+
         target_url = (document.open_url or "").strip()
         if not target_url and document.local_file:
             target_url = document.local_file.url
@@ -10498,15 +12600,39 @@ class OpenDocumentView(View):
 
 @method_decorator(login_required, name="dispatch")
 class DownloadDocumentView(View):
-    """Log a download, then serve or redirect to the file."""
+    """Log a download, then serve the file (local or from Google Drive)."""
 
     def get(self, request, role, document_id):
-        document = get_object_or_404(Document, pk=document_id)
+        document = get_object_or_404(
+            Document.objects.select_related("case", "matter"),
+            pk=document_id,
+        )
         user, denied = _guard_entity_document(
             request, role, document, action="upload"
         )
         if denied:
             return denied
+
+        if document.case_id:
+            access_denied = _case_task_access_denied(
+                request,
+                user,
+                document.case,
+                "download",
+                redirect_to=_document_library_return_url(document, role),
+            )
+            if access_denied:
+                return access_denied
+        elif document.matter_id:
+            access_denied = _matter_task_access_denied(
+                request,
+                user,
+                document.matter,
+                "download",
+                redirect_to=_document_library_return_url(document, role),
+            )
+            if access_denied:
+                return access_denied
 
         log_document_activity(
             document,
@@ -10514,10 +12640,36 @@ class DownloadDocumentView(View):
             DocumentActivity.Action.DOWNLOADED,
             detail=document.original_filename or document.title,
         )
+
         if document.local_file:
-            return redirect(document.local_file.url)
-        if document.open_url:
-            return redirect(document.open_url)
+            filename = (
+                document.original_filename
+                or document.local_file.name.rsplit("/", 1)[-1]
+                or document.title
+                or "document"
+            )
+            return FileResponse(
+                document.local_file.open("rb"),
+                as_attachment=True,
+                filename=filename,
+            )
+
+        if document.drive_file_id:
+            try:
+                content, filename, content_type = download_drive_file(
+                    document.drive_file_id,
+                    mime_type=document.mime_type or "",
+                    title=document.title or "",
+                    original_filename=document.original_filename or "",
+                )
+            except GoogleDriveAPIError as exc:
+                messages.error(request, str(exc))
+                return redirect(_document_library_return_url(document, role))
+            response = HttpResponse(content, content_type=content_type)
+            safe_name = (filename or document.title or "document").replace('"', "")
+            response["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+            return response
+
         messages.error(request, "No downloadable file is available.")
         return redirect(_document_library_return_url(document, role))
 
@@ -10580,6 +12732,81 @@ class DocumentSessionPingView(View):
 
 
 @method_decorator(login_required, name="dispatch")
+class MatterCalendarView(View):
+    """Month calendar of dates for a client's non-litigation matters."""
+
+    template_name = "accounts/entity_calendar.html"
+    action_slug = "matter-calendar"
+
+    def get(self, request, role, matter_id):
+        user, denied = _guard_non_litigation(request, role, action="view")
+        if denied:
+            return denied
+
+        matter = get_object_or_404(
+            NonLitigationMatter.objects.select_related("client"),
+            pk=matter_id,
+        )
+        if matter.status == NonLitigationMatter.Status.PENDING_APPROVAL:
+            return redirect(
+                "accounts:approve_non_litigation_matter",
+                role=role,
+                matter_id=matter.pk,
+            )
+
+        today, year, month, month_start, month_end = _calendar_month_from_request(
+            request
+        )
+        by_day = _client_matter_calendar_by_day(
+            user, matter.client, month_start, month_end
+        )
+        base_url = reverse(
+            "accounts:matter_calendar",
+            kwargs={"role": role, "matter_id": matter.pk},
+        )
+        detail_url = reverse(
+            "accounts:view_non_litigation_matter",
+            kwargs={"role": role, "matter_id": matter.pk},
+        )
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Matter calendar",
+            page_trail=list(ACTIVE_MATTERS_TRAIL),
+            active_page=self.action_slug,
+            page_nav_items=non_litigation_matter_nav_items(
+                user.role_slug, matter.pk, active_slug=self.action_slug
+            ),
+        )
+        context.update(
+            _calendar_grid_payload(today, year, month, by_day, base_url)
+        )
+        context.update(
+            {
+                "matter": matter,
+                "client": matter.client,
+                "detail_url": detail_url,
+                "detail_label": "Back to matter",
+                "list_url": _active_matters_list_url(user),
+                "calendar_lead": (
+                    f"Matter dates, attendances, and tasks for "
+                    f"{matter.client.get_full_name()}."
+                ),
+                "calendar_list_hint": (
+                    "All non-litigation dates for this client this month"
+                ),
+                "calendar_empty_copy": (
+                    "Matter attendances, next attendance dates, opened dates, "
+                    "and matter task due dates for this client will appear here."
+                ),
+                "entity_kind": "matter",
+            }
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
 class NonLitigationMatterActionView(View):
     """Stub workspace pages for non-litigation matter sidebar actions."""
 
@@ -10596,6 +12823,12 @@ class NonLitigationMatterActionView(View):
         if action == "update-matter-attendance":
             return redirect(
                 "accounts:update_matter_attendance",
+                role=role,
+                matter_id=matter_id,
+            )
+        if action == "matter-calendar":
+            return redirect(
+                "accounts:matter_calendar",
                 role=role,
                 matter_id=matter_id,
             )
@@ -10668,7 +12901,7 @@ class NonLitigationMatterActionView(View):
 
 @method_decorator(login_required, name="dispatch")
 class ViewCaseTaskView(View):
-    """Assignee views an accepted (or otherwise assigned) case task."""
+    """Assignee opens an accepted case task by landing on the related case."""
 
     template_name = "accounts/view_case_task.html"
     kind = "case"
@@ -10693,6 +12926,16 @@ class ViewCaseTaskView(View):
 
         task = self.get_task(task_id, user)
         case = task.case
+
+        if task.status in {CaseTask.Status.ACCEPTED, CaseTask.Status.DONE}:
+            case_url = reverse(
+                "accounts:view_litigation_case",
+                kwargs={"role": role, "case_id": case.pk},
+            )
+            if task.status == CaseTask.Status.ACCEPTED:
+                return redirect(f"{case_url}?task={task.pk}")
+            return redirect(case_url)
+
         tasks_url = user.workspace_url("dashboard", "tasks")
         context = workspace_context(
             user,
@@ -10708,6 +12951,8 @@ class ViewCaseTaskView(View):
                 "case": case,
                 "parties": case.parties.all(),
                 "list_url": f"{tasks_url}?kind={self.kind}&id={task.pk}",
+                "open_url": "",
+                "can_open": False,
             }
         )
         response = render(request, self.template_name, context)
@@ -10716,7 +12961,7 @@ class ViewCaseTaskView(View):
 
 @method_decorator(login_required, name="dispatch")
 class ViewMatterTaskView(View):
-    """Assignee views an accepted (or otherwise assigned) matter task."""
+    """Assignee opens an accepted matter task by landing on the related matter."""
 
     template_name = "accounts/view_matter_task.html"
     kind = "matter"
@@ -10741,6 +12986,16 @@ class ViewMatterTaskView(View):
 
         task = self.get_task(task_id, user)
         matter = task.matter
+
+        if task.status in {MatterTask.Status.ACCEPTED, MatterTask.Status.DONE}:
+            matter_url = reverse(
+                "accounts:view_non_litigation_matter",
+                kwargs={"role": role, "matter_id": matter.pk},
+            )
+            if task.status == MatterTask.Status.ACCEPTED:
+                return redirect(f"{matter_url}?task={task.pk}")
+            return redirect(matter_url)
+
         tasks_url = user.workspace_url("dashboard", "tasks")
         context = workspace_context(
             user,
@@ -10756,10 +13011,104 @@ class ViewMatterTaskView(View):
                 "matter": matter,
                 "parties": matter.parties.all(),
                 "list_url": f"{tasks_url}?kind={self.kind}&id={task.pk}",
+                "open_url": "",
+                "can_open": False,
             }
         )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
+class CompleteCaseTaskView(View):
+    """Assignee marks an accepted case task as done."""
+
+    kind = "case"
+    complete_url_name = "accounts:complete_case_task"
+    entity_url_name = "accounts:view_litigation_case"
+    entity_id_kwarg = "case_id"
+
+    def get_task(self, task_id, user):
+        return get_object_or_404(
+            CaseTask.objects.select_related("case", "created_by", "assignee"),
+            pk=task_id,
+            assignee=user,
+        )
+
+    def entity_id(self, task):
+        return task.case_id
+
+    def entity_redirect(self, role, task):
+        return redirect(
+            self.entity_url_name,
+            role=role,
+            **{self.entity_id_kwarg: self.entity_id(task)},
+        )
+
+    def post(self, request, role, task_id):
+        guard = (
+            _guard_litigation
+            if self.kind == "case"
+            else _guard_non_litigation
+        )
+        user, denied = guard(request, role, action="task")
+        if denied:
+            return denied
+
+        task = self.get_task(task_id, user)
+        accepted = (
+            CaseTask.Status.ACCEPTED
+            if self.kind == "case"
+            else MatterTask.Status.ACCEPTED
+        )
+        done = (
+            CaseTask.Status.DONE
+            if self.kind == "case"
+            else MatterTask.Status.DONE
+        )
+
+        if task.status != accepted:
+            messages.info(request, "Only an accepted task can be marked complete.")
+            return self._redirect_after_complete(request, role, task)
+
+        task.status = done
+        task.responded_at = task.responded_at or timezone.now()
+        task.save(update_fields=["status", "responded_at", "updated_at"])
+        notified = notify_task_completed(task, kind=self.kind)
+        if notified and notified.recipient_id != user.pk:
+            messages.success(
+                request,
+                "Task marked as complete. The employee who allocated it has been notified.",
+            )
+        else:
+            messages.success(request, "Task marked as complete.")
+        return self._redirect_after_complete(request, role, task)
+
+    def _redirect_after_complete(self, request, role, task):
+        next_url = (request.POST.get("next") or "").strip()
+        if next_url.startswith("/") and not next_url.startswith("//"):
+            return redirect(next_url)
+        return self.entity_redirect(role, task)
+
+
+@method_decorator(login_required, name="dispatch")
+class CompleteMatterTaskView(CompleteCaseTaskView):
+    """Assignee marks an accepted matter task as done."""
+
+    kind = "matter"
+    complete_url_name = "accounts:complete_matter_task"
+    entity_url_name = "accounts:view_non_litigation_matter"
+    entity_id_kwarg = "matter_id"
+
+    def get_task(self, task_id, user):
+        return get_object_or_404(
+            MatterTask.objects.select_related("matter", "created_by", "assignee"),
+            pk=task_id,
+            assignee=user,
+        )
+
+    def entity_id(self, task):
+        return task.matter_id
 
 
 @method_decorator(login_required, name="dispatch")
@@ -10769,6 +13118,8 @@ class RespondCaseTaskView(View):
     kind = "case"
     respond_url_name = "accounts:respond_case_task"
     view_url_name = "accounts:view_case_task"
+    entity_url_name = "accounts:view_litigation_case"
+    entity_id_kwarg = "case_id"
 
     def get_task(self, task_id, user):
         return get_object_or_404(
@@ -10779,6 +13130,16 @@ class RespondCaseTaskView(View):
 
     def task_subject(self, task):
         return str(task.case)
+
+    def entity_id(self, task):
+        return task.case_id
+
+    def accepted_redirect(self, role, task):
+        entity_url = reverse(
+            self.entity_url_name,
+            kwargs={"role": role, self.entity_id_kwarg: self.entity_id(task)},
+        )
+        return redirect(f"{entity_url}?task={task.pk}")
 
     def post(self, request, role, task_id):
         guard = (
@@ -10800,6 +13161,8 @@ class RespondCaseTaskView(View):
 
         if task.status != CaseTask.Status.PENDING:
             messages.info(request, "This task has already been responded to.")
+            if task.status == CaseTask.Status.ACCEPTED:
+                return self.accepted_redirect(role, task)
             return redirect(f"{tasks_url}?kind={self.kind}&id={task.pk}")
 
         if action == "accept":
@@ -10840,12 +13203,7 @@ class RespondCaseTaskView(View):
                 )
             else:
                 messages.success(request, "Task accepted.")
-            return redirect(
-                reverse(
-                    self.view_url_name,
-                    kwargs={"role": role, "task_id": task.pk},
-                )
-            )
+            return self.accepted_redirect(role, task)
 
         if action == "reject":
             form = RejectTaskForm(request.POST)
@@ -10923,6 +13281,8 @@ class RespondMatterTaskView(RespondCaseTaskView):
     kind = "matter"
     respond_url_name = "accounts:respond_matter_task"
     view_url_name = "accounts:view_matter_task"
+    entity_url_name = "accounts:view_non_litigation_matter"
+    entity_id_kwarg = "matter_id"
 
     def get_task(self, task_id, user):
         return get_object_or_404(
@@ -10935,6 +13295,9 @@ class RespondMatterTaskView(RespondCaseTaskView):
 
     def task_subject(self, task):
         return str(task.matter)
+
+    def entity_id(self, task):
+        return task.matter_id
 
 
 @method_decorator(login_required, name="dispatch")

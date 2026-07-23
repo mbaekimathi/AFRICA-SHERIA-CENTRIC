@@ -562,15 +562,15 @@ def _recommendations(
                 "Verify root, Clients, and Work folder IDs are saved on the connection.",
             ],
         )
-    elif documents["token_expiring_soon"]:
+    elif documents["missing_refresh_token"]:
         add(
-            "info",
-            "Refresh Google Drive token soon",
-            f"Access token expires in about {documents['token_expires_in_hours']:.1f} hours.",
-            impact="Expired tokens interrupt document create/open/sync until refresh succeeds.",
+            "warning",
+            "Reconnect Google Drive for lasting access",
+            "Google Drive is connected without a refresh token, so access cannot renew automatically.",
+            impact="Document create/open/sync will stop when the short-lived access token expires.",
             actions=[
-                "Confirm refresh_token is present so the app can renew automatically.",
-                "If refreshes fail, reconnect Google Drive from Document Settings.",
+                "Disconnect and connect again from Google Drive Settings.",
+                "Approve consent so Google returns an offline refresh token.",
             ],
         )
 
@@ -870,13 +870,16 @@ def build_system_analytics(range_key="24h"):
     editing_seconds = kind_totals.get(DocumentOpenSession.Kind.EDITING, 0)
     creating_seconds = kind_totals.get(DocumentOpenSession.Kind.CREATING, 0)
     token_expires_in_hours = None
-    token_expiring_soon = False
     if drive.token_expiry:
         token_expires_in_hours = round(
             (drive.token_expiry - now).total_seconds() / 3600,
             1,
         )
-        token_expiring_soon = 0 < token_expires_in_hours <= 24
+    # Short-lived access tokens renew automatically via refresh_token.
+    # Only flag when connected without a refresh token (cannot stay connected).
+    missing_refresh_token = drive.is_connected and not (
+        drive.refresh_token or ""
+    ).strip()
     document_routes = _module_route_stats(
         rows,
         (
@@ -899,7 +902,9 @@ def build_system_analytics(range_key="24h"):
         "token_expires_in_hours": token_expires_in_hours
         if token_expires_in_hours is not None
         else 0,
-        "token_expiring_soon": token_expiring_soon,
+        "missing_refresh_token": missing_refresh_token,
+        # Kept for older callers; access-token age is not a connection expiry.
+        "token_expiring_soon": missing_refresh_token,
         "total_documents": all_documents.count(),
         "google_documents": all_documents.filter(
             source=Document.Source.GOOGLE_DOC
