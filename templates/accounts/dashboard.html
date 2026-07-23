@@ -65,14 +65,20 @@
       {% for item in page_nav_items %}
       <a
         href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
-        class="module-card module-card--pro{% if item.disabled %} is-disabled{% endif %}"
+        class="module-card module-card--pro{% if item.disabled %} is-disabled{% endif %}{% if item.badge_count %} has-unread{% endif %}"
         style="--stagger: {{ forloop.counter0 }}"
         data-magnetic
+        {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} pending approval"{% endif %}
         {% if item.disabled %}aria-disabled="true"{% endif %}
       >
         <span class="icon-orb icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
           <span class="icon-orb__shine"></span>
           <span class="icon-orb__core">{{ item.icon|safe }}</span>
+          <span
+            class="nav-badge module-card__badge"
+            data-page-badge="{{ item.slug }}"
+            {% if not item.badge_count %}hidden{% endif %}
+          >{{ item.badge_count|default:0 }}</span>
         </span>
         <span class="module-card__body">
           <span class="module-card__label">{{ item.label }}</span>

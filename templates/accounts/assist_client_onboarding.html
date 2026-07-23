@@ -164,7 +164,13 @@
           </div>
           {% if form.corporate_kind.errors %}<span class="field-error">{{ form.corporate_kind.errors.0 }}</span>{% endif %}
 
-          <div class="form-field">
+          <div class="form-field" id="business-doc-field">
+            <label for="id_business_document">Upload business certificate</label>
+            {{ form.business_document }}
+            {% if form.business_document.errors %}<span class="field-error">{{ form.business_document.errors.0 }}</span>{% endif %}
+          </div>
+
+          <div class="form-field is-hidden" id="company-doc-field">
             <label for="id_company_registration_document">Upload CR12</label>
             {{ form.company_registration_document }}
             {% if form.company_registration_document.errors %}<span class="field-error">{{ form.company_registration_document.errors.0 }}</span>{% endif %}

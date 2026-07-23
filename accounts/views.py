@@ -2649,9 +2649,99 @@ def _client_contact_subtitle(client):
     return " · ".join(parts) if parts else "No contact details"
 
 
+def _client_profile_avatar(client) -> dict:
+    """Avatar fields for matter-browse client profile tiles."""
+    is_corporate = client.client_type == Client.ClientType.CORPORATE
+    if is_corporate:
+        source = (client.company_name or client.email or "?").strip()
+        initials = (source[:1] or "?").upper()
+    else:
+        first = (client.first_name or "").strip()
+        last = (client.last_name or "").strip()
+        if first or last:
+            initials = f"{first[:1]}{last[:1]}".upper()
+        else:
+            initials = ((client.email or "?")[:1]).upper()
+    photo_url = ""
+    if client.profile_photo:
+        try:
+            photo_url = client.profile_photo.url
+        except ValueError:
+            photo_url = ""
+    return {
+        "photo_url": photo_url,
+        "initials": initials or "?",
+        "is_corporate": is_corporate,
+        "name": client.get_full_name(),
+    }
+
+
+MATTER_CATEGORY_ICON_META = {
+    "conveyancing": ("home", 3),
+    "commercial": ("handshake", 1),
+    "employment": ("briefcase", 5),
+    "intellectual_property": ("bulb", 7),
+    "corporate": ("building", 2),
+    "probate": ("scroll", 4),
+    "immigration": ("globe", 5),
+    "regulatory": ("shield", 6),
+    "due_diligence": ("search-doc", 1),
+    "advisory": ("advice", 2),
+    "other": ("folder", 1),
+}
+
+COURT_RANK_ICON_META = {
+    "supreme_court": ("scales", 3),
+    "court_of_appeal": ("scales", 1),
+    "high_court": ("courthouse", 5),
+    "elc": ("land", 6),
+    "elrc": ("briefcase", 2),
+    "magistrates": ("gavel", 3),
+    "kadhis": ("scroll", 7),
+    "court_martial": ("shield", 4),
+    "small_claims": ("gavel", 1),
+    "tribunal": ("building", 5),
+}
+
+
+def _normalize_choice_key(raw: str, choices) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    mapping = dict(choices)
+    if value in mapping:
+        return value
+    lowered = value.lower()
+    for key, label in choices:
+        if key.lower() == lowered or label.lower() == lowered:
+            return key
+    return value
+
+
+def matter_browse_icon_meta(kind: str, raw_key: str = "", *, index: int = 0) -> dict:
+    """Return icon slug + tone for matter-browse 3D tiles."""
+    if kind == "client":
+        return {"icon": "client", "tone": (index % 6) + 1}
+    if kind == "category":
+        key = _normalize_choice_key(
+            raw_key, NonLitigationMatter.MatterCategory.choices
+        )
+        icon, tone = MATTER_CATEGORY_ICON_META.get(
+            key, ("folder", (index % 6) + 1)
+        )
+        return {"icon": icon, "tone": tone}
+    if kind == "court":
+        key = _normalize_choice_key(raw_key, LitigationCase.CourtRank.choices)
+        icon, tone = COURT_RANK_ICON_META.get(
+            key, ("courthouse", (index % 6) + 1)
+        )
+        return {"icon": icon, "tone": tone}
+    return {"icon": "folder", "tone": (index % 6) + 1}
+
+
 def group_litigation_cases(cases, group_by: str):
-    """Group active litigation cases by client or court for card browse UI."""
-    mode = group_by if group_by in {"court", "client"} else "client"
+    """Group active litigation cases by court rank or client for card browse UI."""
+    mode = group_by if group_by in {"court", "client"} else "court"
     buckets = defaultdict(list)
 
     if mode == "client":
@@ -2680,6 +2770,9 @@ def group_litigation_cases(cases, group_by: str):
                     "count": len(items),
                     "items": items,
                     "tone": index % 6,
+                    "icon": "client",
+                    "icon_tone": (index % 6) + 1,
+                    "profile": _client_profile_avatar(client),
                     "search_text": " ".join(search_bits).lower(),
                     "kind": "client",
                 }
@@ -2715,6 +2808,7 @@ def group_litigation_cases(cases, group_by: str):
                     for case in items
                 ],
             ]
+            icon_meta = matter_browse_icon_meta("court", key, index=index)
             groups.append(
                 {
                     "key": f"court-{key}",
@@ -2722,7 +2816,9 @@ def group_litigation_cases(cases, group_by: str):
                     "subtitle": subtitle,
                     "count": len(items),
                     "items": items,
-                    "tone": index % 6,
+                    "tone": icon_meta["tone"] - 1,
+                    "icon": icon_meta["icon"],
+                    "icon_tone": icon_meta["tone"],
                     "search_text": " ".join(search_bits).lower(),
                     "kind": "court",
                 }
@@ -2736,9 +2832,21 @@ def group_litigation_cases(cases, group_by: str):
     return mode, groups
 
 
+def resolve_matter_group_by(request, *, session_key: str, allowed: set[str], default: str):
+    """Resolve browse grouping from query, then session, then default."""
+    requested = (request.GET.get("group") or "").strip()
+    if requested in allowed:
+        request.session[session_key] = requested
+        return requested
+    saved = request.session.get(session_key)
+    if saved in allowed:
+        return saved
+    return default
+
+
 def group_non_litigation_matters(matters, group_by: str):
     """Group active non-litigation matters by client or category for card browse UI."""
-    mode = group_by if group_by in {"category", "client"} else "client"
+    mode = group_by if group_by in {"category", "client"} else "category"
     buckets = defaultdict(list)
 
     if mode == "client":
@@ -2766,6 +2874,9 @@ def group_non_litigation_matters(matters, group_by: str):
                     "count": len(items),
                     "items": items,
                     "tone": index % 6,
+                    "icon": "client",
+                    "icon_tone": (index % 6) + 1,
+                    "profile": _client_profile_avatar(client),
                     "search_text": " ".join(search_bits).lower(),
                     "kind": "client",
                 }
@@ -2787,6 +2898,7 @@ def group_non_litigation_matters(matters, group_by: str):
                     for matter in items
                 ],
             ]
+            icon_meta = matter_browse_icon_meta("category", key, index=index)
             groups.append(
                 {
                     "key": f"category-{key}",
@@ -2794,7 +2906,9 @@ def group_non_litigation_matters(matters, group_by: str):
                     "subtitle": subtitle,
                     "count": len(items),
                     "items": items,
-                    "tone": index % 6,
+                    "tone": icon_meta["tone"] - 1,
+                    "icon": icon_meta["icon"],
+                    "icon_tone": icon_meta["tone"],
                     "search_text": " ".join(search_bits).lower(),
                     "kind": "category",
                 }
@@ -3322,9 +3436,13 @@ class RoleWorkspaceView(View):
                 .prefetch_related("parties")
                 .order_by("-filing_date", "-created_at")
             )
-            group_by, case_groups = group_litigation_cases(
-                cases, request.GET.get("group", "client")
+            preferred_group = resolve_matter_group_by(
+                request,
+                session_key="litigation_matters_group_by",
+                allowed={"court", "client"},
+                default="court",
             )
+            group_by, case_groups = group_litigation_cases(cases, preferred_group)
             context["cases"] = cases
             context["case_count"] = len(cases)
             context["group_by"] = group_by
@@ -3355,8 +3473,14 @@ class RoleWorkspaceView(View):
                 .prefetch_related("parties")
                 .order_by("-date_opened", "-created_at")
             )
+            preferred_group = resolve_matter_group_by(
+                request,
+                session_key="non_litigation_matters_group_by",
+                allowed={"category", "client"},
+                default="category",
+            )
             group_by, matter_groups = group_non_litigation_matters(
-                matters, request.GET.get("group", "client")
+                matters, preferred_group
             )
             context["matters"] = matters
             context["matter_count"] = len(matters)
@@ -6260,6 +6384,9 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _messages_context(user, request):
         """List message notifications for this employee, newest first."""
+        from .notifications import ensure_task_outcome_messages
+
+        ensure_task_outcome_messages(user)
         message_list = list(
             Notification.objects.filter(
                 recipient=user,
@@ -7765,7 +7892,12 @@ class ApproveClientView(View):
             else:
                 rows.append(("Passport", "", client.alien_document))
         else:
-            rows.append(("CR12", "", client.company_registration_document))
+            if client.corporate_kind == Client.CorporateKind.BUSINESS:
+                rows.append(
+                    ("Business certificate", "", client.business_document)
+                )
+            else:
+                rows.append(("CR12", "", client.company_registration_document))
         rows.extend(
             [
                 ("KRA PIN", "", client.kra_pin_document),
@@ -8177,8 +8309,9 @@ class EditLitigationCaseView(View):
             case.status = LitigationCase.Status.PENDING_APPROVAL
             case.save()
 
-            for obj in party_formset.deleted_objects:
-                obj.delete()
+            for party_form in party_formset.deleted_forms:
+                if party_form.instance.pk:
+                    party_form.instance.delete()
 
             for index, party_form in enumerate(parties):
                 party = party_form.save(commit=False)
@@ -8307,8 +8440,9 @@ class EditActiveLitigationCaseView(View):
             case.status = previous_status
             case.save()
 
-            for obj in party_formset.deleted_objects:
-                obj.delete()
+            for party_form in party_formset.deleted_forms:
+                if party_form.instance.pk:
+                    party_form.instance.delete()
 
             for index, party_form in enumerate(parties):
                 party = party_form.save(commit=False)
@@ -8554,8 +8688,9 @@ class EditNonLitigationMatterView(View):
             matter.status = NonLitigationMatter.Status.PENDING_APPROVAL
             matter.save()
 
-            for obj in party_formset.deleted_objects:
-                obj.delete()
+            for party_form in party_formset.deleted_forms:
+                if party_form.instance.pk:
+                    party_form.instance.delete()
 
             for index, party_form in enumerate(parties):
                 party = party_form.save(commit=False)
@@ -8684,8 +8819,9 @@ class EditActiveNonLitigationMatterView(View):
             matter.status = previous_status
             matter.save()
 
-            for obj in party_formset.deleted_objects:
-                obj.delete()
+            for party_form in party_formset.deleted_forms:
+                if party_form.instance.pk:
+                    party_form.instance.delete()
 
             for index, party_form in enumerate(parties):
                 party = party_form.save(commit=False)
@@ -10342,7 +10478,10 @@ class UpdateCourtAttendanceView(View):
                     ),
                     "allocated_to": item.allocated_to_id or "",
                     "allocated_to_name": (
-                        item.allocated_to.get_full_name()
+                        (
+                            f"{item.allocated_to.get_full_name()} "
+                            f"({item.allocated_to.get_role_display()})"
+                        )
                         if item.allocated_to
                         else ""
                     ),
@@ -11567,7 +11706,10 @@ class UpdateMatterAttendanceView(View):
                     ),
                     "allocated_to": item.allocated_to_id or "",
                     "allocated_to_name": (
-                        item.allocated_to.get_full_name()
+                        (
+                            f"{item.allocated_to.get_full_name()} "
+                            f"({item.allocated_to.get_role_display()})"
+                        )
                         if item.allocated_to
                         else ""
                     ),

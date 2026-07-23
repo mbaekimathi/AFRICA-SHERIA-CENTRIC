@@ -62,22 +62,62 @@ def pending_employees_count() -> int:
     ).count()
 
 
+def pending_litigation_cases_count() -> int:
+    """Litigation cases awaiting firm approval."""
+    from .models import LitigationCase
+
+    return LitigationCase.objects.filter(
+        status=LitigationCase.Status.PENDING_APPROVAL
+    ).count()
+
+
+def pending_non_litigation_matters_count() -> int:
+    """Non-litigation matters awaiting firm approval."""
+    from .models import NonLitigationMatter
+
+    return NonLitigationMatter.objects.filter(
+        status=NonLitigationMatter.Status.PENDING_APPROVAL
+    ).count()
+
+
 def _attach_page_nav_badges(page_nav_items: list[dict]) -> None:
-    """Attach count badges to section nav items that need them."""
+    """Attach count badges to section nav / dashboard items that need them."""
     if not page_nav_items:
         return
     pending_clients = None
     pending_employees = None
+    pending_cases = None
+    pending_matters = None
     for item in page_nav_items:
         slug = item.get("slug")
-        if slug == "approve-pending-clients":
+        if slug == "user-management":
+            if pending_clients is None:
+                pending_clients = pending_clients_count()
+            if pending_employees is None:
+                pending_employees = pending_employees_count()
+            item["badge_count"] = pending_clients + pending_employees
+        elif slug in {"client-management", "approve-pending-clients"}:
             if pending_clients is None:
                 pending_clients = pending_clients_count()
             item["badge_count"] = pending_clients
-        elif slug == "onboarding-approvals":
+        elif slug in {"employee-management", "onboarding-approvals"}:
             if pending_employees is None:
                 pending_employees = pending_employees_count()
             item["badge_count"] = pending_employees
+        elif slug == "matter-management":
+            if pending_cases is None:
+                pending_cases = pending_litigation_cases_count()
+            if pending_matters is None:
+                pending_matters = pending_non_litigation_matters_count()
+            item["badge_count"] = pending_cases + pending_matters
+        elif slug in {"litigation-matters", "approve-registered-cases"}:
+            if pending_cases is None:
+                pending_cases = pending_litigation_cases_count()
+            item["badge_count"] = pending_cases
+        elif slug in {"non-litigation-matters", "approve-registered-matters"}:
+            if pending_matters is None:
+                pending_matters = pending_non_litigation_matters_count()
+            item["badge_count"] = pending_matters
 
 
 def time_of_day_greeting(when=None) -> str:

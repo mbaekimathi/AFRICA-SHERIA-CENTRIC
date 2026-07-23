@@ -9,15 +9,13 @@
   id="live-list-page"
   data-revision-url="{% url 'accounts:workspace_list_revision' %}?list=active-cases"
 >
-  <header class="matter-browse__intro">
+  <header class="matter-browse__intro" data-reveal>
     <div class="matter-browse__title-row">
-      <span class="matter-browse__title-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-          <path d="M12 3.5 4.75 7v.75h14.5V7L12 3.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="M7.5 8.5v4.2c0 2.7 1.9 4.9 4.5 5.8 2.6-.9 4.5-3.1 4.5-5.8V8.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-          <path d="M5 20.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-        </svg>
-      </span>
+      {% if group_by == "client" %}
+      {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="lg" float=True extra_class="matter-browse__hero-3d" %}
+      {% else %}
+      {% include "accounts/partials/icon_3d.html" with icon="courthouse" tone=3 size="lg" float=True extra_class="matter-browse__hero-3d" %}
+      {% endif %}
       <div>
         <h2>{{ page_title }}</h2>
         <p class="matter-browse__lead">
@@ -31,7 +29,7 @@
     </div>
 
     <div class="matter-browse__controls">
-      <div class="matter-view" role="tablist" aria-label="Group matters by">
+      <div class="matter-view matter-view--{{ group_by }}" role="tablist" aria-label="Group matters by">
         <span class="matter-view__label">View</span>
         <div class="matter-view__tabs">
           <a
@@ -40,10 +38,7 @@
             role="tab"
             aria-selected="{% if group_by == 'client' %}true{% else %}false{% endif %}"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-              <path d="M9 11a3.25 3.25 0 1 0 0-6.5A3.25 3.25 0 0 0 9 11zm6.5-.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5z" stroke="currentColor" stroke-width="1.6"/>
-              <path d="M3.75 19.25v-1.1c0-2.1 2.15-3.65 5.25-3.65s5.25 1.55 5.25 3.65v1.1M14.5 14.75c2.55.2 4.75 1.5 4.75 3.4v1.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-            </svg>
+            {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="sm" extra_class="matter-view__tab-3d" %}
             Client
           </a>
           <a
@@ -52,10 +47,7 @@
             role="tab"
             aria-selected="{% if group_by == 'court' %}true{% else %}false{% endif %}"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-              <path d="M4.5 19.5h15M6 19.5V9.75L12 5.5l6 4.25V19.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-              <path d="M9.25 19.5v-4.25h5.5V19.5M9.25 12.5h.01M12 12.5h.01M14.75 12.5h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-            </svg>
+            {% include "accounts/partials/icon_3d.html" with icon="courthouse" tone=3 size="sm" extra_class="matter-view__tab-3d" %}
             Court Rank
           </a>
         </div>
@@ -63,10 +55,12 @@
 
       <div class="matter-browse__search-row">
         <label class="matter-search" for="matter-browse-search">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
-            <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.7"/>
-            <path d="m16 16 3.25 3.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-          </svg>
+          <span class="matter-search__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.7"/>
+              <path d="m16 16 3.25 3.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </span>
           <input
             id="matter-browse-search"
             type="search"
@@ -75,34 +69,26 @@
           >
         </label>
         <button type="button" class="btn btn--quiet matter-browse__refresh" id="matter-browse-refresh">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-            <path d="M19.25 12a7.25 7.25 0 1 1-2.12-5.13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-            <path d="M19.25 4.75v4.5h-4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <span class="matter-browse__refresh-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+              <path d="M19.25 12a7.25 7.25 0 1 1-2.12-5.13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              <path d="M19.25 4.75v4.5h-4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
           Refresh
         </button>
       </div>
     </div>
   </header>
 
-  <section class="matter-browse__panel">
+  <section class="matter-browse__panel" data-reveal style="--stagger: 1">
     <header class="matter-browse__panel-head">
       <h3>
-        <span class="matter-browse__panel-icon" aria-hidden="true">
-          {% if group_by == "client" %}
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-            <path d="M9 11a3.25 3.25 0 1 0 0-6.5A3.25 3.25 0 0 0 9 11zm6.5-.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5z" stroke="currentColor" stroke-width="1.6"/>
-            <path d="M3.75 19.25v-1.1c0-2.1 2.15-3.65 5.25-3.65s5.25 1.55 5.25 3.65v1.1M14.5 14.75c2.55.2 4.75 1.5 4.75 3.4v1.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-          </svg>
-          {% else %}
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-            <path d="M4.5 19.5h15M6 19.5V9.75L12 5.5l6 4.25V19.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-          </svg>
-          {% endif %}
-        </span>
         {% if group_by == "client" %}
+        {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="sm" float=True extra_class="matter-browse__panel-3d" %}
         Clients with Matters: <span id="matter-browse-group-count">{{ case_groups|length }}</span>
         {% else %}
+        {% include "accounts/partials/icon_3d.html" with icon="courthouse" tone=3 size="sm" float=True extra_class="matter-browse__panel-3d" %}
         Courts with Matters: <span id="matter-browse-group-count">{{ case_groups|length }}</span>
         {% endif %}
       </h3>
@@ -112,20 +98,18 @@
     {% if cases %}
     <div class="matter-browse__cards" id="matter-browse-cards">
       {% for group in case_groups %}
-      <details class="matter-card" data-search="{{ group.search_text }}">
+      <details
+        class="matter-card matter-card--tone-{{ group.icon_tone }}"
+        data-search="{{ group.search_text }}"
+        data-reveal
+        style="--stagger: {{ forloop.counter0 }}"
+      >
         <summary class="matter-card__summary">
-          <span class="matter-card__icon matter-card__icon--{{ group.tone }}" aria-hidden="true">
-            {% if group.kind == "client" %}
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
-              <circle cx="12" cy="9" r="3.25" stroke="currentColor" stroke-width="1.7"/>
-              <path d="M5.75 19c.7-3 3.1-4.75 6.25-4.75S17.55 16 18.25 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-            </svg>
-            {% else %}
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
-              <path d="M4.5 19.5h15M6 19.5V9.75L12 5.5l6 4.25V19.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-            </svg>
-            {% endif %}
-          </span>
+          {% if group.kind == "client" and group.profile %}
+          {% include "accounts/partials/icon_3d_profile.html" with profile=group.profile tone=group.icon_tone extra_class="matter-card__icon-3d" %}
+          {% else %}
+          {% include "accounts/partials/icon_3d.html" with icon=group.icon tone=group.icon_tone extra_class="matter-card__icon-3d" %}
+          {% endif %}
           <span class="matter-card__main">
             <span class="matter-card__name">{{ group.label }}</span>
             <span class="matter-card__meta">{{ group.subtitle }}</span>
@@ -140,40 +124,77 @@
             </svg>
           </span>
         </summary>
-        <div class="matter-card__body">
-          {% for case in group.items %}
-          <a
-            class="matter-item"
-            href="{% url 'accounts:view_litigation_case' role=role_slug case_id=case.pk %}"
-          >
-            <span class="matter-item__title">
-              {{ case.court_case_number|default:"No court number" }}
-            </span>
-            <span class="matter-item__meta">
-              {{ case.get_case_category_display }} · {{ case.get_case_type_display }}
-              · Filed {{ case.filing_date|date:"d M Y" }}
-              {% if group.kind != "court" %}
-              · {{ case.get_court_rank_display }}
-              {% else %}
-              · {{ case.client.get_full_name }}
-              {% endif %}
-              {% if case.assigned_to %}
-              · {{ case.assigned_to.get_full_name }}
-              {% endif %}
-            </span>
-          </a>
-          {% endfor %}
+        <div class="matter-card__body matter-card__body--table">
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Case #</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Court</th>
+                  <th scope="col">Client</th>
+                  <th scope="col">Assigned To</th>
+                  <th scope="col">Date Filed</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for case in group.items %}
+                <tr
+                  class="is-clickable-row"
+                  data-href="{% url 'accounts:view_litigation_case' role=role_slug case_id=case.pk %}"
+                  tabindex="0"
+                  role="link"
+                  aria-label="Open case {% if case.court_case_number %}{{ case.court_case_number }}{% else %}#{{ case.pk }}{% endif %}"
+                >
+                  <td>
+                    <a
+                      class="matter-ref-link"
+                      href="{% url 'accounts:view_litigation_case' role=role_slug case_id=case.pk %}"
+                    >
+                      {{ case.court_case_number|default:"No court number" }}
+                    </a>
+                  </td>
+                  <td>{{ case.get_case_category_display }}</td>
+                  <td>{{ case.get_case_type_display }}</td>
+                  <td>{{ case.get_court_rank_display }}</td>
+                  <td>{{ case.client.get_full_name }}</td>
+                  <td>
+                    {% if case.assigned_to %}
+                    {{ case.assigned_to.get_full_name }}
+                    {% else %}
+                    —
+                    {% endif %}
+                  </td>
+                  <td>{{ case.filing_date|date:"n/j/Y" }}</td>
+                  <td>
+                    <span class="status-pill status-pill--{{ case.status }}">
+                      {{ case.get_status_display }}
+                    </span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         </div>
       </details>
       {% endfor %}
     </div>
     <div class="empty-state" id="matter-browse-filtered-empty" hidden>
+      {% include "accounts/partials/icon_3d.html" with icon="search-doc" tone=3 size="lg" float=True extra_class="empty-state__icon-3d" %}
       <div class="empty-state__rule" aria-hidden="true"></div>
       <p class="empty-state__title">No matches</p>
-      <p class="empty-state__text">Try another client name or phone number.</p>
+      <p class="empty-state__text">Try another court, client, or case number.</p>
     </div>
     {% else %}
     <div class="empty-state">
+      {% if group_by == "client" %}
+      {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="lg" float=True extra_class="empty-state__icon-3d" %}
+      {% else %}
+      {% include "accounts/partials/icon_3d.html" with icon="courthouse" tone=3 size="lg" float=True extra_class="empty-state__icon-3d" %}
+      {% endif %}
       <div class="empty-state__rule" aria-hidden="true"></div>
       <p class="empty-state__title">No active cases</p>
       <p class="empty-state__text">

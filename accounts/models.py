@@ -170,6 +170,18 @@ class Employee(AbstractUser):
         RUBY = "ruby", "Ruby"
         LIME = "lime", "Lime"
         ORCHID = "orchid", "Orchid"
+        VIOLET_GLOW = "violet_glow", "Aurora"
+        TEAL_MATTER = "teal_matter", "Cascade"
+        ORANGE_BRIEF = "orange_brief", "Copper"
+        ROSE_SEAL = "rose_seal", "Garnet"
+        BLUE_DOCKET = "blue_docket", "Atlas"
+        VERDANT_LEAF = "verdant_leaf", "Grove"
+        AMETHYST_FILE = "amethyst_file", "Violet"
+        INDIGO_LIST = "indigo_list", "Ink"
+        EMBER_COURT = "ember_court", "Ember"
+        FUCHSIA_CLIENT = "fuchsia_client", "Berry"
+        CYAN_HARBOR = "cyan_harbor", "Glacier"
+        BLUSH_ADVICE = "blush_advice", "Blush"
 
     class UiFont(models.TextChoices):
         PLEX = "plex", "Plex Chambers"

@@ -42,6 +42,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const citizenField = document.getElementById("citizen-id-field");
   const alienField = document.getElementById("alien-id-field");
 
+  const businessDocField = document.getElementById("business-doc-field");
+  const companyDocField = document.getElementById("company-doc-field");
+
   const syncCorporateKind = () => {
     const kind = document.querySelector(
       'input[name="corporate_kind"]:checked'
@@ -52,6 +55,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ? "Company name"
         : "Business name";
     }
+    businessDocField?.classList.toggle("is-hidden", isCompany);
+    companyDocField?.classList.toggle("is-hidden", !isCompany);
   };
 
   const syncType = () => {

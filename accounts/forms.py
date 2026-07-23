@@ -1061,6 +1061,16 @@ class ClientOnboardingForm(forms.Form):
         choices=[],
         widget=forms.RadioSelect(attrs={"class": "radio-group"}),
     )
+    business_document = forms.FileField(
+        required=False,
+        widget=forms.FileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*,.pdf",
+                "id": "id_business_document",
+            }
+        ),
+    )
     company_registration_document = forms.FileField(
         required=False,
         widget=forms.FileInput(
@@ -1126,6 +1136,7 @@ class ClientOnboardingForm(forms.Form):
                 "corporate_kind",
                 "identification_document",
                 "alien_document",
+                "business_document",
                 "company_registration_document",
                 "kra_pin_document",
                 "signed_instruction_note",
@@ -1234,6 +1245,8 @@ class ClientOnboardingForm(forms.Form):
             ]
         if self.cleaned_data.get("alien_document"):
             client.alien_document = self.cleaned_data["alien_document"]
+        if self.cleaned_data.get("business_document"):
+            client.business_document = self.cleaned_data["business_document"]
         if self.cleaned_data.get("company_registration_document"):
             client.company_registration_document = self.cleaned_data[
                 "company_registration_document"
@@ -1250,9 +1263,12 @@ class ClientOnboardingForm(forms.Form):
             client.alien_number = ""
             client.identification_document = None
             client.alien_document = None
-            client.business_number = ""
-            client.business_document = None
-            client.company_registration_number = ""
+            if client.corporate_kind == Client.CorporateKind.BUSINESS:
+                client.company_registration_number = ""
+                client.company_registration_document = None
+            else:
+                client.business_number = ""
+                client.business_document = None
         else:
             client.corporate_kind = ""
             client.business_number = ""
@@ -1272,6 +1288,7 @@ class ClientOnboardingForm(forms.Form):
             for name in (
                 "identification_document",
                 "alien_document",
+                "business_document",
                 "company_registration_document",
                 "kra_pin_document",
                 "signed_instruction_note",
@@ -1325,6 +1342,7 @@ class StaffClientProfileForm(ClientOnboardingForm):
         for name in (
             "identification_document",
             "alien_document",
+            "business_document",
             "company_registration_document",
             "kra_pin_document",
             "signed_instruction_note",
@@ -1350,6 +1368,7 @@ class StaffClientProfileForm(ClientOnboardingForm):
             for name in (
                 "identification_document",
                 "alien_document",
+                "business_document",
                 "company_registration_document",
                 "kra_pin_document",
                 "signed_instruction_note",
@@ -1847,7 +1866,6 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
             "attendance_date",
             "presence",
             "court_directions",
-            "description",
             "next_action",
             "next_activity_type",
             "next_court_date",
@@ -1891,13 +1909,6 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
                     "class": "form-input",
                     "rows": 3,
                     "placeholder": "Enter court directions...",
-                }
-            ),
-            "description": forms.Textarea(
-                attrs={
-                    "class": "form-input",
-                    "rows": 4,
-                    "placeholder": "Enter detailed outcome information...",
                 }
             ),
             "next_action": forms.Textarea(
@@ -1951,7 +1962,6 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
             "attendance_date": "Date of Court Attendance",
             "presence": "Court Attendance",
             "court_directions": "Court Directions",
-            "description": "Description",
             "next_action": "Next Action",
             "next_activity_type": "Next Activity Type",
             "next_court_date": "Next Court Date",
@@ -1968,7 +1978,6 @@ class UpdateCourtAttendanceForm(forms.ModelForm):
         self.fields["presence"].required = True
         self.fields["court_room"].required = False
         self.fields["court_directions"].required = False
-        self.fields["description"].required = False
         self.fields["next_action"].required = False
         self.fields["next_activity_type"].required = False
         self.fields["next_court_date"].required = False
@@ -2085,7 +2094,13 @@ class CourtAttendanceBringUpItemForm(forms.ModelForm):
         self.fields["allocated_to"].queryset = Employee.objects.filter(
             status=Employee.Status.ACTIVE
         ).order_by("first_name", "last_name", "login_code")
-        self.fields["allocated_to"].empty_label = "Search employee..."
+        self.fields["allocated_to"].empty_label = "Select employee..."
+        self.fields["allocated_to"].label_from_instance = (
+            lambda employee: (
+                f"{employee.get_full_name() or employee.login_code} "
+                f"({employee.get_role_display()})"
+            )
+        )
 
     def clean(self):
         cleaned = super().clean()
@@ -2357,7 +2372,13 @@ class MatterAttendanceBringUpItemForm(forms.ModelForm):
         self.fields["allocated_to"].queryset = Employee.objects.filter(
             status=Employee.Status.ACTIVE
         ).order_by("first_name", "last_name", "login_code")
-        self.fields["allocated_to"].empty_label = "Search employee..."
+        self.fields["allocated_to"].empty_label = "Select employee..."
+        self.fields["allocated_to"].label_from_instance = (
+            lambda employee: (
+                f"{employee.get_full_name() or employee.login_code} "
+                f"({employee.get_role_display()})"
+            )
+        )
 
     def clean(self):
         cleaned = super().clean()
@@ -2502,6 +2523,12 @@ class CreateCaseTaskForm(forms.Form):
         self.fields["assigned_to"].queryset = Employee.objects.filter(
             status=Employee.Status.ACTIVE
         ).order_by("first_name", "last_name", "login_code")
+        self.fields["assigned_to"].label_from_instance = (
+            lambda employee: (
+                f"{employee.get_full_name() or employee.login_code} "
+                f"({employee.get_role_display()})"
+            )
+        )
         self.fields["assigned_to"].help_text = (
             "Select the employee who will receive and work on this case task."
         )
@@ -2653,6 +2680,12 @@ class CreateMatterTaskForm(forms.Form):
         self.fields["assigned_to"].queryset = Employee.objects.filter(
             status=Employee.Status.ACTIVE
         ).order_by("first_name", "last_name", "login_code")
+        self.fields["assigned_to"].label_from_instance = (
+            lambda employee: (
+                f"{employee.get_full_name() or employee.login_code} "
+                f"({employee.get_role_display()})"
+            )
+        )
         self.fields["assigned_to"].help_text = (
             "Select the employee who will receive and work on this matter task."
         )

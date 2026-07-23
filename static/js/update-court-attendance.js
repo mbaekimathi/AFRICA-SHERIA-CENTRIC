@@ -226,10 +226,6 @@
       data.court_directions
     );
     setMultiline(
-      document.getElementById("view-attendance-description"),
-      data.description
-    );
-    setMultiline(
       document.getElementById("view-attendance-next-action"),
       data.next_action
     );
@@ -346,7 +342,6 @@
     setFieldValue(form, "attendance_date", data.attendance_date);
     setFieldValue(form, "presence", data.presence);
     setFieldValue(form, "court_directions", data.court_directions);
-    setFieldValue(form, "description", data.description);
     setFieldValue(form, "next_action", data.next_action);
     setFieldValue(form, "next_activity_type", data.next_activity_type);
     setFieldValue(form, "next_court_date", data.next_court_date);

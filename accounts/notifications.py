@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils import timezone
 
@@ -123,49 +123,35 @@ def notify_task_rejected(task, *, kind: str) -> Notification | None:
     )
 
 
-def _task_entity_url(employee, task, *, kind: str) -> str:
-    """Deep-link the assigner to the related case or matter page."""
-    if kind == "case":
-        return reverse(
-            "accounts:view_litigation_case",
-            kwargs={"role": employee.role_slug, "case_id": task.case_id},
-        )
-    return reverse(
-        "accounts:view_non_litigation_matter",
-        kwargs={"role": employee.role_slug, "matter_id": task.matter_id},
-    )
-
-
 def notify_task_completed(task, *, kind: str) -> Notification | None:
-    """Notify the allocator in their live notification feed that the task is done."""
+    """Notify the employee who tasked the assignee that the task was completed."""
     assigner = task.created_by
-    if not assigner:
+    if not assigner or assigner.pk == task.assignee_id:
         return None
 
     subject = task.case if kind == "case" else task.matter
     title_label = (task.title or "").strip() or str(subject)
-    assignee_name = task.assignee.get_full_name()
-    if assigner.pk == task.assignee_id:
-        body = (
-            f"You marked this task as complete on {subject} "
-            f"(due {task.due_date:%d %b %Y})."
-        )
-    else:
-        body = (
-            f"{assignee_name} marked this task as complete on {subject} "
-            f"(due {task.due_date:%d %b %Y})."
-        )
-
-    notification, _created = Notification.objects.get_or_create(
+    source_key = f"{kind}_task_completed:{task.pk}"
+    target_url = _utility_url(assigner, "messages")
+    body = (
+        f"{task.assignee.get_full_name()} submitted the task as complete "
+        f"on {subject} (due {task.due_date:%d %b %Y})."
+    )
+    notification, created = Notification.objects.get_or_create(
         recipient=assigner,
-        source_key=f"{kind}_task_completed:{task.pk}",
+        source_key=source_key,
         defaults={
-            "category": Notification.Category.TASK,
+            "category": Notification.Category.MESSAGE,
             "title": f"Task completed: {title_label}",
             "body": body,
-            "target_url": _task_entity_url(assigner, task, kind=kind),
+            "target_url": target_url,
         },
     )
+    # Older completes were filed under Tasks; keep them in Messages instead.
+    if not created and notification.category != Notification.Category.MESSAGE:
+        notification.category = Notification.Category.MESSAGE
+        notification.target_url = target_url
+        notification.save(update_fields=["category", "target_url"])
     return notification
 
 
@@ -219,6 +205,25 @@ def ensure_due_reminders(employee) -> int:
             created += 1
 
     return created
+
+
+def ensure_task_outcome_messages(employee) -> int:
+    """Move task-complete notices into Messages (not Tasks)."""
+    updated = Notification.objects.filter(
+        recipient=employee,
+        category=Notification.Category.TASK,
+    ).filter(
+        Q(source_key__startswith="case_task_completed:")
+        | Q(source_key__startswith="matter_task_completed:")
+        | Q(source_key__startswith="case_task_accepted:")
+        | Q(source_key__startswith="matter_task_accepted:")
+        | Q(source_key__startswith="case_task_rejected:")
+        | Q(source_key__startswith="matter_task_rejected:")
+    ).update(
+        category=Notification.Category.MESSAGE,
+        target_url=_utility_url(employee, "messages"),
+    )
+    return updated
 
 
 def ensure_task_notifications(employee) -> int:
@@ -370,6 +375,7 @@ def utility_badge_counts(employee) -> dict[str, int]:
 def notifications_payload(employee, *, limit: int = 40) -> dict:
     """Build the live-poll payload, grouped by category (latest first)."""
     ensure_task_notifications(employee)
+    ensure_task_outcome_messages(employee)
     ensure_due_reminders(employee)
     # The polling request only claims work; network checks run off-request.
     from .news_watch import launch_due_news_watches

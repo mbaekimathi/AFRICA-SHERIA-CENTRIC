@@ -60,6 +60,71 @@ THEME_GROUPS = (
             ("orchid", "Orchid", "Violet accent, soft surfaces"),
         ),
     ),
+    (
+        "Modern studio",
+        (
+            (
+                "violet_glow",
+                "Aurora",
+                "Indigo signal, deep night shell — product-forward",
+            ),
+            (
+                "teal_matter",
+                "Cascade",
+                "Fresh teal with a calm, polished desk feel",
+            ),
+            (
+                "orange_brief",
+                "Copper",
+                "Warm amber accents on a refined charcoal shell",
+            ),
+            (
+                "rose_seal",
+                "Garnet",
+                "Confident rose for seals, status, and focus",
+            ),
+            (
+                "blue_docket",
+                "Atlas",
+                "Crisp corporate blue for dockets and dashboards",
+            ),
+            (
+                "verdant_leaf",
+                "Grove",
+                "Modern green for clear, steady reading",
+            ),
+            (
+                "amethyst_file",
+                "Violet",
+                "Atelier violet with luminous soft surfaces",
+            ),
+            (
+                "indigo_list",
+                "Ink",
+                "Deep indigo for lists, categories, and focus work",
+            ),
+            (
+                "ember_court",
+                "Ember",
+                "Energetic ember for court calendars and urgency",
+            ),
+            (
+                "fuchsia_client",
+                "Berry",
+                "Contemporary berry for client-facing sessions",
+            ),
+            (
+                "cyan_harbor",
+                "Glacier",
+                "Cool cyan clarity for harbor-clean workflows",
+            ),
+            (
+                "blush_advice",
+                "Blush",
+                "Soft modern rose for advisory and counsel notes",
+            ),
+        ),
+    ),
 )
 
 DENSITY_CATALOG = (

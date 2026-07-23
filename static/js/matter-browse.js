@@ -30,7 +30,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   searchInput?.addEventListener("input", applyFilter);
+
   refreshBtn?.addEventListener("click", () => {
-    window.location.reload();
+    refreshBtn.classList.add("is-spinning");
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 280);
+  });
+
+  cards.forEach((card) => {
+    card.addEventListener("toggle", () => {
+      if (!card.open) return;
+      const body = card.querySelector(".matter-card__body--table");
+      if (!body) return;
+      body.style.animation = "none";
+      // Force reflow so reopen replays the entrance motion.
+      void body.offsetWidth;
+      body.style.animation = "";
+    });
   });
 });

@@ -163,7 +163,7 @@
         </span>
         <div>
           <h3 id="section-outcome">Directions &amp; outcome</h3>
-          <p>Court directions, description, and next action</p>
+          <p>Court directions and next action</p>
         </div>
       </header>
       <div class="register-section__body register-grid register-grid--2">
@@ -171,11 +171,6 @@
           <label for="{{ form.court_directions.id_for_label }}">Court Directions</label>
           {{ form.court_directions }}
           {% if form.court_directions.errors %}<span class="field-error">{{ form.court_directions.errors.0 }}</span>{% endif %}
-        </div>
-        <div class="form-field register-grid__span">
-          <label for="{{ form.description.id_for_label }}">Description</label>
-          {{ form.description }}
-          {% if form.description.errors %}<span class="field-error">{{ form.description.errors.0 }}</span>{% endif %}
         </div>
         <div class="form-field register-grid__span">
           <label for="{{ form.next_action.id_for_label }}">Next Action</label>
@@ -317,9 +312,9 @@
               <div class="form-field">
                 <label for="id_bringups-__prefix__-allocated_to">Allocated To</label>
                 <select name="bringups-__prefix__-allocated_to" class="form-input" id="id_bringups-__prefix__-allocated_to">
-                  <option value="">Search employee...</option>
+                  <option value="">Select employee...</option>
                   {% for employee in employee_choices %}
-                  <option value="{{ employee.pk }}">{{ employee.get_full_name }}</option>
+                  <option value="{{ employee.pk }}">{{ employee.get_full_name }} ({{ employee.get_role_display }})</option>
                   {% endfor %}
                 </select>
               </div>
@@ -443,7 +438,6 @@
         <h3 id="view-section-outcome">Directions &amp; outcome</h3>
         <dl class="settings-grid review-grid">
           <div class="review-grid__full"><dt>Court Directions</dt><dd id="view-attendance-directions">—</dd></div>
-          <div class="review-grid__full"><dt>Description</dt><dd id="view-attendance-description">—</dd></div>
           <div class="review-grid__full"><dt>Next Action</dt><dd id="view-attendance-next-action">—</dd></div>
         </dl>
       </section>
@@ -611,11 +605,6 @@
             {% if edit_form.court_directions.errors %}<span class="field-error">{{ edit_form.court_directions.errors.0 }}</span>{% endif %}
           </div>
           <div class="form-field register-grid__span">
-            <label for="{{ edit_form.description.id_for_label }}">Description</label>
-            {{ edit_form.description }}
-            {% if edit_form.description.errors %}<span class="field-error">{{ edit_form.description.errors.0 }}</span>{% endif %}
-          </div>
-          <div class="form-field register-grid__span">
             <label for="{{ edit_form.next_action.id_for_label }}">Next Action</label>
             {{ edit_form.next_action }}
             {% if edit_form.next_action.errors %}<span class="field-error">{{ edit_form.next_action.errors.0 }}</span>{% endif %}
@@ -730,9 +719,9 @@
               <div class="form-field">
                 <label for="id_edit-bringups-__prefix__-allocated_to">Allocated To</label>
                 <select name="edit-bringups-__prefix__-allocated_to" class="form-input" id="id_edit-bringups-__prefix__-allocated_to">
-                  <option value="">Search employee...</option>
+                  <option value="">Select employee...</option>
                   {% for employee in employee_choices %}
-                  <option value="{{ employee.pk }}">{{ employee.get_full_name }}</option>
+                  <option value="{{ employee.pk }}">{{ employee.get_full_name }} ({{ employee.get_role_display }})</option>
                   {% endfor %}
                 </select>
               </div>
@@ -751,5 +740,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/update-court-attendance.js' %}?v=view-form-order-1" defer></script>
+<script src="{% static 'js/update-court-attendance.js' %}?v=no-outcome-description-1" defer></script>
 {% endblock %}

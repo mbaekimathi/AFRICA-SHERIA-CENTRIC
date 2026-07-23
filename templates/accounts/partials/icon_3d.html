@@ -1,0 +1,11 @@
+{# Renders a soft 3D clay icon. Expects: icon, optional tone (1-7), size (sm|lg), float #}
+<span
+  class="icon-3d icon-3d--{{ icon|default:'folder' }}{% if tone %} icon-3d--{{ tone }}{% endif %}{% if size %} icon-3d--{{ size }}{% endif %}{% if float %} icon-3d--float{% endif %}{% if extra_class %} {{ extra_class }}{% endif %}"
+  aria-hidden="true"
+>
+  <span class="icon-3d__shadow"></span>
+  <span class="icon-3d__plate">
+    <span class="icon-3d__gloss"></span>
+    {% include "accounts/partials/icon_3d_glyph.html" with icon=icon %}
+  </span>
+</span>

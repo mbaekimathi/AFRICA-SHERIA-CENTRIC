@@ -319,9 +319,9 @@
               <div class="form-field">
                 <label for="id_bringups-__prefix__-allocated_to">Allocated To</label>
                 <select name="bringups-__prefix__-allocated_to" class="form-input" id="id_bringups-__prefix__-allocated_to">
-                  <option value="">Search employee...</option>
+                  <option value="">Select employee...</option>
                   {% for employee in employee_choices %}
-                  <option value="{{ employee.pk }}">{{ employee.get_full_name }}</option>
+                  <option value="{{ employee.pk }}">{{ employee.get_full_name }} ({{ employee.get_role_display }})</option>
                   {% endfor %}
                 </select>
               </div>
@@ -711,9 +711,9 @@
               <div class="form-field">
                 <label for="id_edit-bringups-__prefix__-allocated_to">Allocated To</label>
                 <select name="edit-bringups-__prefix__-allocated_to" class="form-input" id="id_edit-bringups-__prefix__-allocated_to">
-                  <option value="">Search employee...</option>
+                  <option value="">Select employee...</option>
                   {% for employee in employee_choices %}
-                  <option value="{{ employee.pk }}">{{ employee.get_full_name }}</option>
+                  <option value="{{ employee.pk }}">{{ employee.get_full_name }} ({{ employee.get_role_display }})</option>
                   {% endfor %}
                 </select>
               </div>

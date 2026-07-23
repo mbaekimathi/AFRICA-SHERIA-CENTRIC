@@ -78,8 +78,8 @@ CLIENT_PERSONAL_DOCUMENT_FIELDS = (
     ("profile_photo", "Profile Photo"),
     ("identification_document", "National ID"),
     ("alien_document", "Alien Document"),
-    ("business_document", "Business Document"),
-    ("company_registration_document", "Company Registration"),
+    ("business_document", "Business Certificate"),
+    ("company_registration_document", "CR12"),
     ("kra_pin_document", "KRA PIN Certificate"),
     ("signed_instruction_note", "Signed Instruction Note"),
 )
