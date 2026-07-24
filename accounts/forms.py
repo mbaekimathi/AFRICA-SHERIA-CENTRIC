@@ -31,6 +31,9 @@ from .models import (
     EmployeeBlogPost,
     CommunicationSettings,
     CompanyLetterheadSetting,
+    CompanyDigitalStampSetting,
+    CompanyDigitalSignatureSetting,
+    EmployeeDigitalStampSetting,
     CompanyThemeSetting,
     FinanceSettings,
     FirmCompanyInformation,
@@ -51,7 +54,7 @@ from .models import (
     PettyCashExpenseRequest,
     WebsiteTemplateSetting,
 )
-from .utils import optimize_image, optimize_profile_photo
+from .utils import optimize_image, optimize_logo, optimize_profile_photo
 
 
 class LatestNewsScrapeForm(forms.Form):
@@ -3520,6 +3523,7 @@ class CompanyLetterheadForm(forms.ModelForm):
         model = CompanyLetterheadSetting
         fields = [
             "template",
+            "footer_template",
             "accent",
             "show_logo",
             "show_tagline",
@@ -3528,15 +3532,19 @@ class CompanyLetterheadForm(forms.ModelForm):
         ]
         labels = {
             "template": "Letterhead sample",
+            "footer_template": "Footer sample",
             "accent": "Accent colour",
             "show_logo": "Show logo / mark",
             "show_tagline": "Show tagline",
-            "show_address": "Show address",
+            "show_address": "Show address in footer",
             "show_contacts": "Show contacts",
         }
         widgets = {
             "template": forms.RadioSelect(
                 attrs={"class": "letterhead-choice-group"}
+            ),
+            "footer_template": forms.RadioSelect(
+                attrs={"class": "letterfoot-choice-group"}
             ),
             "accent": forms.RadioSelect(
                 attrs={"class": "letterhead-accent-group"}
@@ -3552,11 +3560,166 @@ class CompanyLetterheadForm(forms.ModelForm):
         self.fields["template"].choices = list(
             CompanyLetterheadSetting.Template.choices
         )
+        self.fields["footer_template"].choices = list(
+            CompanyLetterheadSetting.FooterTemplate.choices
+        )
         self.fields["accent"].choices = list(
             CompanyLetterheadSetting.Accent.choices
         )
         self.fields["template"].required = True
+        self.fields["footer_template"].required = True
         self.fields["accent"].required = True
+
+
+class CompanyDigitalStampForm(forms.ModelForm):
+    """Firm digital stamp layout (Document settings)."""
+
+    class Meta:
+        model = CompanyDigitalStampSetting
+        fields = [
+            "template",
+            "accent",
+            "show_firm_name",
+            "show_status",
+            "show_approver",
+            "show_date",
+        ]
+        labels = {
+            "template": "Stamp sample",
+            "accent": "Accent colour",
+            "show_firm_name": "Show firm name",
+            "show_status": "Show status",
+            "show_approver": "Show company name line",
+            "show_date": "Show date",
+        }
+        widgets = {
+            "template": forms.RadioSelect(
+                attrs={"class": "stamp-choice-group"}
+            ),
+            "accent": forms.RadioSelect(
+                attrs={"class": "stamp-accent-group"}
+            ),
+            "show_firm_name": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_status": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_approver": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_date": forms.CheckboxInput(attrs={"class": "form-check"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["template"].choices = list(
+            CompanyDigitalStampSetting.Template.choices
+        )
+        self.fields["accent"].choices = list(
+            CompanyDigitalStampSetting.Accent.choices
+        )
+        self.fields["template"].required = True
+        self.fields["accent"].required = True
+
+
+class EmployeeDigitalStampForm(forms.ModelForm):
+    """Personal digital stamp layout (My tools)."""
+
+    class Meta:
+        model = EmployeeDigitalStampSetting
+        fields = [
+            "template",
+            "accent",
+            "show_firm_name",
+            "show_status",
+            "show_approver",
+            "show_date",
+        ]
+        labels = {
+            "template": "Stamp sample",
+            "accent": "Accent colour",
+            "show_firm_name": "Show firm name",
+            "show_status": "Show status",
+            "show_approver": "Show my name",
+            "show_date": "Show date",
+        }
+        widgets = {
+            "template": forms.RadioSelect(
+                attrs={"class": "stamp-choice-group"}
+            ),
+            "accent": forms.RadioSelect(
+                attrs={"class": "stamp-accent-group"}
+            ),
+            "show_firm_name": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_status": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_approver": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_date": forms.CheckboxInput(attrs={"class": "form-check"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["template"].choices = list(
+            EmployeeDigitalStampSetting.Template.choices
+        )
+        self.fields["accent"].choices = list(
+            EmployeeDigitalStampSetting.Accent.choices
+        )
+        self.fields["template"].required = True
+        self.fields["accent"].required = True
+
+
+class CompanyDigitalSignatureForm(forms.ModelForm):
+    """Firm digital signature layout (Document settings)."""
+
+    class Meta:
+        model = CompanyDigitalSignatureSetting
+        fields = [
+            "template",
+            "accent",
+            "default_title",
+            "show_firm_name",
+            "show_name",
+            "show_title",
+            "show_date",
+        ]
+        labels = {
+            "template": "Signature sample",
+            "accent": "Accent colour",
+            "default_title": "Default title / capacity",
+            "show_firm_name": "Show firm name",
+            "show_name": "Show signatory name",
+            "show_title": "Show title / capacity",
+            "show_date": "Show date",
+        }
+        widgets = {
+            "template": forms.RadioSelect(
+                attrs={"class": "signature-choice-group"}
+            ),
+            "accent": forms.RadioSelect(
+                attrs={"class": "signature-accent-group"}
+            ),
+            "default_title": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Authorized Signatory",
+                    "maxlength": "120",
+                }
+            ),
+            "show_firm_name": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_name": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_title": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_date": forms.CheckboxInput(attrs={"class": "form-check"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["template"].choices = list(
+            CompanyDigitalSignatureSetting.Template.choices
+        )
+        self.fields["accent"].choices = list(
+            CompanyDigitalSignatureSetting.Accent.choices
+        )
+        self.fields["template"].required = True
+        self.fields["accent"].required = True
+        self.fields["default_title"].required = False
+
+    def clean_default_title(self):
+        return (self.cleaned_data.get("default_title") or "").strip()
 
 
 class NotificationSettingsForm(forms.ModelForm):
@@ -3918,6 +4081,41 @@ class MultipleFileField(forms.FileField):
 class CompanyInformationForm(forms.ModelForm):
     """Firm-wide company profile under System Settings."""
 
+    logo = forms.ImageField(
+        required=False,
+        widget=forms.FileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*",
+                "id": "id_company_logo",
+            }
+        ),
+        label="Firm logo",
+        help_text="Square or landscape mark used on letterhead and invoices.",
+    )
+    remove_logo_background = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="Remove solid background",
+        help_text="Best for logos on white or other uniform backgrounds.",
+        widget=forms.CheckboxInput(
+            attrs={
+                "class": "form-check",
+                "id": "id_remove_logo_background",
+            }
+        ),
+    )
+    clear_logo = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="Clear current logo",
+        widget=forms.CheckboxInput(
+            attrs={
+                "class": "form-check",
+                "id": "id_clear_logo",
+            }
+        ),
+    )
     images = MultipleFileField(
         required=False,
         widget=MultipleFileInput(
@@ -3928,7 +4126,7 @@ class CompanyInformationForm(forms.ModelForm):
             }
         ),
         label="Company images",
-        help_text="Upload one or more images. The first image is the main image.",
+        help_text="Gallery images for the firm profile and website.",
     )
 
     class Meta:
@@ -3998,6 +4196,26 @@ class CompanyInformationForm(forms.ModelForm):
         if not name:
             raise ValidationError("Legal name is required.")
         return name
+
+    def apply_logo(self, company):
+        """Apply clear/upload/cutout for the firm logo onto a saved company row."""
+        uploaded = self.cleaned_data.get("logo")
+        if uploaded:
+            optimized = optimize_logo(
+                uploaded,
+                remove_background=bool(self.cleaned_data.get("remove_logo_background")),
+            )
+            if company.logo:
+                company.logo.delete(save=False)
+            company.logo = optimized
+            company.save(update_fields=["logo", "updated_at"])
+            return company
+
+        if self.cleaned_data.get("clear_logo") and company.logo:
+            company.logo.delete(save=False)
+            company.logo = None
+            company.save(update_fields=["logo", "updated_at"])
+        return company
 
 
 class CompanyContactsForm(forms.ModelForm):
@@ -5459,11 +5677,12 @@ class GenerateInvoiceForm(forms.ModelForm):
             status=Client.Status.ACTIVE
         ).order_by("company_name", "first_name", "last_name", "email")
         self.fields["client"].empty_label = "Select a client"
+        self.fields["due_date"].required = False
         self.fields["tax_amount"].required = False
         self.fields["notes"].required = False
         today = timezone.localdate()
         self.fields["issue_date"].initial = today
-        self.fields["due_date"].initial = today
+        self.fields["due_date"].initial = None
         self.fields["tax_amount"].initial = 0
 
     def clean_description(self):

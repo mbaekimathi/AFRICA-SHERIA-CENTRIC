@@ -3,7 +3,10 @@
 {% block title %}{{ invoice.invoice_number }} — Sheria-Centric{% endblock %}
 
 {% block content %}
-<section class="page page--invoice">
+<section
+  class="page page--invoice"
+  {% if letterhead_accent_hex %}style="--inv-accent: {{ letterhead_accent_hex }};"{% endif %}
+>
   <header class="invoice-toolbar no-print">
     <div class="invoice-toolbar__copy">
       <h2>{{ invoice.invoice_number }}</h2>
@@ -47,7 +50,7 @@
         </div>
         <div>
           <dt>Due date</dt>
-          <dd>{{ invoice.due_date|date:"d M Y" }}</dd>
+          <dd>{% if invoice.due_date %}{{ invoice.due_date|date:"d M Y" }}{% else %}—{% endif %}</dd>
         </div>
       </dl>
     </div>
@@ -116,36 +119,13 @@
     </section>
     {% endif %}
 
+    {% if show_invoice_marks %}
     <div class="invoice-sheet__stamps-row">
-      <div
-        class="invoice-seal invoice-seal--{{ invoice.status }}"
-        role="img"
-        aria-label="{% if invoice.approved_by %}{{ invoice.get_status_display }}, approved by {{ invoice.approved_by.get_full_name }}{% else %}{{ invoice.get_status_display }}{% endif %}"
-      >
-        <span class="invoice-seal__ring" aria-hidden="true"></span>
-        <span class="invoice-seal__inner">
-          <span class="invoice-seal__status">{{ invoice.get_status_display }}</span>
-          {% if invoice.approved_by %}
-          <span class="invoice-seal__rule" aria-hidden="true"></span>
-          <span class="invoice-seal__label">Approved by</span>
-          <span class="invoice-seal__name">{{ invoice.approved_by.get_full_name }}</span>
-          {% if invoice.approved_at %}
-          <span class="invoice-seal__date">{{ invoice.approved_at|date:"d M Y" }}</span>
-          {% endif %}
-          {% endif %}
-        </span>
-      </div>
+      {% include "accounts/partials/company_digital_signature.html" %}
     </div>
+    {% endif %}
 
-    <footer class="invoice-company-footer">
-      <p class="invoice-company-footer__thanks">Thank you for your business.</p>
-      <p class="invoice-company-footer__line">
-        {{ firm.display_name }}
-        {% if firm.phone %} · {{ firm.phone }}{% endif %}
-        {% if firm.email %} · {{ firm.email }}{% endif %}
-        {% if firm.tax_pin %} · PIN {{ firm.tax_pin }}{% endif %}
-      </p>
-    </footer>
+    {% include "accounts/partials/company_letterfoot.html" %}
   </article>
 </section>
 

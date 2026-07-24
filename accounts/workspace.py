@@ -593,6 +593,14 @@ RESEARCH_BLOGS_PAGE_LINKS = [
     ("My blogs", "my-blogs", ICON_DOC),
 ]
 
+# My tools — personal document tools (utility hub)
+MY_TOOLS_PAGE_LINKS = [
+    ("My digital stamp", "my-digital-stamp", ICON_BRIEF),
+    ("My digital signature", "my-digital-signature", ICON_SCALE),
+]
+
+MY_TOOLS_AREA_SLUGS = {"my-tools"} | {slug for _, slug, _ in MY_TOOLS_PAGE_LINKS}
+
 # Shown only on their own hub pages — not inherited by child pages.
 PAGE_LOCAL_LINKS_NO_INHERIT = {
     "finance-billing",
@@ -659,6 +667,7 @@ PAGE_LOCAL_LINKS = {
     "system-settings": SYSTEM_SETTINGS_PAGE_LINKS,
     "company-information": COMPANY_INFORMATION_PAGE_LINKS,
     "document-settings": DOCUMENT_SETTINGS_PAGE_LINKS,
+    "my-tools": MY_TOOLS_PAGE_LINKS,
 }
 
 # Personal My profile sidebar group (theme overrides company default per account)
@@ -962,6 +971,8 @@ WORKSPACE_EDIT_POST_PAGES = frozenset(
         "letterhead",
         "digital-stamp",
         "default-signature",
+        "my-digital-stamp",
+        "my-digital-signature",
         "google-drive-settings",
         "email-settings",
     }
@@ -1098,6 +1109,8 @@ def infer_activity_permission_actions(
         "letterhead",
         "digital-stamp",
         "default-signature",
+        "my-digital-stamp",
+        "my-digital-signature",
         "google-drive-settings",
     }:
         return ("view", "edit")
@@ -1351,6 +1364,8 @@ def page_local_links_for(active: str, trail: list[str] | None = None):
         return PAGE_LOCAL_LINKS["document-settings"]
     if active in SYSTEM_SETTINGS_AREA_SLUGS:
         return PAGE_LOCAL_LINKS["system-settings"]
+    if active in MY_TOOLS_AREA_SLUGS:
+        return PAGE_LOCAL_LINKS["my-tools"]
     if active in PAGE_LOCAL_LINKS:
         return PAGE_LOCAL_LINKS[active]
     for segment in reversed(trail[:-1]):
@@ -1439,6 +1454,8 @@ PAGE_TITLES = {
     "reminders": "Reminders",
     "calendar": "Calendar",
     "my-tools": "My tools",
+    "my-digital-stamp": "My digital stamp",
+    "my-digital-signature": "My digital signature",
     "user-management": "User Management",
     "client-management": "Client Management",
     "register-client": "Register Client",
@@ -1586,6 +1603,10 @@ def resolve_workspace_page(role, pages: str):
         "is_website_template": leaf == "website-template",
         "is_company_theme": leaf == "company-theme",
         "is_letterhead": leaf == "letterhead",
+        "is_digital_stamp": leaf == "digital-stamp",
+        "is_default_signature": leaf == "default-signature",
+        "is_my_digital_stamp": leaf == "my-digital-stamp",
+        "is_my_digital_signature": leaf == "my-digital-signature",
         "is_practice_areas": leaf == "practice-areas",
         "is_practice_areas_new": leaf == "practice-areas-new",
         "is_company_faqs": leaf == "company-faqs",
@@ -1835,22 +1856,59 @@ TRAIL_SIDE_PAGES = (
     | SYSTEM_SETTINGS_AREA_SLUGS
 )
 
+# Nested side-page hubs: child → immediate parent (Back / breadcrumbs).
+PAGE_PARENT: dict[str, str] = {
+    **{slug: "system-settings" for _, slug, _ in SYSTEM_SETTINGS_PAGE_LINKS},
+    **{slug: "company-information" for _, slug, _ in COMPANY_INFORMATION_PAGE_LINKS},
+    **{slug: "document-settings" for _, slug, _ in DOCUMENT_SETTINGS_PAGE_LINKS},
+    "practice-areas-new": "company-information",
+    "company-faqs-new": "company-information",
+    "company-gallery-new": "company-information",
+    "latest-news": "research-blogs",
+    "my-blogs": "research-blogs",
+    "my-blogs-new": "my-blogs",
+}
+
+
+def side_page_ancestor_hubs(slug: str) -> list[str]:
+    """Parent hubs for a nested side page, root-first (excludes slug itself)."""
+    chain: list[str] = []
+    seen: set[str] = set()
+    current = PAGE_PARENT.get(slug)
+    while current and current not in seen:
+        chain.append(current)
+        seen.add(current)
+        current = PAGE_PARENT.get(current)
+    chain.reverse()
+    return chain
+
+
+def content_trail_prefix(trail: list[str]) -> list[str]:
+    """Non-side segments of a trail, defaulting to dashboard."""
+    clean = [part for part in trail if part and part not in TRAIL_SIDE_PAGES]
+    return clean or ["dashboard"]
+
+
 def extend_page_trail(trail: list[str], *pages: str) -> list[str]:
     """
     Grow /<role>/<page>/<page>/ as the user moves.
 
-    Trailing side pages (settings, reminders, …) are replaced so they nest
-    under the content trail instead of stacking forever.
+    Trailing peer side pages (settings, reminders, …) are replaced so they nest
+    under the content trail instead of stacking forever. Hierarchical side pages
+    (e.g. system-settings → company-information → company-profile) keep their
+    parent hubs so Back returns to the previous exact page.
     """
-    clean = [part for part in trail if part]
-    while clean and clean[-1] in TRAIL_SIDE_PAGES:
-        clean.pop()
-    if not clean:
-        clean = ["dashboard"]
+    clean = content_trail_prefix(trail)
     for page in pages:
         slug = (page or "").strip("/")
         if not slug:
             continue
+        if slug in TRAIL_SIDE_PAGES:
+            # Drop any prior side pages, then rebuild this page's hub chain.
+            clean = content_trail_prefix(clean)
+            for hub in side_page_ancestor_hubs(slug):
+                if clean[-1] != hub:
+                    clean.append(hub)
         if clean[-1] == slug:
             continue
         clean.append(slug)
@@ -1864,9 +1922,23 @@ def settings_pages_for_trail(trail: list[str]) -> str:
 def back_url_for_trail(role_slug: str, trail: list[str]) -> str | None:
     """Parent page in the trail, or dashboard when leaving a top-level page."""
     clean = [part for part in trail if part]
+    if not clean:
+        return None
+
+    leaf = clean[-1]
+    parent = PAGE_PARENT.get(leaf)
+    if parent:
+        if parent in clean:
+            return workspace_reverse(role_slug, *clean[: clean.index(parent) + 1])
+        # Flattened deep links (e.g. /dashboard/company-profile/) still go to
+        # the logical hub, not straight to dashboard.
+        prefix = content_trail_prefix(clean[:-1])
+        hubs = side_page_ancestor_hubs(leaf)
+        return workspace_reverse(role_slug, *prefix, *hubs)
+
     if len(clean) > 1:
         return workspace_reverse(role_slug, *clean[:-1])
-    if clean and clean[0] != "dashboard":
+    if leaf != "dashboard":
         return workspace_reverse(role_slug, "dashboard")
     return None
 

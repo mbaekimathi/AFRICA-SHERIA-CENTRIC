@@ -1,5 +1,5 @@
 <header
-  class="doc-letterhead {{ letterhead.css_modifier }}{% if not letterhead.show_logo %} doc-letterhead--no-logo{% endif %}{% if not letterhead.show_tagline %} doc-letterhead--no-tagline{% endif %}{% if not letterhead.show_address %} doc-letterhead--no-address{% endif %}{% if not letterhead.show_contacts %} doc-letterhead--no-contacts{% endif %}"
+  class="doc-letterhead {{ letterhead.css_modifier }}{% if not letterhead.show_logo %} doc-letterhead--no-logo{% endif %}{% if not letterhead.show_tagline %} doc-letterhead--no-tagline{% endif %}{% if not letterhead.show_contacts %} doc-letterhead--no-contacts{% endif %}"
   style="--lh-accent: {{ letterhead_accent_hex }};"
   aria-label="{{ firm.display_name }} letterhead"
 >
@@ -10,21 +10,15 @@
       {% if firm.tagline %}
       <p class="doc-letterhead__tagline">{{ firm.tagline }}</p>
       {% endif %}
-      {% if firm.city or firm.country %}
-      <p class="doc-letterhead__place">
-        {{ firm.city }}{% if firm.city and firm.country %}, {% endif %}{{ firm.country }}
-      </p>
-      {% endif %}
     </div>
   </div>
 
-  {% if letterhead_contact_lines or letterhead_address_lines %}
+  {% if letterhead_contact_rows %}
   <div class="doc-letterhead__details">
-    {% for line in letterhead_contact_lines %}
-    <p>{{ line }}</p>
-    {% endfor %}
-    {% for line in letterhead_address_lines %}
-    <p class="doc-letterhead__address">{{ line }}</p>
+    {% for row in letterhead_contact_rows %}
+    <p class="doc-letterhead__row doc-letterhead__row--contact doc-letterhead__row--bare" data-letterhead-field="{{ row.key }}">
+      <span class="doc-letterhead__value">{{ row.value }}</span>
+    </p>
     {% endfor %}
   </div>
   {% endif %}

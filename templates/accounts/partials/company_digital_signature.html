@@ -1,0 +1,24 @@
+{% load document_extras %}
+<div
+  class="doc-signature {{ digital_signature.css_modifier }}{% if not digital_signature.show_firm_name %} doc-signature--no-firm{% endif %}{% if not digital_signature.show_name %} doc-signature--no-name{% endif %}{% if not digital_signature.show_title %} doc-signature--no-title{% endif %}{% if not digital_signature.show_date %} doc-signature--no-date{% endif %}"
+  style="--signature-ink: {{ signature_accent_hex }};"
+  role="img"
+  aria-label="{% if signature_name %}Signed by {{ signature_name }}{% if signature_title %}, {{ signature_title }}{% endif %}{% else %}Company signature{% endif %}"
+>
+  <span class="doc-signature__monogram" aria-hidden="true">{% if signature_initials %}{{ signature_initials }}{% else %}{{ signature_name|default:firm.display_name|person_initials }}{% endif %}</span>
+  <span class="doc-signature__body">
+    {% if digital_signature.show_firm_name %}
+    <span class="doc-signature__firm">{{ firm.display_name }}</span>
+    {% endif %}
+    {% if digital_signature.show_name and signature_name %}
+    <span class="doc-signature__name">{{ signature_name }}</span>
+    {% endif %}
+    <span class="doc-signature__rule" aria-hidden="true"></span>
+    {% if digital_signature.show_title and signature_title %}
+    <span class="doc-signature__title">{{ signature_title }}</span>
+    {% endif %}
+    {% if digital_signature.show_date and signature_date %}
+    <span class="doc-signature__date">{{ signature_date }}</span>
+    {% endif %}
+  </span>
+</div>

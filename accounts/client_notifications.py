@@ -30,9 +30,13 @@ def notify_invoice_issued(invoice: Invoice) -> tuple[ClientNotification, bool]:
             "category": ClientNotification.Category.BILLING,
             "title": f"New invoice: {invoice.invoice_number}",
             "body": (
-                f"Amount due: {amount_display}. "
-                f"Due {invoice.due_date:%d %b %Y}. "
-                "Open Finance & Billing to view or pay."
+                f"Amount due: {amount_display}."
+                + (
+                    f" Due {invoice.due_date:%d %b %Y}."
+                    if invoice.due_date
+                    else ""
+                )
+                + " Open Finance & Billing to view or pay."
             ),
             "target_url": reverse(
                 "accounts:client_invoice",

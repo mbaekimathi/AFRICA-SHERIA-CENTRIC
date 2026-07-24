@@ -37,6 +37,39 @@ LETTERHEAD_SAMPLES = (
     },
 )
 
+FOOTER_SAMPLES = (
+    {
+        "value": CompanyLetterheadSetting.FooterTemplate.COMPACT,
+        "label": "Compact line",
+        "blurb": "Single footer line with address parts joined — quiet and space-efficient.",
+    },
+    {
+        "value": CompanyLetterheadSetting.FooterTemplate.CENTERED,
+        "label": "Centered stack",
+        "blurb": "Thanks and address stacked and centered under the document.",
+    },
+    {
+        "value": CompanyLetterheadSetting.FooterTemplate.RULED,
+        "label": "Ruled footer",
+        "blurb": "Accent rule above a clean address block — formal close.",
+    },
+    {
+        "value": CompanyLetterheadSetting.FooterTemplate.STACKED,
+        "label": "Left stack",
+        "blurb": "Left-aligned address lines under the thanks note.",
+    },
+    {
+        "value": CompanyLetterheadSetting.FooterTemplate.SPLIT,
+        "label": "Split thanks",
+        "blurb": "Thanks on the left, address details on the right.",
+    },
+    {
+        "value": CompanyLetterheadSetting.FooterTemplate.BAR,
+        "label": "Accent bar",
+        "blurb": "Full-width accent strip carrying the address when enabled.",
+    },
+)
+
 ACCENT_SAMPLES = (
     {
         "value": CompanyLetterheadSetting.Accent.FOREST,
@@ -72,6 +105,18 @@ ACCENT_SAMPLES = (
 
 ACCENT_HEX = {item["value"]: item["hex"] for item in ACCENT_SAMPLES}
 
+CONTACT_FIELDS = (
+    ("email", "", "email"),
+    ("phone", "", "phone"),
+)
+
+ADDRESS_FIELDS = (
+    ("physical_address", "", "physical_address"),
+    ("postal_address", "", "postal_address"),
+    ("city", "", "city"),
+    ("country", "", "country"),
+)
+
 
 def accent_hex(accent: str) -> str:
     return ACCENT_HEX.get(accent, ACCENT_HEX[CompanyLetterheadSetting.Accent.FOREST])
@@ -85,6 +130,17 @@ def letterhead_samples(*, current: str | None = None) -> list[dict]:
             "is_current": sample["value"] == current,
         }
         for sample in LETTERHEAD_SAMPLES
+    ]
+
+
+def footer_samples(*, current: str | None = None) -> list[dict]:
+    current = current or CompanyLetterheadSetting.FooterTemplate.COMPACT
+    return [
+        {
+            **sample,
+            "is_current": sample["value"] == current,
+        }
+        for sample in FOOTER_SAMPLES
     ]
 
 
@@ -103,31 +159,68 @@ def get_letterhead_setting() -> CompanyLetterheadSetting:
     return CompanyLetterheadSetting.get_solo()
 
 
+def _field_value(firm: FirmCompanyInformation, attr: str) -> str:
+    raw = getattr(firm, attr, "") or ""
+    if attr == "physical_address":
+        parts = [part.strip() for part in str(raw).splitlines() if part.strip()]
+        return ", ".join(parts) if parts else ""
+    return str(raw).strip()
+
+
+def firm_detail_rows(
+    firm: FirmCompanyInformation,
+    *,
+    include_contacts: bool = True,
+    include_address: bool = True,
+) -> list[dict]:
+    """Contact and address rows for letterhead / footer rendering."""
+    rows: list[dict] = []
+    if include_contacts:
+        for key, label, attr in CONTACT_FIELDS:
+            value = _field_value(firm, attr)
+            if value:
+                rows.append(
+                    {
+                        "key": key,
+                        "label": label,
+                        "value": value,
+                        "kind": "contact",
+                    }
+                )
+    if include_address:
+        for key, label, attr in ADDRESS_FIELDS:
+            value = _field_value(firm, attr)
+            if value:
+                rows.append(
+                    {
+                        "key": key,
+                        "label": label,
+                        "value": value,
+                        "kind": "address",
+                    }
+                )
+    return rows
+
+
 def firm_address_lines(firm: FirmCompanyInformation) -> list[str]:
-    lines: list[str] = []
-    physical = (firm.physical_address or "").strip()
-    if physical:
-        lines.extend(
-            part.strip() for part in physical.splitlines() if part.strip()
-        )
-    postal = (firm.postal_address or "").strip()
-    if postal:
-        lines.append(postal)
-    place = ", ".join(
-        part for part in ((firm.city or "").strip(), (firm.country or "").strip()) if part
-    )
-    if place and place not in lines:
-        lines.append(place)
-    return lines
+    """Plain address values for footer / PDF helpers."""
+    return [
+        row["value"]
+        for row in firm_detail_rows(firm, include_contacts=False, include_address=True)
+    ]
 
 
 def firm_contact_lines(firm: FirmCompanyInformation) -> list[str]:
-    lines: list[str] = []
-    for attr in ("phone", "email", "website"):
-        value = (getattr(firm, attr, "") or "").strip()
-        if value:
-            lines.append(value)
-    return lines
+    """Plain contact values for letterhead / PDF helpers."""
+    return [
+        row["value"]
+        for row in firm_detail_rows(firm, include_contacts=True, include_address=False)
+    ]
+
+
+def firm_address_compact(firm: FirmCompanyInformation) -> str:
+    """Single-line address for compact footers."""
+    return " · ".join(firm_address_lines(firm))
 
 
 def letterhead_render_context(
@@ -135,13 +228,39 @@ def letterhead_render_context(
     firm: FirmCompanyInformation | None = None,
     setting: CompanyLetterheadSetting | None = None,
 ) -> dict:
-    """Context keys for the shared letterhead partial (invoices, receipts, designer)."""
+    """Context keys for letterhead + footer partials (invoices, receipts, designer)."""
+    from .models import (
+        CompanyDigitalSignatureSetting,
+        CompanyDigitalStampSetting,
+    )
+
     firm = firm or FirmCompanyInformation.get_solo()
     setting = setting or CompanyLetterheadSetting.get_solo()
+    stamp_setting = CompanyDigitalStampSetting.get_solo()
+    signature_setting = CompanyDigitalSignatureSetting.get_solo()
+    contact_rows = firm_detail_rows(
+        firm,
+        include_contacts=True,
+        include_address=False,
+    )
+    address_rows = firm_detail_rows(
+        firm,
+        include_contacts=False,
+        include_address=True,
+    )
+    address_lines = [row["value"] for row in address_rows]
     return {
         "firm": firm,
         "letterhead": setting,
-        "letterhead_address_lines": firm_address_lines(firm),
-        "letterhead_contact_lines": firm_contact_lines(firm),
+        "letterhead_detail_rows": contact_rows,
+        "letterhead_contact_rows": contact_rows,
+        "letterhead_address_rows": address_rows,
+        "letterhead_address_lines": address_lines,
+        "letterhead_contact_lines": [row["value"] for row in contact_rows],
+        "letterhead_address_compact": " · ".join(address_lines),
         "letterhead_accent_hex": accent_hex(setting.accent),
+        "digital_stamp": stamp_setting,
+        "stamp_accent_hex": accent_hex(stamp_setting.accent),
+        "digital_signature": signature_setting,
+        "signature_accent_hex": accent_hex(signature_setting.accent),
     }

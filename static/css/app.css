@@ -198,23 +198,26 @@ svg {
 }
 
 .theme-managing_partner {
-  --ink: #142029;
-  --ink-muted: #667888;
-  --line: #e2e8ed;
-  --accent: #3d7ea6;
-  --accent-strong: #2d6284;
-  --accent-soft: #eef5f9;
+  /* Partner desk aligned to control-panel navy + sky accent */
+  --ink: #1f2a37;
+  --ink-muted: #6b7785;
+  --line: #e4e8ee;
+  --accent: #2ea8e5;
+  --accent-strong: #1f8fc9;
+  --accent-soft: #eaf6fc;
   --surface: #ffffff;
-  --surface-tint: #f4f8fb;
-  --sidebar-bg: #121c24;
-  --sidebar-ink: #f3f7fa;
-  --sidebar-muted: #9aafbd;
-  --sidebar-line: rgba(255, 255, 255, 0.09);
-  --sidebar-hover: rgba(255, 255, 255, 0.055);
-  --sidebar-active: rgba(61, 126, 166, 0.22);
+  --surface-tint: #f7f9fb;
+  --sidebar-bg: #1b2a41;
+  --sidebar-ink: #f5f8fc;
+  --sidebar-muted: #9eb0c7;
+  --sidebar-line: rgba(255, 255, 255, 0.1);
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-active: rgba(46, 168, 229, 0.22);
   --sidebar-active-ink: #ffffff;
-  --page-bg: #f2f5f8;
-  --dot: #3d7ea6;
+  --page-bg: #f0f3f7;
+  --dot: #2ea8e5;
+  --brand-mark: #2ea8e5;
+  --chrome-accent: #2ea8e5;
 }
 
 .theme-advocate {
@@ -566,23 +569,26 @@ svg {
 }
 
 .theme-azure {
-  --ink: #121a2a;
-  --ink-muted: #64748b;
-  --line: #e2e8f0;
-  --accent: #3b82f6;
-  --accent-strong: #1d4ed8;
-  --accent-soft: #eff6ff;
+  /* Hosting-panel: deep navy shell, bright sky accent, white canvas */
+  --ink: #1f2a37;
+  --ink-muted: #6b7785;
+  --line: #e4e8ee;
+  --accent: #2ea8e5;
+  --accent-strong: #1f8fc9;
+  --accent-soft: #eaf6fc;
   --surface: #ffffff;
-  --surface-tint: #f5f8fc;
-  --sidebar-bg: #0f172a;
-  --sidebar-ink: #f8fafc;
-  --sidebar-muted: #94a3b8;
-  --sidebar-line: rgba(255, 255, 255, 0.09);
-  --sidebar-hover: rgba(255, 255, 255, 0.055);
-  --sidebar-active: rgba(59, 130, 246, 0.2);
+  --surface-tint: #f7f9fb;
+  --sidebar-bg: #1b2a41;
+  --sidebar-ink: #f5f8fc;
+  --sidebar-muted: #9eb0c7;
+  --sidebar-line: rgba(255, 255, 255, 0.1);
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-active: rgba(46, 168, 229, 0.22);
   --sidebar-active-ink: #ffffff;
-  --page-bg: #f1f5f9;
-  --dot: #3b82f6;
+  --page-bg: #f0f3f7;
+  --dot: #2ea8e5;
+  --brand-mark: #2ea8e5;
+  --chrome-accent: #2ea8e5;
 }
 
 .theme-emerald {
@@ -969,7 +975,7 @@ svg {
 /* Bright unread badges ? vivid hues aligned to each theme accent */
 .theme-product { --notif-badge: #ff6b2c; }
 .theme-firm_admin { --notif-badge: #8b83ff; }
-.theme-managing_partner { --notif-badge: #38bdf8; }
+.theme-managing_partner { --notif-badge: #2ea8e5; }
 .theme-advocate { --notif-badge: #2dd4a8; }
 .theme-intern { --notif-badge: #60a5fa; }
 .theme-it_support { --notif-badge: #7dd3fc; }
@@ -987,7 +993,7 @@ svg {
 .theme-marine { --notif-badge: #38bdf8; }
 .theme-sunrise { --notif-badge: #ff6b3d; }
 .theme-citrus { --notif-badge: #facc15; }
-.theme-azure { --notif-badge: #60a5fa; }
+.theme-azure { --notif-badge: #2ea8e5; }
 .theme-emerald { --notif-badge: #34d399; }
 .theme-saffron { --notif-badge: #fbbf24; }
 .theme-flamingo { --notif-badge: #f472b6; }
@@ -8260,7 +8266,7 @@ dialog.workspace-modal[open] {
 .theme-card--default,
 .theme-card--product { --swatch-page: #f2f2f2; --swatch-sidebar: #1f1f1f; --swatch-accent: #2c2c2c; }
 .theme-card--firm_admin { --swatch-page: #f4f3f9; --swatch-sidebar: #141228; --swatch-accent: #6b63e8; }
-.theme-card--managing_partner { --swatch-page: #f2f5f8; --swatch-sidebar: #121c24; --swatch-accent: #3d7ea6; }
+.theme-card--managing_partner { --swatch-page: #f0f3f7; --swatch-sidebar: #1b2a41; --swatch-accent: #2ea8e5; }
 .theme-card--advocate { --swatch-page: #f2f7f4; --swatch-sidebar: #12201b; --swatch-accent: #2f8a72; }
 .theme-card--intern { --swatch-page: #f3f5f8; --swatch-sidebar: #131925; --swatch-accent: #4f6f9c; }
 .theme-card--it_support { --swatch-page: #f3f4f6; --swatch-sidebar: #14181e; --swatch-accent: #4d6b8a; }
@@ -8277,7 +8283,7 @@ dialog.workspace-modal[open] {
 .theme-card--marine { --swatch-page: #eef3f8; --swatch-sidebar: #101d2b; --swatch-accent: #2f6f9c; }
 .theme-card--sunrise { --swatch-page: #f7f2f0; --swatch-sidebar: #1a1412; --swatch-accent: #e05a3c; }
 .theme-card--citrus { --swatch-page: #f5f3e9; --swatch-sidebar: #18160f; --swatch-accent: #c9a00e; }
-.theme-card--azure { --swatch-page: #f1f5f9; --swatch-sidebar: #0f172a; --swatch-accent: #3b82f6; }
+.theme-card--azure { --swatch-page: #f0f3f7; --swatch-sidebar: #1b2a41; --swatch-accent: #2ea8e5; }
 .theme-card--emerald { --swatch-page: #eef6f2; --swatch-sidebar: #10201a; --swatch-accent: #10a974; }
 .theme-card--saffron { --swatch-page: #f5f1e8; --swatch-sidebar: #18140e; --swatch-accent: #d4920f; }
 .theme-card--flamingo { --swatch-page: #f6f1f3; --swatch-sidebar: #181216; --swatch-accent: #db3f7c; }
@@ -13400,6 +13406,74 @@ a.contact-connections__value:hover {
   font-size: 0.9rem;
 }
 
+.company-logo-block {
+  margin: 1.25rem 0 0;
+  padding: 1rem 1.1rem 1.15rem;
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  border-radius: 0.65rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.company-logo-block legend {
+  padding: 0 0.25rem;
+  font-weight: 650;
+  font-size: 0.95rem;
+}
+
+.company-logo-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.company-logo-preview__frame {
+  width: 7.5rem;
+  height: 7.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  background-color: #f3f4f6;
+  background-image:
+    linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+    linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+    linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  overflow: hidden;
+}
+
+.company-logo-preview__frame img {
+  max-width: 90%;
+  max-height: 90%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.company-logo-preview__clear,
+.company-logo-cutout {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.company-logo-cutout span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.company-logo-cutout em {
+  font-style: normal;
+  color: var(--text-muted, inherit);
+  font-size: 0.82rem;
+}
+
 @media (max-width: 640px) {
   .practice-area-item {
     grid-template-columns: 1fr;
@@ -13635,8 +13709,19 @@ a.contact-connections__value:hover {
 
 .invoice-sheet__stamps-row {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1.25rem;
+  flex-wrap: wrap;
   margin: 1.35rem 0 1.15rem;
+}
+
+.invoice-sheet__stamps-row > .doc-signature {
+  margin-right: auto;
+}
+
+.invoice-sheet__stamps-row > .doc-stamp {
+  margin-left: auto;
 }
 
 .invoice-company-footer {
@@ -14438,55 +14523,163 @@ a.contact-connections__value:hover {
 @media print {
   @page {
     size: A4;
-    margin: 14mm;
+    margin: 10mm;
   }
 
-  body * {
-    visibility: hidden !important;
+  html,
+  body {
+    background: #fff !important;
+    color: #15202b !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
   }
 
-  .invoice-sheet,
-  .invoice-sheet * {
-    visibility: visible !important;
+  body.workspace {
+    background: #fff !important;
   }
 
-  .no-print {
+  .sidebar,
+  .sidebar-backdrop,
+  .topbar,
+  .no-print,
+  .toast-stack,
+  .workspace-modal,
+  dialog {
     display: none !important;
   }
 
+  .workspace-shell,
+  .workspace-main,
+  .workspace-content,
+  .page--invoice {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  .page--invoice {
+    --inv-ink: #15202b;
+    --inv-muted: #5b6770;
+    --inv-line: #d8dee4;
+    --inv-soft: #f4f6f8;
+    --inv-paper: #ffffff;
+  }
+
   .invoice-sheet {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    max-width: none;
-    margin: 0;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
-    padding: 0;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 1.35rem 1.4rem 1.2rem !important;
+    border: 1px solid var(--inv-line) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: var(--inv-paper) !important;
+    color: var(--inv-ink) !important;
+    overflow: visible !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .invoice-sheet,
+  .invoice-sheet *,
+  .doc-letterhead,
+  .doc-letterhead *,
+  .doc-letterfoot,
+  .doc-letterfoot *,
+  .doc-signature,
+  .doc-signature *,
+  .doc-stamp,
+  .doc-stamp * {
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
   }
 
   .invoice-sheet::before {
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 4px;
+    background: linear-gradient(90deg, var(--inv-accent), #1d9a74 55%, #c9a227) !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
   }
 
-  .invoice-status,
-  .invoice-sheet__mark,
-  .invoice-letterhead__mark,
-  .invoice-letterhead,
-  .doc-letterhead__mark,
   .doc-letterhead,
-  .invoice-table thead th,
-  .invoice-sheet__notes,
-  .invoice-seal {
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
+  .invoice-letterhead {
+    background: var(--lh-soft, var(--inv-soft)) !important;
+    border-color: var(--lh-line, var(--inv-line)) !important;
+    break-inside: avoid;
   }
 
-  .invoice-company-footer {
+  .doc-letterhead__mark,
+  .invoice-letterhead__mark,
+  .invoice-sheet__mark {
+    color: #fff !important;
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--lh-accent, var(--inv-accent)) 72%, #000),
+      var(--lh-accent, var(--inv-accent))
+    ) !important;
+  }
+
+  .invoice-party__label {
+    color: var(--inv-accent) !important;
+  }
+
+  .invoice-table thead th {
+    background: var(--inv-soft) !important;
+    color: var(--inv-muted) !important;
+  }
+
+  .invoice-totals__grand dt,
+  .invoice-totals__grand dd {
+    color: var(--inv-ink) !important;
+  }
+
+  .invoice-sheet__notes {
+    background: var(--inv-soft) !important;
     break-inside: avoid;
+  }
+
+  .doc-letterfoot--bar {
+    background: var(--lh-accent, var(--inv-accent)) !important;
+    color: #fff !important;
+  }
+
+  .doc-letterfoot--bar .doc-letterfoot__thanks,
+  .doc-letterfoot--bar .doc-letterfoot__website,
+  .doc-letterfoot--bar .doc-letterfoot__website a,
+  .doc-letterfoot--bar .doc-letterfoot__line {
+    color: #fff !important;
+  }
+
+  .doc-signature__monogram {
+    border-color: var(--signature-ink) !important;
+    color: var(--signature-ink) !important;
+  }
+
+  .doc-signature__rule {
+    background: color-mix(in srgb, var(--signature-ink) 70%, #fff) !important;
+  }
+
+  .invoice-sheet__stamps-row,
+  .invoice-company-footer,
+  .doc-letterfoot {
+    break-inside: avoid;
+  }
+
+  .invoice-sheet a {
+    color: inherit !important;
+    text-decoration: none !important;
   }
 }
 
@@ -19674,11 +19867,37 @@ button.invoice-share-option:hover {
   font-size: 0.78rem;
   line-height: 1.4;
   min-width: 0;
+  display: grid;
+  gap: 0.28rem;
+  justify-items: end;
 }
 
-.doc-letterhead__details p {
+.doc-letterhead__details p,
+.doc-letterhead__row {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.doc-letterhead__row {
+  display: grid;
+  gap: 0.05rem 0.55rem;
+  justify-items: end;
+}
+
+.doc-letterhead__label {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--lh-muted) 88%, var(--lh-accent));
+}
+
+.doc-letterhead__value {
+  display: block;
+  color: var(--lh-ink);
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .doc-letterhead--centered {
@@ -19694,6 +19913,11 @@ button.invoice-share-option:hover {
 
 .doc-letterhead--centered .doc-letterhead__details {
   text-align: center;
+  justify-items: center;
+}
+
+.doc-letterhead--centered .doc-letterhead__row {
+  justify-items: center;
 }
 
 .doc-letterhead--banner {
@@ -19704,9 +19928,14 @@ button.invoice-share-option:hover {
 
 .doc-letterhead--banner .doc-letterhead__name,
 .doc-letterhead--banner .doc-letterhead__tagline,
-.doc-letterhead--banner .doc-letterhead__place,
-.doc-letterhead--banner .doc-letterhead__details {
+.doc-letterhead--banner .doc-letterhead__details,
+.doc-letterhead--banner .doc-letterhead__label,
+.doc-letterhead--banner .doc-letterhead__value {
   color: #fff;
+}
+
+.doc-letterhead--banner .doc-letterhead__label {
+  color: color-mix(in srgb, #fff 78%, transparent);
 }
 
 .doc-letterhead--banner .doc-letterhead__mark {
@@ -19752,6 +19981,11 @@ button.invoice-share-option:hover {
 
 .doc-letterhead--minimal .doc-letterhead__details {
   text-align: left;
+  justify-items: start;
+}
+
+.doc-letterhead--minimal .doc-letterhead__row {
+  justify-items: start;
 }
 
 .doc-letterhead--no-logo .doc-letterhead__logo,
@@ -19763,11 +19997,11 @@ button.invoice-share-option:hover {
   display: none;
 }
 
-.doc-letterhead--no-address .doc-letterhead__address {
+.doc-letterhead--no-address .doc-letterhead__row--address {
   display: none;
 }
 
-.doc-letterhead--no-contacts .doc-letterhead__details > p:not(.doc-letterhead__address) {
+.doc-letterhead--no-contacts .doc-letterhead__row--contact {
   display: none;
 }
 
@@ -19782,5 +20016,939 @@ button.invoice-share-option:hover {
 
   .letterhead-preview {
     position: static;
+  }
+}
+
+/* ?? Document letterfoot + footer sample minis ?? */
+.letterfoot-mini {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 2.9rem;
+  align-content: end;
+}
+
+.letterfoot-mini__thanks,
+.letterfoot-mini__addr i {
+  display: block;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, #15202b 28%, transparent);
+}
+
+.letterfoot-mini__thanks {
+  width: 42%;
+  margin-inline: auto;
+  height: 0.34rem;
+}
+
+.letterfoot-mini__addr {
+  display: grid;
+  gap: 0.18rem;
+  justify-items: center;
+}
+
+.letterfoot-mini__addr i { width: 78%; }
+.letterfoot-mini__addr i:last-child { width: 54%; }
+
+.letterfoot-mini--compact .letterfoot-mini__addr {
+  grid-template-columns: 1fr;
+}
+
+.letterfoot-mini--compact .letterfoot-mini__addr i:last-child { display: none; }
+.letterfoot-mini--compact .letterfoot-mini__addr i { width: 88%; }
+
+.letterfoot-mini--ruled {
+  border-top: 2px solid #0f6e56;
+  padding-top: 0.35rem;
+}
+
+.letterfoot-mini--stacked .letterfoot-mini__thanks,
+.letterfoot-mini--stacked .letterfoot-mini__addr {
+  justify-items: start;
+  margin-inline: 0;
+}
+
+.letterfoot-mini--stacked .letterfoot-mini__thanks { margin-inline: 0; }
+
+.letterfoot-mini--split {
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+}
+
+.letterfoot-mini--split .letterfoot-mini__thanks {
+  margin-inline: 0;
+  width: 70%;
+}
+
+.letterfoot-mini--split .letterfoot-mini__addr {
+  justify-items: end;
+}
+
+.letterfoot-mini--bar {
+  padding: 0.4rem;
+  border-radius: 0.35rem;
+  background: #0f6e56;
+}
+
+.letterfoot-mini--bar .letterfoot-mini__thanks,
+.letterfoot-mini--bar .letterfoot-mini__addr i {
+  background: color-mix(in srgb, #fff 72%, transparent);
+}
+
+.doc-letterfoot {
+  --lh-accent: #0f6e56;
+  --lh-ink: #15202b;
+  --lh-muted: #5b6770;
+  --lh-line: #d8dee4;
+  margin-top: 0.85rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--lh-line);
+  display: grid;
+  gap: 0.45rem;
+}
+
+.doc-letterfoot__thanks {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-serif);
+  font-size: 0.98rem;
+  font-style: italic;
+  color: var(--lh-muted);
+}
+
+.doc-letterfoot__website {
+  margin: 0;
+  text-align: center;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.doc-letterfoot__website a {
+  color: var(--lh-accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.doc-letterfoot__website a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.doc-letterfoot__address {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: center;
+}
+
+.doc-letterfoot__line {
+  margin: 0;
+  color: var(--lh-ink);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.doc-letterfoot--centered .doc-letterfoot__address,
+.doc-letterfoot--compact .doc-letterfoot__address {
+  justify-items: center;
+}
+
+.doc-letterfoot--ruled {
+  border-top: 2.5px solid var(--lh-accent);
+}
+
+.doc-letterfoot--stacked .doc-letterfoot__thanks,
+.doc-letterfoot--stacked .doc-letterfoot__website,
+.doc-letterfoot--stacked .doc-letterfoot__line {
+  text-align: left;
+}
+
+.doc-letterfoot--stacked .doc-letterfoot__address {
+  justify-items: start;
+}
+
+.doc-letterfoot--split {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  align-items: end;
+  gap: 0.75rem 1rem;
+}
+
+.doc-letterfoot--split .doc-letterfoot__thanks,
+.doc-letterfoot--split .doc-letterfoot__website {
+  text-align: left;
+}
+
+.doc-letterfoot--split .doc-letterfoot__address {
+  justify-items: end;
+}
+
+.doc-letterfoot--split .doc-letterfoot__line {
+  text-align: right;
+}
+
+.doc-letterfoot--bar {
+  border-top: 0;
+  padding: 0.85rem 0.9rem;
+  border-radius: 6px;
+  background: var(--lh-accent);
+}
+
+.doc-letterfoot--bar .doc-letterfoot__thanks,
+.doc-letterfoot--bar .doc-letterfoot__website,
+.doc-letterfoot--bar .doc-letterfoot__website a,
+.doc-letterfoot--bar .doc-letterfoot__line {
+  color: #fff;
+}
+
+.doc-letterfoot--no-address .doc-letterfoot__address {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .doc-letterfoot--split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .doc-letterfoot--split .doc-letterfoot__thanks,
+  .doc-letterfoot--split .doc-letterfoot__website,
+  .doc-letterfoot--split .doc-letterfoot__line {
+    text-align: center;
+  }
+
+  .doc-letterfoot--split .doc-letterfoot__address {
+    justify-items: center;
+  }
+}
+
+@media print {
+  .doc-letterfoot,
+  .doc-letterfoot--bar {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+/* ?? Digital stamp designer + document stamps ?? */
+.stamp-preview__stage {
+  display: grid;
+  place-items: center;
+  min-height: 14rem;
+}
+
+.stamp-preview__canvas {
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+
+.stamp-mini {
+  display: grid;
+  place-items: center;
+  min-height: 3.4rem;
+}
+
+.stamp-mini__mark {
+  width: 2.6rem;
+  height: 2.6rem;
+  border: 2px solid #0f6e56;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #0f6e56 35%, transparent);
+  position: relative;
+}
+
+.stamp-mini__mark::after {
+  content: "";
+  position: absolute;
+  inset: 0.28rem;
+  border: 1px dashed color-mix(in srgb, #0f6e56 55%, #fff);
+  border-radius: 50%;
+}
+
+.stamp-mini--square .stamp-mini__mark {
+  border-radius: 0.35rem;
+}
+
+.stamp-mini--square .stamp-mini__mark::after {
+  border-radius: 0.2rem;
+  border-style: solid;
+}
+
+.stamp-mini--oval .stamp-mini__mark {
+  width: 3.2rem;
+  height: 2.1rem;
+  border-radius: 50%;
+}
+
+.stamp-mini--badge .stamp-mini__mark {
+  border-radius: 0.35rem 0.35rem 50% 50%;
+  height: 2.9rem;
+}
+
+.stamp-mini--badge .stamp-mini__mark::after {
+  border-radius: 0.2rem 0.2rem 50% 50%;
+}
+
+.stamp-mini--ribbon .stamp-mini__mark {
+  width: 3.5rem;
+  height: 1.45rem;
+  border-radius: 0.2rem;
+  transform: none;
+}
+
+.stamp-mini--ribbon .stamp-mini__mark::after {
+  inset: 0.18rem;
+  border-radius: 0.1rem;
+  border-style: solid;
+}
+
+.stamp-mini--wax .stamp-mini__mark {
+  background: color-mix(in srgb, #0f6e56 18%, #fff);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, #0f6e56 55%, transparent);
+}
+
+.doc-stamp {
+  --stamp-ink: #0f6e56;
+  position: relative;
+  width: 8.1rem;
+  height: 8.1rem;
+  border-radius: 50%;
+  border: 2.5px solid var(--stamp-ink);
+  color: var(--stamp-ink);
+  background:
+    radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--stamp-ink) 6%, #fff) 0%,
+      color-mix(in srgb, var(--stamp-ink) 2%, #fff) 55%,
+      #fff 100%
+    );
+  display: grid;
+  place-items: center;
+  text-align: center;
+  transform: rotate(-7deg);
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stamp-ink) 25%, transparent);
+}
+
+.doc-stamp__ring {
+  position: absolute;
+  inset: 0.38rem;
+  border-radius: 50%;
+  border: 1.5px dashed color-mix(in srgb, var(--stamp-ink) 55%, #fff);
+  pointer-events: none;
+}
+
+.doc-stamp__inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  padding: 0.7rem 0.65rem;
+  max-width: 6.6rem;
+}
+
+.doc-stamp__firm {
+  font-size: 0.48rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  opacity: 0.85;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.doc-stamp__status {
+  font-family: var(--font-serif);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.doc-stamp__rule {
+  width: 2.4rem;
+  height: 1px;
+  margin: 0.18rem 0 0.08rem;
+  background: color-mix(in srgb, var(--stamp-ink) 55%, #fff);
+}
+
+.doc-stamp__label {
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.doc-stamp__name {
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.2;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.doc-stamp__date {
+  margin-top: 0.08rem;
+  font-size: 0.55rem;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-stamp--square {
+  border-radius: 0.55rem;
+  transform: rotate(-4deg);
+}
+
+.doc-stamp--square .doc-stamp__ring {
+  border-radius: 0.35rem;
+  border-style: solid;
+}
+
+.doc-stamp--oval {
+  width: 9.4rem;
+  height: 6.4rem;
+  border-radius: 50%;
+  transform: rotate(-3deg);
+}
+
+.doc-stamp--oval .doc-stamp__ring {
+  border-radius: 50%;
+}
+
+.doc-stamp--badge {
+  width: 7.4rem;
+  height: 8.4rem;
+  border-radius: 0.55rem 0.55rem 50% 50% / 0.55rem 0.55rem 42% 42%;
+  transform: rotate(0deg);
+}
+
+.doc-stamp--badge .doc-stamp__ring {
+  border-radius: 0.35rem 0.35rem 50% 50% / 0.35rem 0.35rem 40% 40%;
+  border-style: solid;
+}
+
+.doc-stamp--ribbon {
+  width: 11.5rem;
+  height: auto;
+  min-height: 4.2rem;
+  border-radius: 0.35rem;
+  transform: rotate(-2deg);
+  padding: 0.35rem 0;
+}
+
+.doc-stamp--ribbon .doc-stamp__ring {
+  inset: 0.28rem;
+  border-radius: 0.2rem;
+  border-style: solid;
+}
+
+.doc-stamp--ribbon .doc-stamp__inner {
+  max-width: 10.4rem;
+  gap: 0.08rem;
+}
+
+.doc-stamp--wax {
+  background: radial-gradient(
+    circle at 35% 30%,
+    color-mix(in srgb, var(--stamp-ink) 22%, #fff),
+    color-mix(in srgb, var(--stamp-ink) 10%, #fff) 55%,
+    color-mix(in srgb, var(--stamp-ink) 16%, #fff)
+  );
+  box-shadow:
+    inset 0 0 0 3px color-mix(in srgb, var(--stamp-ink) 45%, transparent),
+    0 0.35rem 0.65rem color-mix(in srgb, var(--stamp-ink) 18%, transparent);
+}
+
+.doc-stamp--wax .doc-stamp__ring {
+  border-style: solid;
+  opacity: 0.7;
+}
+
+.doc-stamp--paid { --stamp-ink: #067647; }
+.doc-stamp--cancelled { --stamp-ink: #b42318; }
+
+.doc-stamp--no-firm .doc-stamp__firm { display: none; }
+.doc-stamp--no-status .doc-stamp__status { display: none; }
+.doc-stamp--no-approver .doc-stamp__label,
+.doc-stamp--no-approver .doc-stamp__name { display: none; }
+.doc-stamp--no-date .doc-stamp__date { display: none; }
+.doc-stamp--no-approver.doc-stamp--no-date .doc-stamp__rule { display: none; }
+
+@media print {
+  .doc-stamp {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+/* ?? Digital signature (document settings + invoices) ?? */
+
+.signature-preview__stage {
+  min-height: 12rem;
+  display: grid;
+  place-items: center;
+}
+
+.signature-preview__canvas {
+  width: min(100%, 22rem);
+  display: grid;
+  place-items: center;
+}
+
+.signature-mini {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  max-width: 7.5rem;
+}
+
+.signature-mini__mark {
+  height: 0.85rem;
+  width: 70%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chip-accent, #1e3a5f) 55%, #c8d2de);
+}
+
+.signature-mini__line {
+  height: 2px;
+  width: 100%;
+  background: color-mix(in srgb, var(--chip-accent, #1e3a5f) 45%, #d0d7e0);
+}
+
+.signature-mini--script .signature-mini__mark {
+  width: 85%;
+  transform: rotate(-4deg);
+  border-radius: 40% 60% 55% 45%;
+}
+
+.signature-mini--formal {
+  padding: 0.35rem;
+  border: 1.5px solid color-mix(in srgb, var(--chip-accent, #1e3a5f) 45%, #d0d7e0);
+  border-radius: 0.35rem;
+}
+
+.signature-mini--monogram .signature-mini__mark {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--chip-accent, #1e3a5f) 55%, #fff);
+  background: transparent;
+}
+
+.signature-mini--stacked .signature-mini__mark {
+  width: 55%;
+  height: 0.45rem;
+}
+
+.signature-mini--compact {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.signature-mini--compact .signature-mini__mark {
+  width: 1.8rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+}
+
+.signature-mini--compact .signature-mini__line {
+  flex: 1;
+}
+
+.signature-title-field {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+}
+
+.doc-signature {
+  --signature-ink: #1e3a5f;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: end;
+  gap: 0.75rem;
+  min-width: 10.5rem;
+  max-width: 16rem;
+  color: var(--signature-ink);
+  flex-shrink: 0;
+}
+
+.doc-signature__monogram {
+  display: none;
+  width: 2.6rem;
+  height: 2.6rem;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--signature-ink);
+  font-family: var(--font-serif);
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.doc-signature__body {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.doc-signature__firm {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.doc-signature__name {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+
+.doc-signature__rule {
+  width: 100%;
+  height: 1.5px;
+  margin: 0.2rem 0 0.12rem;
+  background: color-mix(in srgb, var(--signature-ink) 70%, #fff);
+}
+
+.doc-signature__title {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.doc-signature__date {
+  font-size: 0.68rem;
+  opacity: 0.75;
+}
+
+.doc-signature--classic {
+  grid-template-columns: 1fr;
+}
+
+.doc-signature--script {
+  grid-template-columns: 1fr;
+}
+
+.doc-signature--script .doc-signature__name {
+  font-style: italic;
+  font-size: 1.35rem;
+  font-weight: 500;
+  transform: rotate(-2deg);
+  transform-origin: left bottom;
+}
+
+.doc-signature--script .doc-signature__rule {
+  width: 88%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--signature-ink),
+    color-mix(in srgb, var(--signature-ink) 20%, transparent)
+  );
+}
+
+.doc-signature--formal {
+  grid-template-columns: 1fr;
+  padding: 0.7rem 0.85rem;
+  border: 1.5px solid color-mix(in srgb, var(--signature-ink) 55%, #fff);
+  border-radius: 0.35rem;
+  background: color-mix(in srgb, var(--signature-ink) 4%, #fff);
+}
+
+.doc-signature--formal .doc-signature__rule {
+  width: 70%;
+}
+
+.doc-signature--monogram .doc-signature__monogram {
+  display: grid;
+}
+
+.doc-signature--stacked {
+  grid-template-columns: 1fr;
+}
+
+.doc-signature--stacked .doc-signature__body {
+  gap: 0.22rem;
+}
+
+.doc-signature--stacked .doc-signature__name {
+  font-size: 1.05rem;
+}
+
+.doc-signature--stacked .doc-signature__rule {
+  width: 3.2rem;
+}
+
+.doc-signature--compact {
+  grid-template-columns: 1fr;
+  max-width: 18rem;
+}
+
+.doc-signature--compact .doc-signature__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+}
+
+.doc-signature--compact .doc-signature__firm {
+  width: 100%;
+}
+
+.doc-signature--compact .doc-signature__name {
+  font-size: 0.98rem;
+}
+
+.doc-signature--compact .doc-signature__rule {
+  display: none;
+}
+
+.doc-signature--compact .doc-signature__title,
+.doc-signature--compact .doc-signature__date {
+  font-size: 0.62rem;
+}
+
+.doc-signature--no-firm .doc-signature__firm { display: none; }
+.doc-signature--no-name .doc-signature__name { display: none; }
+.doc-signature--no-title .doc-signature__title { display: none; }
+.doc-signature--no-date .doc-signature__date { display: none; }
+.doc-signature--no-name.doc-signature--no-title .doc-signature__rule { display: none; }
+
+@media print {
+  .doc-signature {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+
+/* Books of account (classic ledger sheets) */
+.page--ledger-book {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  width: 100%;
+  min-width: 0;
+  max-width: min(72rem, 100%);
+}
+
+.page--ledger-book .ledger-book__metrics {
+  margin: 0;
+}
+
+.ledger-sheet {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 92%, #f3efe6) 0%,
+      color-mix(in srgb, var(--surface) 88%, #ebe4d6) 100%
+    );
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-radius: 0.35rem;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #fff 55%, transparent),
+    var(--shadow-sm);
+  overflow: hidden;
+}
+
+.ledger-sheet__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.95rem 1.1rem 0.85rem;
+  border-bottom: 2px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  background: color-mix(in srgb, var(--surface) 70%, #f7f1e6);
+}
+
+.ledger-sheet__eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 650;
+}
+
+.ledger-sheet__head h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+
+.ledger-sheet__sub {
+  margin: 0.25rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.ledger-sheet__meta {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
+  font-size: 0.78rem;
+  color: var(--ink);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ledger-sheet__scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ledger-sheet__empty {
+  padding: 2rem 1.25rem;
+  text-align: center;
+}
+
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  min-width: 42rem;
+}
+
+.ledger-table th,
+.ledger-table td {
+  padding: 0.42rem 0.55rem;
+  border-right: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  vertical-align: top;
+}
+
+.ledger-table th:last-child,
+.ledger-table td:last-child {
+  border-right: 0;
+}
+
+.ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, #efe7d8 70%, var(--surface));
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 2px solid color-mix(in srgb, var(--ink) 28%, transparent);
+  white-space: nowrap;
+}
+
+.ledger-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, #f3eee4 55%, transparent);
+}
+
+.ledger-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent, #5b6cff) 8%, #fff8ee);
+}
+
+.ledger-table tfoot th {
+  background: color-mix(in srgb, #e8dfcf 65%, var(--surface));
+  border-top: 2px double color-mix(in srgb, var(--ink) 35%, transparent);
+  border-bottom: 0;
+  font-weight: 700;
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.ledger-table .col-date {
+  width: 5.5rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-table .col-folio {
+  width: 3.25rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-table .col-ref {
+  width: 6.5rem;
+  font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.ledger-table .col-account {
+  min-width: 8rem;
+  max-width: 12rem;
+}
+
+.ledger-table .col-particulars {
+  min-width: 14rem;
+}
+
+.ledger-table .col-money {
+  width: 6.75rem;
+  text-align: right;
+  font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ledger-table .col-side {
+  width: 3rem;
+  text-align: center;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.ledger-table__empty td {
+  text-align: center;
+  color: var(--ink-muted);
+  padding: 1.75rem 1rem;
+  font-style: italic;
+}
+
+.ledger-table--journal tr.is-entry-start td {
+  border-top: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+.ledger-table--journal .is-credit-line {
+  padding-left: 1.35rem;
+}
+
+.ledger-narration {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--ink-muted);
+  font-style: italic;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 720px) {
+  .ledger-sheet__head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ledger-sheet__meta {
+    text-align: left;
+  }
+
+  .ledger-table {
+    font-size: 0.78rem;
   }
 }

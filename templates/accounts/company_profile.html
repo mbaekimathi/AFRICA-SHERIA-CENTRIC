@@ -9,9 +9,8 @@
       <p class="page-kicker">Company information</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Register the firm’s legal identity and brand images. The display name appears
-        across the workspace, client portal, and website. Upload images in the order you
-        want — the first image is the main one.
+        Register the firm’s legal identity, logo, and brand images. The display name
+        appears across the workspace, client portal, and website.
       </p>
     </div>
   </header>
@@ -88,10 +87,54 @@
           </div>
         </div>
 
+        <fieldset class="company-logo-block">
+          <legend>Firm logo</legend>
+          <p class="field-hint">
+            Used on letterhead and invoices. Optional cutout works best when the
+            logo sits on a white or solid background.
+          </p>
+
+          {% if company_information.logo %}
+          <div class="company-logo-preview" aria-label="Current logo">
+            <div class="company-logo-preview__frame">
+              <img
+                src="{{ company_information.logo.url }}"
+                alt="{{ company_information.display_name }} logo"
+                width="120"
+                height="120"
+              >
+            </div>
+            <label class="company-logo-preview__clear">
+              {{ form.clear_logo }}
+              <span>{{ form.clear_logo.label }}</span>
+            </label>
+          </div>
+          {% endif %}
+
+          <div class="form-field">
+            <label for="{{ form.logo.id_for_label }}">
+              {% if company_information.logo %}Replace logo{% else %}{{ form.logo.label }}{% endif %}
+            </label>
+            {{ form.logo }}
+            <span class="field-hint">{{ form.logo.help_text }}</span>
+            {% if form.logo.errors %}
+            <span class="field-error">{{ form.logo.errors.0 }}</span>
+            {% endif %}
+          </div>
+
+          <label class="company-logo-cutout">
+            {{ form.remove_logo_background }}
+            <span>
+              <strong>{{ form.remove_logo_background.label }}</strong>
+              <em>{{ form.remove_logo_background.help_text }}</em>
+            </span>
+          </label>
+        </fieldset>
+
         {% if existing_images %}
         <div class="form-field">
-          <span class="form-label">Current images</span>
-          <span class="field-hint">The first image is the main image. Change order or remove images below.</span>
+          <span class="form-label">Current gallery images</span>
+          <span class="field-hint">Profile and website gallery. Change order or remove images below.</span>
           <ul class="practice-image-list">
             {% for image in existing_images %}
             <li class="practice-image-item">
@@ -112,9 +155,6 @@
                   <input type="checkbox" name="delete_images" value="{{ image.pk }}">
                   Remove
                 </label>
-                {% if forloop.first %}
-                <span class="status-pill status-pill--active">Main</span>
-                {% endif %}
               </div>
             </li>
             {% endfor %}
@@ -124,7 +164,7 @@
 
         <div class="form-field">
           <label for="{{ form.images.id_for_label }}">
-            {% if existing_images %}Add more images{% else %}{{ form.images.label }}{% endif %}
+            {% if existing_images %}Add more gallery images{% else %}{{ form.images.label }}{% endif %}
           </label>
           {{ form.images }}
           <span class="field-hint">{{ form.images.help_text }}</span>

@@ -59,7 +59,7 @@
             {% if form.issue_date.errors %}<span class="field-error">{{ form.issue_date.errors.0 }}</span>{% endif %}
           </div>
           <div class="form-field">
-            <label for="{{ form.due_date.id_for_label }}">Due date <span aria-hidden="true">*</span></label>
+            <label for="{{ form.due_date.id_for_label }}">Due date <span class="gen-inv__optional">(optional)</span></label>
             {{ form.due_date }}
             {% if form.due_date.errors %}<span class="field-error">{{ form.due_date.errors.0 }}</span>{% endif %}
           </div>

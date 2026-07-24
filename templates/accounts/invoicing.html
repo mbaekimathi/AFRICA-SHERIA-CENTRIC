@@ -87,7 +87,7 @@
             <span class="matter-item__title">{{ invoice.invoice_number }}</span>
             <span class="matter-item__meta">
               Issued {{ invoice.issue_date|date:"d M Y" }}
-              · Due {{ invoice.due_date|date:"d M Y" }}
+              {% if invoice.due_date %}· Due {{ invoice.due_date|date:"d M Y" }}{% endif %}
               · Total {{ invoice.total_amount }}
               · {{ invoice.get_status_display }}
             </span>

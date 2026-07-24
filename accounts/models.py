@@ -2192,6 +2192,12 @@ class FirmCompanyInformation(models.Model):
         default="",
         help_text="Short line used under the firm name where needed.",
     )
+    logo = models.ImageField(
+        upload_to="company/logo/",
+        blank=True,
+        null=True,
+        help_text="Firm logo for letterhead, invoices, and brand mark.",
+    )
     # —— About company (website story) ——
     visitor_feeling = models.CharField(
         max_length=500,
@@ -2296,6 +2302,14 @@ class FirmCompanyInformation(models.Model):
     @property
     def main_image(self):
         return self.profile_images.order_by("sort_order", "id").first()
+
+    @property
+    def logo_or_main(self):
+        """Preferred brand mark: dedicated logo, else first profile image."""
+        if self.logo:
+            return self.logo
+        main = self.main_image
+        return main.image if main and main.image else None
 
 
 def company_profile_image_upload_to(instance, filename):
@@ -2627,6 +2641,14 @@ class CompanyLetterheadSetting(models.Model):
         SPLIT = "split", "Modern split"
         MINIMAL = "minimal", "Minimal stack"
 
+    class FooterTemplate(models.TextChoices):
+        COMPACT = "compact", "Compact line"
+        CENTERED = "centered", "Centered stack"
+        RULED = "ruled", "Ruled footer"
+        STACKED = "stacked", "Left stack"
+        SPLIT = "split", "Split thanks"
+        BAR = "bar", "Accent bar"
+
     class Accent(models.TextChoices):
         FOREST = "forest", "Forest"
         NAVY = "navy", "Navy"
@@ -2640,6 +2662,12 @@ class CompanyLetterheadSetting(models.Model):
         choices=Template.choices,
         default=Template.CLASSIC,
         help_text="Letterhead layout sample used on invoices and receipts.",
+    )
+    footer_template = models.CharField(
+        max_length=32,
+        choices=FooterTemplate.choices,
+        default=FooterTemplate.COMPACT,
+        help_text="Footer layout sample used on invoices and receipts.",
     )
     accent = models.CharField(
         max_length=32,
@@ -2656,12 +2684,12 @@ class CompanyLetterheadSetting(models.Model):
         help_text="Show the company tagline under the firm name when set.",
     )
     show_address = models.BooleanField(
-        default=False,
-        help_text="Include physical or postal address lines.",
+        default=True,
+        help_text="Show physical, postal, city, and country in the document footer.",
     )
     show_contacts = models.BooleanField(
         default=True,
-        help_text="Show phone, email, and website contact lines.",
+        help_text="Show phone and email contact lines on the letterhead.",
     )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
@@ -2687,6 +2715,249 @@ class CompanyLetterheadSetting(models.Model):
     @property
     def css_modifier(self) -> str:
         return f"doc-letterhead--{self.template} doc-letterhead--accent-{self.accent}"
+
+    @property
+    def footer_css_modifier(self) -> str:
+        return (
+            f"doc-letterfoot--{self.footer_template} "
+            f"doc-letterfoot--accent-{self.accent}"
+        )
+
+
+class CompanyDigitalStampSetting(models.Model):
+    """
+    Firm digital stamp layout for invoices and receipts (singleton).
+
+    Edited under System Settings → Document Settings → Digital stamp.
+    """
+
+    class Template(models.TextChoices):
+        CLASSIC = "classic", "Classic ring"
+        SQUARE = "square", "Square seal"
+        OVAL = "oval", "Oval seal"
+        BADGE = "badge", "Shield badge"
+        RIBBON = "ribbon", "Ribbon banner"
+        WAX = "wax", "Wax stamp"
+
+    class Accent(models.TextChoices):
+        FOREST = "forest", "Forest"
+        NAVY = "navy", "Navy"
+        CHARCOAL = "charcoal", "Charcoal"
+        BURGUNDY = "burgundy", "Burgundy"
+        TEAL = "teal", "Teal"
+        GOLD = "gold", "Gold"
+
+    template = models.CharField(
+        max_length=32,
+        choices=Template.choices,
+        default=Template.CLASSIC,
+        help_text="Digital stamp layout sample used on invoices and receipts.",
+    )
+    accent = models.CharField(
+        max_length=32,
+        choices=Accent.choices,
+        default=Accent.FOREST,
+        help_text="Accent colour for the stamp ink and borders.",
+    )
+    show_firm_name = models.BooleanField(
+        default=True,
+        help_text="Show the firm display name on the stamp.",
+    )
+    show_status = models.BooleanField(
+        default=True,
+        help_text="Show the document status (Paid, Issued, etc.).",
+    )
+    show_approver = models.BooleanField(
+        default=True,
+        help_text="Show the company name line on the stamp.",
+    )
+    show_date = models.BooleanField(
+        default=True,
+        help_text="Show the approval or payment date when available.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_digital_stamp_updates",
+    )
+
+    class Meta:
+        verbose_name = "Company digital stamp setting"
+        verbose_name_plural = "Company digital stamp setting"
+
+    def __str__(self):
+        return self.get_template_display()
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @property
+    def css_modifier(self) -> str:
+        return f"doc-stamp--{self.template} doc-stamp--accent-{self.accent}"
+
+
+class EmployeeDigitalStampSetting(models.Model):
+    """
+    Per-employee digital stamp layout (My tools → My digital stamp).
+    """
+
+    class Template(models.TextChoices):
+        CLASSIC = "classic", "Classic ring"
+        SQUARE = "square", "Square seal"
+        OVAL = "oval", "Oval seal"
+        BADGE = "badge", "Shield badge"
+        RIBBON = "ribbon", "Ribbon banner"
+        WAX = "wax", "Wax stamp"
+
+    class Accent(models.TextChoices):
+        FOREST = "forest", "Forest"
+        NAVY = "navy", "Navy"
+        CHARCOAL = "charcoal", "Charcoal"
+        BURGUNDY = "burgundy", "Burgundy"
+        TEAL = "teal", "Teal"
+        GOLD = "gold", "Gold"
+
+    employee = models.OneToOneField(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="digital_stamp_setting",
+    )
+    template = models.CharField(
+        max_length=32,
+        choices=Template.choices,
+        default=Template.CLASSIC,
+        help_text="Personal digital stamp layout sample.",
+    )
+    accent = models.CharField(
+        max_length=32,
+        choices=Accent.choices,
+        default=Accent.NAVY,
+        help_text="Accent colour for the stamp ink and borders.",
+    )
+    show_firm_name = models.BooleanField(
+        default=True,
+        help_text="Show the firm display name on the stamp.",
+    )
+    show_status = models.BooleanField(
+        default=True,
+        help_text="Show the document status (Paid, Issued, etc.).",
+    )
+    show_approver = models.BooleanField(
+        default=True,
+        help_text="Show your name on the stamp.",
+    )
+    show_date = models.BooleanField(
+        default=True,
+        help_text="Show the approval or payment date when available.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Employee digital stamp setting"
+        verbose_name_plural = "Employee digital stamp settings"
+
+    def __str__(self):
+        return f"{self.employee} — {self.get_template_display()}"
+
+    @classmethod
+    def for_employee(cls, employee: Employee):
+        obj, _ = cls.objects.get_or_create(employee=employee)
+        return obj
+
+    @property
+    def css_modifier(self) -> str:
+        return f"doc-stamp--{self.template} doc-stamp--accent-{self.accent}"
+
+
+class CompanyDigitalSignatureSetting(models.Model):
+    """
+    Firm default digital signature layout for invoices and receipts (singleton).
+
+    Edited under System Settings → Document Settings → Default signature.
+    """
+
+    class Template(models.TextChoices):
+        CLASSIC = "classic", "Classic line"
+        SCRIPT = "script", "Script flourish"
+        FORMAL = "formal", "Formal block"
+        MONOGRAM = "monogram", "Monogram mark"
+        STACKED = "stacked", "Stacked authority"
+        COMPACT = "compact", "Compact strip"
+
+    class Accent(models.TextChoices):
+        FOREST = "forest", "Forest"
+        NAVY = "navy", "Navy"
+        CHARCOAL = "charcoal", "Charcoal"
+        BURGUNDY = "burgundy", "Burgundy"
+        TEAL = "teal", "Teal"
+        GOLD = "gold", "Gold"
+
+    template = models.CharField(
+        max_length=32,
+        choices=Template.choices,
+        default=Template.CLASSIC,
+        help_text="Digital signature layout sample used on invoices and receipts.",
+    )
+    accent = models.CharField(
+        max_length=32,
+        choices=Accent.choices,
+        default=Accent.NAVY,
+        help_text="Accent colour for the signature ink and rules.",
+    )
+    default_title = models.CharField(
+        max_length=120,
+        blank=True,
+        default="Authorized Signatory",
+        help_text="Default title / capacity shown under the signatory name.",
+    )
+    show_firm_name = models.BooleanField(
+        default=True,
+        help_text="Show the firm display name on the signature block.",
+    )
+    show_name = models.BooleanField(
+        default=True,
+        help_text="Show the signatory name when available.",
+    )
+    show_title = models.BooleanField(
+        default=True,
+        help_text="Show the signatory title / capacity.",
+    )
+    show_date = models.BooleanField(
+        default=True,
+        help_text="Show the signature date when available.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_digital_signature_updates",
+    )
+
+    class Meta:
+        verbose_name = "Company digital signature setting"
+        verbose_name_plural = "Company digital signature setting"
+
+    def __str__(self):
+        return self.get_template_display()
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @property
+    def css_modifier(self) -> str:
+        return (
+            f"doc-signature--{self.template} "
+            f"doc-signature--accent-{self.accent}"
+        )
 
 
 class GoogleDriveConnection(models.Model):
@@ -3285,7 +3556,11 @@ class Invoice(models.Model):
         related_name="invoices",
     )
     issue_date = models.DateField()
-    due_date = models.DateField()
+    due_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Optional payment due date.",
+    )
     description = models.TextField(
         help_text="What this invoice covers.",
     )

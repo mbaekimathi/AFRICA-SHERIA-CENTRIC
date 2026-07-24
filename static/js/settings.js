@@ -17,6 +17,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("appearance-form");
 
   const chipTheme = document.getElementById("chip-theme");
+  const chipThemeDisplay = document.getElementById("chip-theme-display");
+  const chipThemeMeta = document.getElementById("chip-theme-meta");
   const chipFont = document.getElementById("chip-font");
   const chipDensity = document.getElementById("chip-density");
   const previewTheme = document.getElementById("preview-theme");
@@ -74,6 +76,12 @@ document.addEventListener("DOMContentLoaded", () => {
       tab.classList.toggle("is-active", active);
       tab.setAttribute("aria-selected", active ? "true" : "false");
     });
+    page.querySelectorAll(".theme-admin__panel-actions [data-tab]").forEach((btn) => {
+      const active = btn.dataset.tab === name;
+      btn.classList.toggle("is-active", active);
+      btn.classList.toggle("btn--primary", active);
+      btn.classList.toggle("btn--quiet", !active);
+    });
     Object.entries(panels).forEach(([key, panel]) => {
       if (!panel) return;
       panel.hidden = key !== name;
@@ -82,6 +90,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => activateTab(tab.dataset.tab));
+  });
+
+  page.querySelectorAll(".theme-admin__panel-actions [data-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
 
   const replacePrefixClass = (prefix, next) => {
@@ -121,7 +133,10 @@ document.addEventListener("DOMContentLoaded", () => {
       page.querySelectorAll(".theme-card").forEach((el) => el.classList.remove("is-selected"));
       input.closest(".theme-card")?.classList.add("is-selected");
       replacePrefixClass("theme-", input.dataset.themePreview || roleTheme);
-      setLabel([chipTheme, previewTheme], input.dataset.themeLabel || "Theme");
+      setLabel(
+        [chipTheme, chipThemeDisplay, chipThemeMeta, previewTheme],
+        input.dataset.themeLabel || "Theme"
+      );
       syncDirty();
     });
   });

@@ -33,3 +33,14 @@ def drive_kind_filter(document):
     if source == "google_doc":
         return "docs"
     return "file"
+
+
+@register.filter(name="person_initials")
+def person_initials_filter(name):
+    """Two-letter initials from a display name."""
+    parts = [p for p in (name or "").split() if p]
+    if not parts:
+        return "SC"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return f"{parts[0][0]}{parts[-1][0]}".upper()

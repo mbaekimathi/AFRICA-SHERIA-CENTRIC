@@ -33,9 +33,35 @@ def _letterhead_options(firm):
 
     setting = CompanyLetterheadSetting.get_solo()
     accent = colors.HexColor(accent_hex(setting.accent))
-    contact_lines = firm_contact_lines(firm) if setting.show_contacts else []
-    address_lines = firm_address_lines(firm) if setting.show_address else []
+    contact_lines = (
+        firm_contact_lines(firm) if setting.show_contacts else []
+    )
+    address_lines = (
+        firm_address_lines(firm) if setting.show_address else []
+    )
     return setting, accent, contact_lines, address_lines
+
+
+def _firm_footer_blocks(firm, setting, address_lines, *, website_style, line_style):
+    """Build PDF footer flowables from the selected footer template."""
+    blocks = []
+    website = (getattr(firm, "website", "") or "").strip()
+    if website:
+        blocks.append(_p(website, website_style))
+    if not address_lines:
+        return blocks
+
+    compact = " · ".join(address_lines)
+    footer_template = setting.footer_template
+    if website:
+        blocks.append(Spacer(1, 2 * mm))
+    if footer_template in {"compact", "bar"}:
+        blocks.append(_p(compact, line_style))
+        return blocks
+
+    for line in address_lines:
+        blocks.append(_p(line, line_style))
+    return blocks
 
 
 def _money(value) -> str:
@@ -182,21 +208,12 @@ def build_invoice_pdf(invoice, firm) -> bytes:
     client = invoice.client
     setting, accent_color, contact_lines, address_lines = _letterhead_options(firm)
     label.textColor = accent_color
+    detail_lines = list(contact_lines)
 
-    header_lines = list(contact_lines)
     left_blocks = [_p(firm.display_name, firm_name)]
     tagline_text = (getattr(firm, "tagline", "") or "").strip()
     if setting.show_tagline and tagline_text:
         left_blocks.append(_p(tagline_text, tagline))
-    city = (getattr(firm, "city", "") or "").strip()
-    country = (getattr(firm, "country", "") or "").strip()
-    place = ", ".join(part for part in (city, country) if part)
-    if place:
-        left_blocks.append(_p(place, legal))
-    if setting.show_address:
-        for line in address_lines:
-            if line and line != place:
-                left_blocks.append(_p(line, legal))
 
     align_right = setting.template not in {"centered", "minimal"}
     meta_style = meta if align_right else ParagraphStyle(
@@ -209,9 +226,15 @@ def build_invoice_pdf(invoice, firm) -> bytes:
         legal.alignment = TA_CENTER
         tagline.alignment = TA_CENTER
 
-    detail_blocks = [_p(line, meta_style) for line in header_lines] or [""]
-    if setting.template in {"centered", "minimal", "banner"}:
-        letterhead_data = [[left_blocks + ([Spacer(1, 1.5 * mm)] if header_lines else []) + detail_blocks]]
+    detail_blocks = [_p(line, meta_style) for line in detail_lines] or [""]
+    if setting.template in {"centered", "minimal"}:
+        letterhead_data = [
+            [
+                left_blocks
+                + ([Spacer(1, 1.5 * mm)] if detail_lines else [])
+                + detail_blocks
+            ]
+        ]
         col_widths = [175 * mm]
     else:
         letterhead_data = [[left_blocks, detail_blocks]]
@@ -237,9 +260,7 @@ def build_invoice_pdf(invoice, firm) -> bytes:
         left_blocks = [_p(firm.display_name, banner_name)]
         if setting.show_tagline and tagline_text:
             left_blocks.append(_p(tagline_text, banner_legal))
-        if place:
-            left_blocks.append(_p(place, banner_legal))
-        detail_blocks = [_p(line, banner_meta) for line in header_lines] or [""]
+        detail_blocks = [_p(line, banner_meta) for line in detail_lines] or [""]
         letterhead_data = [[left_blocks, detail_blocks]]
         col_widths = [110 * mm, 65 * mm]
 
@@ -287,7 +308,12 @@ def build_invoice_pdf(invoice, firm) -> bytes:
                 ],
                 [
                     _p(f"Issue date: {invoice.issue_date.strftime('%d %b %Y')}", right_meta),
-                    _p(f"Due date: {invoice.due_date.strftime('%d %b %Y')}", right_meta),
+                    _p(
+                        f"Due date: {invoice.due_date.strftime('%d %b %Y')}"
+                        if invoice.due_date
+                        else "Due date: —",
+                        right_meta,
+                    ),
                 ],
             ]
         ],
@@ -426,21 +452,118 @@ def build_invoice_pdf(invoice, firm) -> bytes:
             ]
         )
 
-    stamp_bits = [f"Status: {invoice.get_status_display()}"]
-    approved_by = getattr(invoice, "approved_by", None)
-    if approved_by:
-        stamp_bits.append(f"Approved by: {approved_by.get_full_name()}")
-    story.extend(
-        [
-            Spacer(1, 8 * mm),
-            _p(" · ".join(stamp_bits), muted_body),
-            Spacer(1, 8 * mm),
-            HRFlowable(width="100%", thickness=0.6, color=LINE, spaceBefore=2, spaceAfter=6),
-            _p("Thank you for your business.", thanks),
-            Spacer(1, 2 * mm),
-            _p(_firm_footer_line(firm), footer_center),
+    from .invoice_marks import invoice_marks_context, invoice_show_marks
+
+    marks = invoice_marks_context(invoice, firm=firm)
+
+    mark_table = None
+    if invoice_show_marks(invoice):
+        sig_name = marks.get("signature_name") or ""
+        sig_title = marks.get("signature_title") or ""
+        sig_date = marks.get("signature_date") or ""
+        left_mark = [
+            _p("SIGNATURE", label),
+            Spacer(1, 1.5 * mm),
+            _p(sig_name or "—", ParagraphStyle("SigName", parent=body, fontName="Helvetica-Oblique", fontSize=11)),
         ]
+        if sig_title:
+            left_mark.append(_p(sig_title, muted_body))
+        if sig_date:
+            left_mark.append(_p(sig_date, muted_body))
+        mark_table = Table(
+            [[left_mark]],
+            colWidths=[175 * mm],
+        )
+        mark_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+
+    footer_line = ParagraphStyle(
+        "FooterLine",
+        parent=footer_center,
+        textColor=MUTED if setting.footer_template != "bar" else colors.white,
+        alignment=(
+            TA_LEFT
+            if setting.footer_template in {"stacked", "split"}
+            else TA_CENTER
+        ),
     )
+    footer_website = ParagraphStyle(
+        "FooterWebsite",
+        parent=footer_line,
+        fontName="Helvetica",
+        textColor=(
+            colors.white if setting.footer_template == "bar" else accent_color
+        ),
+    )
+
+    footer_flowables = _firm_footer_blocks(
+        firm,
+        setting,
+        address_lines,
+        website_style=footer_website,
+        line_style=footer_line,
+    )
+    if setting.footer_template == "ruled":
+        story.extend(
+            [
+                Spacer(1, 8 * mm),
+                *([mark_table, Spacer(1, 6 * mm)] if mark_table is not None else []),
+                Spacer(1, 2 * mm),
+                HRFlowable(
+                    width="100%",
+                    thickness=1.4,
+                    color=accent_color,
+                    spaceBefore=2,
+                    spaceAfter=6,
+                ),
+                *footer_flowables,
+            ]
+        )
+    elif setting.footer_template == "bar":
+        footer_table = Table(
+            [[footer_flowables]],
+            colWidths=[175 * mm],
+        )
+        footer_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), accent_color),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+        story.extend(
+            [
+                Spacer(1, 8 * mm),
+                *([mark_table, Spacer(1, 6 * mm)] if mark_table is not None else []),
+                Spacer(1, 2 * mm),
+                footer_table,
+            ]
+        )
+    else:
+        story.extend(
+            [
+                Spacer(1, 8 * mm),
+                *([mark_table, Spacer(1, 6 * mm)] if mark_table is not None else []),
+                Spacer(1, 2 * mm),
+                HRFlowable(
+                    width="100%", thickness=0.6, color=LINE, spaceBefore=2, spaceAfter=6
+                ),
+                *footer_flowables,
+            ]
+        )
 
     doc.build(story)
     return buffer.getvalue()

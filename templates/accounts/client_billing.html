@@ -57,7 +57,7 @@
                 <a href="{% url 'accounts:client_invoice' invoice.pk %}">{{ invoice.invoice_number }}</a>
               </td>
               <td>{{ invoice.issue_date|date:"d M Y" }}</td>
-              <td>{{ invoice.due_date|date:"d M Y" }}</td>
+              <td>{% if invoice.due_date %}{{ invoice.due_date|date:"d M Y" }}{% else %}—{% endif %}</td>
               <td>KES {{ invoice.total_amount|floatformat:2 }}</td>
               <td>
                 <span class="invoice-status invoice-status--{{ invoice.status }}">

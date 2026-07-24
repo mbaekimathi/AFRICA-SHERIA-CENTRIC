@@ -1,0 +1,23 @@
+<footer
+  class="doc-letterfoot {{ letterhead.footer_css_modifier }}{% if not letterhead.show_address %} doc-letterfoot--no-address{% endif %}{% if not firm.website %} doc-letterfoot--no-website{% endif %}"
+  style="--lh-accent: {{ letterhead_accent_hex }};"
+  aria-label="Document footer"
+>
+  {% if firm.website %}
+  <p class="doc-letterfoot__website">
+    <a href="{{ firm.website }}" target="_blank" rel="noopener noreferrer">{{ firm.website }}</a>
+  </p>
+  {% endif %}
+
+  {% if letterhead_address_rows %}
+  <div class="doc-letterfoot__address" data-letterfoot-address>
+    {% if letterhead.footer_template == "compact" or letterhead.footer_template == "bar" %}
+    <p class="doc-letterfoot__line">{{ letterhead_address_compact }}</p>
+    {% else %}
+    {% for row in letterhead_address_rows %}
+    <p class="doc-letterfoot__line" data-letterhead-field="{{ row.key }}">{{ row.value }}</p>
+    {% endfor %}
+    {% endif %}
+  </div>
+  {% endif %}
+</footer>

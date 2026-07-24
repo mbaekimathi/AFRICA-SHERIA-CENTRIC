@@ -1,0 +1,183 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page settings-page signature-page"
+  id="signature-page"
+  data-template="{{ form.template.value|default:digital_signature.template }}"
+  data-accent="{{ form.accent.value|default:digital_signature.accent }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Document settings</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Choose a digital signature template for invoices and receipts. Firm name comes from
+        <a href="{{ company_profile_url }}">Company profile</a>;
+        the signatory name and date come from each document.
+      </p>
+    </div>
+  </header>
+
+  <div class="letterhead-studio__current" aria-label="Current digital signature">
+    <p class="letterhead-studio__current-kicker">Active signature</p>
+    <p class="letterhead-studio__current-name" id="signature-current-label">
+      {{ current_template_label }}
+    </p>
+    <p class="letterhead-studio__current-meta">
+      <span>{{ signature_samples|length }} samples</span>
+      <span aria-hidden="true">·</span>
+      <span id="signature-current-accent">{{ digital_signature.get_accent_display }}</span>
+    </p>
+  </div>
+
+  <form method="post" class="letterhead-studio signature-studio" id="signature-form" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="form-alert" role="alert">
+      {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="letterhead-studio__main">
+      <section class="letterhead-studio__samples" aria-labelledby="signature-samples-title">
+        <div class="settings-panel__intro">
+          <h3 id="signature-samples-title">Signature samples</h3>
+          <p>Select a starting design. The live preview updates as you choose.</p>
+        </div>
+        <div class="letterhead-sample-grid" role="radiogroup" aria-label="Signature samples">
+          {% for sample in signature_samples %}
+          <label
+            class="letterhead-sample-card signature-sample-card signature-sample-card--{{ sample.value }}{% if form.template.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-sample-card--current{% endif %}"
+          >
+            <input
+              type="radio"
+              name="{{ form.template.name }}"
+              value="{{ sample.value }}"
+              {% if form.template.value == sample.value %}checked{% endif %}
+              data-signature-template="{{ sample.value }}"
+              data-signature-label="{{ sample.label }}"
+            >
+            {% if sample.is_current %}
+            <span class="letterhead-sample-card__badge">Active</span>
+            {% endif %}
+            <span class="letterhead-sample-card__stage" aria-hidden="true">
+              <span class="signature-mini signature-mini--{{ sample.value }}">
+                <span class="signature-mini__mark"></span>
+                <span class="signature-mini__line"></span>
+              </span>
+            </span>
+            <span class="letterhead-sample-card__meta">
+              <span class="letterhead-sample-card__name">{{ sample.label }}</span>
+              <span class="letterhead-sample-card__blurb">{{ sample.blurb }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% if form.template.errors %}
+        <p class="field-error">{{ form.template.errors.0 }}</p>
+        {% endif %}
+      </section>
+
+      <section class="letterhead-studio__accents" aria-labelledby="signature-accents-title">
+        <div class="settings-panel__intro">
+          <h3 id="signature-accents-title">Accent colour</h3>
+          <p>Used for signature ink, rules, and monogram marks.</p>
+        </div>
+        <div class="letterhead-accent-grid" role="radiogroup" aria-label="Accent colour">
+          {% for sample in accent_samples %}
+          <label
+            class="letterhead-accent-chip{% if form.accent.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-accent-chip--current{% endif %}"
+            style="--chip-accent: {{ sample.hex }};"
+          >
+            <input
+              type="radio"
+              name="{{ form.accent.name }}"
+              value="{{ sample.value }}"
+              {% if form.accent.value == sample.value %}checked{% endif %}
+              data-signature-accent="{{ sample.value }}"
+              data-signature-accent-hex="{{ sample.hex }}"
+              data-signature-accent-label="{{ sample.label }}"
+            >
+            <span class="letterhead-accent-chip__swatch" aria-hidden="true"></span>
+            <span class="letterhead-accent-chip__name">{{ sample.label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        {% if form.accent.errors %}
+        <p class="field-error">{{ form.accent.errors.0 }}</p>
+        {% endif %}
+      </section>
+
+      <section class="letterhead-studio__options" aria-labelledby="signature-options-title">
+        <div class="settings-panel__intro">
+          <h3 id="signature-options-title">Details</h3>
+          <p>Choose which lines appear in the signature block, and set the default title.</p>
+        </div>
+        <div class="letterhead-option-grid">
+          <label class="letterhead-option">
+            {{ form.show_firm_name }}
+            <span>{{ form.show_firm_name.label }}</span>
+          </label>
+          <label class="letterhead-option">
+            {{ form.show_name }}
+            <span>{{ form.show_name.label }}</span>
+          </label>
+          <label class="letterhead-option">
+            {{ form.show_title }}
+            <span>{{ form.show_title.label }}</span>
+          </label>
+          <label class="letterhead-option">
+            {{ form.show_date }}
+            <span>{{ form.show_date.label }}</span>
+          </label>
+        </div>
+        <label class="form-field signature-title-field">
+          <span class="form-label">{{ form.default_title.label }}</span>
+          {{ form.default_title }}
+          {% if form.default_title.errors %}
+          <span class="field-error">{{ form.default_title.errors.0 }}</span>
+          {% endif %}
+        </label>
+      </section>
+    </div>
+
+    <aside class="letterhead-studio__aside" aria-label="Live signature preview">
+      <div class="letterhead-preview signature-preview">
+        <div class="letterhead-preview__head">
+          <h3>Live preview</h3>
+          <span class="settings-preview__badge">Realtime</span>
+        </div>
+        <div class="letterhead-preview__stage signature-preview__stage" id="signature-preview-stage">
+          <div class="signature-preview__canvas">
+            {% include "accounts/partials/company_digital_signature.html" %}
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="form-actions form-actions--start letterhead-studio__actions">
+      <button type="submit" class="btn btn--primary btn--inline">
+        Save default signature
+      </button>
+    </div>
+  </form>
+
+  {% if digital_signature_setting.updated_at %}
+  <p class="website-template-meta">
+    Last updated {{ digital_signature_setting.updated_at|date:"j M Y, H:i" }}
+    {% if digital_signature_setting.updated_by %}
+    by {{ digital_signature_setting.updated_by.get_full_name|default:digital_signature_setting.updated_by.login_code }}
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/digital-signature.js' %}" defer></script>
+{% endblock %}

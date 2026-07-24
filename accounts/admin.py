@@ -48,6 +48,9 @@ from .models import (
     WebsiteTemplateSetting,
     CompanyThemeSetting,
     CompanyLetterheadSetting,
+    CompanyDigitalStampSetting,
+    CompanyDigitalSignatureSetting,
+    EmployeeDigitalStampSetting,
 )
 
 
@@ -799,11 +802,63 @@ class CompanyThemeSettingAdmin(admin.ModelAdmin):
 class CompanyLetterheadSettingAdmin(admin.ModelAdmin):
     list_display = (
         "template",
+        "footer_template",
         "accent",
         "show_logo",
         "show_tagline",
         "show_address",
         "show_contacts",
+        "updated_at",
+        "updated_by",
+    )
+    readonly_fields = ("updated_at", "updated_by")
+
+
+@admin.register(CompanyDigitalStampSetting)
+class CompanyDigitalStampSettingAdmin(admin.ModelAdmin):
+    list_display = (
+        "template",
+        "accent",
+        "show_firm_name",
+        "show_status",
+        "show_approver",
+        "show_date",
+        "updated_at",
+        "updated_by",
+    )
+    readonly_fields = ("updated_at", "updated_by")
+
+
+@admin.register(EmployeeDigitalStampSetting)
+class EmployeeDigitalStampSettingAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee",
+        "template",
+        "accent",
+        "show_firm_name",
+        "show_status",
+        "show_approver",
+        "show_date",
+        "updated_at",
+    )
+    search_fields = (
+        "employee__login_code",
+        "employee__first_name",
+        "employee__last_name",
+    )
+    readonly_fields = ("updated_at",)
+
+
+@admin.register(CompanyDigitalSignatureSetting)
+class CompanyDigitalSignatureSettingAdmin(admin.ModelAdmin):
+    list_display = (
+        "template",
+        "accent",
+        "default_title",
+        "show_firm_name",
+        "show_name",
+        "show_title",
+        "show_date",
         "updated_at",
         "updated_by",
     )
@@ -1010,6 +1065,7 @@ class FirmCompanyInformationAdmin(admin.ModelAdmin):
                     "legal_name",
                     "trading_name",
                     "tagline",
+                    "logo",
                     "registration_number",
                     "tax_pin",
                 )

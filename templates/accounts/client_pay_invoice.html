@@ -32,7 +32,7 @@
         </div>
         <div>
           <dt>Due date</dt>
-          <dd>{{ invoice.due_date|date:"d M Y" }}</dd>
+          <dd>{% if invoice.due_date %}{{ invoice.due_date|date:"d M Y" }}{% else %}—{% endif %}</dd>
         </div>
         <div>
           <dt>Amount due</dt>

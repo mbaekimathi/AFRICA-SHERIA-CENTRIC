@@ -1,0 +1,438 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--ledger-book" id="accounting-book-{{ book.book_slug }}">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Books of account</p>
+      <h2>{{ book.book_title|default:page_title }}</h2>
+      <p class="page-lead">{{ book.book_lead }}</p>
+    </div>
+  </header>
+
+  {% if book.metrics %}
+  <div class="metrics metrics--dash ledger-book__metrics">
+    {% for metric in book.metrics %}
+    <div class="metric metric--glass">
+      <p class="metric__label">{{ metric.label }}</p>
+      <p class="metric__value">{{ metric.value }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# —— Cash / Bank Book —— #}
+  {% if book.book_kind == "cash_bank" %}
+  <article class="ledger-sheet">
+    <header class="ledger-sheet__head">
+      <div>
+        <p class="ledger-sheet__eyebrow">Folio book</p>
+        <h3>{{ book.book_title }}</h3>
+      </div>
+      <p class="ledger-sheet__meta">Currency: Kenya Shillings (KES)</p>
+    </header>
+    <div class="ledger-sheet__scroll">
+      <table class="ledger-table ledger-table--cash">
+        <thead>
+          <tr>
+            <th scope="col" class="col-date">Date</th>
+            <th scope="col" class="col-particulars">Particulars</th>
+            <th scope="col" class="col-folio">Folio</th>
+            <th scope="col" class="col-money">Receipts (Dr)</th>
+            <th scope="col" class="col-money">Payments (Cr)</th>
+            <th scope="col" class="col-money">Balance</th>
+            <th scope="col" class="col-side">Dr/Cr</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in book.entries %}
+          <tr>
+            <td class="col-date">{{ row.when|date:"d/m/Y" }}</td>
+            <td class="col-particulars">{{ row.particulars }}</td>
+            <td class="col-folio">{{ row.folio }}</td>
+            <td class="col-money">{% if row.debit %}{{ row.debit|floatformat:2 }}{% endif %}</td>
+            <td class="col-money">{% if row.credit %}{{ row.credit|floatformat:2 }}{% endif %}</td>
+            <td class="col-money">{{ row.balance|floatformat:2 }}</td>
+            <td class="col-side">{{ row.balance_side }}</td>
+          </tr>
+          {% empty %}
+          <tr class="ledger-table__empty">
+            <td colspan="7">{{ book.empty_copy }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if book.entries %}
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="3">Totals c/d</th>
+            <th class="col-money">{{ book.totals.debit|floatformat:2 }}</th>
+            <th class="col-money">{{ book.totals.credit|floatformat:2 }}</th>
+            <th class="col-money">{{ book.totals.balance|floatformat:2 }}</th>
+            <th class="col-side"></th>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </article>
+  {% endif %}
+
+  {# —— Sales Day Book —— #}
+  {% if book.book_kind == "sales_day" %}
+  <article class="ledger-sheet">
+    <header class="ledger-sheet__head">
+      <div>
+        <p class="ledger-sheet__eyebrow">Day book</p>
+        <h3>{{ book.book_title }}</h3>
+      </div>
+      <p class="ledger-sheet__meta">Sales / fees journal</p>
+    </header>
+    <div class="ledger-sheet__scroll">
+      <table class="ledger-table">
+        <thead>
+          <tr>
+            <th scope="col" class="col-date">Date</th>
+            <th scope="col" class="col-folio">Folio</th>
+            <th scope="col" class="col-ref">Invoice No.</th>
+            <th scope="col" class="col-account">Customer / Client</th>
+            <th scope="col" class="col-particulars">Particulars</th>
+            <th scope="col" class="col-money">Net</th>
+            <th scope="col" class="col-money">Tax</th>
+            <th scope="col" class="col-money">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in book.entries %}
+          <tr>
+            <td class="col-date">{{ row.when|date:"d/m/Y" }}</td>
+            <td class="col-folio">{{ row.folio }}</td>
+            <td class="col-ref">{{ row.ref }}</td>
+            <td class="col-account">{{ row.account }}</td>
+            <td class="col-particulars">{{ row.particulars }}</td>
+            <td class="col-money">{{ row.net|floatformat:2 }}</td>
+            <td class="col-money">{{ row.tax|floatformat:2 }}</td>
+            <td class="col-money">{{ row.amount|floatformat:2 }}</td>
+          </tr>
+          {% empty %}
+          <tr class="ledger-table__empty">
+            <td colspan="8">{{ book.empty_copy }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if book.entries %}
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="5">Totals</th>
+            <th class="col-money">{{ book.totals.net|floatformat:2 }}</th>
+            <th class="col-money">{{ book.totals.tax|floatformat:2 }}</th>
+            <th class="col-money">{{ book.totals.amount|floatformat:2 }}</th>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </article>
+  {% endif %}
+
+  {# —— Purchases Day Book —— #}
+  {% if book.book_kind == "purchases_day" %}
+  <article class="ledger-sheet">
+    <header class="ledger-sheet__head">
+      <div>
+        <p class="ledger-sheet__eyebrow">Day book</p>
+        <h3>{{ book.book_title }}</h3>
+      </div>
+      <p class="ledger-sheet__meta">Purchases / expenses journal</p>
+    </header>
+    <div class="ledger-sheet__scroll">
+      <table class="ledger-table">
+        <thead>
+          <tr>
+            <th scope="col" class="col-date">Date</th>
+            <th scope="col" class="col-folio">Folio</th>
+            <th scope="col" class="col-ref">Voucher</th>
+            <th scope="col" class="col-account">Paid from</th>
+            <th scope="col" class="col-account">Category</th>
+            <th scope="col" class="col-particulars">Particulars</th>
+            <th scope="col" class="col-money">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in book.entries %}
+          <tr>
+            <td class="col-date">{{ row.when|date:"d/m/Y" }}</td>
+            <td class="col-folio">{{ row.folio }}</td>
+            <td class="col-ref">{{ row.ref }}</td>
+            <td class="col-account">{{ row.account }}</td>
+            <td class="col-account">{{ row.category }}</td>
+            <td class="col-particulars">{{ row.particulars }}</td>
+            <td class="col-money">{{ row.amount|floatformat:2 }}</td>
+          </tr>
+          {% empty %}
+          <tr class="ledger-table__empty">
+            <td colspan="7">{{ book.empty_copy }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if book.entries %}
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="6">Totals</th>
+            <th class="col-money">{{ book.totals.amount|floatformat:2 }}</th>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </article>
+  {% endif %}
+
+  {# —— Journal Proper —— #}
+  {% if book.book_kind == "journal" %}
+  <article class="ledger-sheet">
+    <header class="ledger-sheet__head">
+      <div>
+        <p class="ledger-sheet__eyebrow">Journal</p>
+        <h3>{{ book.book_title }}</h3>
+      </div>
+      <p class="ledger-sheet__meta">Double-entry journal</p>
+    </header>
+    <div class="ledger-sheet__scroll">
+      <table class="ledger-table ledger-table--journal">
+        <thead>
+          <tr>
+            <th scope="col" class="col-date">Date</th>
+            <th scope="col" class="col-particulars">Particulars</th>
+            <th scope="col" class="col-folio">Folio</th>
+            <th scope="col" class="col-money">Debit (Dr)</th>
+            <th scope="col" class="col-money">Credit (Cr)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in book.entries %}
+            {% for line in entry.lines %}
+            <tr class="{% if forloop.first %}is-entry-start{% endif %}">
+              <td class="col-date">{% if forloop.first %}{{ entry.when|date:"d/m/Y" }}{% endif %}</td>
+              <td class="col-particulars {% if line.side == 'Cr' %}is-credit-line{% endif %}">
+                {{ line.particulars }}
+                {% if forloop.last %}
+                <span class="ledger-narration">{{ entry.narration }}</span>
+                {% endif %}
+              </td>
+              <td class="col-folio">{% if forloop.first %}{{ entry.folio }}{% endif %}</td>
+              <td class="col-money">{% if line.debit %}{{ line.debit|floatformat:2 }}{% endif %}</td>
+              <td class="col-money">{% if line.credit %}{{ line.credit|floatformat:2 }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+          {% empty %}
+          <tr class="ledger-table__empty">
+            <td colspan="5">{{ book.empty_copy }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if book.entries %}
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="3">Totals</th>
+            <th class="col-money">{{ book.totals.debit|floatformat:2 }}</th>
+            <th class="col-money">{{ book.totals.credit|floatformat:2 }}</th>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </article>
+  {% endif %}
+
+  {# —— Sales / Purchases Ledger (account folios) —— #}
+  {% if book.book_kind == "sales_ledger" or book.book_kind == "purchases_ledger" %}
+  {% if book.groups %}
+  {% for group in book.groups %}
+  <article class="ledger-sheet">
+    <header class="ledger-sheet__head">
+      <div>
+        <p class="ledger-sheet__eyebrow">Account folio {{ group.folio }}</p>
+        <h3>{{ group.label }}</h3>
+        <p class="ledger-sheet__sub">{{ group.subtitle }}</p>
+      </div>
+      <p class="ledger-sheet__meta">
+        Balance {{ group.balance|floatformat:2 }} {{ group.balance_side|default:"Dr" }}
+      </p>
+    </header>
+    <div class="ledger-sheet__scroll">
+      <table class="ledger-table">
+        <thead>
+          <tr>
+            <th scope="col" class="col-date">Date</th>
+            <th scope="col" class="col-particulars">Particulars</th>
+            <th scope="col" class="col-ref">Ref</th>
+            <th scope="col" class="col-money">Debit (Dr)</th>
+            <th scope="col" class="col-money">Credit (Cr)</th>
+            <th scope="col" class="col-money">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in group.lines %}
+          <tr>
+            <td class="col-date">{{ row.when|date:"d/m/Y" }}</td>
+            <td class="col-particulars">{{ row.particulars }}</td>
+            <td class="col-ref">{{ row.ref }}</td>
+            <td class="col-money">{% if row.debit %}{{ row.debit|floatformat:2 }}{% endif %}</td>
+            <td class="col-money">{% if row.credit %}{{ row.credit|floatformat:2 }}{% endif %}</td>
+            <td class="col-money">{{ row.balance|floatformat:2 }}</td>
+          </tr>
+          {% empty %}
+          <tr class="ledger-table__empty">
+            <td colspan="6">No postings on this account.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if group.lines %}
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="3">Totals</th>
+            <th class="col-money">{{ group.totals.debit|floatformat:2 }}</th>
+            <th class="col-money">{{ group.totals.credit|floatformat:2 }}</th>
+            <th class="col-money">{{ group.balance|floatformat:2 }}</th>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </article>
+  {% endfor %}
+  {% else %}
+  <article class="ledger-sheet">
+    <div class="ledger-sheet__empty">
+      <p class="empty-state__title">{{ book.empty_title }}</p>
+      <p class="empty-state__copy">{{ book.empty_copy }}</p>
+    </div>
+  </article>
+  {% endif %}
+  {% endif %}
+
+  {# —— General Ledger —— #}
+  {% if book.book_kind == "general_ledger" %}
+  {% if book.gl_accounts %}
+  {% for account in book.gl_accounts %}
+  <article class="ledger-sheet">
+    <header class="ledger-sheet__head">
+      <div>
+        <p class="ledger-sheet__eyebrow">Folio {{ account.folio }} · {{ account.code }}</p>
+        <h3>{{ account.name }}</h3>
+        <p class="ledger-sheet__sub">{{ account.meta }}</p>
+      </div>
+      <p class="ledger-sheet__meta">
+        Balance {{ account.balance|floatformat:2 }} {{ account.side }}
+      </p>
+    </header>
+    <div class="ledger-sheet__scroll">
+      <table class="ledger-table">
+        <thead>
+          <tr>
+            <th scope="col" class="col-date">Date</th>
+            <th scope="col" class="col-particulars">Particulars</th>
+            <th scope="col" class="col-folio">Folio</th>
+            <th scope="col" class="col-ref">Ref</th>
+            <th scope="col" class="col-money">Debit (Dr)</th>
+            <th scope="col" class="col-money">Credit (Cr)</th>
+            <th scope="col" class="col-money">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in account.lines %}
+          <tr>
+            <td class="col-date">{{ row.when|date:"d/m/Y" }}</td>
+            <td class="col-particulars">{{ row.particulars }}</td>
+            <td class="col-folio">{{ row.folio }}</td>
+            <td class="col-ref">{{ row.ref }}</td>
+            <td class="col-money">{% if row.debit %}{{ row.debit|floatformat:2 }}{% endif %}</td>
+            <td class="col-money">{% if row.credit %}{{ row.credit|floatformat:2 }}{% endif %}</td>
+            <td class="col-money">{{ row.balance|floatformat:2 }}</td>
+          </tr>
+          {% empty %}
+          <tr class="ledger-table__empty">
+            <td colspan="7">Control balance only — detail posts live in related books.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if account.lines %}
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="4">Totals</th>
+            <th class="col-money">{{ account.totals.debit|floatformat:2 }}</th>
+            <th class="col-money">{{ account.totals.credit|floatformat:2 }}</th>
+            <th class="col-money">{{ account.balance|floatformat:2 }}</th>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </article>
+  {% endfor %}
+  {% else %}
+  <article class="ledger-sheet">
+    <div class="ledger-sheet__empty">
+      <p class="empty-state__title">{{ book.empty_title }}</p>
+      <p class="empty-state__copy">{{ book.empty_copy }}</p>
+    </div>
+  </article>
+  {% endif %}
+  {% endif %}
+
+  {# —— Trial Balance —— #}
+  {% if book.book_kind == "trial_balance" %}
+  <article class="ledger-sheet">
+    <header class="ledger-sheet__head">
+      <div>
+        <p class="ledger-sheet__eyebrow">Statement</p>
+        <h3>{{ book.book_title }}</h3>
+        <p class="ledger-sheet__sub">As at {{ book.generated_at|date:"j F Y, H:i" }}</p>
+      </div>
+      <p class="ledger-sheet__meta">
+        {% if book.is_balanced %}Balanced{% else %}Difference {{ book.difference|floatformat:2 }}{% endif %}
+      </p>
+    </header>
+    <div class="ledger-sheet__scroll">
+      <table class="ledger-table ledger-table--trial">
+        <thead>
+          <tr>
+            <th scope="col" class="col-folio">Folio</th>
+            <th scope="col" class="col-ref">Code</th>
+            <th scope="col" class="col-particulars">Account name</th>
+            <th scope="col" class="col-money">Debit (Dr)</th>
+            <th scope="col" class="col-money">Credit (Cr)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in book.rows %}
+          <tr>
+            <td class="col-folio">{{ row.folio }}</td>
+            <td class="col-ref">{{ row.code }}</td>
+            <td class="col-particulars">{{ row.name }}</td>
+            <td class="col-money">{% if row.debit %}{{ row.debit|floatformat:2 }}{% endif %}</td>
+            <td class="col-money">{% if row.credit %}{{ row.credit|floatformat:2 }}{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr class="ledger-table__empty">
+            <td colspan="5">{{ book.empty_copy }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if book.rows %}
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="3">Totals</th>
+            <th class="col-money">{{ book.total_debit|floatformat:2 }}</th>
+            <th class="col-money">{{ book.total_credit|floatformat:2 }}</th>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </article>
+  {% endif %}
+</section>
+{% endblock %}

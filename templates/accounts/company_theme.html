@@ -5,37 +5,43 @@
 
 {% block content %}
 <section
-  class="page settings-page theme-settings-page company-theme-page"
+  class="page settings-page theme-settings-page company-theme-page theme-admin-page"
   id="settings-page"
   data-saved-theme="{% if form.default_ui_theme.value == 'product' %}default{% else %}{{ form.default_ui_theme.value|default:'default' }}{% endif %}"
   data-saved-font="plex"
   data-saved-density="comfortable"
 >
-  <header class="page-intro">
-    <div class="page-intro__copy">
-      <p class="page-kicker">System settings</p>
-      <h2>{{ page_title }}</h2>
-      <p class="page-lead">
-        Firm default for workspace pages. Staff who pick a personal theme under
-        My profile override this on their own role pages only — other roles are not changed.
+  <form method="post" class="theme-admin" id="appearance-form" novalidate>
+    {% csrf_token %}
+
+    <header class="theme-admin__toolbar">
+      <div class="theme-admin__toolbar-copy">
+        <h2 class="theme-admin__title">{{ page_title }}</h2>
+        <p class="theme-admin__subtitle">
+          <span class="theme-admin__domain">Firm default</span>
+          <span class="theme-admin__subtitle-sep" aria-hidden="true">·</span>
+          <span id="chip-theme">{{ current_theme_label }}</span>
+        </p>
+      </div>
+      <div class="theme-admin__toolbar-actions">
+        <a class="btn btn--quiet btn--inline theme-admin__btn" href="{{ back_url|default:system_settings_url|default:'#' }}">Cancel</a>
+        <button type="submit" class="btn btn--primary btn--inline theme-admin__btn theme-admin__btn--save">
+          Save
+        </button>
+      </div>
+    </header>
+
+    <div class="theme-admin__banner" role="note">
+      <span class="theme-admin__banner-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 17l6-6-6-6M12 19h8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <p>
+        Staff who pick a personal theme under My profile override this on their own role pages only —
+        other roles are not changed. Personal Theme settings never rewrite this firm setting.
       </p>
     </div>
-  </header>
-
-  <div class="theme-studio__current" aria-label="Current company theme">
-    <p class="theme-studio__current-kicker">Company default</p>
-    <p class="theme-studio__current-name" id="chip-theme">{{ current_theme_label }}</p>
-    <p class="theme-studio__current-meta">
-      <span>{{ theme_count }} themes available</span>
-    </p>
-  </div>
-
-  <p class="theme-studio__scope" role="note">
-    Default for users following Company default. Personal Theme settings never rewrite this firm setting.
-  </p>
-
-  <form method="post" class="theme-studio settings-studio" id="appearance-form" novalidate>
-    {% csrf_token %}
 
     {% if form.non_field_errors %}
     <div class="form-alert" role="alert">
@@ -43,104 +49,119 @@
     </div>
     {% endif %}
 
-    <div class="theme-studio__main settings-studio__main">
-      <div class="settings-panels">
-        <div class="settings-panel" id="panel-themes" role="tabpanel">
-          <div class="settings-panel__intro">
-            <h3>Color themes</h3>
-            <p>Choose the palette applied to workspace pages by default across the firm.</p>
+    <div class="theme-admin__layout">
+      <div class="theme-admin__main">
+        <section class="theme-admin__panel">
+          <div class="theme-admin__panel-head">
+            <h3>Application</h3>
+            <div class="theme-admin__panel-actions">
+              <span class="theme-admin__chip">{{ theme_count }} themes</span>
+            </div>
           </div>
-          {% for group in theme_groups %}
-          <div class="theme-group">
-            <p class="theme-group__label">{{ group.label }}</p>
-            <div class="theme-grid" role="radiogroup" aria-label="{{ group.label }}">
-              {% for option in group.options %}
-              <label class="theme-card theme-card--{{ option.preview }}{% if option.featured %} theme-card--featured{% endif %}{% if option.is_current %} theme-card--current{% endif %}{% if form.default_ui_theme.value == option.value or form.default_ui_theme.value == 'product' and option.value == 'default' %} is-selected{% endif %}">
-                <input
-                  type="radio"
-                  name="{{ form.default_ui_theme.name }}"
-                  value="{{ option.value }}"
-                  {% if form.default_ui_theme.value == option.value or form.default_ui_theme.value == 'product' and option.value == 'default' %}checked{% endif %}
-                  data-theme-preview="{{ option.preview }}"
-                  data-theme-label="{{ option.label }}"
-                >
-                {% if option.is_current %}
-                <span class="theme-card__badge">Active</span>
-                {% endif %}
-                <span class="theme-card__stage" aria-hidden="true">
-                  <span class="theme-card__rail"></span>
-                  <span class="theme-card__canvas">
-                    <span class="theme-card__line"></span>
-                    <span class="theme-card__line theme-card__line--short"></span>
-                    <span class="theme-card__block"></span>
-                  </span>
-                </span>
-                <span class="theme-card__meta">
-                  <span class="theme-card__name">{{ option.label }}</span>
-                  <span class="theme-card__blurb">{{ option.blurb }}</span>
-                </span>
-              </label>
+
+          <div class="theme-admin__row">
+            <div class="theme-admin__label">
+              <strong>Company default</strong>
+              <span>Palette applied to workspace pages when staff follow Company default.</span>
+            </div>
+            <div class="theme-admin__control">
+              <p class="theme-admin__value" id="chip-theme-display">{{ current_theme_label }}</p>
+            </div>
+          </div>
+
+          <div class="theme-admin__row theme-admin__row--stack">
+            <div class="theme-admin__label">
+              <strong>Color theme</strong>
+              <span>Choose the firm-wide default. Preview updates as you select.</span>
+            </div>
+            <div class="theme-admin__control">
+              {% for group in theme_groups %}
+              <div class="theme-group">
+                <p class="theme-group__label">{{ group.label }}</p>
+                <div class="theme-grid" role="radiogroup" aria-label="{{ group.label }}">
+                  {% for option in group.options %}
+                  <label class="theme-card theme-card--{{ option.preview }}{% if option.featured %} theme-card--featured{% endif %}{% if option.is_current %} theme-card--current{% endif %}{% if form.default_ui_theme.value == option.value or form.default_ui_theme.value == 'product' and option.value == 'default' %} is-selected{% endif %}">
+                    <input
+                      type="radio"
+                      name="{{ form.default_ui_theme.name }}"
+                      value="{{ option.value }}"
+                      {% if form.default_ui_theme.value == option.value or form.default_ui_theme.value == 'product' and option.value == 'default' %}checked{% endif %}
+                      data-theme-preview="{{ option.preview }}"
+                      data-theme-label="{{ option.label }}"
+                    >
+                    {% if option.is_current %}
+                    <span class="theme-card__badge">Active</span>
+                    {% endif %}
+                    <span class="theme-card__stage" aria-hidden="true">
+                      <span class="theme-card__rail"></span>
+                      <span class="theme-card__canvas">
+                        <span class="theme-card__line"></span>
+                        <span class="theme-card__line theme-card__line--short"></span>
+                        <span class="theme-card__block"></span>
+                      </span>
+                    </span>
+                    <span class="theme-card__meta">
+                      <span class="theme-card__name">{{ option.label }}</span>
+                      <span class="theme-card__blurb">{{ option.blurb }}</span>
+                    </span>
+                  </label>
+                  {% endfor %}
+                </div>
+              </div>
               {% endfor %}
+              {% if form.default_ui_theme.errors %}
+              <p class="field-error">{{ form.default_ui_theme.errors.0 }}</p>
+              {% endif %}
             </div>
           </div>
-          {% endfor %}
-          {% if form.default_ui_theme.errors %}
-          <p class="field-error">{{ form.default_ui_theme.errors.0 }}</p>
-          {% endif %}
-        </div>
-      </div>
-    </div>
+        </section>
 
-    <aside class="theme-studio__aside" aria-label="Live appearance preview">
-      <div class="settings-studio__preview">
-        <div class="settings-preview__head">
-          <h3>Live preview</h3>
-          <span class="settings-preview__badge">Realtime</span>
-        </div>
-        <div class="settings-preview__stage">
-          <div class="settings-preview__shell">
-            <div class="settings-preview__nav" aria-hidden="true">
-              <span></span><span></span><span></span><span></span>
-              <span class="settings-preview__nav-item">
-                <i></i>
-                <em class="settings-preview__dot"></em>
-              </span>
-            </div>
-            <div class="settings-preview__main">
-              <div class="settings-preview__topbar" aria-hidden="true">
-                <span class="settings-preview__crumb"></span>
-                <span class="settings-preview__bell">
+        {% if company_theme_setting.updated_at %}
+        <p class="theme-admin__meta website-template-meta">
+          Last updated {{ company_theme_setting.updated_at|date:"j M Y, H:i" }}
+          {% if company_theme_setting.updated_by %}
+          by {{ company_theme_setting.updated_by.get_full_name|default:company_theme_setting.updated_by.login_code }}
+          {% endif %}
+        </p>
+        {% endif %}
+      </div>
+
+      <aside class="theme-admin__aside" aria-label="Live appearance preview">
+        <div class="theme-admin__preview">
+          <div class="theme-admin__preview-head">
+            <h3>Live preview</h3>
+            <span class="theme-admin__chip theme-admin__chip--live">Realtime</span>
+          </div>
+          <div class="settings-preview__stage">
+            <div class="settings-preview__shell">
+              <div class="settings-preview__nav" aria-hidden="true">
+                <span></span><span></span><span></span><span></span>
+                <span class="settings-preview__nav-item">
                   <i></i>
-                  <em></em>
+                  <em class="settings-preview__dot"></em>
                 </span>
               </div>
-              <div class="settings-preview__card">
-                <span class="settings-preview__title"></span>
-                <span class="settings-preview__line"></span>
-                <span class="settings-preview__line settings-preview__line--short"></span>
-                <span class="settings-preview__cta"></span>
+              <div class="settings-preview__main">
+                <div class="settings-preview__topbar" aria-hidden="true">
+                  <span class="settings-preview__crumb"></span>
+                  <span class="settings-preview__bell">
+                    <i></i>
+                    <em></em>
+                  </span>
+                </div>
+                <div class="settings-preview__card">
+                  <span class="settings-preview__title"></span>
+                  <span class="settings-preview__line"></span>
+                  <span class="settings-preview__line settings-preview__line--short"></span>
+                  <span class="settings-preview__cta"></span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </aside>
-
-    <div class="form-actions form-actions--start theme-studio__actions">
-      <button type="submit" class="btn btn--primary btn--inline">
-        Save company theme
-      </button>
+      </aside>
     </div>
   </form>
-
-  {% if company_theme_setting.updated_at %}
-  <p class="website-template-meta">
-    Last updated {{ company_theme_setting.updated_at|date:"j M Y, H:i" }}
-    {% if company_theme_setting.updated_by %}
-    by {{ company_theme_setting.updated_by.get_full_name|default:company_theme_setting.updated_by.login_code }}
-    {% endif %}
-  </p>
-  {% endif %}
 </section>
 {% endblock %}
 

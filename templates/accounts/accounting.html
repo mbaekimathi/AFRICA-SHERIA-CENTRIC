@@ -1,0 +1,71 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" data-reveal-root id="accounting-hub">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Books of account assembled from live Finance &amp; Billing activity —
+        company ledgers, invoices, payroll, advances, and petty cash.
+      </p>
+    </div>
+  </header>
+
+  {% if accounting_snapshot %}
+  <div class="metrics metrics--dash" data-reveal>
+    {% for metric in accounting_snapshot %}
+    <div class="metric metric--glass" style="--stagger: {{ forloop.counter0 }}">
+      <p class="metric__label">{{ metric.label }}</p>
+      <p class="metric__value">{{ metric.value }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if page_nav_items %}
+  <section class="dash-section" data-reveal>
+    <div class="dash-section__head">
+      <div>
+        <p class="dash-section__eyebrow">Books of account</p>
+        <h3>Open a book</h3>
+        <p>Each book shows live balances and movements from the firm’s finance records.</p>
+      </div>
+    </div>
+    <div class="module-grid module-grid--dash">
+      {% for item in page_nav_items %}
+      <a
+        href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
+        class="module-card module-card--pro{% if item.disabled %} is-disabled{% endif %}{% if item.badge_count %} has-unread{% endif %}"
+        style="--stagger: {{ forloop.counter0 }}"
+        data-magnetic
+        {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} pending"{% endif %}
+        {% if item.disabled %}aria-disabled="true"{% endif %}
+      >
+        <span class="icon-orb icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
+          <span class="icon-orb__shine"></span>
+          <span class="icon-orb__core">{{ item.icon|safe }}</span>
+          <span
+            class="nav-badge module-card__badge"
+            data-page-badge="{{ item.slug }}"
+            {% if not item.badge_count %}hidden{% endif %}
+          >{{ item.badge_count|default:0 }}</span>
+        </span>
+        <span class="module-card__body">
+          <span class="module-card__label">{{ item.label }}</span>
+          <span class="module-card__hint">Live ledger</span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true">
+          <span>Open</span>
+          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</section>
+{% endblock %}

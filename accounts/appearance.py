@@ -23,7 +23,7 @@ THEME_GROUPS = (
         "Role palettes",
         (
             ("firm_admin", "Firm indigo", "Restrained indigo for chambers"),
-            ("managing_partner", "Partner slate", "Executive blue-slate shell"),
+            ("managing_partner", "Partner slate", "Navy shell with bright panel-blue controls"),
             ("advocate", "Advocate teal", "Calm practice greens"),
             ("intern", "Intern blue", "Clear training blues"),
             ("it_support", "IT steel", "Technical cool steel"),
@@ -50,7 +50,7 @@ THEME_GROUPS = (
         (
             ("sunrise", "Sunrise", "Coral accent on dark shell"),
             ("citrus", "Citrus", "Gold accent, readable ink"),
-            ("azure", "Azure", "Modern sky blue accent"),
+            ("azure", "Azure", "Navy shell with bright panel-blue accent"),
             ("emerald", "Emerald", "Fresh green, calm body"),
             ("saffron", "Saffron", "Golden accent, soft canvas"),
             ("flamingo", "Flamingo", "Rose accent, balanced contrast"),

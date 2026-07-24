@@ -111,36 +111,40 @@
       </div>
     </header>
 
-    <div class="client-account-panel__body client-account-panel__body--table">
+    <div class="client-account-panel__body">
       {% if account_detail.invoices %}
-      <div class="data-table-wrap">
-        <table class="data-table client-account-invoice-table">
-          <thead>
-            <tr>
-              <th scope="col">Invoice</th>
-              <th scope="col">Description</th>
-              <th scope="col">Issued</th>
-              <th scope="col">Due</th>
-              <th scope="col">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for invoice in account_detail.invoices %}
-            <tr>
-              <td>
-                <a
-                  class="table-entity-link mono"
-                  href="{% url 'accounts:view_invoice' role=role_slug invoice_id=invoice.pk %}"
-                >{{ invoice.invoice_number }}</a>
-              </td>
-              <td class="client-account-invoice-table__description">{{ invoice.description|truncatechars:48 }}</td>
-              <td>{{ invoice.issue_date|date:"d M Y" }}</td>
-              <td>{{ invoice.due_date|date:"d M Y" }}</td>
-              <td class="mono">KES {{ invoice.total_amount|floatformat:2 }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="client-account-invoices" role="list">
+        {% for invoice in account_detail.invoices %}
+        <a
+          class="client-account-invoice"
+          role="listitem"
+          href="{% url 'accounts:view_invoice' role=role_slug invoice_id=invoice.pk %}"
+        >
+          <span class="client-account-invoice__main">
+            <strong class="mono">{{ invoice.invoice_number }}</strong>
+            <span>
+              {% if invoice.description %}{{ invoice.description|truncatechars:56 }} · {% endif %}
+              Issued {{ invoice.issue_date|date:"d M Y" }}
+              {% if invoice.due_date %}· Due {{ invoice.due_date|date:"d M Y" }}{% endif %}
+            </span>
+          </span>
+          <span class="client-account-invoice__amounts">
+            <strong class="mono">KES {{ invoice.total_amount|floatformat:2 }}</strong>
+            <span>
+              Paid KES {{ invoice.amount_paid|floatformat:2 }}
+              · Due KES {{ invoice.balance_due|floatformat:2 }}
+            </span>
+          </span>
+          <span class="invoice-status invoice-status--{{ invoice.status }}">
+            {{ invoice.get_status_display }}
+          </span>
+          <span class="client-account-invoice__chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </a>
+        {% endfor %}
       </div>
       {% else %}
       <div class="client-accounts-empty">

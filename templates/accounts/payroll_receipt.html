@@ -139,33 +139,11 @@
     {% endif %}
 
     <div class="invoice-sheet__stamps-row">
-      <div
-        class="invoice-seal invoice-seal--paid"
-        role="img"
-        aria-label="Paid"
-      >
-        <span class="invoice-seal__ring" aria-hidden="true"></span>
-        <span class="invoice-seal__inner">
-          <span class="invoice-seal__status">Paid</span>
-          {% if payment.recorded_by %}
-          <span class="invoice-seal__rule" aria-hidden="true"></span>
-          <span class="invoice-seal__label">Recorded by</span>
-          <span class="invoice-seal__name">{{ payment.recorded_by.get_full_name }}</span>
-          <span class="invoice-seal__date">{{ payment.paid_at|date:"d M Y" }}</span>
-          {% endif %}
-        </span>
-      </div>
+      {% include "accounts/partials/company_digital_signature.html" with signature_name=payment.recorded_by.get_full_name signature_title=digital_signature.default_title signature_date=payment.paid_at|date:"d M Y" %}
+      {% include "accounts/partials/company_digital_stamp.html" with stamp_status="Paid" stamp_status_key="paid" stamp_label="Issued by" stamp_name=firm.display_name stamp_date=payment.paid_at|date:"d M Y" %}
     </div>
 
-    <footer class="invoice-company-footer">
-      <p class="invoice-company-footer__thanks">Thank you.</p>
-      <p class="invoice-company-footer__line">
-        {{ firm.display_name }}
-        {% if firm.phone %} · {{ firm.phone }}{% endif %}
-        {% if firm.email %} · {{ firm.email }}{% endif %}
-        {% if firm.tax_pin %} · PIN {{ firm.tax_pin }}{% endif %}
-      </p>
-    </footer>
+    {% include "accounts/partials/company_letterfoot.html" %}
   </article>
 </section>
 {% endblock %}

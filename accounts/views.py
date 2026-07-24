@@ -52,6 +52,9 @@ from .forms import (
     CompanyContactsForm,
     CompanyThemeForm,
     CompanyLetterheadForm,
+    CompanyDigitalStampForm,
+    CompanyDigitalSignatureForm,
+    EmployeeDigitalStampForm,
     AboutCompanyForm,
     CompanyTermsForm,
     CourtAttendanceAdvocateFormSet,
@@ -127,6 +130,10 @@ from .blog_share import (
     pop_share_intents,
     stash_share_intents,
 )
+from .books_of_account import (
+    build_accounting_book,
+    build_accounting_hub_snapshot,
+)
 from .case_audit import build_case_audit_events, case_audit_summary
 from .document_tracking import (
     detect_session_behavior,
@@ -158,6 +165,9 @@ from .models import (
     EmployeeWorkSession,
     CommunicationSettings,
     CompanyLetterheadSetting,
+    CompanyDigitalStampSetting,
+    CompanyDigitalSignatureSetting,
+    EmployeeDigitalStampSetting,
     CompanyThemeSetting,
     FinanceSettings,
     FirmCompanyInformation,
@@ -1830,8 +1840,10 @@ class ClientInvoiceView(View):
             active="billing",
         )
         from .letterhead import letterhead_render_context
+        from .invoice_marks import invoice_marks_context
 
         context.update(letterhead_render_context(firm=firm))
+        context.update(invoice_marks_context(invoice, firm=firm))
         context.update(
             {
                 "invoice": invoice,
@@ -3194,6 +3206,9 @@ class RoleWorkspaceView(View):
     website_template_template = "accounts/website_template.html"
     company_theme_template = "accounts/company_theme.html"
     letterhead_template = "accounts/letterhead.html"
+    digital_stamp_template = "accounts/digital_stamp.html"
+    my_digital_stamp_template = "accounts/my_digital_stamp.html"
+    default_signature_template = "accounts/default_signature.html"
     system_settings_template = "accounts/system_settings.html"
     finance_settings_template = "accounts/finance_settings.html"
     communication_settings_template = "accounts/communication_settings.html"
@@ -3210,6 +3225,8 @@ class RoleWorkspaceView(View):
     employee_petty_cashbook_template = "accounts/employee_petty_cashbook.html"
     company_accounts_template = "accounts/company_accounts.html"
     petty_cash_book_template = "accounts/petty_cash_book.html"
+    accounting_template = "accounts/accounting.html"
+    accounting_book_template = "accounts/accounting_book.html"
     roles_permissions_template = "accounts/roles_permissions.html"
     roles_module_detail_template = "accounts/roles_module_detail.html"
     roles_activity_permission_template = "accounts/roles_activity_permission.html"
@@ -3311,6 +3328,17 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_letterhead"):
             context.update(self._letterhead_context(user))
             response = render(request, self.letterhead_template, context)
+        elif resolved.get("is_digital_stamp"):
+            context.update(self._digital_stamp_context(user))
+            response = render(request, self.digital_stamp_template, context)
+        elif resolved.get("is_my_digital_stamp"):
+            context.update(self._my_digital_stamp_context(user))
+            response = render(request, self.my_digital_stamp_template, context)
+        elif resolved.get("is_default_signature") or resolved.get(
+            "is_my_digital_signature"
+        ):
+            context.update(self._default_signature_context(user))
+            response = render(request, self.default_signature_template, context)
         elif resolved.get("is_finance_settings"):
             context.update(self._finance_settings_context(form=None))
             response = render(request, self.finance_settings_template, context)
@@ -3523,6 +3551,22 @@ class RoleWorkspaceView(View):
                 self._petty_cash_book_context(request, user, resolved)
             )
             response = render(request, self.petty_cash_book_template, context)
+        elif resolved["leaf"] == "accounting":
+            context["accounting_snapshot"] = build_accounting_hub_snapshot()
+            response = render(request, self.accounting_template, context)
+        elif resolved["leaf"] in {
+            "cash-book",
+            "bank-book",
+            "sales-day-book",
+            "purchases-day-book",
+            "journal-proper",
+            "sales-ledger",
+            "purchases-ledger",
+            "general-ledger",
+            "trial-balance",
+        }:
+            context["book"] = build_accounting_book(resolved["leaf"])
+            response = render(request, self.accounting_book_template, context)
         elif resolved["is_dashboard"]:
             response = render(request, self.dashboard_template, context)
         elif resolved["leaf"] == "employee-management":
@@ -3797,6 +3841,10 @@ class RoleWorkspaceView(View):
             "website-template",
             "company-theme",
             "letterhead",
+            "digital-stamp",
+            "default-signature",
+            "my-digital-stamp",
+            "my-digital-signature",
             "finance-settings",
             "communication-settings",
             "register-case",
@@ -3833,6 +3881,15 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "letterhead":
             return self._post_letterhead(request, user, resolved)
+
+        if resolved["leaf"] == "digital-stamp":
+            return self._post_digital_stamp(request, user, resolved)
+
+        if resolved["leaf"] == "my-digital-stamp":
+            return self._post_my_digital_stamp(request, user, resolved)
+
+        if resolved["leaf"] in {"default-signature", "my-digital-signature"}:
+            return self._post_default_signature(request, user, resolved)
 
         if resolved["leaf"] == "finance-settings":
             return self._post_finance_settings(request, user, resolved)
@@ -4664,6 +4721,7 @@ class RoleWorkspaceView(View):
             info = form.save(commit=False)
             info.updated_by = user
             info.save()
+            form.apply_logo(info)
             self._sync_company_profile_images(request, info, append=True)
             messages.success(request, "Company profile saved.")
             return redirect(user.workspace_url(*resolved["trail"]))
@@ -5225,6 +5283,7 @@ class RoleWorkspaceView(View):
     def _letterhead_context(user, *, form=None):
         from .letterhead import (
             accent_samples,
+            footer_samples,
             letterhead_render_context,
             letterhead_samples,
         )
@@ -5234,6 +5293,9 @@ class RoleWorkspaceView(View):
         resolved_form = form or CompanyLetterheadForm(instance=setting)
         template_value = (
             resolved_form["template"].value() or setting.template
+        )
+        footer_value = (
+            resolved_form["footer_template"].value() or setting.footer_template
         )
         accent_value = resolved_form["accent"].value() or setting.accent
         if form is not None and form.is_bound:
@@ -5249,6 +5311,7 @@ class RoleWorkspaceView(View):
             show_contacts = bool(setting.show_contacts)
         preview_setting = CompanyLetterheadSetting(
             template=template_value,
+            footer_template=footer_value,
             accent=accent_value,
             show_logo=show_logo,
             show_tagline=show_tagline,
@@ -5261,6 +5324,7 @@ class RoleWorkspaceView(View):
             "letterhead_setting": setting,
             "form": resolved_form,
             "letterhead_samples": letterhead_samples(current=template_value),
+            "footer_samples": footer_samples(current=footer_value),
             "accent_samples": accent_samples(current=accent_value),
             "company_profile_url": user.workspace_url(
                 "dashboard",
@@ -5268,9 +5332,18 @@ class RoleWorkspaceView(View):
                 "company-information",
                 "company-profile",
             ),
+            "company_contacts_url": user.workspace_url(
+                "dashboard",
+                "system-settings",
+                "company-information",
+                "company-contacts",
+            ),
             "current_template_label": dict(
                 CompanyLetterheadSetting.Template.choices
             ).get(template_value, "Classic split"),
+            "current_footer_label": dict(
+                CompanyLetterheadSetting.FooterTemplate.choices
+            ).get(footer_value, "Compact line"),
         }
 
     def _post_letterhead(self, request, user, resolved):
@@ -5289,13 +5362,265 @@ class RoleWorkspaceView(View):
             choice.save()
             messages.success(
                 request,
-                f"Letterhead saved as {choice.get_template_display()} "
+                f"Letterhead saved as {choice.get_template_display()} with "
+                f"{choice.get_footer_template_display()} footer "
                 f"({choice.get_accent_display()}). It will appear on invoices and receipts.",
             )
             return redirect(user.workspace_url(*resolved["trail"]))
 
         context.update(self._letterhead_context(user, form=form))
         response = render(request, self.letterhead_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _digital_stamp_context(user, *, form=None):
+        from .digital_stamp import (
+            stamp_accent_samples,
+            stamp_render_context,
+            stamp_samples,
+        )
+
+        setting = CompanyDigitalStampSetting.get_solo()
+        firm = FirmCompanyInformation.get_solo()
+        resolved_form = form or CompanyDigitalStampForm(instance=setting)
+        template_value = (
+            resolved_form["template"].value() or setting.template
+        )
+        accent_value = resolved_form["accent"].value() or setting.accent
+        if form is not None and form.is_bound:
+            data = form.data
+            show_firm_name = data.get("show_firm_name") in {"on", "true", "1"}
+            show_status = data.get("show_status") in {"on", "true", "1"}
+            show_approver = data.get("show_approver") in {"on", "true", "1"}
+            show_date = data.get("show_date") in {"on", "true", "1"}
+        else:
+            show_firm_name = bool(setting.show_firm_name)
+            show_status = bool(setting.show_status)
+            show_approver = bool(setting.show_approver)
+            show_date = bool(setting.show_date)
+        preview_setting = CompanyDigitalStampSetting(
+            template=template_value,
+            accent=accent_value,
+            show_firm_name=show_firm_name,
+            show_status=show_status,
+            show_approver=show_approver,
+            show_date=show_date,
+        )
+        ctx = stamp_render_context(
+            firm=firm,
+            setting=preview_setting,
+            status="Issued",
+            status_key="issued",
+            label="Issued by",
+            name=firm.display_name,
+            date_display=timezone.now().strftime("%d %b %Y"),
+        )
+        return {
+            **ctx,
+            "digital_stamp_setting": setting,
+            "form": resolved_form,
+            "stamp_samples": stamp_samples(current=template_value),
+            "accent_samples": stamp_accent_samples(current=accent_value),
+            "company_profile_url": user.workspace_url(
+                "dashboard",
+                "system-settings",
+                "company-information",
+                "company-profile",
+            ),
+            "current_template_label": dict(
+                CompanyDigitalStampSetting.Template.choices
+            ).get(template_value, "Classic ring"),
+        }
+
+    def _post_digital_stamp(self, request, user, resolved):
+        setting = CompanyDigitalStampSetting.get_solo()
+        form = CompanyDigitalStampForm(request.POST, instance=setting)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            choice = form.save(commit=False)
+            choice.updated_by = user
+            choice.save()
+            messages.success(
+                request,
+                f"Digital stamp saved as {choice.get_template_display()} "
+                f"({choice.get_accent_display()}). It will appear on invoices and receipts.",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._digital_stamp_context(user, form=form))
+        response = render(request, self.digital_stamp_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _my_digital_stamp_context(user, *, form=None):
+        from .digital_stamp import (
+            stamp_accent_samples,
+            stamp_render_context,
+            stamp_samples,
+        )
+
+        setting = EmployeeDigitalStampSetting.for_employee(user)
+        firm = FirmCompanyInformation.get_solo()
+        resolved_form = form or EmployeeDigitalStampForm(instance=setting)
+        template_value = (
+            resolved_form["template"].value() or setting.template
+        )
+        accent_value = resolved_form["accent"].value() or setting.accent
+        if form is not None and form.is_bound:
+            data = form.data
+            show_firm_name = data.get("show_firm_name") in {"on", "true", "1"}
+            show_status = data.get("show_status") in {"on", "true", "1"}
+            show_approver = data.get("show_approver") in {"on", "true", "1"}
+            show_date = data.get("show_date") in {"on", "true", "1"}
+        else:
+            show_firm_name = bool(setting.show_firm_name)
+            show_status = bool(setting.show_status)
+            show_approver = bool(setting.show_approver)
+            show_date = bool(setting.show_date)
+        preview_setting = EmployeeDigitalStampSetting(
+            employee=user,
+            template=template_value,
+            accent=accent_value,
+            show_firm_name=show_firm_name,
+            show_status=show_status,
+            show_approver=show_approver,
+            show_date=show_date,
+        )
+        signer_name = user.get_full_name() or user.login_code
+        ctx = stamp_render_context(
+            firm=firm,
+            setting=preview_setting,
+            status="Approved",
+            status_key="issued",
+            label="Approved by",
+            name=signer_name,
+            date_display=timezone.now().strftime("%d %b %Y"),
+        )
+        return {
+            **ctx,
+            "digital_stamp_setting": setting,
+            "form": resolved_form,
+            "stamp_samples": stamp_samples(current=template_value),
+            "accent_samples": stamp_accent_samples(current=accent_value),
+            "signer_name": signer_name,
+            "current_template_label": dict(
+                EmployeeDigitalStampSetting.Template.choices
+            ).get(template_value, "Classic ring"),
+        }
+
+    def _post_my_digital_stamp(self, request, user, resolved):
+        setting = EmployeeDigitalStampSetting.for_employee(user)
+        form = EmployeeDigitalStampForm(request.POST, instance=setting)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            choice = form.save()
+            messages.success(
+                request,
+                f"Your digital stamp was saved as {choice.get_template_display()} "
+                f"({choice.get_accent_display()}).",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._my_digital_stamp_context(user, form=form))
+        response = render(request, self.my_digital_stamp_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _default_signature_context(user, *, form=None):
+        from .digital_signature import (
+            signature_accent_samples,
+            signature_render_context,
+            signature_samples,
+        )
+
+        setting = CompanyDigitalSignatureSetting.get_solo()
+        firm = FirmCompanyInformation.get_solo()
+        resolved_form = form or CompanyDigitalSignatureForm(instance=setting)
+        template_value = (
+            resolved_form["template"].value() or setting.template
+        )
+        accent_value = resolved_form["accent"].value() or setting.accent
+        if form is not None and form.is_bound:
+            data = form.data
+            default_title = (data.get("default_title") or "").strip()
+            show_firm_name = data.get("show_firm_name") in {"on", "true", "1"}
+            show_name = data.get("show_name") in {"on", "true", "1"}
+            show_title = data.get("show_title") in {"on", "true", "1"}
+            show_date = data.get("show_date") in {"on", "true", "1"}
+        else:
+            default_title = setting.default_title
+            show_firm_name = bool(setting.show_firm_name)
+            show_name = bool(setting.show_name)
+            show_title = bool(setting.show_title)
+            show_date = bool(setting.show_date)
+        preview_setting = CompanyDigitalSignatureSetting(
+            template=template_value,
+            accent=accent_value,
+            default_title=default_title or "Authorized Signatory",
+            show_firm_name=show_firm_name,
+            show_name=show_name,
+            show_title=show_title,
+            show_date=show_date,
+        )
+        ctx = signature_render_context(
+            firm=firm,
+            setting=preview_setting,
+            name=user.get_full_name() or user.login_code,
+            title=preview_setting.default_title,
+            date_display=timezone.now().strftime("%d %b %Y"),
+        )
+        return {
+            **ctx,
+            "digital_signature_setting": setting,
+            "form": resolved_form,
+            "signature_samples": signature_samples(current=template_value),
+            "accent_samples": signature_accent_samples(current=accent_value),
+            "company_profile_url": user.workspace_url(
+                "dashboard",
+                "system-settings",
+                "company-information",
+                "company-profile",
+            ),
+            "current_template_label": dict(
+                CompanyDigitalSignatureSetting.Template.choices
+            ).get(template_value, "Classic line"),
+        }
+
+    def _post_default_signature(self, request, user, resolved):
+        setting = CompanyDigitalSignatureSetting.get_solo()
+        form = CompanyDigitalSignatureForm(request.POST, instance=setting)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            choice = form.save(commit=False)
+            choice.updated_by = user
+            choice.save()
+            messages.success(
+                request,
+                f"Default signature saved as {choice.get_template_display()} "
+                f"({choice.get_accent_display()}). It will appear on invoices and receipts.",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._default_signature_context(user, form=form))
+        response = render(request, self.default_signature_template, context)
         return attach_greeting_cookie(response, request)
 
     @staticmethod
@@ -11457,9 +11782,10 @@ class ViewInvoiceView(View):
 
         share_message = (
             f"Invoice {invoice.invoice_number} from {firm.display_name}\n"
-            f"Amount due: KES {invoice.balance_due}\n"
-            f"Due date: {invoice.due_date.strftime('%d %b %Y')}"
+            f"Amount due: KES {invoice.balance_due}"
         )
+        if invoice.due_date:
+            share_message += f"\nDue date: {invoice.due_date.strftime('%d %b %Y')}"
         if absolute_pdf_url:
             share_message += f"\n\nPDF invoice:\n{absolute_pdf_url}"
         if absolute_pay_url and invoice.status != Invoice.Status.PAID:
@@ -11500,6 +11826,9 @@ class ViewInvoiceView(View):
             page_nav_items=page_nav_items,
         )
         context.update(letterhead_render_context(firm=firm))
+        from .invoice_marks import invoice_marks_context
+
+        context.update(invoice_marks_context(invoice, firm=firm))
         context.update(
             {
                 "invoice": invoice,

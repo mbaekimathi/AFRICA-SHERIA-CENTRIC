@@ -8,6 +8,7 @@
   class="page settings-page letterhead-page"
   id="letterhead-page"
   data-template="{{ form.template.value|default:letterhead.template }}"
+  data-footer="{{ form.footer_template.value|default:letterhead.footer_template }}"
   data-accent="{{ form.accent.value|default:letterhead.accent }}"
 >
   <header class="page-intro">
@@ -15,10 +16,12 @@
       <p class="page-kicker">Document settings</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Design the firm letterhead used on invoices and receipts. Pick a sample layout,
-        tune accents and details, then save. Content comes from
-        <a href="{{ company_profile_url }}">Company profile</a>
-        and contacts.
+        Design the firm letterhead and footer used on invoices and receipts.
+        Name and logo come from
+        <a href="{{ company_profile_url }}">Company profile</a>;
+        email, phone, and addresses come from
+        <a href="{{ company_contacts_url }}">Company contacts</a>.
+        The website and address details appear in the footer when enabled.
       </p>
     </div>
   </header>
@@ -29,7 +32,7 @@
       {{ current_template_label }}
     </p>
     <p class="letterhead-studio__current-meta">
-      <span>{{ letterhead_samples|length }} samples</span>
+      <span id="letterhead-current-footer">{{ current_footer_label }}</span>
       <span aria-hidden="true">·</span>
       <span id="letterhead-current-accent">{{ letterhead.get_accent_display }}</span>
     </p>
@@ -47,8 +50,8 @@
     <div class="letterhead-studio__main">
       <section class="letterhead-studio__samples" aria-labelledby="letterhead-samples-title">
         <div class="settings-panel__intro">
-          <h3 id="letterhead-samples-title">Layout samples</h3>
-          <p>Select a starting design. The live preview updates as you choose.</p>
+          <h3 id="letterhead-samples-title">Header samples</h3>
+          <p>Select a letterhead layout. The live preview updates as you choose.</p>
         </div>
         <div class="letterhead-sample-grid" role="radiogroup" aria-label="Letterhead samples">
           {% for sample in letterhead_samples %}
@@ -89,6 +92,47 @@
         {% endif %}
       </section>
 
+      <section class="letterhead-studio__samples" aria-labelledby="letterfoot-samples-title">
+        <div class="settings-panel__intro">
+          <h3 id="letterfoot-samples-title">Footer samples</h3>
+          <p>Choose how the document footer looks. Address appears here when enabled.</p>
+        </div>
+        <div class="letterhead-sample-grid" role="radiogroup" aria-label="Footer samples">
+          {% for sample in footer_samples %}
+          <label
+            class="letterhead-sample-card letterfoot-sample-card letterfoot-sample-card--{{ sample.value }}{% if form.footer_template.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-sample-card--current{% endif %}"
+          >
+            <input
+              type="radio"
+              name="{{ form.footer_template.name }}"
+              value="{{ sample.value }}"
+              {% if form.footer_template.value == sample.value %}checked{% endif %}
+              data-letterfoot-template="{{ sample.value }}"
+              data-letterfoot-label="{{ sample.label }}"
+            >
+            {% if sample.is_current %}
+            <span class="letterhead-sample-card__badge">Active</span>
+            {% endif %}
+            <span class="letterhead-sample-card__stage" aria-hidden="true">
+              <span class="letterfoot-mini letterfoot-mini--{{ sample.value }}">
+                <span class="letterfoot-mini__thanks"></span>
+                <span class="letterfoot-mini__addr">
+                  <i></i><i></i>
+                </span>
+              </span>
+            </span>
+            <span class="letterhead-sample-card__meta">
+              <span class="letterhead-sample-card__name">{{ sample.label }}</span>
+              <span class="letterhead-sample-card__blurb">{{ sample.blurb }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% if form.footer_template.errors %}
+        <p class="field-error">{{ form.footer_template.errors.0 }}</p>
+        {% endif %}
+      </section>
+
       <section class="letterhead-studio__accents" aria-labelledby="letterhead-accents-title">
         <div class="settings-panel__intro">
           <h3 id="letterhead-accents-title">Accent colour</h3>
@@ -122,7 +166,7 @@
       <section class="letterhead-studio__options" aria-labelledby="letterhead-options-title">
         <div class="settings-panel__intro">
           <h3 id="letterhead-options-title">Details</h3>
-          <p>Choose which firm details appear on the letterhead.</p>
+          <p>Contacts stay on the header. Address shows in the footer when enabled.</p>
         </div>
         <div class="letterhead-option-grid">
           <label class="letterhead-option">
@@ -134,12 +178,12 @@
             <span>{{ form.show_tagline.label }}</span>
           </label>
           <label class="letterhead-option">
-            {{ form.show_address }}
-            <span>{{ form.show_address.label }}</span>
+            {{ form.show_contacts }}
+            <span>Show contacts (email, phone)</span>
           </label>
           <label class="letterhead-option">
-            {{ form.show_contacts }}
-            <span>{{ form.show_contacts.label }}</span>
+            {{ form.show_address }}
+            <span>Show address in footer (physical, postal, city, country)</span>
           </label>
         </div>
       </section>
@@ -159,6 +203,7 @@
             <span class="letterhead-preview__line letterhead-preview__line--short"></span>
             <span class="letterhead-preview__line"></span>
           </div>
+          {% include "accounts/partials/company_letterfoot.html" %}
         </div>
       </div>
     </aside>
