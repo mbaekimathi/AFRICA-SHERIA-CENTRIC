@@ -1,5 +1,30 @@
 {% for item in items %}
+{% if item.is_folder and item.browse_url %}
+<tr
+  class="drive-browser__row is-clickable-row"
+  data-drive-row
+  data-name="{{ item.name|lower }}"
+  data-group="{{ group_key|default:'' }}"
+  data-href="{{ item.browse_url }}"
+  tabindex="0"
+  role="link"
+  aria-label="Open folder {{ item.name }}"
+>
+{% elif item.open_url %}
+<tr
+  class="drive-browser__row is-clickable-row"
+  data-drive-row
+  data-name="{{ item.name|lower }}"
+  data-group="{{ group_key|default:'' }}"
+  data-href="{{ item.open_url }}"
+  data-target="_blank"
+  tabindex="0"
+  role="link"
+  aria-label="Open document {{ item.name }}"
+>
+{% else %}
 <tr class="drive-browser__row" data-drive-row data-name="{{ item.name|lower }}" data-group="{{ group_key|default:'' }}">
+{% endif %}
   <td>
     <div class="drive-browser__name drive-browser__name--{{ item.kind }}">
       {% include "accounts/partials/drive_file_icon.html" with kind=item.kind %}
@@ -31,19 +56,10 @@
   <td>{{ item.size_label|default:"—" }}</td>
   <td class="drive-browser__actions">
     {% if item.is_folder %}
-    <a class="btn btn--quiet btn--inline" href="{{ item.browse_url }}">Open</a>
     {% if item.workspace_url %}
     <a class="btn btn--quiet btn--inline" href="{{ item.workspace_url }}">{{ item.workspace_label }}</a>
     {% endif %}
     {% else %}
-    {% if item.open_url %}
-    <a
-      class="btn btn--quiet btn--inline"
-      href="{{ item.open_url }}"
-      target="_blank"
-      rel="noopener noreferrer"
-    >Open</a>
-    {% endif %}
     {% if item.activity_url %}
     <a class="btn btn--quiet btn--inline" href="{{ item.activity_url }}">Activity</a>
     {% endif %}

@@ -4,8 +4,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const filterForm = document.getElementById("matter-analytics-filter");
   const liveRoot = document.getElementById("matter-analytics-live");
-  let charts = {};
-  let activeTab = "litigation";
+  const focusInput = document.getElementById("matter-filter-focus");
+  let chartData = { trend: [], focus: "all" };
+  let activeFocus = "all";
   let requestToken = 0;
   let debounceTimer = null;
 
@@ -13,9 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const styles = getComputedStyle(document.body);
     const value = (name, fallback) =>
       styles.getPropertyValue(name).trim() || fallback;
-    const accent = value("--accent", "#0f766e");
     return {
-      accent: accent.startsWith("#") ? accent : "#2563eb",
       ink: value("--ink", "#18202f"),
       muted: value("--ink-muted", "#667085"),
       line: value("--line", "#e4e7ec"),
@@ -47,20 +46,39 @@ document.addEventListener("DOMContentLoaded", () => {
   const readCharts = () => {
     const dataElement = document.getElementById("matter-analytics-charts-data");
     if (!dataElement) {
-      charts = {};
+      chartData = { trend: [], focus: activeFocus };
       return;
     }
-    charts = JSON.parse(dataElement.textContent || "{}");
+    try {
+      chartData = JSON.parse(dataElement.textContent || "{}");
+    } catch (_error) {
+      chartData = { trend: [], focus: activeFocus };
+    }
   };
 
-  const drawTrendSeries = (canvas, series, color) => {
+  const seriesValue = (point, key) => Number(point?.[key] || 0);
+
+  const drawCombinedTrend = () => {
+    const canvas = liveRoot?.querySelector("[data-matter-trend]");
     if (!canvas) return;
+
     const colors = palette();
     const { context, width, height } = prepare(canvas);
     context.clearRect(0, 0, width, height);
 
-    const points = Array.isArray(series) ? series : [];
-    const hasValues = points.some((point) => Number(point.value || 0) > 0);
+    const points = Array.isArray(chartData.trend) ? chartData.trend : [];
+    const focus = chartData.focus || activeFocus;
+    const showLit = focus === "all" || focus === "litigation";
+    const showNon = focus === "all" || focus === "non_litigation";
+
+    const hasValues = points.some((point) => {
+      const lit = seriesValue(point, "litigation");
+      const non = seriesValue(point, "non_litigation");
+      if (focus === "litigation") return lit > 0;
+      if (focus === "non_litigation") return non > 0;
+      return lit + non > 0;
+    });
+
     if (!points.length || !hasValues) {
       emptyState(context, width, height, colors, "No openings in this period");
       return;
@@ -69,9 +87,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const padding = { top: 22, right: 16, bottom: 36, left: 36 };
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
-    const maxValue = Math.max(1, ...points.map((point) => Number(point.value || 0)));
+    const maxValue = Math.max(
+      1,
+      ...points.map((point) => {
+        const lit = seriesValue(point, "litigation");
+        const non = seriesValue(point, "non_litigation");
+        if (focus === "litigation") return lit;
+        if (focus === "non_litigation") return non;
+        return lit + non;
+      })
+    );
+
     const step = chartWidth / Math.max(1, points.length);
-    const barWidth = Math.max(6, Math.min(28, step * 0.55));
+    const groupWidth = Math.max(8, Math.min(36, step * 0.62));
+    const barGap = showLit && showNon ? 2 : 0;
+    const barWidth =
+      showLit && showNon
+        ? Math.max(3, (groupWidth - barGap) / 2)
+        : groupWidth;
     const floorY = padding.top + chartHeight;
 
     context.strokeStyle = colors.line;
@@ -93,17 +126,12 @@ document.addEventListener("DOMContentLoaded", () => {
       );
     }
 
-    const linePoints = [];
-    points.forEach((point, index) => {
-      const center = padding.left + step * index + step / 2;
-      const value = Number(point.value || 0);
+    const drawBar = (x, value, color) => {
       const barHeight = (value / maxValue) * chartHeight;
       const top = floorY - barHeight;
-      const x = center - barWidth / 2;
-
       context.fillStyle = color;
       context.beginPath();
-      const radius = Math.min(4, barWidth / 2);
+      const radius = Math.min(3, barWidth / 2);
       context.moveTo(x, floorY);
       context.lineTo(x, top + radius);
       context.quadraticCurveTo(x, top, x + radius, top);
@@ -112,24 +140,46 @@ document.addEventListener("DOMContentLoaded", () => {
       context.lineTo(x + barWidth, floorY);
       context.closePath();
       context.fill();
+      return { x: x + barWidth / 2, y: top };
+    };
 
-      linePoints.push({ x: center, y: top });
+    const litLine = [];
+    const nonLine = [];
+
+    points.forEach((point, index) => {
+      const center = padding.left + step * index + step / 2;
+      const lit = seriesValue(point, "litigation");
+      const non = seriesValue(point, "non_litigation");
+
+      if (showLit && showNon) {
+        const startX = center - groupWidth / 2;
+        litLine.push(drawBar(startX, lit, colors.litigation));
+        nonLine.push(drawBar(startX + barWidth + barGap, non, colors.non));
+      } else if (showLit) {
+        litLine.push(drawBar(center - barWidth / 2, lit, colors.litigation));
+      } else {
+        nonLine.push(drawBar(center - barWidth / 2, non, colors.non));
+      }
     });
 
-    if (linePoints.length > 1) {
+    const drawLine = (linePoints, color) => {
+      if (linePoints.length < 2) return;
       context.beginPath();
       linePoints.forEach((point, index) => {
         if (index === 0) context.moveTo(point.x, point.y);
         else context.lineTo(point.x, point.y);
       });
       context.strokeStyle = color;
-      context.globalAlpha = 0.45;
+      context.globalAlpha = 0.4;
       context.lineWidth = 2;
       context.lineJoin = "round";
       context.lineCap = "round";
       context.stroke();
       context.globalAlpha = 1;
-    }
+    };
+
+    if (showLit) drawLine(litLine, colors.litigation);
+    if (showNon) drawLine(nonLine, colors.non);
 
     const labelEvery = Math.max(
       1,
@@ -146,45 +196,40 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  const drawAll = () => {
-    const colors = palette();
-    ["litigation", "non_litigation"].forEach((tabId) => {
-      const tabCharts = charts[tabId] || {};
-      const color = tabId === "litigation" ? colors.litigation : colors.non;
-      drawTrendSeries(
-        document.querySelector(`[data-matter-trend="${tabId}"]`),
-        tabCharts.trend || [],
-        color
-      );
-    });
-  };
+  const setActiveFocus = (focusId, { refresh = false, pushUrl = false } = {}) => {
+    activeFocus =
+      focusId === "litigation" || focusId === "non_litigation"
+        ? focusId
+        : "all";
+    page.dataset.focus = activeFocus;
+    if (focusInput) focusInput.value = activeFocus;
 
-  const setActiveTab = (tabId, { pushUrl = false } = {}) => {
-    activeTab = tabId === "non_litigation" ? "non_litigation" : "litigation";
-    page.dataset.activeTab = activeTab;
-
-    liveRoot?.querySelectorAll("[data-matter-tab]").forEach((tab) => {
-      const selected = tab.getAttribute("data-matter-tab") === activeTab;
-      tab.classList.toggle("is-active", selected);
-      tab.setAttribute("aria-selected", selected ? "true" : "false");
-    });
-    liveRoot?.querySelectorAll("[data-matter-panel]").forEach((panel) => {
-      panel.hidden = panel.getAttribute("data-matter-panel") !== activeTab;
+    liveRoot?.querySelectorAll("[data-matter-focus]").forEach((pill) => {
+      const selected = pill.getAttribute("data-matter-focus") === activeFocus;
+      pill.classList.toggle("is-active", selected);
+      pill.setAttribute("aria-selected", selected ? "true" : "false");
     });
 
-    window.requestAnimationFrame(drawAll);
+    if (refresh) {
+      scheduleRefresh(true);
+      return;
+    }
+
+    window.requestAnimationFrame(drawCombinedTrend);
 
     if (pushUrl) {
       const params = new URLSearchParams(queryString());
-      params.set("tab", activeTab);
       history.replaceState(null, "", `${window.location.pathname}?${params}`);
     }
   };
 
-  const bindTabs = () => {
-    liveRoot?.querySelectorAll("[data-matter-tab]").forEach((tab) => {
-      tab.addEventListener("click", () => {
-        setActiveTab(tab.getAttribute("data-matter-tab"), { pushUrl: true });
+  const bindFocus = () => {
+    liveRoot?.querySelectorAll("[data-matter-focus]").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        setActiveFocus(pill.getAttribute("data-matter-focus"), {
+          refresh: true,
+          pushUrl: true,
+        });
       });
     });
   };
@@ -203,8 +248,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!meta) return;
     const status = page.querySelector("[data-matter-filter-status]");
     const summary = page.querySelector("[data-matter-summary]");
-    const label = meta.content.querySelector("[data-filter-label]")?.textContent || "";
-    const metaTab = meta.content.querySelector("[data-active-tab]")?.textContent;
+    const label =
+      meta.content.querySelector("[data-filter-label]")?.textContent || "";
+    const metaFocus = meta.content.querySelector(
+      "[data-active-focus]"
+    )?.textContent;
     const monthInput = filterForm?.querySelector("#matter-filter-month");
 
     if (status) status.textContent = `Showing ${label}`;
@@ -230,14 +278,16 @@ document.addEventListener("DOMContentLoaded", () => {
         meta.content.querySelector("[data-can-next]")?.textContent || "0";
       syncMonthNavButtons();
     }
-    if (metaTab) activeTab = metaTab.trim() || activeTab;
+    if (metaFocus) activeFocus = metaFocus.trim() || activeFocus;
+    if (focusInput) focusInput.value = activeFocus;
   };
 
   const queryString = () => {
     const params = filterForm
       ? new URLSearchParams(new FormData(filterForm))
       : new URLSearchParams(window.location.search);
-    params.set("tab", activeTab);
+    params.set("focus", activeFocus);
+    params.delete("tab");
     return params.toString();
   };
 
@@ -265,9 +315,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       liveRoot.innerHTML = html;
       syncHeaderMeta();
-      bindTabs();
+      bindFocus();
       readCharts();
-      setActiveTab(activeTab);
+      setActiveFocus(activeFocus);
       history.replaceState(null, "", `${window.location.pathname}?${params}`);
     } catch (_error) {
       if (status) {
@@ -315,14 +365,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const activePanel = filterForm.querySelector(
         `[data-mode-field="${mode}"]:not([hidden])`
       );
-      const focusInput = activePanel?.querySelector(
+      const focusEl = activePanel?.querySelector(
         "input:not([type='hidden']):not([disabled]), select:not([disabled])"
       );
-      if (!focusInput) return;
-      focusInput.focus({ preventScroll: true });
-      if (typeof focusInput.showPicker === "function") {
+      if (!focusEl) return;
+      focusEl.focus({ preventScroll: true });
+      if (typeof focusEl.showPicker === "function") {
         try {
-          focusInput.showPicker();
+          focusEl.showPicker();
         } catch (_error) {
           /* Browser may block picker unless from a direct click. */
         }
@@ -336,10 +386,12 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
 
-    filterForm.querySelectorAll("input[type='date'], input[type='month']").forEach((input) => {
-      input.addEventListener("change", () => scheduleRefresh(true));
-      input.addEventListener("input", () => scheduleRefresh());
-    });
+    filterForm
+      .querySelectorAll("input[type='date'], input[type='month']")
+      .forEach((input) => {
+        input.addEventListener("change", () => scheduleRefresh(true));
+        input.addEventListener("input", () => scheduleRefresh());
+      });
 
     const yearInput = filterForm.querySelector("#matter-filter-year");
     if (yearInput) {
@@ -369,14 +421,20 @@ document.addEventListener("DOMContentLoaded", () => {
     syncModeFields();
   }
 
-  const initialTab = new URLSearchParams(window.location.search).get("tab");
-  activeTab =
-    initialTab === "non_litigation" || initialTab === "non-litigation"
-      ? "non_litigation"
-      : "litigation";
+  const params = new URLSearchParams(window.location.search);
+  const initialFocus = params.get("focus") || params.get("tab") || "all";
+  activeFocus =
+    initialFocus === "litigation" ||
+    initialFocus === "non_litigation" ||
+    initialFocus === "non-litigation"
+      ? initialFocus === "non-litigation"
+        ? "non_litigation"
+        : initialFocus
+      : "all";
+  if (focusInput) focusInput.value = activeFocus;
 
-  bindTabs();
+  bindFocus();
   readCharts();
-  setActiveTab(activeTab);
-  window.addEventListener("resize", drawAll);
+  setActiveFocus(activeFocus);
+  window.addEventListener("resize", drawCombinedTrend);
 });

@@ -1,11 +1,20 @@
 """Workspace navigation helpers for role dashboards."""
 
+from datetime import timedelta
 from functools import lru_cache
 
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Employee, get_firm_display_name
+from .models import (
+    CaseTask,
+    Employee,
+    LitigationCase,
+    MatterTask,
+    NonLitigationMatter,
+    get_firm_display_name,
+)
 from .appearance import resolve_user_workspace_theme
 
 SESSION_GREETING_KEY = "greeting_name_key"
@@ -32,11 +41,14 @@ def ensure_session_started_at(request) -> str:
 def _notification_badge_context(user) -> dict:
     """Initial bell + sidebar badge counts for first paint (before live poll)."""
     # Lazy import: notifications.py imports workspace helpers at module load.
-    from .notifications import utility_badge_counts
+    from .notifications import unread_counts_by_category, utility_badge_counts
 
-    badges = utility_badge_counts(user)
+    by_category = unread_counts_by_category(user)
+    badges = utility_badge_counts(user, by_category=by_category)
     return {
-        "notification_unread_count": sum(badges.values()),
+        # Topbar bell: unread notification rows (tasks/reminders/messages).
+        "notification_unread_count": sum(by_category.values()),
+        # Sidebar utility icons: tasks = pending assignments; others = unread.
         "notification_badges": badges,
     }
 
@@ -361,8 +373,8 @@ ROLE_WELCOME = {
         "copy": "Monitor matter health, counsel capacity, and chamber performance.",
         "stats": [
             ("Active matters", "—"),
-            ("Counsel load", "—"),
-            ("This week", "—"),
+            ("Matters this week", "—"),
+            ("Tasks in progress", "—"),
         ],
     },
     Employee.Role.ADVOCATE: {
@@ -1943,6 +1955,230 @@ def back_url_for_trail(role_slug: str, trail: list[str]) -> str | None:
     return None
 
 
+def _calendar_week_start():
+    """Monday of the current local calendar week."""
+    today = timezone.localdate()
+    return today - timedelta(days=today.weekday())
+
+
+def _metric_matter_item(*, kind, title, meta, url, badge, status="", status_key=""):
+    return {
+        "kind": kind,
+        "title": title,
+        "meta": meta,
+        "url": url,
+        "badge": badge,
+        "status": status,
+        "status_key": status_key,
+    }
+
+
+def _user_linked_active_cases(user):
+    """Active litigation cases assigned to the user or carrying their open tasks."""
+    open_task_case_ids = CaseTask.objects.filter(
+        assignee=user,
+        status__in=(CaseTask.Status.PENDING, CaseTask.Status.ACCEPTED),
+    ).values_list("case_id", flat=True)
+    return (
+        LitigationCase.objects.filter(status=LitigationCase.Status.ACTIVE)
+        .filter(Q(assigned_to=user) | Q(pk__in=open_task_case_ids))
+        .select_related("client", "assigned_to")
+        .distinct()
+        .order_by("-updated_at", "-pk")
+    )
+
+
+def _user_linked_active_matters(user):
+    """Active non-litigation matters assigned to the user or carrying open tasks."""
+    open_task_matter_ids = MatterTask.objects.filter(
+        assignee=user,
+        status__in=(MatterTask.Status.PENDING, MatterTask.Status.ACCEPTED),
+    ).values_list("matter_id", flat=True)
+    return (
+        NonLitigationMatter.objects.filter(status=NonLitigationMatter.Status.ACTIVE)
+        .filter(Q(assigned_to=user) | Q(pk__in=open_task_matter_ids))
+        .select_related("client", "assigned_to")
+        .distinct()
+        .order_by("-updated_at", "-pk")
+    )
+
+
+def _serialize_linked_cases(user, cases, *, limit=10):
+    role = user.role_slug
+    items = []
+    for case in cases[:limit]:
+        ref = (case.court_case_number or "").strip() or f"Case #{case.pk}"
+        items.append(
+            _metric_matter_item(
+                kind="case",
+                title=ref,
+                meta=case.client.get_full_name(),
+                url=reverse(
+                    "accounts:view_litigation_case",
+                    kwargs={"role": role, "case_id": case.pk},
+                ),
+                badge="Case",
+            )
+        )
+    return items
+
+
+def _serialize_linked_matters(user, matters, *, limit=10):
+    role = user.role_slug
+    items = []
+    for matter in matters[:limit]:
+        items.append(
+            _metric_matter_item(
+                kind="matter",
+                title=matter.matter_title or matter.reference_code,
+                meta=matter.client.get_full_name(),
+                url=reverse(
+                    "accounts:view_non_litigation_matter",
+                    kwargs={"role": role, "matter_id": matter.pk},
+                ),
+                badge="Matter",
+            )
+        )
+    return items
+
+
+def _serialize_linked_tasks(user, case_tasks, matter_tasks, *, limit=10):
+    role = user.role_slug
+    combined = []
+    for task in case_tasks:
+        combined.append(("case", task, task.updated_at or task.created_at))
+    for task in matter_tasks:
+        combined.append(("matter", task, task.updated_at or task.created_at))
+    combined.sort(key=lambda row: row[2] or timezone.now(), reverse=True)
+
+    items = []
+    for kind, task, _stamp in combined[:limit]:
+        if kind == "case":
+            title = (task.title or "").strip() or f"Task #{task.pk}"
+            meta = str(task.case)
+            url = reverse(
+                "accounts:view_case_task",
+                kwargs={"role": role, "task_id": task.pk},
+            )
+            badge = "Case task"
+        else:
+            title = (task.title or "").strip() or f"Task #{task.pk}"
+            meta = str(task.matter)
+            url = reverse(
+                "accounts:view_matter_task",
+                kwargs={"role": role, "task_id": task.pk},
+            )
+            badge = "Matter task"
+        items.append(
+            _metric_matter_item(
+                kind=kind,
+                title=title,
+                meta=meta,
+                url=url,
+                badge=badge,
+                status=task.get_status_display(),
+                status_key=task.status,
+            )
+        )
+    return items
+
+
+def managing_partner_welcome_stats(user):
+    """
+    Live dashboard metrics for the managing partner home page.
+
+    Counts and dropdown rows are scoped to matters/tasks linked to the
+    signed-in user (assigned counsel or open task assignee).
+    """
+    week_start = _calendar_week_start()
+    role = user.role_slug
+    cases = list(_user_linked_active_cases(user))
+    matters = list(_user_linked_active_matters(user))
+
+    cases_this_week = [
+        case
+        for case in cases
+        if (
+            case.approved_at
+            and timezone.localtime(case.approved_at).date() >= week_start
+        )
+        or (case.filing_date and case.filing_date >= week_start)
+    ]
+    matters_this_week = [
+        matter
+        for matter in matters
+        if (
+            matter.approved_at
+            and timezone.localtime(matter.approved_at).date() >= week_start
+        )
+        or (matter.date_opened and matter.date_opened >= week_start)
+    ]
+
+    case_tasks = list(
+        CaseTask.objects.filter(
+            assignee=user,
+            status=CaseTask.Status.ACCEPTED,
+        )
+        .select_related("case", "case__client")
+        .order_by("-updated_at", "-pk")
+    )
+    matter_tasks = list(
+        MatterTask.objects.filter(
+            assignee=user,
+            status=MatterTask.Status.ACCEPTED,
+        )
+        .select_related("matter", "matter__client")
+        .order_by("-updated_at", "-pk")
+    )
+
+    active_items = _serialize_linked_cases(user, cases) + _serialize_linked_matters(
+        user, matters
+    )
+    # Keep a stable, recent-first mix without exceeding the dropdown cap.
+    active_items = active_items[:10]
+    week_items = _serialize_linked_cases(
+        user, cases_this_week
+    ) + _serialize_linked_matters(user, matters_this_week)
+    week_items = week_items[:10]
+    task_items = _serialize_linked_tasks(user, case_tasks, matter_tasks)
+
+    matter_hub_url = workspace_reverse(role, "dashboard", "matter-management")
+    tasks_url = workspace_reverse(role, "dashboard", "tasks")
+
+    return [
+        {
+            "key": "active-matters",
+            "label": "Active matters",
+            "value": len(cases) + len(matters),
+            "interactive": True,
+            "items": active_items,
+            "empty_copy": "No active matters linked to your account.",
+            "view_all_url": matter_hub_url,
+            "view_all_label": "Open matter management",
+        },
+        {
+            "key": "matters-this-week",
+            "label": "Matters this week",
+            "value": len(cases_this_week) + len(matters_this_week),
+            "interactive": True,
+            "items": week_items,
+            "empty_copy": "No linked matters opened or approved this week.",
+            "view_all_url": matter_hub_url,
+            "view_all_label": "Open matter management",
+        },
+        {
+            "key": "tasks-in-progress",
+            "label": "Tasks in progress",
+            "value": len(case_tasks) + len(matter_tasks),
+            "interactive": True,
+            "items": task_items,
+            "empty_copy": "No accepted tasks in progress on your desk.",
+            "view_all_url": tasks_url,
+            "view_all_label": "Open tasks",
+        },
+    ]
+
+
 def workspace_context(
     user,
     *,
@@ -1985,6 +2221,19 @@ def workspace_context(
     ]
 
     welcome = ROLE_WELCOME.get(role, ROLE_WELCOME[Employee.Role.EMPLOYEE])
+    if role == Employee.Role.MANAGING_PARTNER and is_dashboard:
+        welcome_stats = managing_partner_welcome_stats(user)
+    else:
+        welcome_stats = [
+            {
+                "key": f"stat-{index}",
+                "label": label,
+                "value": value,
+                "interactive": False,
+                "items": [],
+            }
+            for index, (label, value) in enumerate(welcome["stats"])
+        ]
     greeting_prefix = time_of_day_greeting()
     if request is not None:
         greeting_name = session_greeting_name(request, user)
@@ -2126,7 +2375,7 @@ def workspace_context(
         "icon_logout": ICON_LOGOUT,
         "welcome_headline": welcome["headline"],
         "welcome_copy": welcome["copy"],
-        "welcome_stats": welcome["stats"],
+        "welcome_stats": welcome_stats,
         "greeting_prefix": greeting_prefix,
         "greeting_name": greeting_name,
         "session_greeting": f"{greeting_prefix}, {greeting_name}",

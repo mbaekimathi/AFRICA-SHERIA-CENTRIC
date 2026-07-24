@@ -103,6 +103,7 @@ from .google_auth import GoogleAuthError, verify_google_id_token
 from .google_drive import (
     GoogleDriveAPIError,
     GoogleDriveOAuthError,
+    apply_company_letterhead_to_google_doc,
     begin_oauth,
     bootstrap_drive_folders,
     build_redirect_uri,
@@ -208,6 +209,8 @@ from .notifications import (
     notifications_payload,
     notify_case_task,
     notify_google_drive_disconnected,
+    notify_invoice_generated,
+    notify_invoice_issued_staff,
     notify_matter_task,
     notify_task_accepted,
     notify_task_completed,
@@ -7578,6 +7581,7 @@ class RoleWorkspaceView(View):
             invoice.created_by = user
             invoice.status = Invoice.Status.GENERATED
             invoice.save()
+            notify_invoice_generated(invoice)
             messages.success(
                 request,
                 f"Invoice {invoice.invoice_number} generated for "
@@ -7731,7 +7735,8 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _tasks_context(user, request):
         """Build assignee-only task list for the Tasks utility page."""
-        # Viewing Tasks clears the sidebar badge for this category.
+        # Viewing Tasks clears unread task notifications in the bell feed.
+        # The sidebar Tasks badge uses pending assignment count instead.
         ensure_task_notifications(user)
         mark_category_read(user, Notification.Category.TASK)
 
@@ -11719,6 +11724,7 @@ class ViewInvoiceView(View):
                     ]
                 )
                 notify_invoice_issued(invoice)
+                notify_invoice_issued_staff(invoice)
                 messages.success(
                     request,
                     f"{invoice.invoice_number} marked as Issued. "
@@ -13076,16 +13082,30 @@ class UploadCaseDocumentsView(View):
         title = form.cleaned_data["title"]
         google_type = form.cleaned_data["google_type"]
         description = form.cleaned_data["description"]
+        include_letterhead = bool(
+            form.cleaned_data.get("include_letterhead")
+        )
         folder_id = ensure_case_drive_folder(case)
         created = create_google_workspace_file(
             title, type_key=google_type, parent_id=folder_id
         )
         label = created.get("_workspace_label") or "Google Docs"
+        file_id = created.get("id") or ""
+        letterhead_applied = False
+        if include_letterhead and google_type == "document" and file_id:
+            try:
+                apply_company_letterhead_to_google_doc(file_id)
+                letterhead_applied = True
+            except GoogleDriveAPIError as exc:
+                messages.warning(
+                    self.request,
+                    f"Document created, but letterhead could not be applied: {exc}",
+                )
         document = Document.objects.create(
             case=case,
             title=title,
             source=Document.Source.GOOGLE_DOC,
-            drive_file_id=created.get("id") or "",
+            drive_file_id=file_id,
             web_view_link=created.get("webViewLink") or "",
             mime_type=created.get("mimeType")
             or "application/vnd.google-apps.document",
@@ -13097,13 +13117,28 @@ class UploadCaseDocumentsView(View):
             document,
             user,
             DocumentActivity.Action.CREATED,
-            detail=f"Created as {label}",
-            metadata={"google_type": google_type, "source": document.source},
+            detail=(
+                f"Created as {label} with letterhead"
+                if letterhead_applied
+                else f"Created as {label}"
+            ),
+            metadata={
+                "google_type": google_type,
+                "source": document.source,
+                "letterhead": letterhead_applied,
+            },
         )
-        messages.success(
-            self.request,
-            f"“{title}” created in {label}. Open it to start working.",
-        )
+        if letterhead_applied:
+            messages.success(
+                self.request,
+                f"“{title}” created in {label} with firm letterhead. "
+                "Open it to start working.",
+            )
+        else:
+            messages.success(
+                self.request,
+                f"“{title}” created in {label}. Open it to start working.",
+            )
         return document
 
     def _upload_file(self, user, case, form):
@@ -13280,6 +13315,9 @@ class UploadCaseDocumentsView(View):
                 "task_access": task_access,
             }
         )
+        from .letterhead import letterhead_render_context
+
+        context.update(letterhead_render_context())
         return context
 
 
@@ -13757,7 +13795,6 @@ class UpdateMatterAttendanceView(View):
             "presence": attendance.presence,
             "presence_display": attendance.get_presence_display(),
             "outcome_notes": attendance.outcome_notes or "",
-            "description": attendance.description or "",
             "next_action": attendance.next_action or "",
             "next_activity_type": attendance.next_activity_type or "",
             "next_attendance_date": (
@@ -14227,16 +14264,30 @@ class UploadMatterDocumentsView(View):
         title = form.cleaned_data["title"]
         google_type = form.cleaned_data["google_type"]
         description = form.cleaned_data["description"]
+        include_letterhead = bool(
+            form.cleaned_data.get("include_letterhead")
+        )
         folder_id = ensure_matter_drive_folder(matter)
         created = create_google_workspace_file(
             title, type_key=google_type, parent_id=folder_id
         )
         label = created.get("_workspace_label") or "Google Docs"
+        file_id = created.get("id") or ""
+        letterhead_applied = False
+        if include_letterhead and google_type == "document" and file_id:
+            try:
+                apply_company_letterhead_to_google_doc(file_id)
+                letterhead_applied = True
+            except GoogleDriveAPIError as exc:
+                messages.warning(
+                    self.request,
+                    f"Document created, but letterhead could not be applied: {exc}",
+                )
         document = Document.objects.create(
             matter=matter,
             title=title,
             source=Document.Source.GOOGLE_DOC,
-            drive_file_id=created.get("id") or "",
+            drive_file_id=file_id,
             web_view_link=created.get("webViewLink") or "",
             mime_type=created.get("mimeType")
             or "application/vnd.google-apps.document",
@@ -14248,13 +14299,28 @@ class UploadMatterDocumentsView(View):
             document,
             user,
             DocumentActivity.Action.CREATED,
-            detail=f"Created as {label}",
-            metadata={"google_type": google_type, "source": document.source},
+            detail=(
+                f"Created as {label} with letterhead"
+                if letterhead_applied
+                else f"Created as {label}"
+            ),
+            metadata={
+                "google_type": google_type,
+                "source": document.source,
+                "letterhead": letterhead_applied,
+            },
         )
-        messages.success(
-            self.request,
-            f"“{title}” created in {label}. Open it to start working.",
-        )
+        if letterhead_applied:
+            messages.success(
+                self.request,
+                f"“{title}” created in {label} with firm letterhead. "
+                "Open it to start working.",
+            )
+        else:
+            messages.success(
+                self.request,
+                f"“{title}” created in {label}. Open it to start working.",
+            )
         return document
 
     def _upload_file(self, user, matter, form):
@@ -14431,6 +14497,9 @@ class UploadMatterDocumentsView(View):
                 "task_access": task_access,
             }
         )
+        from .letterhead import letterhead_render_context
+
+        context.update(letterhead_render_context())
         return context
 
 

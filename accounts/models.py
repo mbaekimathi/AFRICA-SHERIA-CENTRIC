@@ -324,12 +324,12 @@ class Employee(AbstractUser):
         null=True,
     )
 
-    # Google Drive: Work/{Name}/Personal/
+    # Google Drive: Employees/{Name}/Personal/
     drive_folder_id = models.CharField(
         max_length=128,
         blank=True,
         default="",
-        help_text="Google Drive folder for this employee under Work/.",
+        help_text="Google Drive folder for this employee under Employees/.",
     )
     drive_personal_details_folder_id = models.CharField(
         max_length=128,
@@ -2981,7 +2981,7 @@ class GoogleDriveConnection(models.Model):
         max_length=128,
         blank=True,
         default="",
-        help_text="Deprecated. Employee folders now live directly under Work/{Name}/Personal.",
+        help_text="Deprecated. Employee folders now live directly under Employees/{Name}/Personal.",
     )
     connected_by = models.ForeignKey(
         Employee,
@@ -3682,6 +3682,13 @@ class Invoice(models.Model):
             if mpesa_receipt:
                 fields.append("last_mpesa_receipt")
             self.save(update_fields=fields)
+
+            if self.status == self.Status.PAID:
+                from .client_notifications import notify_invoice_paid_client
+                from .notifications import notify_invoice_paid
+
+                notify_invoice_paid(self)
+                notify_invoice_paid_client(self)
 
             receipt_note = f" Receipt {mpesa_receipt}." if mpesa_receipt else ""
             if applied > 0:

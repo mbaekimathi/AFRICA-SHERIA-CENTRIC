@@ -10,7 +10,7 @@
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
       <p class="matter-hub__lead">
-        Openings, status, and workload for litigation and non-litigation matters.
+        Openings, status, and workload at a glance.
       </p>
     </div>
     <dl class="matter-hub__totals" data-matter-summary>
@@ -40,6 +40,8 @@
       id="matter-analytics-filter"
       aria-label="Date range"
     >
+      <input type="hidden" name="focus" id="matter-filter-focus" value="{{ analytics.focus }}">
+
       <div class="matter-hub__modes" role="group" aria-label="Filter by">
         {% for option in analytics.filter.modes %}
         <label class="matter-hub__mode{% if analytics.filter.mode == option.value %} is-active{% endif %}">
@@ -194,5 +196,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/matter-analytics.js' %}?v=matter-hub-2" defer></script>
+<script src="{% static 'js/matter-analytics.js' %}?v=matter-hub-3" defer></script>
 {% endblock %}

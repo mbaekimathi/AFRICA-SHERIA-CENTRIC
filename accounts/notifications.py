@@ -6,7 +6,7 @@ from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import CaseTask, Employee, MatterTask, Notification
+from .models import CaseTask, Employee, Invoice, MatterTask, Notification
 from .workspace import workspace_reverse
 
 
@@ -271,6 +271,131 @@ def notify_message(
     return notification
 
 
+def _invoice_amount_display(invoice: Invoice) -> str:
+    amount = invoice.total_amount
+    try:
+        return f"KES {float(amount):,.2f}"
+    except (TypeError, ValueError):
+        return f"KES {amount}"
+
+
+def _invoice_url(employee: Employee, invoice: Invoice) -> str:
+    return reverse(
+        "accounts:view_invoice",
+        kwargs={"role": employee.role_slug, "invoice_id": invoice.pk},
+    )
+
+
+def _invoice_message_recipients(invoice: Invoice) -> list[Employee]:
+    """
+    Staff who should see invoice lifecycle messages.
+
+    Managing partners and firm admins always; also creator and issuer when set.
+    """
+    seen: set[int] = set()
+    recipients: list[Employee] = []
+
+    def _add(employee: Employee | None) -> None:
+        if not employee or not employee.pk:
+            return
+        if employee.status != Employee.Status.ACTIVE:
+            return
+        if employee.pk in seen:
+            return
+        seen.add(employee.pk)
+        recipients.append(employee)
+
+    for employee in Employee.objects.filter(
+        status=Employee.Status.ACTIVE,
+        role__in=(Employee.Role.MANAGING_PARTNER, Employee.Role.FIRM_ADMIN),
+    ).iterator():
+        _add(employee)
+
+    created_by = getattr(invoice, "created_by", None)
+    if created_by is None and getattr(invoice, "created_by_id", None):
+        created_by = Employee.objects.filter(pk=invoice.created_by_id).first()
+    _add(created_by)
+
+    approved_by = getattr(invoice, "approved_by", None)
+    if approved_by is None and getattr(invoice, "approved_by_id", None):
+        approved_by = Employee.objects.filter(pk=invoice.approved_by_id).first()
+    _add(approved_by)
+
+    return recipients
+
+
+def _notify_invoice_message(
+    invoice: Invoice,
+    *,
+    event: str,
+    title: str,
+    body: str,
+) -> int:
+    """Fan out a Messages-category notice for an invoice event. Returns created count."""
+    created = 0
+    for recipient in _invoice_message_recipients(invoice):
+        _, was_created = Notification.objects.get_or_create(
+            recipient=recipient,
+            source_key=f"invoice_{event}:{invoice.pk}:{recipient.pk}",
+            defaults={
+                "category": Notification.Category.MESSAGE,
+                "title": title,
+                "body": body,
+                "target_url": _invoice_url(recipient, invoice),
+            },
+        )
+        if was_created:
+            created += 1
+    return created
+
+
+def notify_invoice_generated(invoice: Invoice) -> int:
+    """Notify staff that an invoice was generated."""
+    client_name = invoice.client.get_full_name()
+    return _notify_invoice_message(
+        invoice,
+        event="generated",
+        title=f"Invoice generated: {invoice.invoice_number}",
+        body=(
+            f"Invoice for {client_name} "
+            f"({_invoice_amount_display(invoice)}) was generated."
+        ),
+    )
+
+
+def notify_invoice_issued_staff(invoice: Invoice) -> int:
+    """Notify staff that an invoice was issued to the client portal."""
+    client_name = invoice.client.get_full_name()
+    due = (
+        f" Due {invoice.due_date:%d %b %Y}."
+        if invoice.due_date
+        else ""
+    )
+    return _notify_invoice_message(
+        invoice,
+        event="issued",
+        title=f"Invoice issued: {invoice.invoice_number}",
+        body=(
+            f"Invoice for {client_name} "
+            f"({_invoice_amount_display(invoice)}) was issued.{due}"
+        ),
+    )
+
+
+def notify_invoice_paid(invoice: Invoice) -> int:
+    """Notify staff that an invoice was fully paid."""
+    client_name = invoice.client.get_full_name()
+    return _notify_invoice_message(
+        invoice,
+        event="paid",
+        title=f"Invoice paid: {invoice.invoice_number}",
+        body=(
+            f"Payment received in full for {client_name} "
+            f"({_invoice_amount_display(invoice)})."
+        ),
+    )
+
+
 def notify_google_drive_disconnected(*, disconnected_by: Employee) -> int:
     """
     Notify every active employee that firm Google Drive was disconnected.
@@ -350,6 +475,20 @@ def serialize_notification(notification: Notification) -> dict:
     }
 
 
+def pending_assigned_tasks_count(employee) -> int:
+    """Tasks assigned to this employee that still await accept/reject."""
+    return (
+        CaseTask.objects.filter(
+            assignee=employee,
+            status=CaseTask.Status.PENDING,
+        ).count()
+        + MatterTask.objects.filter(
+            assignee=employee,
+            status=MatterTask.Status.PENDING,
+        ).count()
+    )
+
+
 def unread_counts_by_category(employee) -> dict[str, int]:
     """Return total unread notification counts keyed by category."""
     rows = (
@@ -363,13 +502,24 @@ def unread_counts_by_category(employee) -> dict[str, int]:
     return counts
 
 
-def utility_badge_counts(employee) -> dict[str, int]:
-    """Unread counts for sidebar utility icons (and related pages)."""
-    by_category = unread_counts_by_category(employee)
-    return {
+def utility_badge_counts(
+    employee, *, by_category: dict[str, int] | None = None
+) -> dict[str, int]:
+    """
+    Counts for sidebar utility icons.
+
+    Tasks uses pending assignments (awaiting accept/reject), not merely unread
+    notifications — so the badge stays until the assignee responds.
+    Reminders and Messages still use unread notification counts.
+    """
+    if by_category is None:
+        by_category = unread_counts_by_category(employee)
+    counts = {
         slug: by_category.get(category, 0)
         for slug, category in UTILITY_BADGE_CATEGORIES.items()
     }
+    counts["tasks"] = pending_assigned_tasks_count(employee)
+    return counts
 
 
 def mark_category_read(employee, category: str) -> int:
@@ -403,10 +553,7 @@ def notifications_payload(employee, *, limit: int = 40) -> dict:
 
     by_category = unread_counts_by_category(employee)
     unread_count = sum(by_category.values())
-    badges = {
-        slug: by_category.get(category, 0)
-        for slug, category in UTILITY_BADGE_CATEGORIES.items()
-    }
+    badges = utility_badge_counts(employee, by_category=by_category)
 
     # Fetch each category independently so Tasks / Reminders / Messages
     # each surface their own latest items (newest first).
@@ -424,12 +571,18 @@ def notifications_payload(employee, *, limit: int = 40) -> dict:
             )[:per_category]
         )
         recent.extend(items_qs)
+        # Tasks group unread mirrors pending assignments for the sidebar badge.
+        group_unread = (
+            badges.get("tasks", 0)
+            if category == Notification.Category.TASK
+            else by_category.get(category, 0)
+        )
         ordered_groups.append(
             {
                 "category": category,
                 "label": CATEGORY_LABELS[category],
                 "page_url": _utility_url(employee, CATEGORY_PAGE[category]),
-                "unread": by_category.get(category, 0),
+                "unread": group_unread,
                 "items": [serialize_notification(item) for item in items_qs],
             }
         )

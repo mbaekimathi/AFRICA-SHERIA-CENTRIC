@@ -1,34 +1,21 @@
-<div class="ma-switch" role="tablist" aria-label="Matter type">
-  {% for item in analytics.tab_items %}
+<div class="ma-focus" role="tablist" aria-label="Matter focus">
+  {% for item in analytics.focus_items %}
   <button
     type="button"
-    class="ma-switch__tab{% if item.active %} is-active{% endif %}"
+    class="ma-focus__pill{% if item.active %} is-active{% endif %}"
     role="tab"
-    id="matter-tab-{{ item.id }}"
-    data-matter-tab="{{ item.id }}"
+    data-matter-focus="{{ item.id }}"
     aria-selected="{% if item.active %}true{% else %}false{% endif %}"
-    aria-controls="matter-panel-{{ item.id }}"
   >
-    <span class="ma-switch__label">{{ item.label }}</span>
-    <span class="ma-switch__meta">
-      <strong>{{ item.count }}</strong>
-      <em>{{ item.share_pct }}% of openings</em>
-    </span>
+    <span class="ma-focus__label">{{ item.label }}</span>
+    <strong class="ma-focus__count">{{ item.count }}</strong>
   </button>
   {% endfor %}
 </div>
 
-{% for tab_key, tab in analytics.tabs.items %}
-<section
-  class="ma-panel ma-panel--{{ tab.accent }}"
-  id="matter-panel-{{ tab.id }}"
-  role="tabpanel"
-  aria-labelledby="matter-tab-{{ tab.id }}"
-  data-matter-panel="{{ tab.id }}"
-  {% if analytics.active_tab != tab.id %}hidden{% endif %}
->
-  <section class="ma-kpis" aria-label="{{ tab.label }} snapshot">
-    {% for item in tab.glance %}
+<section class="ma-panel ma-panel--{{ analytics.accent }}" data-matter-panel>
+  <section class="ma-kpis" aria-label="{{ analytics.focus_label }} snapshot">
+    {% for item in analytics.glance %}
     <article class="ma-kpi ma-kpi--{{ item.tone }}">
       <span class="ma-kpi__label">{{ item.label }}</span>
       <strong class="ma-kpi__value">{{ item.value }}</strong>
@@ -40,26 +27,26 @@
   <article class="ma-card ma-card--trend">
     <header class="ma-card__head">
       <div>
-        <h3>{{ tab.trend_title }}</h3>
-        <p>{{ tab.opened }} opened · {{ analytics.filter.label }}</p>
+        <h3>{{ analytics.trend_title }}</h3>
+        <p>{{ analytics.opened }} opened · {{ analytics.filter.label }}</p>
       </div>
-      <ul class="ma-card__stats">
-        <li>
-          <span>Peak</span>
-          <strong>{{ tab.trend_stats.peak_value }} · {{ tab.trend_stats.peak_label }}</strong>
+      <ul class="ma-legend" aria-label="Chart series">
+        <li class="ma-legend__item ma-legend__item--litigation">
+          <i aria-hidden="true"></i>
+          <span>Litigation</span>
         </li>
-        <li class="is-{{ tab.trend_stats.direction }}">
-          <span>Half vs half</span>
-          <strong>{{ tab.trend_stats.direction_label }} {{ tab.trend_stats.delta_pct }}%</strong>
+        <li class="ma-legend__item ma-legend__item--non">
+          <i aria-hidden="true"></i>
+          <span>Non-litigation</span>
         </li>
       </ul>
     </header>
     <div class="ma-card__chart">
       <canvas
-        id="matter-trend-chart-{{ tab.id }}"
-        data-matter-trend="{{ tab.id }}"
+        id="matter-trend-chart"
+        data-matter-trend
         role="img"
-        aria-label="{{ tab.label }} openings trend"
+        aria-label="Matter openings trend"
       ></canvas>
     </div>
   </article>
@@ -69,12 +56,12 @@
       <header class="ma-card__head">
         <div>
           <h3>Status mix</h3>
-          <p>All {{ tab.label|lower }} matters in range</p>
+          <p>{{ analytics.focus_label }} in range</p>
         </div>
       </header>
-      {% if tab.status %}
+      {% if analytics.status %}
       <div class="ma-rails">
-        {% for bar in tab.status %}
+        {% for bar in analytics.status %}
         <div class="ma-rail">
           <div class="ma-rail__meta">
             <span>{{ bar.label }}</span>
@@ -94,69 +81,13 @@
     <article class="ma-card">
       <header class="ma-card__head">
         <div>
-          <h3>{{ tab.focus_title }}</h3>
-          <p>Active matters only</p>
-        </div>
-      </header>
-      {% if tab.focus %}
-      <div class="ma-rails">
-        {% for row in tab.focus %}
-        <div class="ma-rail">
-          <div class="ma-rail__meta">
-            <span>{{ row.label }}</span>
-            <strong>{{ row.value }}</strong>
-          </div>
-          <div class="ma-rail__track" aria-hidden="true">
-            <span style="width: {% widthratio row.value row.max 100 %}%;"></span>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="ma-empty">{{ tab.focus_empty }}</p>
-      {% endif %}
-    </article>
-  </div>
-
-  <div class="ma-grid{% if not tab.show_secondary %} ma-grid--single{% endif %}">
-    {% if tab.show_secondary %}
-    <article class="ma-card">
-      <header class="ma-card__head">
-        <div>
-          <h3>{{ tab.secondary_title }}</h3>
-          <p>Active matters only</p>
-        </div>
-      </header>
-      {% if tab.secondary %}
-      <div class="ma-rails">
-        {% for row in tab.secondary %}
-        <div class="ma-rail">
-          <div class="ma-rail__meta">
-            <span>{{ row.label }}</span>
-            <strong>{{ row.value }}</strong>
-          </div>
-          <div class="ma-rail__track" aria-hidden="true">
-            <span style="width: {% widthratio row.value row.max 100 %}%;"></span>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="ma-empty">{{ tab.secondary_empty }}</p>
-      {% endif %}
-    </article>
-    {% endif %}
-
-    <article class="ma-card">
-      <header class="ma-card__head">
-        <div>
           <h3>Top assignees</h3>
-          <p>{{ tab.active }} active · {{ tab.unassigned }} unassigned</p>
+          <p>{{ analytics.active_count }} active · {{ analytics.unassigned }} unassigned</p>
         </div>
       </header>
-      {% if tab.workload %}
+      {% if analytics.workload %}
       <div class="ma-rails">
-        {% for row in tab.workload %}
+        {% for row in analytics.workload %}
         <div class="ma-rail">
           <div class="ma-rail__meta">
             <span>{{ row.label }}</span>
@@ -169,12 +100,11 @@
         {% endfor %}
       </div>
       {% else %}
-      <p class="ma-empty">{{ tab.workload_empty }}</p>
+      <p class="ma-empty">{{ analytics.workload_empty }}</p>
       {% endif %}
     </article>
   </div>
 </section>
-{% endfor %}
 
 {{ analytics.charts|json_script:"matter-analytics-charts-data" }}
 <template id="matter-analytics-meta">
@@ -186,7 +116,7 @@
   <span data-summary-litigation>{{ analytics.totals.litigation }}</span>
   <span data-summary-non>{{ analytics.totals.non_litigation }}</span>
   <span data-filter-label>{{ analytics.filter.label }}</span>
-  <span data-active-tab>{{ analytics.active_tab }}</span>
+  <span data-active-focus>{{ analytics.focus }}</span>
   <span data-prev-month>{{ analytics.filter.month_nav.prev }}</span>
   <span data-next-month>{{ analytics.filter.month_nav.next }}</span>
   <span data-can-next>{% if analytics.filter.month_nav.can_next %}1{% else %}0{% endif %}</span>

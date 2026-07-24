@@ -194,6 +194,58 @@
             {% endif %}
           </fieldset>
 
+          <section
+            class="docs-letterhead"
+            data-docs-letterhead
+            aria-labelledby="docs-letterhead-title"
+          >
+            <div class="docs-letterhead__head">
+              <div class="docs-letterhead__copy">
+                <h4 id="docs-letterhead-title">Firm letterhead</h4>
+                <p>
+                  Use the company letterhead from Document settings when creating
+                  a Google Doc. Disable for a blank document.
+                </p>
+              </div>
+              <label class="docs-letterhead__switch">
+                {{ create_form.include_letterhead }}
+                <span class="docs-letterhead__switch-ui" aria-hidden="true"></span>
+                <span class="docs-letterhead__switch-label">
+                  {% if create_form.include_letterhead.value %}Enabled{% else %}Disabled{% endif %}
+                </span>
+              </label>
+            </div>
+
+            <div
+              class="docs-letterhead__preview"
+              data-docs-letterhead-preview
+              {% if create_form.is_bound and not create_form.include_letterhead.value %}hidden{% endif %}
+            >
+              <p class="docs-letterhead__preview-kicker">Preview</p>
+              <div class="docs-letterhead__sheet">
+                {% include "accounts/partials/company_letterhead.html" %}
+                <div class="docs-letterhead__body-hint" aria-hidden="true">
+                  Document body starts here…
+                </div>
+                {% include "accounts/partials/company_letterfoot.html" %}
+              </div>
+            </div>
+
+            <p
+              class="docs-letterhead__off"
+              data-docs-letterhead-off
+              {% if not create_form.is_bound or create_form.include_letterhead.value %}hidden{% endif %}
+            >
+              Letterhead will not be added to this file.
+            </p>
+            <p class="docs-letterhead__hint" data-docs-letterhead-docs-only hidden>
+              Letterhead is applied to Google Docs only. Sheets and Slides stay blank.
+            </p>
+            {% if create_form.include_letterhead.errors %}
+            <span class="field-error">{{ create_form.include_letterhead.errors.0 }}</span>
+            {% endif %}
+          </section>
+
           <div class="docs-field">
             <label for="{{ create_form.party_type.id_for_label }}">Party type <span aria-hidden="true">*</span></label>
             {{ create_form.party_type }}
@@ -445,6 +497,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/docs-upload.js' %}?v=4" defer></script>
+<script src="{% static 'js/docs-upload.js' %}?v=5" defer></script>
 <script src="{% static 'js/docs-open.js' %}" defer></script>
 {% endblock %}

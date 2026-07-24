@@ -11,10 +11,13 @@ from .google_drive import (
     GOOGLE_DOC_MIME,
     GOOGLE_SHEET_MIME,
     GOOGLE_SLIDE_MIME,
+    WORK_FOLDER_NAME,
     GoogleDriveAPIError,
     GoogleDriveOAuthError,
     build_drive_folder_breadcrumbs,
+    ensure_folder,
     firm_root_folder_name,
+    get_valid_access_token,
     google_edit_url,
     list_drive_children,
 )
@@ -393,6 +396,20 @@ def build_document_management_browser(
             "in settings to create the company structure."
         )
         return base
+
+    # Keep the firm Employees folder title in sync (was historically "Work").
+    work_id = (connection.work_folder_id or "").strip()
+    if work_id:
+        try:
+            token = get_valid_access_token(connection)
+            ensure_folder(
+                token,
+                name=WORK_FOLDER_NAME,
+                parent_id=root_id,
+                existing_id=work_id,
+            )
+        except (GoogleDriveAPIError, GoogleDriveOAuthError):
+            pass
 
     requested = (folder_id or "").strip() or root_id
     try:

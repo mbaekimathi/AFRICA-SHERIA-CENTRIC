@@ -579,7 +579,7 @@ class SignUpForm(UserCreationForm):
 
     @staticmethod
     def _sync_signup_drive_uploads(user):
-        """Create Work/{Name}/Personal and upload photo."""
+        """Create Employees/{Name}/Personal and upload photo."""
         try:
             from .google_drive import (
                 GoogleDriveAPIError,
@@ -2145,7 +2145,6 @@ class UpdateMatterAttendanceForm(forms.ModelForm):
             "attendance_date",
             "presence",
             "outcome_notes",
-            "description",
             "next_action",
             "next_activity_type",
             "next_attendance_date",
@@ -2189,13 +2188,6 @@ class UpdateMatterAttendanceForm(forms.ModelForm):
                     "class": "form-input",
                     "rows": 3,
                     "placeholder": "Enter outcome notes / directions...",
-                }
-            ),
-            "description": forms.Textarea(
-                attrs={
-                    "class": "form-input",
-                    "rows": 4,
-                    "placeholder": "Enter attendance description...",
                 }
             ),
             "next_action": forms.Textarea(
@@ -2249,7 +2241,6 @@ class UpdateMatterAttendanceForm(forms.ModelForm):
             "attendance_date": "Date of Attendance",
             "presence": "Matter Attendance",
             "outcome_notes": "Outcome / Notes",
-            "description": "Description",
             "next_action": "Next Action",
             "next_activity_type": "Next Activity Type",
             "next_attendance_date": "Next Attendance Date",
@@ -2266,7 +2257,6 @@ class UpdateMatterAttendanceForm(forms.ModelForm):
         self.fields["contact_person"].required = False
         self.fields["location"].required = False
         self.fields["outcome_notes"].required = False
-        self.fields["description"].required = False
         self.fields["next_action"].required = False
         self.fields["next_activity_type"].required = False
         self.fields["next_attendance_date"].required = False
@@ -2766,6 +2756,12 @@ class ApproveCaseForm(forms.Form):
         self.fields["assigned_to"].queryset = Employee.objects.filter(
             status=Employee.Status.ACTIVE
         ).order_by("first_name", "last_name", "login_code")
+        self.fields["assigned_to"].label_from_instance = (
+            lambda employee: (
+                f"{employee.get_full_name() or employee.login_code} "
+                f"({employee.get_role_display()})"
+            )
+        )
 
     def clean_assigned_to(self):
         employee = self.cleaned_data.get("assigned_to")
@@ -5468,11 +5464,28 @@ class CreateGoogleDocumentForm(DocumentPartyTypeMixin, forms.Form):
             attrs={"class": "docs-type-input"}
         ),
     )
+    include_letterhead = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Include firm letterhead",
+        help_text=(
+            "When enabled, new Google Docs open with the company letterhead "
+            "from Document settings. Turn off for a blank document."
+        ),
+        widget=forms.CheckboxInput(
+            attrs={
+                "class": "form-check",
+                "data-docs-letterhead-toggle": "1",
+            }
+        ),
+    )
 
     def __init__(self, *args, party_type_choices=None, **kwargs):
         kwargs.pop("default_client", None)
         super().__init__(*args, **kwargs)
         self._add_party_type_field(party_type_choices)
+        if not self.is_bound:
+            self.fields["include_letterhead"].initial = True
 
     def clean_title(self):
         title = (self.cleaned_data.get("title") or "").strip()

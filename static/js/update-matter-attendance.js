@@ -219,10 +219,6 @@
       data.outcome_notes
     );
     setMultiline(
-      document.getElementById("view-matter-description"),
-      data.description
-    );
-    setMultiline(
       document.getElementById("view-matter-next-action"),
       data.next_action
     );
@@ -330,7 +326,6 @@
     setFieldValue(form, "attendance_date", data.attendance_date);
     setFieldValue(form, "presence", data.presence);
     setFieldValue(form, "outcome_notes", data.outcome_notes);
-    setFieldValue(form, "description", data.description);
     setFieldValue(form, "next_action", data.next_action);
     setFieldValue(form, "next_activity_type", data.next_activity_type);
     setFieldValue(form, "next_attendance_date", data.next_attendance_date);

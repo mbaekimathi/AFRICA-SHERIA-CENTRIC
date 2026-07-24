@@ -15,13 +15,17 @@ CATEGORY_LABELS = {
 }
 
 
-def notify_invoice_issued(invoice: Invoice) -> tuple[ClientNotification, bool]:
-    """Notify the client that an invoice was issued to their portal."""
+def _invoice_amount_display(invoice: Invoice) -> str:
     amount = invoice.total_amount
     try:
-        amount_display = f"KES {float(amount):,.2f}"
+        return f"KES {float(amount):,.2f}"
     except (TypeError, ValueError):
-        amount_display = f"KES {amount}"
+        return f"KES {amount}"
+
+
+def notify_invoice_issued(invoice: Invoice) -> tuple[ClientNotification, bool]:
+    """Notify the client that an invoice was issued to their portal."""
+    amount_display = _invoice_amount_display(invoice)
 
     return ClientNotification.objects.get_or_create(
         recipient=invoice.client,
@@ -37,6 +41,26 @@ def notify_invoice_issued(invoice: Invoice) -> tuple[ClientNotification, bool]:
                     else ""
                 )
                 + " Open Finance & Billing to view or pay."
+            ),
+            "target_url": reverse(
+                "accounts:client_invoice",
+                kwargs={"invoice_id": invoice.pk},
+            ),
+        },
+    )
+
+
+def notify_invoice_paid_client(invoice: Invoice) -> tuple[ClientNotification, bool]:
+    """Notify the client that an invoice was paid in full."""
+    return ClientNotification.objects.get_or_create(
+        recipient=invoice.client,
+        source_key=f"invoice_paid:{invoice.pk}",
+        defaults={
+            "category": ClientNotification.Category.BILLING,
+            "title": f"Invoice paid: {invoice.invoice_number}",
+            "body": (
+                f"Payment of {_invoice_amount_display(invoice)} was received "
+                "in full. Thank you."
             ),
             "target_url": reverse(
                 "accounts:client_invoice",

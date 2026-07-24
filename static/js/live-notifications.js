@@ -153,10 +153,11 @@
       const count = Number(counts[slug] || 0);
       const link = badge.closest(".nav-link");
       const label = link?.dataset.label || slug || "Item";
+      const unit = slug === "tasks" ? "pending" : "unread";
       setBadgeCount(badge, count);
       if (count > 0) {
         link?.classList.add("has-unread");
-        link?.setAttribute("aria-label", `${label}, ${count} unread`);
+        link?.setAttribute("aria-label", `${label}, ${count} ${unit}`);
       } else {
         link?.classList.remove("has-unread");
         link?.removeAttribute("aria-label");

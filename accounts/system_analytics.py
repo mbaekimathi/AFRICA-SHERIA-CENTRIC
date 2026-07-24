@@ -555,11 +555,11 @@ def _recommendations(
         add(
             "warning",
             "Bootstrap Drive folder structure",
-            "Google Drive is connected, but the firm Clients/Work folder tree is incomplete.",
+            "Google Drive is connected, but the firm Clients/Employees folder tree is incomplete.",
             impact="New case/matter documents may fail folder placement or land in the wrong location.",
             actions=[
                 "Run folder bootstrap from Document Settings.",
-                "Verify root, Clients, and Work folder IDs are saved on the connection.",
+                "Verify root, Clients, and Employees folder IDs are saved on the connection.",
             ],
         )
     elif documents["missing_refresh_token"]:

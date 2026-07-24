@@ -167,7 +167,7 @@
         </span>
         <div>
           <h3 id="section-outcome">Outcome</h3>
-          <p>Outcome notes, description, and next action</p>
+          <p>Outcome notes and next action</p>
         </div>
       </header>
       <div class="register-section__body register-grid register-grid--2">
@@ -175,11 +175,6 @@
           <label for="{{ form.outcome_notes.id_for_label }}">Outcome / Notes</label>
           {{ form.outcome_notes }}
           {% if form.outcome_notes.errors %}<span class="field-error">{{ form.outcome_notes.errors.0 }}</span>{% endif %}
-        </div>
-        <div class="form-field register-grid__span">
-          <label for="{{ form.description.id_for_label }}">Description</label>
-          {{ form.description }}
-          {% if form.description.errors %}<span class="field-error">{{ form.description.errors.0 }}</span>{% endif %}
         </div>
         <div class="form-field register-grid__span">
           <label for="{{ form.next_action.id_for_label }}">Next Action</label>
@@ -429,7 +424,6 @@
         <div><dt>Location</dt><dd id="view-matter-location">—</dd></div>
         <div><dt>Recorded by</dt><dd id="view-matter-recorded-by">—</dd></div>
         <div class="review-grid__full"><dt>Outcome</dt><dd id="view-matter-outcome">—</dd></div>
-        <div class="review-grid__full"><dt>Description</dt><dd id="view-matter-description">—</dd></div>
         <div class="review-grid__full"><dt>Next action</dt><dd id="view-matter-next-action">—</dd></div>
         <div><dt>Next appearance</dt><dd id="view-matter-next-appearance">—</dd></div>
         <div><dt>Next contact</dt><dd id="view-matter-next-contact">—</dd></div>
@@ -592,11 +586,6 @@
             {% if edit_form.outcome_notes.errors %}<span class="field-error">{{ edit_form.outcome_notes.errors.0 }}</span>{% endif %}
           </div>
           <div class="form-field register-grid__span">
-            <label for="{{ edit_form.description.id_for_label }}">Description</label>
-            {{ edit_form.description }}
-            {% if edit_form.description.errors %}<span class="field-error">{{ edit_form.description.errors.0 }}</span>{% endif %}
-          </div>
-          <div class="form-field register-grid__span">
             <label for="{{ edit_form.next_action.id_for_label }}">Next Action</label>
             {{ edit_form.next_action }}
             {% if edit_form.next_action.errors %}<span class="field-error">{{ edit_form.next_action.errors.0 }}</span>{% endif %}
@@ -732,5 +721,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/update-matter-attendance.js' %}?v=matter-parity-1" defer></script>
+<script src="{% static 'js/update-matter-attendance.js' %}?v=no-description-1" defer></script>
 {% endblock %}

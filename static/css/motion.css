@@ -1211,19 +1211,82 @@
   align-items: center;
   gap: 0.85rem;
   padding: 1.1rem 1.2rem;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid var(--line);
   backdrop-filter: blur(10px);
-  transition: background 0.25s var(--ease), transform 0.25s var(--ease-out);
+  cursor: default;
+  transition:
+    background 0.28s var(--ease),
+    transform 0.28s var(--ease-out),
+    border-color 0.28s var(--ease),
+    box-shadow 0.28s var(--ease);
+}
+
+.metric--glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    120% 90% at 12% 0%,
+    color-mix(in srgb, var(--accent) 18%, transparent),
+    transparent 58%
+  );
+  opacity: 0;
+  transition: opacity 0.28s var(--ease);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.metric--glass > * {
+  position: relative;
+  z-index: 1;
 }
 
 .metric--glass:hover {
-  background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface));
+  transform: translateY(-4px);
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  box-shadow:
+    0 12px 28px color-mix(in srgb, var(--ink) 8%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 24px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.metric--glass:hover::before {
+  opacity: 1;
+}
+
+.metric--glass:hover .metric__value {
+  color: var(--accent-strong);
+}
+
+.metric--glass:hover .metric__label {
+  color: var(--accent-strong);
+}
+
+.metric--glass:hover .icon-orb--sm .icon-orb__core {
+  transform: translateY(-1px) scale(1.08);
+  box-shadow:
+    0 2px 6px color-mix(in srgb, var(--orb, var(--accent)) 18%, transparent),
+    0 14px 28px color-mix(in srgb, var(--orb, var(--accent)) 28%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.metric--glass:hover .icon-orb--sm .icon-orb__core svg {
+  transform: scale(1.06);
 }
 
 .metric--glass .metric__value {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+  transition: color 0.2s var(--ease);
+}
+
+.metric--glass .metric__label {
   transition: color 0.2s var(--ease);
 }
 
@@ -1347,7 +1410,9 @@
   }
 
   [data-reveal],
-  .module-card--pro {
+  .module-card--pro,
+  .metric--glass,
+  .metric {
     opacity: 1 !important;
     transform: none !important;
   }

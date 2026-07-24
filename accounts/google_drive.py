@@ -61,7 +61,7 @@ GOOGLE_WORKSPACE_TYPES = {
 }
 
 CLIENTS_FOLDER_NAME = "Clients"
-WORK_FOLDER_NAME = "Work"
+WORK_FOLDER_NAME = "Employees"
 PERSONAL_FOLDER_NAME = "Personal"
 PERSONAL_DOCUMENTS_FOLDER_NAME = "Personal Documents"
 LITIGATION_FOLDER_NAME = "Litigation"
@@ -726,6 +726,38 @@ def create_folder(
     return folder_id
 
 
+def _ensure_folder_name(access_token: str, folder_id: str, name: str) -> None:
+    """Rename an existing Drive folder when its title no longer matches."""
+    safe_name = sanitize_drive_name(name)
+    if not folder_id or not safe_name:
+        return
+    url = (
+        f"{DRIVE_FILES_URL}/{urllib.parse.quote(folder_id)}"
+        "?fields=id,name"
+    )
+    try:
+        meta = _request_json("GET", url, access_token=access_token)
+    except GoogleDriveAPIError:
+        return
+    current = (meta.get("name") or "").strip()
+    if current == safe_name:
+        return
+    try:
+        _request_json(
+            "PATCH",
+            url,
+            access_token=access_token,
+            payload={"name": safe_name},
+        )
+    except GoogleDriveAPIError as exc:
+        logger.warning(
+            "Could not rename Drive folder %s to %s: %s",
+            folder_id,
+            safe_name,
+            exc,
+        )
+
+
 def ensure_folder(
     access_token: str,
     *,
@@ -734,6 +766,7 @@ def ensure_folder(
     existing_id: str = "",
 ) -> str:
     if existing_id and folder_exists(access_token, existing_id):
+        _ensure_folder_name(access_token, existing_id, name)
         return existing_id
     return create_folder(access_token, name, parent_id=parent_id)
 
@@ -742,7 +775,7 @@ def ensure_firm_folder_structure(
     connection: GoogleDriveConnection | None = None,
 ) -> GoogleDriveConnection:
     """
-    Ensure Company / Clients / Work folders exist on the connected Drive.
+    Ensure Company / Clients / Employees folders exist on the connected Drive.
     """
     connection = connection or GoogleDriveConnection.get_solo()
     if not connection.is_connected:
@@ -783,7 +816,7 @@ def ensure_firm_folder_structure(
 
 def ensure_employee_folder_structure(employee: Employee) -> Employee:
     """
-    Ensure Work/{Employee Name}/Personal.
+    Ensure Employees/{Employee Name}/Personal.
     """
     connection = GoogleDriveConnection.get_solo()
     if not connection.is_connected or not connection.work_folder_id:
@@ -844,7 +877,7 @@ def sync_employee_personal_detail_uploads(
 ) -> dict:
     """
     Upload selected employee personal-detail files into
-    Work/{Name}/Personal on Google Drive.
+    Employees/{Name}/Personal on Google Drive.
 
     Skips quietly when Drive is not connected. Returns a small summary.
     """
@@ -1143,6 +1176,187 @@ def create_google_doc(
     )
 
 
+DOCS_API_URL = "https://docs.googleapis.com/v1/documents"
+
+
+def _hex_to_rgb_color(hex_color: str) -> dict:
+    raw = (hex_color or "").lstrip("#").strip()
+    if len(raw) != 6:
+        raw = "1f4d3a"
+    return {
+        "red": int(raw[0:2], 16) / 255.0,
+        "green": int(raw[2:4], 16) / 255.0,
+        "blue": int(raw[4:6], 16) / 255.0,
+    }
+
+
+def apply_company_letterhead_to_google_doc(document_id: str) -> None:
+    """
+    Seed a newly created Google Doc with the firm letterhead header
+    (and address footer when enabled in letterhead settings).
+    """
+    from .letterhead import (
+        accent_hex,
+        firm_address_compact,
+        firm_contact_lines,
+        get_letterhead_setting,
+    )
+    from .models import FirmCompanyInformation
+
+    document_id = (document_id or "").strip()
+    if not document_id:
+        return
+
+    firm = FirmCompanyInformation.get_solo()
+    setting = get_letterhead_setting()
+    accent = _hex_to_rgb_color(accent_hex(setting.accent))
+    name = (firm.display_name or "").strip() or "Firm"
+
+    header_lines = [name]
+    if setting.show_tagline:
+        tagline = (firm.tagline or "").strip()
+        if tagline:
+            header_lines.append(tagline)
+    if setting.show_contacts:
+        header_lines.extend(firm_contact_lines(firm))
+
+    footer_parts: list[str] = []
+    if setting.show_address:
+        address = firm_address_compact(firm)
+        if address:
+            footer_parts.append(address)
+        website = (firm.website or "").strip()
+        if website:
+            footer_parts.append(website)
+    footer_text = " · ".join(footer_parts)
+
+    token = get_valid_access_token()
+    create_requests: list[dict] = [{"createHeader": {"type": "DEFAULT"}}]
+    if footer_text:
+        create_requests.append({"createFooter": {"type": "DEFAULT"}})
+
+    created = _request_json(
+        "POST",
+        f"{DOCS_API_URL}/{urllib.parse.quote(document_id)}:batchUpdate",
+        access_token=token,
+        payload={"requests": create_requests},
+    )
+    header_id = ""
+    footer_id = ""
+    for reply in created.get("replies") or []:
+        header_id = header_id or (reply.get("createHeader") or {}).get(
+            "headerId", ""
+        )
+        footer_id = footer_id or (reply.get("createFooter") or {}).get(
+            "footerId", ""
+        )
+    if not header_id:
+        raise GoogleDriveAPIError(
+            "Could not create the letterhead header on this Google Doc."
+        )
+
+    # Empty headers/footers only contain a trailing newline (endIndex=1), so
+    # insert before that newline via endOfSegmentLocation (index 1 is invalid).
+    header_text = "\n".join(header_lines)
+    name_end = len(name)
+    header_end = len(header_text)
+    muted = {"red": 0.35, "green": 0.4, "blue": 0.45}
+
+    content_requests: list[dict] = [
+        {
+            "insertText": {
+                "endOfSegmentLocation": {"segmentId": header_id},
+                "text": header_text,
+            }
+        },
+        {
+            "updateTextStyle": {
+                "range": {
+                    "segmentId": header_id,
+                    "startIndex": 0,
+                    "endIndex": name_end,
+                },
+                "textStyle": {
+                    "bold": True,
+                    "fontSize": {"magnitude": 14, "unit": "PT"},
+                    "foregroundColor": {"color": {"rgbColor": accent}},
+                },
+                "fields": "bold,fontSize,foregroundColor",
+            }
+        },
+        {
+            "updateParagraphStyle": {
+                "range": {
+                    "segmentId": header_id,
+                    "startIndex": 0,
+                    "endIndex": min(name_end + 1, header_end + 1),
+                },
+                "paragraphStyle": {
+                    "borderBottom": {
+                        "color": {"color": {"rgbColor": accent}},
+                        "width": {"magnitude": 1.5, "unit": "PT"},
+                        "padding": {"magnitude": 3, "unit": "PT"},
+                        "dashStyle": "SOLID",
+                    }
+                },
+                "fields": "borderBottom",
+            }
+        },
+    ]
+    if header_end > name_end + 1:
+        content_requests.append(
+            {
+                "updateTextStyle": {
+                    "range": {
+                        "segmentId": header_id,
+                        "startIndex": name_end + 1,
+                        "endIndex": header_end,
+                    },
+                    "textStyle": {
+                        "fontSize": {"magnitude": 9, "unit": "PT"},
+                        "foregroundColor": {"color": {"rgbColor": muted}},
+                    },
+                    "fields": "fontSize,foregroundColor",
+                }
+            }
+        )
+
+    if footer_id and footer_text:
+        content_requests.extend(
+            [
+                {
+                    "insertText": {
+                        "endOfSegmentLocation": {"segmentId": footer_id},
+                        "text": footer_text,
+                    }
+                },
+                {
+                    "updateTextStyle": {
+                        "range": {
+                            "segmentId": footer_id,
+                            "startIndex": 0,
+                            "endIndex": len(footer_text),
+                        },
+                        "textStyle": {
+                            "fontSize": {"magnitude": 8, "unit": "PT"},
+                            "foregroundColor": {
+                                "color": {"rgbColor": muted}
+                            },
+                        },
+                        "fields": "fontSize,foregroundColor",
+                    }
+                },
+            ]
+        )
+
+    _request_json(
+        "POST",
+        f"{DOCS_API_URL}/{urllib.parse.quote(document_id)}:batchUpdate",
+        access_token=token,
+        payload={"requests": content_requests},
+    )
+
+
 def _guess_mime(filename: str, fallback: str = "application/octet-stream") -> str:
     guessed, _ = mimetypes.guess_type(filename or "")
     return guessed or fallback
@@ -1243,7 +1457,7 @@ def trash_drive_file(file_id: str) -> None:
 def bootstrap_drive_folders(connection: GoogleDriveConnection | None = None) -> dict:
     """
     Create the firm tree, a folder for every active/suspended client,
-    and Work/{Name}/Personal for employees.
+    and Employees/{Name}/Personal for employees.
     Returns counts for messaging.
     """
     connection = ensure_firm_folder_structure(connection)

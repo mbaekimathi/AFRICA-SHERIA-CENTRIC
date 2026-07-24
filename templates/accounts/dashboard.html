@@ -1,4 +1,5 @@
 {% extends "layouts/workspace.html" %}
+{% load static %}
 
 {% block title %}{{ page_title }} — Sheria Centric{% endblock %}
 
@@ -33,7 +34,77 @@
 
   {% if welcome_stats %}
   <div class="metrics metrics--dash" data-reveal>
-    {% for label, value in welcome_stats %}
+    {% for card in welcome_stats %}
+    {% if card.interactive %}
+    <div class="metric-menu" data-metric-menu>
+      <button
+        type="button"
+        class="metric metric--glass metric--interactive"
+        style="--stagger: {{ forloop.counter0 }}"
+        id="metric-trigger-{{ card.key }}"
+        aria-haspopup="true"
+        aria-expanded="false"
+        aria-controls="metric-dropdown-{{ card.key }}"
+      >
+        <span class="icon-orb icon-orb--sm icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
+          <span class="icon-orb__core">
+            {% if forloop.counter0 == 0 %}{{ icon_home|safe }}
+            {% elif forloop.counter0 == 1 %}{{ icon_settings|safe }}
+            {% else %}{{ icon_bell|safe }}
+            {% endif %}
+          </span>
+        </span>
+        <div class="metric__copy">
+          <p class="metric__label">{{ card.label }}</p>
+          <p class="metric__value">{{ card.value }}</p>
+        </div>
+        <span class="metric__chevron" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="16" height="16">
+            <path d="M5 7.5 10 12.5 15 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </button>
+
+      <div
+        class="metric-dropdown"
+        id="metric-dropdown-{{ card.key }}"
+        role="menu"
+        aria-labelledby="metric-trigger-{{ card.key }}"
+        hidden
+      >
+        <div class="metric-dropdown__head">
+          <p class="metric-dropdown__title">{{ card.label }}</p>
+          <p class="metric-dropdown__count">{{ card.value }} linked</p>
+        </div>
+        <div class="metric-dropdown__body">
+          {% for item in card.items %}
+          <a href="{{ item.url }}" class="metric-dropdown__item" role="menuitem">
+            <span class="metric-dropdown__badge">{{ item.badge }}</span>
+            <span class="metric-dropdown__text">
+              <span class="metric-dropdown__item-title">{{ item.title }}</span>
+              <span class="metric-dropdown__item-meta">{{ item.meta }}</span>
+              {% if item.status %}
+              <span class="metric-dropdown__status metric-dropdown__status--{{ item.status_key }}">
+                {{ item.status }}
+              </span>
+              {% endif %}
+            </span>
+            <span class="metric-dropdown__arrow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+          </a>
+          {% empty %}
+          <p class="metric-dropdown__empty">{{ card.empty_copy }}</p>
+          {% endfor %}
+        </div>
+        {% if card.view_all_url %}
+        <a href="{{ card.view_all_url }}" class="metric-dropdown__footer">
+          {{ card.view_all_label }}
+        </a>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
     <div class="metric metric--glass" style="--stagger: {{ forloop.counter0 }}">
       <span class="icon-orb icon-orb--sm icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
         <span class="icon-orb__core">
@@ -44,90 +115,17 @@
         </span>
       </span>
       <div>
-        <p class="metric__label">{{ label }}</p>
-        <p class="metric__value">{{ value }}</p>
+        <p class="metric__label">{{ card.label }}</p>
+        <p class="metric__value">{{ card.value }}</p>
       </div>
     </div>
+    {% endif %}
     {% endfor %}
   </div>
   {% endif %}
-
-  {% if page_nav_items %}
-  <section class="dash-section" data-reveal>
-    <div class="dash-section__head">
-      <div>
-        <p class="dash-section__eyebrow">Navigate</p>
-        <h3>Quick access</h3>
-        <p>Jump into core practice modules.</p>
-      </div>
-    </div>
-    <div class="module-grid module-grid--dash">
-      {% for item in page_nav_items %}
-      <a
-        href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
-        class="module-card module-card--pro{% if item.disabled %} is-disabled{% endif %}{% if item.badge_count %} has-unread{% endif %}"
-        style="--stagger: {{ forloop.counter0 }}"
-        data-magnetic
-        {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} pending approval"{% endif %}
-        {% if item.disabled %}aria-disabled="true"{% endif %}
-      >
-        <span class="icon-orb icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
-          <span class="icon-orb__shine"></span>
-          <span class="icon-orb__core">{{ item.icon|safe }}</span>
-          <span
-            class="nav-badge module-card__badge"
-            data-page-badge="{{ item.slug }}"
-            {% if not item.badge_count %}hidden{% endif %}
-          >{{ item.badge_count|default:0 }}</span>
-        </span>
-        <span class="module-card__body">
-          <span class="module-card__label">{{ item.label }}</span>
-          <span class="module-card__hint">Open module</span>
-        </span>
-        <span class="module-card__cta" aria-hidden="true">
-          <span>Open</span>
-          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </span>
-      </a>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-
-  {% if module_items %}
-  <section class="dash-section" data-reveal>
-    <div class="dash-section__head">
-      <div>
-        <p class="dash-section__eyebrow">Allocated</p>
-        <h3>Role modules</h3>
-        <p>Tools assigned to your role.</p>
-      </div>
-    </div>
-    <div class="module-grid module-grid--dash">
-      {% for item in module_items %}
-      <a
-        href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
-        class="module-card module-card--pro{% if item.disabled %} is-disabled{% endif %}"
-        style="--stagger: {{ forloop.counter0 }}"
-        data-magnetic
-        {% if item.disabled %}aria-disabled="true" tabindex="-1"{% endif %}
-      >
-        <span class="icon-orb icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
-          <span class="icon-orb__shine"></span>
-          <span class="icon-orb__core">{{ item.icon|safe }}</span>
-        </span>
-        <span class="module-card__body">
-          <span class="module-card__label">{{ item.label }}</span>
-          <span class="module-card__hint">{% if item.disabled %}Locked until approval{% else %}Open module{% endif %}</span>
-        </span>
-        <span class="module-card__cta" aria-hidden="true">
-          <span>{% if item.disabled %}Locked{% else %}Open{% endif %}</span>
-          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </span>
-      </a>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/metric-menus.js' %}?v=metric-menus-1" defer></script>
 {% endblock %}

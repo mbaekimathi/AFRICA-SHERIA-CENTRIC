@@ -9,9 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Alegreya:wght@400;600;700&family=Albert+Sans:wght@400;500;600;700&family=Archivo:wght@400;500;600;700&family=Bitter:wght@400;600;700&family=Bricolage+Grotesque:wght@400;500;600;700&family=Cabin:wght@400;500;600;700&family=Cardo:wght@400;700&family=Cormorant+Garamond:wght@400;600;700&family=Crimson+Pro:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&family=Epilogue:wght@400;500;600;700&family=Figtree:wght@400;500;600;700&family=Fraunces:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Lexend:wght@400;500;600;700&family=Libre+Baskerville:wght@400;700&family=Literata:wght@400;600;700&family=Lora:wght@400;600;700&family=Manrope:wght@400;500;600;700&family=Newsreader:wght@400;600;700&family=Outfit:wght@400;500;600;700&family=Playfair+Display:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&family=Red+Hat+Display:wght@400;500;600;700&family=Red+Hat+Text:wght@400;500;600;700&family=Sora:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:wght@400;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Spectral:wght@400;600;700&family=Syne:wght@400;600;700&family=Urbanist:wght@400;500;600;700&family=Vollkorn:wght@400;600;700&family=Work+Sans:wght@400;500;600;700&family=Zilla+Slab:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=invoice-print-color-1">
-  <link rel="stylesheet" href="{% static 'css/motion.css' %}?v=matter-hub-2">
-  <link rel="stylesheet" href="{% static 'css/chrome.css' %}?v=theme-admin-3">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=tasks-pending-badge-1">
+  <link rel="stylesheet" href="{% static 'css/motion.css' %}?v=metric-hover-1">
+  <link rel="stylesheet" href="{% static 'css/chrome.css' %}?v=metric-menus-3">
   {% block extra_head %}{% endblock %}
 </head>
 <body
@@ -90,7 +90,7 @@
         </nav>
         {% endif %}
 
-        {% if preactive_locked and module_items %}
+        {% if module_items and dashboard_active or preactive_locked and module_items %}
         <p class="nav-section">Modules</p>
         <nav class="sidebar__nav" aria-label="Role modules">
           {% for item in module_items %}
@@ -119,7 +119,7 @@
             class="nav-link {% if item.active %}is-active{% endif %}{% if item.disabled %} is-disabled{% endif %}{% if item.badge_count %} has-unread{% endif %}"
             data-utility-slug="{{ item.slug }}"
             data-label="{{ item.label }}"
-            {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} unread"{% endif %}
+            {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} {% if item.slug == 'tasks' %}pending{% else %}unread{% endif %}"{% endif %}
             {% if item.disabled %}aria-disabled="true" tabindex="-1" title="Available after approval"{% endif %}
           >
             <span class="nav-icon-wrap">
@@ -377,7 +377,7 @@
   <script src="{% static 'js/access-denied-modal.js' %}" defer></script>
   {% endif %}
   <script src="{% static 'js/live-poll.js' %}" defer></script>
-  <script src="{% static 'js/live-notifications.js' %}" defer></script>
+  <script src="{% static 'js/live-notifications.js' %}?v=tasks-pending-badge-1" defer></script>
   <script src="{% static 'js/live-session.js' %}" defer></script>
   <script src="{% static 'js/live-list.js' %}" defer></script>
   <script src="{% static 'js/live-entity.js' %}" defer></script>
