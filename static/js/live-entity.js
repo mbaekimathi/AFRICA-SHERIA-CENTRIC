@@ -13,8 +13,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.SheriaLivePoll.start({
     url: statusUrl,
-    minMs: 5000,
-    maxMs: 30000,
+    minMs: 8000,
+    maxMs: 45000,
+    factor: 1.7,
     onPayload: (data) => {
       if (!data) return false;
       if (data.exists === false || data.status !== expectedStatus) {

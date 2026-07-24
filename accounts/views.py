@@ -97,6 +97,9 @@ from .forms import (
     UpdateCourtAttendanceForm,
     UpdateMatterAttendanceForm,
     UploadDocumentForm,
+    TemplatesFormsCreateForm,
+    TemplatesFormsUploadForm,
+    StartFromTemplateForm,
     WebsiteTemplateForm,
 )
 from .google_auth import GoogleAuthError, verify_google_id_token
@@ -108,17 +111,27 @@ from .google_drive import (
     bootstrap_drive_folders,
     build_redirect_uri,
     can_start_google_oauth,
+    copy_drive_file,
     create_google_workspace_file,
     disconnect_google_drive,
     ensure_case_drive_folder,
     ensure_matter_drive_folder,
+    ensure_templates_forms_folder,
     exchange_code,
     firm_root_folder_name,
+    get_drive_file_meta,
+    google_edit_url,
     google_oauth_configured,
     is_loopback_host,
     is_private_lan_host,
+    list_drive_children,
+    list_templates_forms_library,
     pop_oauth_return,
     rename_drive_file,
+    templates_forms_category_folder_id,
+    TEMPLATES_FORMS_CATEGORIES,
+    TEMPLATES_FORMS_CATEGORY_LABELS,
+    TEMPLATES_FORMS_CATEGORY_SLUGS,
     trash_drive_file,
     upload_drive_file,
     download_drive_file,
@@ -192,6 +205,7 @@ from .models import (
     MpesaStkRequest,
     NewsSearchJob,
     NewsWatch,
+    NewsWatchArticle,
     NonLitigationMatter,
     Notification,
     PayrollDeduction,
@@ -208,6 +222,7 @@ from .notifications import (
     mark_category_read,
     notifications_payload,
     notify_case_task,
+    notify_blog_returned,
     notify_google_drive_disconnected,
     notify_invoice_generated,
     notify_invoice_issued_staff,
@@ -233,14 +248,22 @@ from .workspace import (
     apply_notification_badges,
     assign_session_greeting,
     attach_greeting_cookie,
+    case_tasks_visible_to,
+    cases_visible_to,
     client_account_page_nav_items,
     collect_module_activities,
     DASHBOARD_PAGE_LINKS,
+    employee_action_default_allowed,
+    employee_can_access_case,
+    employee_can_access_matter,
+    employee_can_view_all,
     employee_preactive_context,
     extend_page_trail,
     litigation_case_nav_items,
     LITIGATION_CASE_ACTION_SLUGS,
     mark_session_start,
+    matter_tasks_visible_to,
+    matters_visible_to,
     module_activity_url,
     module_slug_for_trail,
     non_litigation_matter_nav_items,
@@ -248,8 +271,11 @@ from .workspace import (
     PAGE_LOCAL_LINKS,
     PAGE_TITLES,
     redirect_if_workspace_action_denied,
+    reminder_case_tasks_visible_to,
+    reminder_matter_tasks_visible_to,
     resolve_workspace_page,
     resolve_workspace_post_action,
+    rewrite_legacy_research_blogs_trail,
     role_activity_is_allowed,
     role_page_slugs,
     roles_activity_permission_url,
@@ -258,6 +284,7 @@ from .workspace import (
     set_workspace_access_denied_modal,
     system_module_hint,
     SYSTEM_MODULE_SLUGS,
+    VIEW_ALL_ACTION,
     workspace_activity_access_allowed,
     workspace_activity_action_permitted,
     workspace_action_denial_copy,
@@ -2065,6 +2092,9 @@ def client_notifications_mark_all_read(request):
     updated = ClientNotification.objects.filter(
         recipient=client, is_read=False
     ).update(is_read=True, read_at=now)
+    from django.core.cache import cache
+
+    cache.delete(f"client_notif_payload:v1:{client.pk}:40")
     return JsonResponse(
         {
             "ok": True,
@@ -2195,34 +2225,34 @@ def employee_status(request):
 
 
 WORKSPACE_LIST_SPECS = {
-    "pending-clients": lambda: Client.objects.filter(
+    "pending-clients": lambda _user: Client.objects.filter(
         status__in=[
             Client.Status.PENDING_ONBOARDING,
             Client.Status.PENDING_APPROVAL,
         ]
     ).order_by("pk").values_list("pk", "status"),
-    "pending-employees": lambda: Employee.objects.filter(
+    "pending-employees": lambda _user: Employee.objects.filter(
         status__in=[
             Employee.Status.PENDING_ONBOARDING,
             Employee.Status.PENDING_APPROVAL,
         ]
     ).order_by("pk").values_list("pk", "status"),
-    "pending-cases": lambda: LitigationCase.objects.filter(
+    "pending-cases": lambda _user: LitigationCase.objects.filter(
         status=LitigationCase.Status.PENDING_APPROVAL
     ).order_by("pk").values_list("pk", "status"),
-    "active-cases": lambda: LitigationCase.objects.filter(
-        status=LitigationCase.Status.ACTIVE
+    "active-cases": lambda user: cases_visible_to(
+        user, status=LitigationCase.Status.ACTIVE
     ).order_by("pk").values_list("pk", "status"),
-    "pending-matters": lambda: NonLitigationMatter.objects.filter(
+    "pending-matters": lambda _user: NonLitigationMatter.objects.filter(
         status=NonLitigationMatter.Status.PENDING_APPROVAL
     ).order_by("pk").values_list("pk", "status"),
-    "active-matters": lambda: NonLitigationMatter.objects.filter(
-        status=NonLitigationMatter.Status.ACTIVE
+    "active-matters": lambda user: matters_visible_to(
+        user, status=NonLitigationMatter.Status.ACTIVE
     ).order_by("pk").values_list("pk", "status"),
-    "clients": lambda: Client.objects.filter(
+    "clients": lambda _user: Client.objects.filter(
         status__in=[Client.Status.ACTIVE, Client.Status.SUSPENDED]
     ).order_by("pk").values_list("pk", "status"),
-    "employees": lambda: Employee.objects.filter(
+    "employees": lambda _user: Employee.objects.filter(
         status__in=[Employee.Status.ACTIVE, Employee.Status.SUSPENDED]
     ).order_by("pk").values_list("pk", "status"),
 }
@@ -2245,7 +2275,7 @@ def workspace_list_revision(request):
     if builder is None:
         return JsonResponse({"error": "unknown_list"}, status=400)
 
-    rows = list(builder())
+    rows = list(builder(user))
     revision = "|".join(f"{pk}:{status}" for pk, status in rows)
     return JsonResponse({"list": list_key, "count": len(rows), "revision": revision})
 
@@ -2268,11 +2298,13 @@ def workspace_notification_open(request, notification_id):
     if user.status != Employee.Status.ACTIVE:
         return JsonResponse({"error": "forbidden"}, status=403)
 
-    notification = get_object_or_404(
-        Notification,
-        pk=notification_id,
-        recipient=user,
-    )
+    notification = get_object_or_404(Notification, pk=notification_id)
+    if notification.recipient_id != user.pk:
+        # Firm-wide viewers may open others' alerts without marking them read.
+        if not employee_can_view_all(user, "notifications"):
+            return JsonResponse({"error": "forbidden"}, status=403)
+        return redirect(notification.target_url)
+
     notification.mark_read()
     return redirect(notification.target_url)
 
@@ -3192,6 +3224,7 @@ class RoleWorkspaceView(View):
     my_blogs_template = "accounts/my_blogs.html"
     my_blog_form_template = "accounts/my_blog_form.html"
     google_drive_settings_template = "accounts/google_drive_settings.html"
+    templates_and_forms_template = "accounts/templates_and_forms.html"
     company_information_template = "accounts/company_information.html"
     company_profile_template = "accounts/company_profile.html"
     company_contacts_template = "accounts/company_contacts.html"
@@ -3203,7 +3236,9 @@ class RoleWorkspaceView(View):
     company_gallery_template = "accounts/company_gallery.html"
     company_gallery_form_template = "accounts/company_gallery_form.html"
     company_terms_template = "accounts/company_terms.html"
-    research_blogs_template = "accounts/research_blogs.html"
+    research_template = "accounts/research.html"
+    blogs_template = "accounts/blogs.html"
+    research_blogs_template = "accounts/research.html"
     latest_news_template = "accounts/latest_news.html"
     company_faq_form_template = "accounts/company_faq_form.html"
     website_template_template = "accounts/website_template.html"
@@ -3248,6 +3283,10 @@ class RoleWorkspaceView(View):
         resolved = resolve_workspace_page(user.role, pages)
         if not resolved:
             return redirect(user.dashboard_url)
+
+        rewritten = rewrite_legacy_research_blogs_trail(resolved["trail"])
+        if rewritten is not None:
+            return redirect(user.workspace_url(*rewritten))
 
         # Enforce role and employee activity locks (not on permission UI).
         denied = self._redirect_if_activity_locked(
@@ -3322,6 +3361,13 @@ class RoleWorkspaceView(View):
             response = render(
                 request, self.google_drive_settings_template, context
             )
+        elif resolved.get("is_templates_and_forms"):
+            context.update(
+                self._templates_and_forms_context(user, request=request)
+            )
+            response = render(
+                request, self.templates_and_forms_template, context
+            )
         elif resolved.get("is_website_template"):
             context.update(self._website_template_context(user))
             response = render(request, self.website_template_template, context)
@@ -3395,9 +3441,12 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_company_terms"):
             context.update(self._company_terms_context())
             response = render(request, self.company_terms_template, context)
-        elif resolved.get("is_research_blogs"):
-            context.update(self._research_blogs_context(user))
-            response = render(request, self.research_blogs_template, context)
+        elif resolved.get("is_research") or resolved.get("is_research_blogs"):
+            context.update(self._research_context(user, request=request))
+            response = render(request, self.research_template, context)
+        elif resolved.get("is_blogs"):
+            context.update(self._blogs_context(user, request=request))
+            response = render(request, self.blogs_template, context)
         elif resolved.get("is_latest_news"):
             context.update(
                 self._latest_news_context(user=user, request=request)
@@ -3674,9 +3723,7 @@ class RoleWorkspaceView(View):
             )
         elif resolved["leaf"] == "litigation-matters":
             cases = list(
-                LitigationCase.objects.filter(
-                    status=LitigationCase.Status.ACTIVE
-                )
+                cases_visible_to(user, status=LitigationCase.Status.ACTIVE)
                 .select_related("client", "assigned_to", "registered_by")
                 .prefetch_related("parties")
                 .order_by("-filing_date", "-created_at")
@@ -3692,6 +3739,9 @@ class RoleWorkspaceView(View):
             context["case_count"] = len(cases)
             context["group_by"] = group_by
             context["case_groups"] = case_groups
+            context["visibility_view_all"] = employee_can_view_all(
+                user, "litigation-matters"
+            )
             response = render(request, self.litigation_matters_template, context)
         elif resolved["leaf"] == "register-case":
             context.update(self._register_case_context())
@@ -3711,8 +3761,8 @@ class RoleWorkspaceView(View):
             )
         elif resolved["leaf"] == "non-litigation-matters":
             matters = list(
-                NonLitigationMatter.objects.filter(
-                    status=NonLitigationMatter.Status.ACTIVE
+                matters_visible_to(
+                    user, status=NonLitigationMatter.Status.ACTIVE
                 )
                 .select_related("client", "assigned_to", "registered_by")
                 .prefetch_related("parties")
@@ -3731,6 +3781,9 @@ class RoleWorkspaceView(View):
             context["matter_count"] = len(matters)
             context["group_by"] = group_by
             context["matter_groups"] = matter_groups
+            context["visibility_view_all"] = employee_can_view_all(
+                user, "non-litigation-matters"
+            )
             response = render(
                 request, self.non_litigation_matters_template, context
             )
@@ -3812,6 +3865,10 @@ class RoleWorkspaceView(View):
         if not resolved:
             return redirect(user.dashboard_url)
 
+        rewritten = rewrite_legacy_research_blogs_trail(resolved["trail"])
+        if rewritten is not None:
+            return redirect(user.workspace_url(*rewritten))
+
         if resolved.get("is_roles_activity_permission"):
             return self._post_roles_activity_permission(request, user, resolved)
 
@@ -3884,6 +3941,9 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "letterhead":
             return self._post_letterhead(request, user, resolved)
+
+        if resolved["leaf"] == "templates-and-forms":
+            return self._post_templates_and_forms(request, user, resolved)
 
         if resolved["leaf"] == "digital-stamp":
             return self._post_digital_stamp(request, user, resolved)
@@ -4307,7 +4367,10 @@ class RoleWorkspaceView(View):
                         {
                             **action,
                             "is_allowed": employee_action_rows.get(
-                                (employee.pk, action["slug"]), True
+                                (employee.pk, action["slug"]),
+                                employee_action_default_allowed(
+                                    employee, activity_slug, action["slug"]
+                                ),
                             ),
                         }
                     )
@@ -4334,6 +4397,9 @@ class RoleWorkspaceView(View):
             "activity": activity_meta,
             "activity_open_url": open_url,
             "activity_actions": activity_actions,
+            "has_view_all_action": any(
+                action["slug"] == VIEW_ALL_ACTION for action in activity_actions
+            ),
             "role_groups": role_groups,
             "allowed_role_count": allowed_count,
             "locked_role_count": locked_count,
@@ -4500,6 +4566,12 @@ class RoleWorkspaceView(View):
                 user.workspace_density, "Comfortable"
             ),
             "notification_sound_enabled": bool(user.notification_sound),
+            "notification_sound_volume": int(
+                getattr(user, "notification_sound_volume", 70) or 70
+            ),
+            "notification_browser_enabled": bool(
+                getattr(user, "notification_browser", True)
+            ),
             "company_theme_label": company_theme_label,
             "has_personal_theme_override": not (
                 (form_theme or "") in {"", "default"}
@@ -4893,26 +4965,100 @@ class RoleWorkspaceView(View):
         return user.workspace_url("dashboard", "company-blogs")
 
     @staticmethod
-    def _research_blogs_context(user):
+    def _research_context(user, request=None):
+        return {
+            "latest_news_url": user.workspace_url(
+                "dashboard", "research", "latest-news"
+            ),
+            "blogs_url": user.workspace_url("dashboard", "blogs"),
+            "my_blogs_new_url": user.workspace_url("dashboard", "my-blogs-new"),
+        }
+
+    @staticmethod
+    def _blogs_context(user, request=None):
+        from datetime import timedelta
+
+        from django.db.models import Count, Q
+
+        hub_list_limit = 8
+        analytics_days = 30
+        since = timezone.now() - timedelta(days=analytics_days)
+
         my_posts = EmployeeBlogPost.objects.filter(author=user)
         firm_qs = EmployeeBlogPost.objects.exclude(
             status=EmployeeBlogPost.Status.DRAFT
         ).select_related("author", "approved_by")
-        submitted_posts = list(
-            firm_qs.filter(status=EmployeeBlogPost.Status.SUBMITTED).order_by(
-                "-submitted_at", "-updated_at", "-created_at"
-            )
+        submitted_qs = firm_qs.filter(
+            status=EmployeeBlogPost.Status.SUBMITTED
+        ).order_by("-submitted_at", "-updated_at", "-created_at")
+        published_qs = firm_qs.filter(
+            status=EmployeeBlogPost.Status.PUBLISHED
+        ).order_by("-published_at", "-updated_at", "-created_at")
+
+        pending_count = submitted_qs.count()
+        published_count = published_qs.count()
+        submitted_posts = list(submitted_qs[:hub_list_limit])
+        published_posts = list(published_qs[:hub_list_limit])
+
+        oldest_pending_at = (
+            submitted_qs.exclude(submitted_at=None)
+            .order_by("submitted_at")
+            .values_list("submitted_at", flat=True)
+            .first()
         )
-        published_posts = list(
-            firm_qs.filter(status=EmployeeBlogPost.Status.PUBLISHED).order_by(
-                "-published_at", "-updated_at", "-created_at"
+        seo_at_risk_count = submitted_qs.filter(
+            Q(focus_keyword="") | Q(meta_description="")
+        ).count()
+
+        top_blog_posts = list(
+            EmployeeBlogPost.objects.filter(
+                status=EmployeeBlogPost.Status.PUBLISHED
             )
+            .annotate(
+                hub_views=Count(
+                    "web_events",
+                    filter=Q(
+                        web_events__event_type=BlogPostEvent.EventType.VIEW,
+                        web_events__created_at__gte=since,
+                    ),
+                ),
+                hub_conversions=Count(
+                    "web_events",
+                    filter=Q(
+                        web_events__event_type__in=(
+                            BlogPostEvent.EventType.CTA_WHATSAPP,
+                            BlogPostEvent.EventType.CTA_CONTACT,
+                        ),
+                        web_events__created_at__gte=since,
+                    ),
+                ),
+            )
+            .filter(hub_views__gt=0)
+            .order_by("-hub_views", "-hub_conversions")[:5]
         )
-        pending_count = len(submitted_posts)
-        published_count = len(published_posts)
+        firm_views_30d = BlogPostEvent.objects.filter(
+            event_type=BlogPostEvent.EventType.VIEW,
+            created_at__gte=since,
+            post__status=EmployeeBlogPost.Status.PUBLISHED,
+        ).count()
+        firm_conversions_30d = BlogPostEvent.objects.filter(
+            event_type__in=(
+                BlogPostEvent.EventType.CTA_WHATSAPP,
+                BlogPostEvent.EventType.CTA_CONTACT,
+            ),
+            created_at__gte=since,
+            post__status=EmployeeBlogPost.Status.PUBLISHED,
+        ).count()
+
+        share_intents = pop_share_intents(request) if request is not None else []
+        company_blogs_url = RoleWorkspaceView._company_blogs_list_url(user)
+
         return {
             "submitted_blog_posts": submitted_posts,
             "published_blog_posts": published_posts,
+            "hub_list_limit": hub_list_limit,
+            "submitted_blog_truncated": pending_count > hub_list_limit,
+            "published_blog_truncated": published_count > hub_list_limit,
             "firm_blog_count": pending_count + published_count,
             "my_blog_count": my_posts.count(),
             "my_draft_count": my_posts.filter(
@@ -4926,19 +5072,39 @@ class RoleWorkspaceView(View):
             ).count(),
             "pending_blog_count": pending_count,
             "published_blog_count": published_count,
+            "oldest_pending_at": oldest_pending_at,
+            "seo_at_risk_count": seo_at_risk_count,
+            "top_blog_posts": top_blog_posts,
+            "firm_views_30d": firm_views_30d,
+            "firm_conversions_30d": firm_conversions_30d,
+            "analytics_days": analytics_days,
+            "blog_share_intents": share_intents,
             "my_blogs_url": user.workspace_url("dashboard", "my-blogs"),
             "my_blogs_new_url": user.workspace_url("dashboard", "my-blogs-new"),
-            "company_blogs_url": RoleWorkspaceView._company_blogs_list_url(user),
+            "company_blogs_url": company_blogs_url,
             "public_blog_list_url": reverse("accounts:blog_list"),
-            "latest_news_url": user.workspace_url(
-                "dashboard", "research-blogs", "latest-news"
-            ),
+            "research_url": user.workspace_url("dashboard", "research"),
+            "review_next": "blogs",
         }
 
     @staticmethod
+    def _research_blogs_context(user, request=None):
+        """Legacy alias — combined hub is now Research + Blogs."""
+        return RoleWorkspaceView._research_context(user, request=request)
+
+    @staticmethod
     def _latest_news_context(*, user=None, request=None, form=None, result=None):
+        from .news_watch import (
+            filter_country_code,
+            form_initial_from_news_filters,
+            watch_article_as_dict,
+        )
+
         job = None
         selected_watch = None
+        news_new_count = 0
+        news_show_new_only = False
+        form_initial = None
         if result is None and user is not None and request is not None:
             job_id = request.GET.get("job")
             if job_id and str(job_id).isdigit():
@@ -4949,6 +5115,7 @@ class RoleWorkspaceView(View):
                 ).first()
                 if job:
                     result = job.result
+                    form_initial = form_initial_from_news_filters(job.filters)
             watch_id = request.GET.get("watch")
             if result is None and watch_id and str(watch_id).isdigit():
                 selected_watch = NewsWatch.objects.filter(
@@ -4956,20 +5123,51 @@ class RoleWorkspaceView(View):
                     requested_by=user,
                 ).first()
                 if selected_watch:
+                    news_show_new_only = request.GET.get("new") == "1"
+                    unread_keys = set(
+                        Notification.objects.filter(
+                            recipient=user,
+                            is_read=False,
+                            source_key__startswith=(
+                                f"news_watch:{selected_watch.pk}:"
+                            ),
+                        ).values_list("source_key", flat=True)
+                    )
                     Notification.objects.filter(
                         recipient=user,
                         is_read=False,
-                        source_key__startswith=f"news_watch:{selected_watch.pk}:",
+                        source_key__startswith=(
+                            f"news_watch:{selected_watch.pk}:"
+                        ),
                     ).update(is_read=True, read_at=timezone.now())
                     items = list(selected_watch.articles.all()[:30])
                     article_id = request.GET.get("article")
-                    if article_id and str(article_id).isdigit():
-                        items.sort(
-                            key=lambda item: item.pk != int(article_id)
+                    focused_id = (
+                        int(article_id)
+                        if article_id and str(article_id).isdigit()
+                        else None
+                    )
+                    if focused_id is not None:
+                        items.sort(key=lambda item: item.pk != focused_id)
+                    articles = []
+                    for item in items:
+                        source_key = (
+                            f"news_watch:{selected_watch.pk}:"
+                            f"{item.fingerprint[:32]}"
                         )
+                        is_new = source_key in unread_keys
+                        if is_new:
+                            news_new_count += 1
+                        if news_show_new_only and not is_new:
+                            continue
+                        payload = watch_article_as_dict(item)
+                        payload["is_new"] = is_new
+                        payload["is_focused"] = item.pk == focused_id
+                        payload["watch_article_id"] = item.pk
+                        articles.append(payload)
                     result = {
                         "country_name": country_name(
-                            selected_watch.filters.get("country_code")
+                            filter_country_code(selected_watch.filters)
                         ),
                         "industry": selected_watch.filters.get("industry", ""),
                         "requested_details": selected_watch.name,
@@ -4984,10 +5182,15 @@ class RoleWorkspaceView(View):
                             else ""
                         ),
                         "enriched_count": sum(
-                            bool(item.description) for item in items
+                            bool(article.get("description"))
+                            for article in articles
                         ),
-                        "articles": [item.article_data for item in items],
+                        "articles": articles,
                     }
+                    form_initial = form_initial_from_news_filters(
+                        selected_watch.filters,
+                        fallback_details=selected_watch.name,
+                    )
         watches = (
             list(
                 NewsWatch.objects.filter(requested_by=user).order_by(
@@ -5005,12 +5208,34 @@ class RoleWorkspaceView(View):
                     source_key__startswith=f"news_watch:{watch.pk}:",
                 ).count()
 
+        recent_news_jobs = []
+        if user is not None:
+            recent_news_jobs = list(
+                NewsSearchJob.objects.filter(requested_by=user).order_by(
+                    "-created_at"
+                )[:8]
+            )
+            for recent_job in recent_news_jobs:
+                filters = recent_job.filters or {}
+                recent_job.hub_label = (
+                    filters.get("requested_details")
+                    or filters.get("industry")
+                    or filters.get("exact_phrase")
+                    or "News search"
+                )
+
+        if form is None and form_initial:
+            form = LatestNewsScrapeForm(initial=form_initial)
+
         return {
             "form": form or LatestNewsScrapeForm(),
             "news_result": result,
             "news_job": job,
             "selected_news_watch": selected_watch,
             "news_watches": watches,
+            "recent_news_jobs": recent_news_jobs,
+            "news_new_count": news_new_count,
+            "news_show_new_only": news_show_new_only,
         }
 
     def _post_latest_news(self, request, user, resolved):
@@ -5041,7 +5266,11 @@ class RoleWorkspaceView(View):
             page_trail=resolved["trail"],
             active_page=resolved["leaf"],
         )
-        context.update(self._latest_news_context(form=form, result=result))
+        context.update(
+            self._latest_news_context(
+                user=user, request=request, form=form, result=result
+            )
+        )
         response = render(request, self.latest_news_template, context)
         return attach_greeting_cookie(response, request)
 
@@ -5741,6 +5970,251 @@ class RoleWorkspaceView(View):
                 else ""
             ),
         }
+
+    @staticmethod
+    def _templates_forms_active_category(request, *, fallback="letters") -> str:
+        raw = (
+            (request.GET.get("category") if request.method == "GET" else None)
+            or (request.POST.get("category") if request.method == "POST" else None)
+            or fallback
+        )
+        slug = (raw or "").strip()
+        if slug in TEMPLATES_FORMS_CATEGORY_SLUGS:
+            return slug
+        return fallback if fallback in TEMPLATES_FORMS_CATEGORY_SLUGS else "letters"
+
+    def _templates_and_forms_context(
+        self,
+        user,
+        *,
+        upload_form=None,
+        create_form=None,
+        drive_error="",
+        active_category="",
+        request=None,
+    ):
+        from .letterhead import letterhead_render_context
+
+        connection = GoogleDriveConnection.get_solo()
+        folder_id = (connection.templates_forms_folder_id or "").strip()
+        folder_url = ""
+        library: list[dict] = []
+        error = (drive_error or "").strip()
+        category = active_category or "letters"
+        if category not in TEMPLATES_FORMS_CATEGORY_SLUGS:
+            category = "letters"
+        if request is not None and not active_category:
+            category = self._templates_forms_active_category(request)
+
+        if connection.is_connected:
+            try:
+                connection = ensure_templates_forms_folder(connection)
+                folder_id = (connection.templates_forms_folder_id or "").strip()
+                library = list_templates_forms_library(connection)
+            except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+                error = error or str(exc) or (
+                    "Could not prepare the Templates and Forms folder."
+                )
+
+        if folder_id:
+            folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
+
+        active_bucket = next(
+            (item for item in library if item["slug"] == category),
+            None,
+        )
+        if active_bucket is None:
+            active_bucket = {
+                "slug": category,
+                "label": TEMPLATES_FORMS_CATEGORY_LABELS.get(category, category),
+                "folder_id": "",
+                "folder_url": "",
+                "files": [],
+                "count": 0,
+            }
+
+        context = {
+            "upload_form": upload_form
+            or TemplatesFormsUploadForm(initial_category=category),
+            "create_form": create_form
+            or TemplatesFormsCreateForm(initial_category=category),
+            "google_drive": connection,
+            "google_drive_connected": connection.is_connected,
+            "templates_forms_folder_id": folder_id,
+            "templates_forms_folder_url": folder_url,
+            "templates_forms_library": library,
+            "templates_forms_categories": TEMPLATES_FORMS_CATEGORIES,
+            "active_category": category,
+            "active_category_label": active_bucket["label"],
+            "active_category_folder_url": active_bucket.get("folder_url") or "",
+            "templates_forms_files": active_bucket.get("files") or [],
+            "templates_forms_total_count": sum(
+                item.get("count") or 0 for item in library
+            ),
+            "drive_error": error,
+            "google_drive_settings_url": user.workspace_url(
+                "dashboard",
+                "system-settings",
+                "document-settings",
+                "google-drive-settings",
+            ),
+        }
+        context.update(letterhead_render_context())
+        return context
+
+    def _post_templates_and_forms(self, request, user, resolved):
+        action = (request.POST.get("template_action") or "upload").strip()
+        active_category = self._templates_forms_active_category(request)
+        upload_form = TemplatesFormsUploadForm(initial_category=active_category)
+        create_form = TemplatesFormsCreateForm(initial_category=active_category)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+
+        def render_page(*, drive_error="", category=""):
+            cat = category or active_category
+            context.update(
+                self._templates_and_forms_context(
+                    user,
+                    upload_form=upload_form,
+                    create_form=create_form,
+                    drive_error=drive_error,
+                    active_category=cat,
+                )
+            )
+            response = render(
+                request, self.templates_and_forms_template, context
+            )
+            return attach_greeting_cookie(response, request)
+
+        def success_redirect(category_slug: str):
+            base = user.workspace_url(*resolved["trail"])
+            return redirect(f"{base}?category={category_slug}")
+
+        connection = GoogleDriveConnection.get_solo()
+        if not connection.is_connected:
+            messages.error(
+                request,
+                "Connect Google Drive before creating or uploading templates.",
+            )
+            if action == "create_google":
+                create_form = TemplatesFormsCreateForm(request.POST)
+            else:
+                upload_form = TemplatesFormsUploadForm(
+                    request.POST, request.FILES
+                )
+            return render_page()
+
+        try:
+            connection = ensure_templates_forms_folder(connection)
+        except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+            messages.error(
+                request,
+                str(exc) or "Could not prepare the Templates and Forms folder.",
+            )
+            if action == "create_google":
+                create_form = TemplatesFormsCreateForm(request.POST)
+            else:
+                upload_form = TemplatesFormsUploadForm(
+                    request.POST, request.FILES
+                )
+            return render_page(drive_error=str(exc))
+
+        if action == "create_google":
+            create_form = TemplatesFormsCreateForm(request.POST)
+            if not create_form.is_valid():
+                return render_page(
+                    category=create_form.data.get("category") or active_category
+                )
+            title = create_form.cleaned_data["title"]
+            google_type = create_form.cleaned_data["google_type"]
+            category = create_form.cleaned_data["category"]
+            include_letterhead = bool(
+                create_form.cleaned_data.get("include_letterhead")
+            )
+            try:
+                category_folder_id = templates_forms_category_folder_id(
+                    category, connection=connection
+                )
+                created = create_google_workspace_file(
+                    title,
+                    type_key=google_type,
+                    parent_id=category_folder_id,
+                )
+                file_id = (created.get("id") or "").strip()
+                if include_letterhead and google_type == "document" and file_id:
+                    try:
+                        apply_company_letterhead_to_google_doc(file_id)
+                    except GoogleDriveAPIError as exc:
+                        messages.warning(
+                            request,
+                            f"Template created, but letterhead could not be "
+                            f"applied: {exc}",
+                        )
+                        return success_redirect(category)
+                label = created.get("_workspace_label") or "Google file"
+                category_label = TEMPLATES_FORMS_CATEGORY_LABELS.get(
+                    category, category
+                )
+                if include_letterhead and google_type == "document":
+                    messages.success(
+                        request,
+                        f"“{title}” created in {category_label} as a {label} "
+                        "template with firm letterhead.",
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f"“{title}” created in {category_label} as a {label} "
+                        "template.",
+                    )
+                return success_redirect(category)
+            except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+                messages.error(
+                    request,
+                    str(exc) or "Could not create the template in Google Drive.",
+                )
+                return render_page(drive_error=str(exc), category=category)
+
+        upload_form = TemplatesFormsUploadForm(request.POST, request.FILES)
+        if not upload_form.is_valid():
+            return render_page(
+                category=upload_form.data.get("category") or active_category
+            )
+        try:
+            uploaded = upload_form.cleaned_data["file"]
+            title = upload_form.cleaned_data["title"]
+            category = upload_form.cleaned_data["category"]
+            category_folder_id = templates_forms_category_folder_id(
+                category, connection=connection
+            )
+            content = uploaded.read()
+            upload_drive_file(
+                name=title,
+                content=content,
+                mime_type=getattr(uploaded, "content_type", "") or "",
+                parent_id=category_folder_id,
+                original_filename=getattr(uploaded, "name", "") or title,
+            )
+            category_label = TEMPLATES_FORMS_CATEGORY_LABELS.get(
+                category, category
+            )
+            messages.success(
+                request,
+                f"“{title}” uploaded to {category_label}.",
+            )
+            return success_redirect(category)
+        except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+            messages.error(
+                request,
+                str(exc) or "Could not upload to Google Drive.",
+            )
+            return render_page(drive_error=str(exc), category=active_category)
+
 
     def _post_register_client(self, request, user, resolved):
         form = StaffRegisterClientForm(request.POST, request.FILES)
@@ -7734,20 +8208,21 @@ class RoleWorkspaceView(View):
 
     @staticmethod
     def _tasks_context(user, request):
-        """Build assignee-only task list for the Tasks utility page."""
+        """Build task list (assigned-only or firm-wide per View all permission)."""
         # Viewing Tasks clears unread task notifications in the bell feed.
         # The sidebar Tasks badge uses pending assignment count instead.
         ensure_task_notifications(user)
         mark_category_read(user, Notification.Category.TASK)
 
+        view_all = employee_can_view_all(user, "tasks")
         case_tasks = list(
-            CaseTask.objects.filter(assignee=user)
-            .select_related("case", "case__client", "created_by")
+            case_tasks_visible_to(user)
+            .select_related("case", "case__client", "created_by", "assignee")
             .order_by("-created_at")
         )
         matter_tasks = list(
-            MatterTask.objects.filter(assignee=user)
-            .select_related("matter", "matter__client", "created_by")
+            matter_tasks_visible_to(user)
+            .select_related("matter", "matter__client", "created_by", "assignee")
             .order_by("-created_at")
         )
 
@@ -7762,26 +8237,32 @@ class RoleWorkspaceView(View):
             )
             if task.status == CaseTask.Status.ACCEPTED:
                 entity_url = f"{entity_url}?task={task.pk}"
+            is_assignee = task.assignee_id == user.pk
             tasks.append(
                 {
                     "kind": "case",
                     "task": task,
                     "subject": str(task.case),
                     "subject_meta": task.case.client.get_full_name(),
+                    "is_assignee": is_assignee,
                     "accept_url": reverse(
                         "accounts:respond_case_task",
                         kwargs={
                             "role": user.role_slug,
                             "task_id": task.pk,
                         },
-                    ),
+                    )
+                    if is_assignee
+                    else "",
                     "reject_url": reverse(
                         "accounts:respond_case_task",
                         kwargs={
                             "role": user.role_slug,
                             "task_id": task.pk,
                         },
-                    ),
+                    )
+                    if is_assignee
+                    else "",
                     "view_url": reverse(
                         "accounts:view_case_task",
                         kwargs={
@@ -7797,7 +8278,9 @@ class RoleWorkspaceView(View):
                             "role": user.role_slug,
                             "task_id": task.pk,
                         },
-                    ),
+                    )
+                    if is_assignee
+                    else "",
                 }
             )
         for task in matter_tasks:
@@ -7810,26 +8293,32 @@ class RoleWorkspaceView(View):
             )
             if task.status == MatterTask.Status.ACCEPTED:
                 entity_url = f"{entity_url}?task={task.pk}"
+            is_assignee = task.assignee_id == user.pk
             tasks.append(
                 {
                     "kind": "matter",
                     "task": task,
                     "subject": str(task.matter),
                     "subject_meta": task.matter.client.get_full_name(),
+                    "is_assignee": is_assignee,
                     "accept_url": reverse(
                         "accounts:respond_matter_task",
                         kwargs={
                             "role": user.role_slug,
                             "task_id": task.pk,
                         },
-                    ),
+                    )
+                    if is_assignee
+                    else "",
                     "reject_url": reverse(
                         "accounts:respond_matter_task",
                         kwargs={
                             "role": user.role_slug,
                             "task_id": task.pk,
                         },
-                    ),
+                    )
+                    if is_assignee
+                    else "",
                     "view_url": reverse(
                         "accounts:view_matter_task",
                         kwargs={
@@ -7845,7 +8334,9 @@ class RoleWorkspaceView(View):
                             "role": user.role_slug,
                             "task_id": task.pk,
                         },
-                    ),
+                    )
+                    if is_assignee
+                    else "",
                 }
             )
 
@@ -7860,7 +8351,10 @@ class RoleWorkspaceView(View):
             highlight_id = None
 
         pending_count = sum(
-            1 for item in tasks if item["task"].status == CaseTask.Status.PENDING
+            1
+            for item in tasks
+            if item["task"].status == CaseTask.Status.PENDING
+            and item.get("is_assignee")
         )
         open_view_modal = False
         if highlight_kind and highlight_id:
@@ -7877,6 +8371,7 @@ class RoleWorkspaceView(View):
             "tasks": tasks,
             "task_count": len(tasks),
             "pending_count": pending_count,
+            "visibility_view_all": view_all,
             "accept_form": AcceptTaskForm(),
             "reject_form": RejectTaskForm(),
             "highlight_kind": highlight_kind,
@@ -7890,12 +8385,12 @@ class RoleWorkspaceView(View):
 
     @staticmethod
     def _calendar_context(user, request):
-        """Month calendar: tasks for most roles; cases/matters for managing partner."""
+        """Month calendar: allocated-only or firm-wide per View all permission."""
         # Calendar and Reminders share the reminder notification category.
         ensure_due_reminders(user)
         mark_category_read(user, Notification.Category.REMINDER)
 
-        if user.role == Employee.Role.MANAGING_PARTNER:
+        if employee_can_view_all(user, "calendar"):
             return RoleWorkspaceView._managing_partner_calendar_context(
                 user, request
             )
@@ -8270,7 +8765,7 @@ class RoleWorkspaceView(View):
 
     @staticmethod
     def _reminders_context(user, request):
-        """List personal task reminders set by this employee."""
+        """List task reminders (own or firm-wide per View all permission)."""
         # Viewing Reminders clears the calendar/reminders sidebar badges.
         ensure_due_reminders(user)
         mark_category_read(user, Notification.Category.REMINDER)
@@ -8282,23 +8777,18 @@ class RoleWorkspaceView(View):
             CaseTask.Status.DONE,
         )
         tasks_url = user.workspace_url("dashboard", "tasks")
+        view_all = employee_can_view_all(user, "reminders")
 
         case_tasks = (
-            CaseTask.objects.filter(
-                assignee=user,
-                reminder_at__isnull=False,
-                status__in=visible_statuses,
-            )
-            .select_related("case", "case__client", "created_by")
+            reminder_case_tasks_visible_to(user)
+            .filter(status__in=visible_statuses)
+            .select_related("case", "case__client", "created_by", "assignee")
             .order_by("-reminder_at")
         )
         matter_tasks = (
-            MatterTask.objects.filter(
-                assignee=user,
-                reminder_at__isnull=False,
-                status__in=visible_statuses,
-            )
-            .select_related("matter", "matter__client", "created_by")
+            reminder_matter_tasks_visible_to(user)
+            .filter(status__in=visible_statuses)
+            .select_related("matter", "matter__client", "created_by", "assignee")
             .order_by("-reminder_at")
         )
 
@@ -8350,6 +8840,7 @@ class RoleWorkspaceView(View):
             "due_reminder_count": len(due_reminders),
             "upcoming_reminder_count": len(upcoming_reminders),
             "reminders_now": now,
+            "visibility_view_all": view_all,
         }
 
     @staticmethod
@@ -8614,7 +9105,7 @@ def _client_case_calendar_by_day(user, client, month_start, month_end):
         CaseTask.Status.ACCEPTED,
         CaseTask.Status.DONE,
     )
-    client_cases = LitigationCase.objects.filter(client=client).exclude(
+    client_cases = cases_visible_to(user).filter(client=client).exclude(
         status=LitigationCase.Status.PENDING_APPROVAL
     )
     case_ids = list(client_cases.values_list("pk", flat=True))
@@ -8723,7 +9214,7 @@ def _client_matter_calendar_by_day(user, client, month_start, month_end):
         MatterTask.Status.ACCEPTED,
         MatterTask.Status.DONE,
     )
-    client_matters = NonLitigationMatter.objects.filter(client=client).exclude(
+    client_matters = matters_visible_to(user).filter(client=client).exclude(
         status=NonLitigationMatter.Status.PENDING_APPROVAL
     )
     matter_ids = list(client_matters.values_list("pk", flat=True))
@@ -8845,7 +9336,8 @@ PAYMENTS_TRAIL = (
 _MATTER_MODULE = "matter-management"
 _USER_MODULE = "user-management"
 _FINANCE_MODULE = "finance-billing"
-_RESEARCH_MODULE = "research-blogs"
+_RESEARCH_MODULE = "research"
+_BLOGS_MODULE = "blogs"
 
 
 def _employee_workspace_guard(
@@ -8950,6 +9442,45 @@ def _guard_litigation(request, role, *, action="view", redirect_to=None):
         activity="litigation-matters",
         action=action,
         redirect_to=redirect_to,
+    )
+
+
+def _redirect_if_record_not_visible(request, user, *, kind, record, redirect_to=None):
+    """Block deep-links to cases/matters outside the employee's visibility scope."""
+    if kind == "case":
+        allowed = employee_can_access_case(user, record)
+        label = "case"
+        fallback = user.workspace_url(
+            "dashboard", "matter-management", "litigation-matters"
+        )
+    else:
+        allowed = employee_can_access_matter(user, record)
+        label = "matter"
+        fallback = user.workspace_url(
+            "dashboard", "matter-management", "non-litigation-matters"
+        )
+    if allowed:
+        return None
+    set_workspace_access_denied_modal(
+        request,
+        title="Not permitted",
+        message=(
+            f"You can only open {label}s allocated to you. "
+            "Ask an administrator to enable View all in Roles & Permissions."
+        ),
+    )
+    return redirect(redirect_to or fallback)
+
+
+def _deny_if_case_not_visible(request, user, case, *, redirect_to=None):
+    return _redirect_if_record_not_visible(
+        request, user, kind="case", record=case, redirect_to=redirect_to
+    )
+
+
+def _deny_if_matter_not_visible(request, user, matter, *, redirect_to=None):
+    return _redirect_if_record_not_visible(
+        request, user, kind="matter", record=matter, redirect_to=redirect_to
     )
 
 
@@ -9235,7 +9766,7 @@ def latest_news_job_status(request, role, job_id):
     }
     if job.status == NewsSearchJob.Status.SUCCEEDED:
         result_url = user.workspace_url(
-            "dashboard", "research-blogs", "latest-news"
+            "dashboard", "research", "latest-news"
         )
         payload["result_url"] = f"{result_url}?job={job.pk}"
     return JsonResponse(payload)
@@ -9303,13 +9834,49 @@ def latest_news_blog_draft(request, role, job_id, article_index):
     if article_index < 0 or article_index >= len(articles):
         messages.error(request, "That news article is no longer available.")
         return redirect(
-            user.workspace_url("dashboard", "research-blogs", "latest-news")
+            user.workspace_url("dashboard", "research", "latest-news")
         )
+
+    from .news_watch import filter_country_code
 
     initial, source = build_news_blog_draft(
         article=articles[article_index],
         filters=job.filters,
-        country_name=country_name(job.filters.get("country")),
+        country_name=country_name(filter_country_code(job.filters)),
+    )
+    request.session["news_blog_draft"] = {
+        "initial": initial,
+        "source": source,
+    }
+    messages.success(
+        request,
+        "News article draft generated. Review the facts and wording before saving.",
+    )
+    return redirect(user.workspace_url("dashboard", "my-blogs-new"))
+
+
+@login_required
+@require_POST
+def latest_news_watch_article_blog_draft(request, role, watch_id, article_id):
+    """Generate a blog draft from an article stored on an owned news watch."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="register",
+    )
+    if denied:
+        return denied
+
+    from .news_watch import filter_country_code, watch_article_as_dict
+
+    watch = get_object_or_404(NewsWatch, pk=watch_id, requested_by=user)
+    item = get_object_or_404(NewsWatchArticle, pk=article_id, watch=watch)
+    initial, source = build_news_blog_draft(
+        article=watch_article_as_dict(item),
+        filters=watch.filters,
+        country_name=country_name(filter_country_code(watch.filters)),
     )
     request.session["news_blog_draft"] = {
         "initial": initial,
@@ -9371,7 +9938,7 @@ def latest_news_watch_search(request, role, job_id):
         ),
     )
     return redirect(
-        f"{user.workspace_url('dashboard', 'research-blogs', 'latest-news')}?job={job.pk}"
+        f"{user.workspace_url('dashboard', 'research', 'latest-news')}?job={job.pk}"
     )
 
 
@@ -9398,52 +9965,25 @@ def latest_news_watch_publisher(request, role, job_id, article_index):
     if article_index < 0 or article_index >= len(articles):
         messages.error(request, "That publisher is no longer available.")
         return redirect(
-            user.workspace_url("dashboard", "research-blogs", "latest-news")
+            user.workspace_url("dashboard", "research", "latest-news")
         )
 
-    from .news_watch import publisher_domain, seed_watch, watch_key
+    from .news_watch import create_or_reactivate_publisher_watch
 
     article = articles[article_index]
-    domain = publisher_domain(article.get("url") or "")
-    if not domain:
-        messages.error(request, "The publisher domain could not be identified.")
-        return redirect(
-            f"{user.workspace_url('dashboard', 'research-blogs', 'latest-news')}?job={job.pk}"
+    try:
+        _watch, created = create_or_reactivate_publisher_watch(
+            user=user,
+            article=article,
+            base_filters=job.filters,
+            baseline_articles=articles,
         )
-    filters = dict(job.filters)
-    # A publisher watch follows the source broadly rather than repeating the
-    # original topic query. Country and language still localise the feed.
-    filters["requested_details"] = ""
-    filters["industry"] = "other"
-    filters["exact_phrase"] = ""
-    filters["excluded_words"] = ""
-    filters["sort_by"] = "newest"
-    filters["source_domain"] = domain
-    key = watch_key(NewsWatch.Kind.PUBLISHER, filters, domain)
-    publisher = article.get("source_name") or domain
-    watch, created = NewsWatch.objects.get_or_create(
-        requested_by=user,
-        key=key,
-        defaults={
-            "kind": NewsWatch.Kind.PUBLISHER,
-            "name": publisher[:180],
-            "filters": filters,
-            "publisher_domain": domain,
-            "last_checked_at": timezone.now(),
-            "next_check_at": timezone.now() + timedelta(days=1),
-        },
-    )
-    if not watch.is_active:
-        watch.is_active = True
-        watch.next_check_at = timezone.now() + timedelta(days=1)
-        watch.save(update_fields=["is_active", "next_check_at", "updated_at"])
-    baseline = [
-        item
-        for item in articles
-        if publisher_domain(item.get("url") or "") == domain
-        or item.get("source_name") == article.get("source_name")
-    ]
-    seed_watch(watch, baseline)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect(
+            f"{user.workspace_url('dashboard', 'research', 'latest-news')}?job={job.pk}"
+        )
+    publisher = article.get("source_name") or article.get("url") or "Publisher"
     messages.success(
         request,
         (
@@ -9453,7 +9993,61 @@ def latest_news_watch_publisher(request, role, job_id, article_index):
         ),
     )
     return redirect(
-        f"{user.workspace_url('dashboard', 'research-blogs', 'latest-news')}?job={job.pk}"
+        f"{user.workspace_url('dashboard', 'research', 'latest-news')}?job={job.pk}"
+    )
+
+
+@login_required
+@require_POST
+def latest_news_watch_article_publisher(request, role, watch_id, article_id):
+    """Watch the publisher of an article stored on an owned news watch."""
+    user, denied = _guard_perm(
+        request,
+        role,
+        module=_RESEARCH_MODULE,
+        activity="latest-news",
+        action="edit",
+    )
+    if denied:
+        return denied
+
+    from .news_watch import (
+        create_or_reactivate_publisher_watch,
+        watch_article_as_dict,
+    )
+
+    source_watch = get_object_or_404(NewsWatch, pk=watch_id, requested_by=user)
+    item = get_object_or_404(NewsWatchArticle, pk=article_id, watch=source_watch)
+    article = watch_article_as_dict(item)
+    baseline = [
+        watch_article_as_dict(row)
+        for row in source_watch.articles.all()[:50]
+    ]
+    try:
+        _watch, created = create_or_reactivate_publisher_watch(
+            user=user,
+            article=article,
+            base_filters=source_watch.filters,
+            baseline_articles=baseline,
+        )
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect(
+            f"{user.workspace_url('dashboard', 'research', 'latest-news')}"
+            f"?watch={source_watch.pk}"
+        )
+    publisher = article.get("source_name") or article.get("url") or "Publisher"
+    messages.success(
+        request,
+        (
+            f"{publisher} is now watched daily for new updates."
+            if created
+            else f"{publisher} is already in your daily watches."
+        ),
+    )
+    return redirect(
+        f"{user.workspace_url('dashboard', 'research', 'latest-news')}"
+        f"?watch={source_watch.pk}"
     )
 
 
@@ -9474,7 +10068,7 @@ def latest_news_watch_remove(request, role, watch_id):
     watch.delete()
     messages.success(request, "Daily news watch removed.")
     return redirect(
-        user.workspace_url("dashboard", "research-blogs", "latest-news")
+        user.workspace_url("dashboard", "research", "latest-news")
     )
 
 
@@ -9496,7 +10090,7 @@ def latest_news_watch_update(request, role, watch_id):
     if frequency not in NewsWatch.Frequency.values:
         messages.error(request, "Select a valid monitoring frequency.")
         return redirect(
-            user.workspace_url("dashboard", "research-blogs", "latest-news")
+            user.workspace_url("dashboard", "research", "latest-news")
         )
 
     from .news_watch import watch_interval
@@ -9517,7 +10111,7 @@ def latest_news_watch_update(request, role, watch_id):
         f"Monitoring for “{watch.name}” will run {watch.get_frequency_display().lower()}.",
     )
     return redirect(
-        user.workspace_url("dashboard", "research-blogs", "latest-news")
+        user.workspace_url("dashboard", "research", "latest-news")
     )
 
 
@@ -9542,7 +10136,7 @@ def latest_news_watch_check(request, role, watch_id):
     state = launch_news_watch_now(watch.pk)
     wants_json = "application/json" in (request.headers.get("Accept") or "")
     latest_url = user.workspace_url(
-        "dashboard", "research-blogs", "latest-news"
+        "dashboard", "research", "latest-news"
     )
     if state == "busy":
         if wants_json:
@@ -9613,7 +10207,7 @@ def latest_news_watch_status(request, role, watch_id):
     }
     if status.get("status") == "succeeded":
         result_url = status.get("result_url") or (
-            f"{user.workspace_url('dashboard', 'research-blogs', 'latest-news')}"
+            f"{user.workspace_url('dashboard', 'research', 'latest-news')}"
             f"?watch={watch.pk}"
         )
         payload["result_url"] = result_url
@@ -10489,7 +11083,7 @@ class EditActiveLitigationCaseView(View):
                 role=role,
                 case_id=case.pk,
             )
-        return None
+        return _deny_if_case_not_visible(request, request.user, case)
 
     def _context(self, user, case, form, party_formset):
         detail_url = reverse(
@@ -10900,7 +11494,7 @@ class EditActiveNonLitigationMatterView(View):
                 role=role,
                 matter_id=matter.pk,
             )
-        return None
+        return _deny_if_matter_not_visible(request, request.user, matter)
 
     def _context(self, user, matter, form, party_formset):
         detail_url = reverse(
@@ -11286,6 +11880,22 @@ class ReviewCompanyBlogView(View):
             pk=post_id,
         )
 
+    @staticmethod
+    def _review_next_key(request):
+        return (request.POST.get("next") or request.GET.get("next") or "").strip()
+
+    @staticmethod
+    def _return_url(user, request):
+        company_url = RoleWorkspaceView._company_blogs_list_url(user)
+        next_key = ReviewCompanyBlogView._review_next_key(request)
+        if next_key in {"blogs", "research-blogs"}:
+            return user.workspace_url("dashboard", "blogs")
+        return company_url
+
+    @staticmethod
+    def _review_note(request):
+        return (request.POST.get("review_note") or "").strip()[:2000]
+
     def get(self, request, role, post_id):
         user = request.user
         if user.status != Employee.Status.ACTIVE:
@@ -11298,22 +11908,27 @@ class ReviewCompanyBlogView(View):
                 )
             )
         post = self._post_or_404(post_id)
-        trail = ["dashboard", "company-blogs"]
+        next_key = self._review_next_key(request)
+        trail = (
+            ["dashboard", "blogs"]
+            if next_key in {"blogs", "research-blogs"}
+            else ["dashboard", "company-blogs"]
+        )
         company = FirmCompanyInformation.get_solo()
         share_accounts = company_share_accounts(company)
+        back_url = self._return_url(user, request)
         context = workspace_context(
             user,
             request=request,
             page_title="Review blog post",
             page_trail=trail,
-            active_page="company-blogs",
+            active_page=trail[-1],
         )
         context.update(
             {
                 "blog_post": post,
-                "company_blogs_url": RoleWorkspaceView._company_blogs_list_url(
-                    user
-                ),
+                "company_blogs_url": back_url,
+                "review_next": next_key,
                 "seo_checklist": post.seo_checklist(),
                 "public_post_url": (
                     post.get_absolute_url() if post.is_public else ""
@@ -11339,8 +11954,9 @@ class ReviewCompanyBlogView(View):
                 )
             )
         post = self._post_or_404(post_id)
-        list_url = RoleWorkspaceView._company_blogs_list_url(user)
+        list_url = self._return_url(user, request)
         action = request.POST.get("blog_review_action", "").strip()
+        note = self._review_note(request)
 
         if action == "approve":
             if post.status not in {
@@ -11357,12 +11973,14 @@ class ReviewCompanyBlogView(View):
                 post.published_at = timezone.now()
             post.approved_by = user
             post.approved_at = timezone.now()
+            post.review_note = ""
             post.save(
                 update_fields=[
                     "status",
                     "published_at",
                     "approved_by",
                     "approved_at",
+                    "review_note",
                     "updated_at",
                 ]
             )
@@ -11390,6 +12008,7 @@ class ReviewCompanyBlogView(View):
                 request,
                 f"“{post.title}” is now published on the website.{share_note}",
             )
+            # Share modal is supported on Blogs and Company Blogs.
             return redirect(list_url)
 
         if action == "return_draft":
@@ -11398,6 +12017,7 @@ class ReviewCompanyBlogView(View):
             post.published_at = None
             post.approved_by = None
             post.approved_at = None
+            post.review_note = note
             post.save(
                 update_fields=[
                     "status",
@@ -11405,9 +12025,11 @@ class ReviewCompanyBlogView(View):
                     "published_at",
                     "approved_by",
                     "approved_at",
+                    "review_note",
                     "updated_at",
                 ]
             )
+            notify_blog_returned(post, reviewer=user, note=note)
             messages.success(
                 request,
                 f"“{post.title}” was returned to the author as a draft.",
@@ -11423,6 +12045,7 @@ class ReviewCompanyBlogView(View):
             post.published_at = None
             post.approved_by = None
             post.approved_at = None
+            post.review_note = note
             post.save(
                 update_fields=[
                     "status",
@@ -11430,8 +12053,12 @@ class ReviewCompanyBlogView(View):
                     "published_at",
                     "approved_by",
                     "approved_at",
+                    "review_note",
                     "updated_at",
                 ]
+            )
+            notify_blog_returned(
+                post, reviewer=user, note=note, unpublished=True
             )
             messages.success(
                 request,
@@ -11440,12 +12067,14 @@ class ReviewCompanyBlogView(View):
             return redirect(list_url)
 
         messages.error(request, "Choose a valid review action.")
-        return redirect(
-            reverse(
-                "accounts:review_company_blog",
-                kwargs={"role": user.role_slug, "post_id": post.pk},
-            )
+        review_url = reverse(
+            "accounts:review_company_blog",
+            kwargs={"role": user.role_slug, "post_id": post.pk},
         )
+        next_key = self._review_next_key(request)
+        if next_key in {"blogs", "research-blogs"}:
+            review_url = f"{review_url}?next=blogs"
+        return redirect(review_url)
 
 
 @method_decorator(login_required, name="dispatch")
@@ -11635,6 +12264,12 @@ class ViewLitigationCaseView(View):
                 role=role,
                 case_id=case.pk,
             )
+
+        scope_denied = _redirect_if_record_not_visible(
+            request, user, kind="case", record=case
+        )
+        if scope_denied:
+            return scope_denied
 
         access_denied = _case_task_access_denied(request, user, case, "view")
         if access_denied:
@@ -12318,6 +12953,10 @@ class UpdateCourtAttendanceView(View):
                 case_id=case.pk,
             )
 
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
+
         context = self._context(
             user,
             case,
@@ -12342,6 +12981,10 @@ class UpdateCourtAttendanceView(View):
             )
 
         form = UpdateCourtAttendanceForm(request.POST)
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
+
         advocate_formset = CourtAttendanceAdvocateFormSet(
             request.POST, prefix="advocates"
         )
@@ -12618,6 +13261,10 @@ class EditCourtAttendanceView(View):
                 case_id=case.pk,
             )
 
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
+
         attendance = self.get_attendance(case, attendance_id)
         create_view = UpdateCourtAttendanceView()
         create_view.request = request
@@ -12650,6 +13297,10 @@ class EditCourtAttendanceView(View):
                 role=role,
                 case_id=case.pk,
             )
+
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
 
         attendance = self.get_attendance(case, attendance_id)
         form = UpdateCourtAttendanceForm(
@@ -12801,6 +13452,10 @@ class CreateCaseTaskView(View):
                 case_id=case.pk,
             )
 
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
+
         form = CreateCaseTaskForm(
             initial={
                 "assigned_to": case.assigned_to_id,
@@ -12825,6 +13480,10 @@ class CreateCaseTaskView(View):
             )
 
         form = CreateCaseTaskForm(request.POST)
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
+
         if not form.is_valid():
             context = self._context(user, case, form)
             response = render(request, self.template_name, context)
@@ -12927,6 +13586,84 @@ def _group_documents_by_party_type(documents, party_type_choices):
     return groups
 
 
+def _templates_library_payload():
+    """
+    Return template library data for Start from template pickers.
+
+    Never raises — Drive failures yield an empty library.
+    """
+    connection = GoogleDriveConnection.get_solo()
+    if not connection.is_connected:
+        return {
+            "connected": False,
+            "categories": [],
+            "files": [],
+            "choices": [],
+            "settings_url": "",
+        }
+    try:
+        library = list_templates_forms_library(connection)
+    except (GoogleDriveAPIError, GoogleDriveOAuthError):
+        library = []
+    files = []
+    choices = []
+    for bucket in library:
+        for item in bucket.get("files") or []:
+            files.append(
+                {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "category": bucket["slug"],
+                    "category_label": bucket["label"],
+                    "mime_type": item.get("mime_type") or "",
+                }
+            )
+            choices.append(
+                (
+                    item["id"],
+                    f"{bucket['label']} — {item['name']}",
+                )
+            )
+    return {
+        "connected": True,
+        "categories": [
+            {"slug": slug, "label": label, "count": bucket.get("count") or 0}
+            for (slug, label), bucket in zip(
+                TEMPLATES_FORMS_CATEGORIES, library or []
+            )
+        ]
+        if library
+        else [
+            {"slug": slug, "label": label, "count": 0}
+            for slug, label in TEMPLATES_FORMS_CATEGORIES
+        ],
+        "files": files,
+        "choices": choices,
+        "library": library,
+    }
+
+
+def _assert_template_in_category(file_id: str, category_slug: str) -> dict:
+    """Ensure the Drive file lives in the selected Templates and Forms category."""
+    meta = get_drive_file_meta(file_id)
+    if meta.get("trashed"):
+        raise GoogleDriveAPIError("That template is no longer available.")
+    category_folder_id = templates_forms_category_folder_id(category_slug)
+    parents = meta.get("parents") or []
+    if category_folder_id not in parents:
+        raise GoogleDriveAPIError(
+            "That template is not in the selected category folder."
+        )
+    return meta
+
+
+def _document_source_for_mime(mime_type: str) -> str:
+    mime = (mime_type or "").strip()
+    if mime.startswith("application/vnd.google-apps."):
+        return Document.Source.GOOGLE_DOC
+    return Document.Source.UPLOADED
+
+
 @method_decorator(login_required, name="dispatch")
 class UploadCaseDocumentsView(View):
     """Create, upload, rename, and manage documents for a litigation case."""
@@ -12956,6 +13693,10 @@ class UploadCaseDocumentsView(View):
                 case_id=case.pk,
             )
 
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
+
         access_denied = _case_task_access_denied(
             request,
             user,
@@ -12970,6 +13711,7 @@ class UploadCaseDocumentsView(View):
             return access_denied
 
         party_type_choices = CaseParty.PartyType.choices
+        template_library = _templates_library_payload()
         context = self._context(
             user,
             case,
@@ -12983,6 +13725,13 @@ class UploadCaseDocumentsView(View):
                 auto_id="upload_%s",
                 party_type_choices=party_type_choices,
             ),
+            StartFromTemplateForm(
+                prefix="template",
+                auto_id="template_%s",
+                party_type_choices=party_type_choices,
+                template_choices=template_library["choices"],
+            ),
+            template_library=template_library,
         )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
@@ -13001,9 +13750,14 @@ class UploadCaseDocumentsView(View):
             )
 
         action = (request.POST.get("document_action") or "").strip()
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
+
         permission_by_action = {
             "create_google": "upload",
             "upload": "upload",
+            "start_from_template": "upload",
             "rename": "edit",
             "delete": "delete",
         }
@@ -13023,6 +13777,7 @@ class UploadCaseDocumentsView(View):
             return access_denied
 
         party_type_choices = CaseParty.PartyType.choices
+        template_library = _templates_library_payload()
         create_form = CreateGoogleDocumentForm(
             prefix="create",
             auto_id="create_%s",
@@ -13032,6 +13787,12 @@ class UploadCaseDocumentsView(View):
             prefix="upload",
             auto_id="upload_%s",
             party_type_choices=party_type_choices,
+        )
+        template_form = StartFromTemplateForm(
+            prefix="template",
+            auto_id="template_%s",
+            party_type_choices=party_type_choices,
+            template_choices=template_library["choices"],
         )
 
         try:
@@ -13056,6 +13817,17 @@ class UploadCaseDocumentsView(View):
                 if upload_form.is_valid():
                     self._upload_file(user, case, upload_form)
                     return self._library_redirect(role, case.pk)
+            elif action == "start_from_template":
+                template_form = StartFromTemplateForm(
+                    request.POST,
+                    prefix="template",
+                    auto_id="template_%s",
+                    party_type_choices=party_type_choices,
+                    template_choices=template_library["choices"],
+                )
+                if template_form.is_valid():
+                    self._start_from_template(user, case, template_form)
+                    return self._library_redirect(role, case.pk)
             elif action == "rename":
                 self._rename_document(request, case)
                 return self._library_redirect(role, case.pk)
@@ -13069,7 +13841,14 @@ class UploadCaseDocumentsView(View):
             messages.error(request, str(exc))
             return self._library_redirect(role, case.pk)
 
-        context = self._context(user, case, create_form, upload_form)
+        context = self._context(
+            user,
+            case,
+            create_form,
+            upload_form,
+            template_form,
+            template_library=template_library,
+        )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
 
@@ -13192,6 +13971,56 @@ class UploadCaseDocumentsView(View):
         )
         return document
 
+    def _start_from_template(self, user, case, form):
+        connection = GoogleDriveConnection.get_solo()
+        if not connection.is_connected:
+            raise GoogleDriveAPIError(
+                "Connect Google Drive in settings before using templates."
+            )
+        category = form.cleaned_data["category"]
+        template_file_id = form.cleaned_data["template_file_id"]
+        title = form.cleaned_data["title"]
+        notes = (form.cleaned_data.get("notes") or "").strip()
+        meta = _assert_template_in_category(template_file_id, category)
+        folder_id = ensure_case_drive_folder(case)
+        created = copy_drive_file(
+            template_file_id,
+            name=title,
+            parent_id=folder_id,
+        )
+        mime = created.get("mimeType") or meta.get("mimeType") or ""
+        source = _document_source_for_mime(mime)
+        category_label = TEMPLATES_FORMS_CATEGORY_LABELS.get(category, category)
+        document = Document.objects.create(
+            case=case,
+            title=title,
+            source=source,
+            drive_file_id=created.get("id") or "",
+            web_view_link=created.get("webViewLink") or "",
+            mime_type=mime,
+            original_filename=meta.get("name") or title,
+            notes=notes,
+            description=f"Started from {category_label} template.",
+            uploaded_by=user,
+            **form.party_type_kwargs(),
+        )
+        log_document_activity(
+            document,
+            user,
+            DocumentActivity.Action.CREATED,
+            detail=f"Copied from {category_label} template",
+            metadata={
+                "source": "template",
+                "template_file_id": template_file_id,
+                "category": category,
+            },
+        )
+        messages.success(
+            self.request,
+            f"“{title}” added to this case from the {category_label} template.",
+        )
+        return document
+
     def _rename_document(self, request, case):
         document = get_object_or_404(
             Document,
@@ -13255,12 +14084,22 @@ class UploadCaseDocumentsView(View):
         )
         return redirect(f"{url}#docs-library")
 
-    def _context(self, user, case, create_form, upload_form):
+    def _context(
+        self,
+        user,
+        case,
+        create_form,
+        upload_form,
+        template_form=None,
+        *,
+        template_library=None,
+    ):
         detail_url = reverse(
             "accounts:view_litigation_case",
             kwargs={"role": user.role_slug, "case_id": case.pk},
         )
         connection = GoogleDriveConnection.get_solo()
+        template_library = template_library or _templates_library_payload()
         context = workspace_context(
             user,
             request=self.request,
@@ -13291,6 +14130,13 @@ class UploadCaseDocumentsView(View):
                 "allow_delete": True,
                 "allow_upload": True,
             }
+        if template_form is None:
+            template_form = StartFromTemplateForm(
+                prefix="template",
+                auto_id="template_%s",
+                party_type_choices=party_type_choices,
+                template_choices=template_library["choices"],
+            )
         context.update(
             {
                 "case": case,
@@ -13299,6 +14145,8 @@ class UploadCaseDocumentsView(View):
                 "entity_label": case.court_case_number or f"Case #{case.pk}",
                 "create_form": create_form,
                 "upload_form": upload_form,
+                "template_form": template_form,
+                "template_library": template_library,
                 "edit_form": edit_form,
                 "party_type_choices": party_type_choices,
                 "documents": documents,
@@ -13311,6 +14159,12 @@ class UploadCaseDocumentsView(View):
                 "google_drive_connected": connection.is_connected,
                 "google_drive_settings_url": user.workspace_url(
                     "dashboard", "google-drive-settings"
+                ),
+                "templates_and_forms_url": user.workspace_url(
+                    "dashboard",
+                    "system-settings",
+                    "document-settings",
+                    "templates-and-forms",
                 ),
                 "task_access": task_access,
             }
@@ -13343,6 +14197,10 @@ class CaseCalendarView(View):
                 role=role,
                 case_id=case.pk,
             )
+
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
 
         today, year, month, month_start, month_end = _calendar_month_from_request(
             request
@@ -13465,6 +14323,12 @@ class LitigationCaseActionView(View):
                 case_id=case.pk,
             )
 
+        scope_denied = _redirect_if_record_not_visible(
+            request, user, kind="case", record=case
+        )
+        if scope_denied:
+            return scope_denied
+
         page_title = PAGE_TITLES.get(
             action, action.replace("-", " ").title()
         )
@@ -13522,6 +14386,12 @@ class ViewNonLitigationMatterView(View):
                 role=role,
                 matter_id=matter.pk,
             )
+
+        scope_denied = _redirect_if_record_not_visible(
+            request, user, kind="matter", record=matter
+        )
+        if scope_denied:
+            return scope_denied
 
         access_denied = _matter_task_access_denied(request, user, matter, "view")
         if access_denied:
@@ -13584,6 +14454,10 @@ class UpdateMatterAttendanceView(View):
                 matter_id=matter.pk,
             )
 
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
+
         context = self._context(
             user,
             matter,
@@ -13606,6 +14480,10 @@ class UpdateMatterAttendanceView(View):
                 role=role,
                 matter_id=matter.pk,
             )
+
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
 
         form = UpdateMatterAttendanceForm(request.POST)
         quorum_formset = MatterAttendanceQuorumFormSet(
@@ -13888,6 +14766,10 @@ class EditMatterAttendanceView(View):
                 matter_id=matter.pk,
             )
 
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
+
         attendance = self.get_attendance(matter, attendance_id)
         create_view = UpdateMatterAttendanceView()
         create_view.request = request
@@ -13920,6 +14802,10 @@ class EditMatterAttendanceView(View):
                 role=role,
                 matter_id=matter.pk,
             )
+
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
 
         attendance = self.get_attendance(matter, attendance_id)
         form = UpdateMatterAttendanceForm(
@@ -14029,6 +14915,10 @@ class CreateMatterTaskView(View):
                 matter_id=matter.pk,
             )
 
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
+
         form = CreateMatterTaskForm(
             initial={
                 "assigned_to": matter.assigned_to_id,
@@ -14051,6 +14941,10 @@ class CreateMatterTaskView(View):
                 role=role,
                 matter_id=matter.pk,
             )
+
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
 
         form = CreateMatterTaskForm(request.POST)
         if not form.is_valid():
@@ -14138,6 +15032,10 @@ class UploadMatterDocumentsView(View):
                 matter_id=matter.pk,
             )
 
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
+
         access_denied = _matter_task_access_denied(
             request,
             user,
@@ -14152,6 +15050,7 @@ class UploadMatterDocumentsView(View):
             return access_denied
 
         party_type_choices = MatterParty.PartyType.choices
+        template_library = _templates_library_payload()
         context = self._context(
             user,
             matter,
@@ -14165,6 +15064,13 @@ class UploadMatterDocumentsView(View):
                 auto_id="upload_%s",
                 party_type_choices=party_type_choices,
             ),
+            StartFromTemplateForm(
+                prefix="template",
+                auto_id="template_%s",
+                party_type_choices=party_type_choices,
+                template_choices=template_library["choices"],
+            ),
+            template_library=template_library,
         )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
@@ -14182,10 +15088,15 @@ class UploadMatterDocumentsView(View):
                 matter_id=matter.pk,
             )
 
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
+
         action = (request.POST.get("document_action") or "").strip()
         permission_by_action = {
             "create_google": "upload",
             "upload": "upload",
+            "start_from_template": "upload",
             "rename": "edit",
             "delete": "delete",
         }
@@ -14205,6 +15116,7 @@ class UploadMatterDocumentsView(View):
             return access_denied
 
         party_type_choices = MatterParty.PartyType.choices
+        template_library = _templates_library_payload()
         create_form = CreateGoogleDocumentForm(
             prefix="create",
             auto_id="create_%s",
@@ -14214,6 +15126,12 @@ class UploadMatterDocumentsView(View):
             prefix="upload",
             auto_id="upload_%s",
             party_type_choices=party_type_choices,
+        )
+        template_form = StartFromTemplateForm(
+            prefix="template",
+            auto_id="template_%s",
+            party_type_choices=party_type_choices,
+            template_choices=template_library["choices"],
         )
 
         try:
@@ -14238,6 +15156,17 @@ class UploadMatterDocumentsView(View):
                 if upload_form.is_valid():
                     self._upload_file(user, matter, upload_form)
                     return self._library_redirect(role, matter.pk)
+            elif action == "start_from_template":
+                template_form = StartFromTemplateForm(
+                    request.POST,
+                    prefix="template",
+                    auto_id="template_%s",
+                    party_type_choices=party_type_choices,
+                    template_choices=template_library["choices"],
+                )
+                if template_form.is_valid():
+                    self._start_from_template(user, matter, template_form)
+                    return self._library_redirect(role, matter.pk)
             elif action == "rename":
                 self._rename_document(request, matter)
                 return self._library_redirect(role, matter.pk)
@@ -14251,7 +15180,14 @@ class UploadMatterDocumentsView(View):
             messages.error(request, str(exc))
             return self._library_redirect(role, matter.pk)
 
-        context = self._context(user, matter, create_form, upload_form)
+        context = self._context(
+            user,
+            matter,
+            create_form,
+            upload_form,
+            template_form,
+            template_library=template_library,
+        )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
 
@@ -14374,6 +15310,56 @@ class UploadMatterDocumentsView(View):
         )
         return document
 
+    def _start_from_template(self, user, matter, form):
+        connection = GoogleDriveConnection.get_solo()
+        if not connection.is_connected:
+            raise GoogleDriveAPIError(
+                "Connect Google Drive in settings before using templates."
+            )
+        category = form.cleaned_data["category"]
+        template_file_id = form.cleaned_data["template_file_id"]
+        title = form.cleaned_data["title"]
+        notes = (form.cleaned_data.get("notes") or "").strip()
+        meta = _assert_template_in_category(template_file_id, category)
+        folder_id = ensure_matter_drive_folder(matter)
+        created = copy_drive_file(
+            template_file_id,
+            name=title,
+            parent_id=folder_id,
+        )
+        mime = created.get("mimeType") or meta.get("mimeType") or ""
+        source = _document_source_for_mime(mime)
+        category_label = TEMPLATES_FORMS_CATEGORY_LABELS.get(category, category)
+        document = Document.objects.create(
+            matter=matter,
+            title=title,
+            source=source,
+            drive_file_id=created.get("id") or "",
+            web_view_link=created.get("webViewLink") or "",
+            mime_type=mime,
+            original_filename=meta.get("name") or title,
+            notes=notes,
+            description=f"Started from {category_label} template.",
+            uploaded_by=user,
+            **form.party_type_kwargs(),
+        )
+        log_document_activity(
+            document,
+            user,
+            DocumentActivity.Action.CREATED,
+            detail=f"Copied from {category_label} template",
+            metadata={
+                "source": "template",
+                "template_file_id": template_file_id,
+                "category": category,
+            },
+        )
+        messages.success(
+            self.request,
+            f"“{title}” added to this matter from the {category_label} template.",
+        )
+        return document
+
     def _rename_document(self, request, matter):
         document = get_object_or_404(
             Document,
@@ -14437,12 +15423,22 @@ class UploadMatterDocumentsView(View):
         )
         return redirect(f"{url}#docs-library")
 
-    def _context(self, user, matter, create_form, upload_form):
+    def _context(
+        self,
+        user,
+        matter,
+        create_form,
+        upload_form,
+        template_form=None,
+        *,
+        template_library=None,
+    ):
         detail_url = reverse(
             "accounts:view_non_litigation_matter",
             kwargs={"role": user.role_slug, "matter_id": matter.pk},
         )
         connection = GoogleDriveConnection.get_solo()
+        template_library = template_library or _templates_library_payload()
         context = workspace_context(
             user,
             request=self.request,
@@ -14473,6 +15469,13 @@ class UploadMatterDocumentsView(View):
                 "allow_delete": True,
                 "allow_upload": True,
             }
+        if template_form is None:
+            template_form = StartFromTemplateForm(
+                prefix="template",
+                auto_id="template_%s",
+                party_type_choices=party_type_choices,
+                template_choices=template_library["choices"],
+            )
         context.update(
             {
                 "case": None,
@@ -14481,6 +15484,8 @@ class UploadMatterDocumentsView(View):
                 "entity_label": matter.matter_title,
                 "create_form": create_form,
                 "upload_form": upload_form,
+                "template_form": template_form,
+                "template_library": template_library,
                 "edit_form": edit_form,
                 "party_type_choices": party_type_choices,
                 "documents": documents,
@@ -14493,6 +15498,12 @@ class UploadMatterDocumentsView(View):
                 "google_drive_connected": connection.is_connected,
                 "google_drive_settings_url": user.workspace_url(
                     "dashboard", "google-drive-settings"
+                ),
+                "templates_and_forms_url": user.workspace_url(
+                    "dashboard",
+                    "system-settings",
+                    "document-settings",
+                    "templates-and-forms",
                 ),
                 "task_access": task_access,
             }
@@ -14599,6 +15610,10 @@ class CaseAuditProgressView(View):
                 role=role,
                 case_id=case.pk,
             )
+
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
 
         events = build_case_audit_events(case, role=role)
         summary = case_audit_summary(events)
@@ -14719,27 +15734,27 @@ class BlogPostAnalyticsView(View):
         if days_raw in {"7", "30", "90"}:
             days = int(days_raw)
         analytics = post.web_analytics(days=days)
-        trail = ["dashboard", "research-blogs"]
+        trail = ["dashboard", "blogs"]
         context = workspace_context(
             user,
             request=request,
             page_title="Blog analytics",
             page_trail=trail,
-            active_page="research-blogs",
+            active_page="blogs",
         )
         context.update(
             {
                 "blog_post": post,
                 "analytics": analytics,
                 "range_days": days,
-                "research_blogs_url": user.workspace_url(
-                    "dashboard", "research-blogs"
-                ),
+                "blogs_url": user.workspace_url("dashboard", "blogs"),
+                "research_blogs_url": user.workspace_url("dashboard", "blogs"),
                 "public_post_url": post.get_absolute_url(),
                 "review_url": reverse(
                     "accounts:review_company_blog",
                     kwargs={"role": user.role_slug, "post_id": post.pk},
-                ),
+                )
+                + "?next=blogs",
             }
         )
         response = render(request, self.template_name, context)
@@ -15060,6 +16075,10 @@ class MatterCalendarView(View):
                 matter_id=matter.pk,
             )
 
+        scope_denied = _deny_if_matter_not_visible(request, user, matter)
+        if scope_denied:
+            return scope_denied
+
         today, year, month, month_start, month_end = _calendar_month_from_request(
             request
         )
@@ -15175,6 +16194,12 @@ class NonLitigationMatterActionView(View):
                 matter_id=matter.pk,
             )
 
+        scope_denied = _redirect_if_record_not_visible(
+            request, user, kind="matter", record=matter
+        )
+        if scope_denied:
+            return scope_denied
+
         page_title = PAGE_TITLES.get(
             action, action.replace("-", " ").title()
         )
@@ -15214,17 +16239,16 @@ class ViewCaseTaskView(View):
     kind = "case"
 
     def get_task(self, task_id, user):
-        return get_object_or_404(
-            CaseTask.objects.select_related(
-                "case",
-                "case__client",
-                "case__registered_by",
-                "created_by",
-                "assignee",
-            ).prefetch_related("case__parties"),
-            pk=task_id,
-            assignee=user,
-        )
+        qs = CaseTask.objects.select_related(
+            "case",
+            "case__client",
+            "case__registered_by",
+            "created_by",
+            "assignee",
+        ).prefetch_related("case__parties")
+        if employee_can_view_all(user, "tasks"):
+            return get_object_or_404(qs, pk=task_id)
+        return get_object_or_404(qs, pk=task_id, assignee=user)
 
     def get(self, request, role, task_id):
         user, denied = _guard_litigation(request, role, action="task")
@@ -15274,17 +16298,16 @@ class ViewMatterTaskView(View):
     kind = "matter"
 
     def get_task(self, task_id, user):
-        return get_object_or_404(
-            MatterTask.objects.select_related(
-                "matter",
-                "matter__client",
-                "matter__registered_by",
-                "created_by",
-                "assignee",
-            ).prefetch_related("matter__parties"),
-            pk=task_id,
-            assignee=user,
-        )
+        qs = MatterTask.objects.select_related(
+            "matter",
+            "matter__client",
+            "matter__registered_by",
+            "created_by",
+            "assignee",
+        ).prefetch_related("matter__parties")
+        if employee_can_view_all(user, "tasks"):
+            return get_object_or_404(qs, pk=task_id)
+        return get_object_or_404(qs, pk=task_id, assignee=user)
 
     def get(self, request, role, task_id):
         user, denied = _guard_non_litigation(request, role, action="task")

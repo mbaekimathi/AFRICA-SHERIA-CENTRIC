@@ -1,0 +1,325 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--docs" id="templates-and-forms-page" data-reveal-root>
+  <header class="page-intro" data-reveal>
+    <div class="page-intro__copy">
+      <p class="page-kicker">Document settings</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Keep ready templates for court forms, affidavits, notices, agreements,
+        letters, and applications in Google Drive. Case and matter libraries can
+        start from these masters without editing the originals.
+      </p>
+    </div>
+  </header>
+
+  <div class="docs-context" aria-label="Drive status">
+    <span class="docs-context__badge">Firm Drive</span>
+    <div class="docs-context__text">
+      <strong>Templates and Forms</strong>
+      <span>{{ templates_forms_total_count }} template{{ templates_forms_total_count|pluralize }} across categories</span>
+    </div>
+    {% if google_drive_connected %}
+    <span class="docs-context__status docs-context__status--on">Drive ready</span>
+    {% else %}
+    <a class="docs-context__status docs-context__status--off" href="{{ google_drive_settings_url }}">
+      Connect Drive
+    </a>
+    {% endif %}
+  </div>
+
+  {% if not google_drive_connected %}
+  <div class="docs-alert" role="alert">
+    Connect Google Drive before creating or uploading templates and forms.
+    <a href="{{ google_drive_settings_url }}">Open Google Drive Settings</a>
+  </div>
+  {% elif drive_error %}
+  <div class="docs-alert" role="alert">{{ drive_error }}</div>
+  {% endif %}
+
+  <nav class="template-category-nav" aria-label="Template categories">
+    {% for slug, label in templates_forms_categories %}
+    <a
+      class="template-category-nav__item{% if slug == active_category %} is-active{% endif %}"
+      href="?category={{ slug }}"
+    >
+      <span>{{ label }}</span>
+      {% for bucket in templates_forms_library %}
+        {% if bucket.slug == slug %}
+        <em>{{ bucket.count }}</em>
+        {% endif %}
+      {% empty %}
+      {% endfor %}
+    </a>
+    {% endfor %}
+  </nav>
+
+  <div class="docs-compose">
+    <div class="docs-compose__intro">
+      <h3>{{ active_category_label }}</h3>
+      <p>
+        Create or upload into this category folder under
+        <code>Sheria-Centric / Templates and Forms / {{ active_category_label }}</code>.
+        {% if active_category_folder_url %}
+        <a href="{{ active_category_folder_url }}" target="_blank" rel="noopener noreferrer">
+          Open category in Google Drive
+        </a>
+        {% elif templates_forms_folder_url %}
+        <a href="{{ templates_forms_folder_url }}" target="_blank" rel="noopener noreferrer">
+          Open Templates and Forms
+        </a>
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="docs-actions">
+      <form
+        method="post"
+        class="docs-tile docs-tile--upload"
+        enctype="multipart/form-data"
+        novalidate
+        data-docs-upload
+      >
+        {% csrf_token %}
+        <input type="hidden" name="template_action" value="upload">
+        <div class="docs-tile__head">
+          <span class="docs-tile__icon docs-tile__icon--upload" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <div class="docs-tile__copy">
+            <h3>Upload template or form</h3>
+            <p>PDF, Word, Excel, PowerPoint, images, and text files up to 15 MB.</p>
+          </div>
+        </div>
+
+        {% if upload_form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in upload_form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="docs-tile__body">
+          <div class="docs-field">
+            <label for="{{ upload_form.category.id_for_label }}">Category <span aria-hidden="true">*</span></label>
+            {{ upload_form.category }}
+            {% if upload_form.category.errors %}<span class="field-error">{{ upload_form.category.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ upload_form.title.id_for_label }}">Name <span aria-hidden="true">*</span></label>
+            {{ upload_form.title }}
+            {% if upload_form.title.errors %}<span class="field-error">{{ upload_form.title.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <span class="docs-field__label">File <span aria-hidden="true">*</span></span>
+            <label class="docs-drop" for="{{ upload_form.file.id_for_label }}" data-docs-drop>
+              <span class="docs-drop__visual" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+                  <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                  <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="docs-drop__copy">
+                <strong data-docs-drop-title>Drop a file or browse</strong>
+                <span data-docs-drop-meta>PDF · Word · Excel · PowerPoint · images</span>
+              </span>
+              {{ upload_form.file }}
+            </label>
+            {% if upload_form.file.errors %}<span class="field-error">{{ upload_form.file.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ upload_form.notes.id_for_label }}">Notes <span class="docs-optional">(optional)</span></label>
+            {{ upload_form.notes }}
+            {% if upload_form.notes.errors %}<span class="field-error">{{ upload_form.notes.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="docs-tile__foot">
+          <p class="docs-tile__hint">Saved as a master template in this category.</p>
+          <button type="submit" class="btn btn--docs-upload" {% if not google_drive_connected %}disabled{% endif %}>
+            Upload &amp; save
+          </button>
+        </div>
+      </form>
+
+      <form
+        method="post"
+        class="docs-tile docs-tile--google"
+        novalidate
+        data-docs-create
+      >
+        {% csrf_token %}
+        <input type="hidden" name="template_action" value="create_google">
+        <div class="docs-tile__head">
+          <span class="docs-tile__icon docs-tile__icon--google" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <path d="M8.05 3.5 2.2 13.6h4.95l5.85-10.1H8.05Zm7.9 0-2.9 5.02 2.92 5.08h5.83L15.95 3.5ZM4.55 15.1 2.2 19.15c.45.95 1.2 1.7 2.15 2.2h15.3c.95-.5 1.7-1.25 2.15-2.2L19.45 15.1H4.55Z"/>
+            </svg>
+          </span>
+          <div class="docs-tile__copy">
+            <h3>Create your own template</h3>
+            <p>Start a blank Google Doc, Sheet, or Slides file in this category.</p>
+          </div>
+        </div>
+
+        {% if create_form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in create_form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="docs-tile__body">
+          <div class="docs-field">
+            <label for="{{ create_form.category.id_for_label }}">Category <span aria-hidden="true">*</span></label>
+            {{ create_form.category }}
+            {% if create_form.category.errors %}<span class="field-error">{{ create_form.category.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ create_form.title.id_for_label }}">Template name <span aria-hidden="true">*</span></label>
+            {{ create_form.title }}
+            {% if create_form.title.errors %}<span class="field-error">{{ create_form.title.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ create_form.description.id_for_label }}">Description <span class="docs-optional">(optional)</span></label>
+            {{ create_form.description }}
+            {% if create_form.description.errors %}<span class="field-error">{{ create_form.description.errors.0 }}</span>{% endif %}
+          </div>
+          <fieldset class="docs-type">
+            <legend>Create as <span aria-hidden="true">*</span></legend>
+            <div class="docs-type__options" role="radiogroup" aria-label="Google file type">
+              {% for value, label in create_form.google_type.field.choices %}
+              <label class="docs-type__option docs-type__option--{{ value }}">
+                <input
+                  type="radio"
+                  name="{{ create_form.google_type.html_name }}"
+                  value="{{ value }}"
+                  class="docs-type-input"
+                  {% if create_form.google_type.value == value %}checked{% elif not create_form.is_bound and value == "document" %}checked{% endif %}
+                >
+                <span class="docs-type__card">
+                  <span class="docs-type__glyph" aria-hidden="true"></span>
+                  <span class="docs-type__name">{{ label }}</span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% if create_form.google_type.errors %}
+            <span class="field-error">{{ create_form.google_type.errors.0 }}</span>
+            {% endif %}
+          </fieldset>
+
+          <section
+            class="docs-letterhead"
+            data-docs-letterhead
+            aria-labelledby="templates-letterhead-title"
+          >
+            <div class="docs-letterhead__head">
+              <div class="docs-letterhead__copy">
+                <h4 id="templates-letterhead-title">Firm letterhead</h4>
+                <p>
+                  Use the company letterhead when creating a Google Doc template.
+                  Disable for a blank document.
+                </p>
+              </div>
+              <label class="docs-letterhead__switch">
+                {{ create_form.include_letterhead }}
+                <span class="docs-letterhead__switch-ui" aria-hidden="true"></span>
+                <span class="docs-letterhead__switch-label">
+                  {% if create_form.include_letterhead.value %}Enabled{% else %}Disabled{% endif %}
+                </span>
+              </label>
+            </div>
+            <div
+              class="docs-letterhead__preview"
+              data-docs-letterhead-preview
+              {% if create_form.is_bound and not create_form.include_letterhead.value %}hidden{% endif %}
+            >
+              <p class="docs-letterhead__preview-kicker">Preview</p>
+              <div class="docs-letterhead__sheet">
+                {% include "accounts/partials/company_letterhead.html" %}
+                <div class="docs-letterhead__body-hint" aria-hidden="true">
+                  Template body starts here…
+                </div>
+                {% include "accounts/partials/company_letterfoot.html" %}
+              </div>
+            </div>
+            <p
+              class="docs-letterhead__off"
+              data-docs-letterhead-off
+              {% if not create_form.is_bound or create_form.include_letterhead.value %}hidden{% endif %}
+            >
+              Letterhead will not be added to this template.
+            </p>
+            <p class="docs-letterhead__hint" data-docs-letterhead-docs-only hidden>
+              Letterhead is applied to Google Docs only. Sheets and Slides stay blank.
+            </p>
+          </section>
+        </div>
+
+        <div class="docs-tile__foot">
+          <p class="docs-tile__hint">Opens in Google Drive for editing.</p>
+          <button type="submit" class="btn btn--docs-google" {% if not google_drive_connected %}disabled{% endif %}>
+            Create template
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <section class="docs-library" aria-labelledby="templates-forms-library-title">
+    <div class="docs-library__head">
+      <div class="docs-library__title">
+        <h3 id="templates-forms-library-title">{{ active_category_label }} library</h3>
+        <p class="docs-library__sub">
+          Master files in this category. Case/matter work copies them — do not edit masters for a single file.
+        </p>
+      </div>
+      <span class="docs-library__count" title="Files in category">
+        {{ templates_forms_files|length }}
+      </span>
+    </div>
+
+    {% if templates_forms_files %}
+    <ul class="docs-file-list">
+      {% for item in templates_forms_files %}
+      <li class="docs-file-list__item">
+        <div class="docs-file-list__main">
+          <strong>{{ item.name }}</strong>
+          {% if item.mime_type %}
+          <span class="docs-file-list__meta">{{ item.mime_type }}</span>
+          {% endif %}
+        </div>
+        {% if item.open_url %}
+        <a
+          class="btn btn--quiet btn--inline"
+          href="{{ item.open_url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open
+        </a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state">
+      <p class="empty-state__title">No {{ active_category_label|lower }} yet</p>
+      <p class="empty-state__copy">
+        Create a Google template or upload a file above for this category.
+      </p>
+    </div>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/docs-upload.js' %}?v=5" defer></script>
+{% endblock %}

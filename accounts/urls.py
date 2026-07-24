@@ -73,66 +73,78 @@ urlpatterns = [
         name="communication_settings_verify",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/jobs/start/",
+        "<slug:role>/dashboard/research/latest-news/jobs/start/",
         views.latest_news_job_start,
         name="latest_news_job_start",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<slug:role>/dashboard/research/latest-news/jobs/"
         "<int:job_id>/status/",
         views.latest_news_job_status,
         name="latest_news_job_status",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<slug:role>/dashboard/research/latest-news/jobs/"
         "<int:job_id>/cancel/",
         views.latest_news_job_cancel,
         name="latest_news_job_cancel",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<slug:role>/dashboard/research/latest-news/jobs/"
         "<int:job_id>/articles/<int:article_index>/blog/",
         views.latest_news_blog_draft,
         name="latest_news_blog_draft",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<slug:role>/dashboard/research/latest-news/watches/"
+        "<int:watch_id>/articles/<int:article_id>/blog/",
+        views.latest_news_watch_article_blog_draft,
+        name="latest_news_watch_article_blog_draft",
+    ),
+    path(
+        "<slug:role>/dashboard/research/latest-news/jobs/"
         "<int:job_id>/watch/",
         views.latest_news_watch_search,
         name="latest_news_watch_search",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/jobs/"
+        "<slug:role>/dashboard/research/latest-news/jobs/"
         "<int:job_id>/articles/<int:article_index>/watch-publisher/",
         views.latest_news_watch_publisher,
         name="latest_news_watch_publisher",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<slug:role>/dashboard/research/latest-news/watches/"
+        "<int:watch_id>/articles/<int:article_id>/watch-publisher/",
+        views.latest_news_watch_article_publisher,
+        name="latest_news_watch_article_publisher",
+    ),
+    path(
+        "<slug:role>/dashboard/research/latest-news/watches/"
         "<int:watch_id>/remove/",
         views.latest_news_watch_remove,
         name="latest_news_watch_remove",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<slug:role>/dashboard/research/latest-news/watches/"
         "<int:watch_id>/update/",
         views.latest_news_watch_update,
         name="latest_news_watch_update",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<slug:role>/dashboard/research/latest-news/watches/"
         "<int:watch_id>/check/",
         views.latest_news_watch_check,
         name="latest_news_watch_check",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<slug:role>/dashboard/research/latest-news/watches/"
         "<int:watch_id>/status/",
         views.latest_news_watch_status,
         name="latest_news_watch_status",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/latest-news/watches/"
+        "<slug:role>/dashboard/research/latest-news/watches/"
         "<int:watch_id>/cancel-check/",
         views.latest_news_watch_cancel,
         name="latest_news_watch_cancel",
@@ -535,7 +547,7 @@ urlpatterns = [
         name="review_company_blog",
     ),
     path(
-        "<slug:role>/dashboard/research-blogs/<int:post_id>/analytics/",
+        "<slug:role>/dashboard/blogs/<int:post_id>/analytics/",
         views.BlogPostAnalyticsView.as_view(),
         name="blog_post_analytics",
     ),

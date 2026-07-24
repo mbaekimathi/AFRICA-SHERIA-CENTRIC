@@ -32,10 +32,11 @@
     }
   }
 
-  function createNotificationSound() {
+  function createNotificationSound(getVolume) {
     let audioCtx = null;
     let unlocked = false;
     let lastPlayedAt = 0;
+    const resolveVolume = typeof getVolume === "function" ? getVolume : () => 70;
 
     function getContext() {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -75,13 +76,17 @@
       }
       if (!force && !unlocked) return;
 
+      const volumePct = Math.max(0, Math.min(100, Number(resolveVolume()) || 0));
+      if (volumePct <= 0) return;
+      const volumeScale = volumePct / 100;
+
       const run = () => {
         const now = Date.now();
         if (!force && now - lastPlayedAt < 1500) return;
         lastPlayedAt = now;
         const t = ctx.currentTime;
-        playTone(ctx, 880, t, 0.14, 0.045);
-        playTone(ctx, 1174.7, t + 0.12, 0.18, 0.035);
+        playTone(ctx, 880, t, 0.14, 0.045 * volumeScale);
+        playTone(ctx, 1174.7, t + 0.12, 0.18, 0.035 * volumeScale);
       };
 
       if (ctx.state === "suspended") {
@@ -97,6 +102,119 @@
     });
 
     return { play, unlock };
+  }
+
+  function createBrowserNotifications(menu) {
+    const firmName = () =>
+      (menu.dataset.firmName || "Sheria Centric").trim() || "Sheria Centric";
+    const preferenceEnabled = () =>
+      (menu.dataset.browserEnabled || "true").toLowerCase() !== "false";
+    let lastPlayedAt = 0;
+
+    function supported() {
+      return typeof window.Notification === "function";
+    }
+
+    function permission() {
+      if (!supported()) return "unsupported";
+      return window.Notification.permission || "default";
+    }
+
+    async function requestPermission() {
+      if (!supported()) return "unsupported";
+      if (permission() !== "default") return permission();
+      try {
+        const result = await window.Notification.requestPermission();
+        return result || permission();
+      } catch (_error) {
+        return permission();
+      }
+    }
+
+    function newestUnreadItems(groups) {
+      const items = [];
+      (groups || []).forEach((group) => {
+        (group.items || []).forEach((item) => {
+          if (!item || item.is_read) return;
+          items.push(item);
+        });
+      });
+      items.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+      return items;
+    }
+
+    function show(item, { force = false } = {}) {
+      if (!supported()) return false;
+      if (!force && !preferenceEnabled()) return false;
+      if (permission() !== "granted") return false;
+      if (!force && menu.classList.contains("is-open")) return false;
+
+      const now = Date.now();
+      if (!force && now - lastPlayedAt < 1500) return false;
+      lastPlayedAt = now;
+
+      const title = (item && item.title) || "New notification";
+      const body =
+        (item && (item.body || item.category_label)) ||
+        "You have a new alert in Sheria Centric.";
+      const targetUrl = (item && item.url) || window.location.href;
+
+      try {
+        const note = new window.Notification(`${firmName()} · ${title}`, {
+          body: String(body).slice(0, 180),
+          tag: item && item.id ? `sheria-notif-${item.id}` : "sheria-notif",
+          renotify: true,
+          requireInteraction: false,
+        });
+        note.onclick = () => {
+          try {
+            window.focus();
+            if (targetUrl) window.location.href = targetUrl;
+          } catch (_error) {
+            // Ignore focus / navigation failures.
+          }
+          note.close();
+        };
+        window.setTimeout(() => {
+          try {
+            note.close();
+          } catch (_error) {
+            // Ignore close failures.
+          }
+        }, 8000);
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    function notifyFromPayload(groups, addedCount) {
+      if (!preferenceEnabled() || permission() !== "granted") return;
+      const unread = newestUnreadItems(groups);
+      if (!unread.length) return;
+      if (addedCount > 1) {
+        show(
+          {
+            id: `batch-${unread[0].id}`,
+            title: `${addedCount} new notifications`,
+            body: unread[0].title || "Open Sheria Centric to review them.",
+            url: unread[0].url,
+          },
+          { force: false }
+        );
+        return;
+      }
+      show(unread[0]);
+    }
+
+    return {
+      supported,
+      permission,
+      requestPermission,
+      show,
+      notifyFromPayload,
+      preferenceEnabled,
+    };
   }
 
   function renderFeed(listEl, groups) {
@@ -198,8 +316,13 @@
     const markAllUrl = menu.dataset.markAllUrl;
     if (!url || !window.SheriaLivePoll) return;
 
-    const sound = createNotificationSound();
+    const sound = createNotificationSound(() => {
+      const raw = Number(menu.dataset.soundVolume);
+      return Number.isFinite(raw) ? raw : 70;
+    });
     window.SheriaNotificationSound = sound;
+    const browserAlerts = createBrowserNotifications(menu);
+    window.SheriaBrowserNotifications = browserAlerts;
     let lastRevision = "";
     let lastUnreadCount = null;
     const soundEnabled = () =>
@@ -212,12 +335,10 @@
       lastRevision = revision;
 
       const unreadCount = Number(data.unread_count || 0);
-      if (
-        soundEnabled() &&
-        lastUnreadCount !== null &&
-        unreadCount > lastUnreadCount
-      ) {
-        sound.play();
+      if (lastUnreadCount !== null && unreadCount > lastUnreadCount) {
+        const added = unreadCount - lastUnreadCount;
+        if (soundEnabled()) sound.play();
+        browserAlerts.notifyFromPayload(data.groups || [], added);
       }
       lastUnreadCount = unreadCount;
 
@@ -229,8 +350,9 @@
 
     window.SheriaLivePoll.start({
       url,
-      minMs: 4000,
-      maxMs: 15000,
+      minMs: 8000,
+      maxMs: 45000,
+      factor: 1.7,
       onPayload,
     });
 

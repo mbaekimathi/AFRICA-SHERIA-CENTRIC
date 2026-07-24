@@ -63,6 +63,11 @@ INDUSTRY_TERMS = {
     "other": "",
 }
 PERIOD_TERMS = {"1d": "when:1d", "7d": "when:7d", "30d": "when:30d"}
+PERIOD_MAX_AGE_SECONDS = {
+    "1d": 1 * 24 * 60 * 60,
+    "7d": 7 * 24 * 60 * 60,
+    "30d": 30 * 24 * 60 * 60,
+}
 TRUSTED_SOURCE_HINTS = {
     "reuters": 18,
     "associated press": 18,
@@ -78,6 +83,13 @@ TRUSTED_SOURCE_HINTS = {
 _STOP_WORDS = {
     "a", "about", "and", "are", "for", "from", "in", "is", "it", "news",
     "of", "on", "or", "the", "this", "to", "with",
+}
+# Light expansions so topic filters match common spellings in headlines.
+_TERM_EXPANSIONS = {
+    "lawfirm": ("lawfirm", "law firm", "law firms", "firm"),
+    "lawfirms": ("lawfirm", "lawfirms", "law firm", "law firms", "firm"),
+    "softwares": ("software", "softwares"),
+    "software": ("software", "softwares"),
 }
 
 
@@ -123,6 +135,41 @@ def _keywords(value: str) -> set[str]:
     return {word for word in words if word not in _STOP_WORDS}
 
 
+def _term_variants(term: str) -> set[str]:
+    """Return match variants for one topic keyword (plurals / known spellings)."""
+    base = (term or "").lower().strip()
+    if not base:
+        return set()
+    variants = {base}
+    if base.endswith("ies") and len(base) > 4:
+        variants.add(f"{base[:-3]}y")
+    elif base.endswith("es") and len(base) > 4:
+        variants.add(base[:-2])
+    elif base.endswith("s") and len(base) > 3:
+        variants.add(base[:-1])
+    variants.update(_TERM_EXPANSIONS.get(base, ()))
+    return {item for item in variants if item}
+
+
+def _term_in_text(term: str, text: str) -> bool:
+    return any(variant in text for variant in _term_variants(term))
+
+
+def _matched_terms(terms: set[str], text: str) -> list[str]:
+    return sorted(term for term in terms if _term_in_text(term, text))
+
+
+def _minimum_topic_hits(topic_count: int) -> int:
+    """Require meaningful topic coverage — not a single weak keyword leak."""
+    if topic_count <= 0:
+        return 0
+    if topic_count == 1:
+        return 1
+    if topic_count == 2:
+        return 2
+    return max(2, (topic_count + 1) // 2)
+
+
 def _build_query(
     country_code: str,
     industry: str,
@@ -151,11 +198,21 @@ def _build_query(
             return terms[0]
         return "(" + " OR ".join(terms) + ")"
 
-    parts = [
-        or_group(requested_details.strip()),
-        or_group(industry_terms),
-        f'"{country_name}"',
-    ]
+    # Topic keywords are ANDed so providers cannot satisfy the query with one
+    # loose word (e.g. only "management" or only "law").
+    topic_terms = sorted(_keywords(requested_details))
+    parts: list[str] = []
+    if topic_terms:
+        parts.append(" ".join(topic_terms))
+    elif requested_details.strip():
+        parts.append(requested_details.strip())
+
+    # Industry is a soft preference, not a substitute for the topic.
+    industry_group = or_group(industry_terms)
+    if industry_group:
+        parts.append(industry_group)
+
+    parts.append(f'"{country_name}"')
     if exact_phrase:
         parts.append(f'"{exact_phrase.strip()}"')
     parts.extend(
@@ -514,26 +571,55 @@ def _enrich_article(article: NewsArticle, search_terms: set[str]) -> NewsArticle
 def _score_article(
     article: NewsArticle,
     *,
-    search_terms: set[str],
+    topic_terms: set[str],
+    industry_terms: set[str],
     exact_phrase: str,
     excluded_terms: set[str],
+    period: str = "",
+    now_timestamp: float | None = None,
 ) -> NewsArticle | None:
     searchable = " ".join(
         [article.title, article.source_name, article.description, *article.passages]
     ).lower()
-    if excluded_terms and any(term in searchable for term in excluded_terms):
+    if excluded_terms and any(
+        _term_in_text(term, searchable) for term in excluded_terms
+    ):
         return None
 
-    matched = sorted(term for term in search_terms if term in searchable)
+    if exact_phrase and exact_phrase.lower() not in searchable:
+        return None
+
+    max_age = PERIOD_MAX_AGE_SECONDS.get(period)
+    if (
+        max_age
+        and article.published_timestamp
+        and now_timestamp
+        and (now_timestamp - article.published_timestamp) > max_age
+    ):
+        return None
+
+    topic_matched = _matched_terms(topic_terms, searchable)
+    required_hits = _minimum_topic_hits(len(topic_terms))
+    # Exact phrase is the hard gate when set; otherwise require real topic coverage.
+    if not exact_phrase and topic_terms and len(topic_matched) < required_hits:
+        return None
+    if exact_phrase and topic_terms and not topic_matched and not industry_terms:
+        return None
+
     title_text = article.title.lower()
-    title_matches = [term for term in matched if term in title_text]
-    relevance = len(matched) * 7 + len(title_matches) * 9
+    title_matches = _matched_terms(set(topic_matched), title_text)
+    industry_matched = _matched_terms(industry_terms, searchable)
+
+    relevance = len(topic_matched) * 14 + len(title_matches) * 12
+    relevance += min(len(industry_matched), 3) * 3
     reasons: list[str] = []
     if title_matches:
         reasons.append(f"Title matches: {', '.join(title_matches[:4])}")
-    elif matched:
-        reasons.append(f"Article matches: {', '.join(matched[:4])}")
-    if exact_phrase and exact_phrase.lower() in searchable:
+    elif topic_matched:
+        reasons.append(f"Topic matches: {', '.join(topic_matched[:4])}")
+    if industry_matched and not topic_terms:
+        reasons.append(f"Industry matches: {', '.join(industry_matched[:3])}")
+    if exact_phrase:
         relevance += 30
         reasons.append("Contains the exact phrase")
     if article.passages:
@@ -645,10 +731,27 @@ def search_latest_news(
 
     report(28, "Removing duplicate reports")
     unique = _deduplicate(articles)
-    search_terms = _keywords(
-        " ".join([requested_details, INDUSTRY_TERMS.get(industry, ""), exact_phrase])
-    )
+    topic_terms = _keywords(requested_details)
+    industry_terms = _keywords(INDUSTRY_TERMS.get(industry, ""))
+    # Enrichment hunts passages using the researcher's topic, not broad industry
+    # words that would keep unrelated legal/finance stories.
+    search_terms = set(topic_terms) | _keywords(exact_phrase)
+    if not search_terms:
+        search_terms = set(industry_terms)
     excluded_terms = _keywords(excluded_words.replace(",", " "))
+    now_timestamp = datetime.now(timezone.utc).timestamp()
+
+    if topic_terms or exact_phrase:
+        # Prefer enriching articles whose titles already look on-topic.
+        def _prefilter_rank(article: NewsArticle) -> tuple[int, float]:
+            text = f"{article.title} {article.source_name}".lower()
+            topic_hits = len(_matched_terms(topic_terms, text))
+            phrase_hit = (
+                1 if exact_phrase and exact_phrase.lower() in text else 0
+            )
+            return (phrase_hit + topic_hits, article.published_timestamp)
+
+        unique.sort(key=_prefilter_rank, reverse=True)
 
     enrichment_targets = unique[:MAX_ENRICHED_ARTICLES]
     enriched_by_url: dict[str, NewsArticle] = {}
@@ -671,9 +774,12 @@ def search_latest_news(
         enriched = enriched_by_url.get(article.url, article)
         scored_article = _score_article(
             enriched,
-            search_terms=search_terms,
+            topic_terms=topic_terms,
+            industry_terms=industry_terms,
             exact_phrase=exact_phrase,
             excluded_terms=excluded_terms,
+            period=period,
+            now_timestamp=now_timestamp,
         )
         if scored_article is not None:
             scored.append(scored_article)

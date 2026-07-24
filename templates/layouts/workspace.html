@@ -199,6 +199,9 @@
             data-notifications-url="{{ notifications_url }}"
             data-mark-all-url="{{ notifications_mark_all_url }}"
             data-sound-enabled="{% if notification_sound_enabled %}true{% else %}false{% endif %}"
+            data-sound-volume="{{ notification_sound_volume|default:70 }}"
+            data-browser-enabled="{% if notification_browser_enabled %}true{% else %}false{% endif %}"
+            data-firm-name="{{ firm_name|default:'Sheria Centric' }}"
           >
             <button
               type="button"
@@ -377,7 +380,7 @@
   <script src="{% static 'js/access-denied-modal.js' %}" defer></script>
   {% endif %}
   <script src="{% static 'js/live-poll.js' %}" defer></script>
-  <script src="{% static 'js/live-notifications.js' %}?v=tasks-pending-badge-1" defer></script>
+  <script src="{% static 'js/live-notifications.js' %}?v=poll-throttle-2" defer></script>
   <script src="{% static 'js/live-session.js' %}" defer></script>
   <script src="{% static 'js/live-list.js' %}" defer></script>
   <script src="{% static 'js/live-entity.js' %}" defer></script>

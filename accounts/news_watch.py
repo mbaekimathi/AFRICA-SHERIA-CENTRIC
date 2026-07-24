@@ -77,6 +77,109 @@ def watch_key(kind: str, filters: dict, domain: str = "") -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def filter_country_code(filters: dict | None) -> str:
+    filters = filters or {}
+    return (filters.get("country_code") or filters.get("country") or "").upper()
+
+
+def form_initial_from_news_filters(
+    filters: dict | None,
+    *,
+    fallback_details: str = "",
+) -> dict:
+    """Map stored job/watch filters onto LatestNewsScrapeForm initials."""
+    filters = filters or {}
+    details = " ".join((filters.get("requested_details") or "").split())
+    if not details:
+        details = " ".join((fallback_details or "").split())
+    initial: dict[str, str] = {}
+    country = filter_country_code(filters)
+    if country:
+        initial["country"] = country
+    for key, default in (
+        ("industry", "legal"),
+        ("period", "7d"),
+        ("language", "en"),
+        ("sort_by", "relevance"),
+    ):
+        value = (filters.get(key) or default).strip()
+        if value:
+            initial[key] = value
+    if details:
+        initial["requested_details"] = details[:500]
+    for key in ("exact_phrase", "excluded_words", "source_domain"):
+        value = " ".join((filters.get(key) or "").split())
+        if value:
+            initial[key] = value[:200] if key == "excluded_words" else value[:160]
+    return initial
+
+
+def watch_article_as_dict(item: NewsWatchArticle) -> dict:
+    """Prefer stored article_data, falling back to denormalised watch fields."""
+    payload = dict(item.article_data or {})
+    payload.setdefault("title", item.title)
+    payload.setdefault("url", item.url)
+    payload.setdefault("source_name", item.source_name)
+    payload.setdefault("published_at", item.published_at)
+    payload.setdefault("description", item.description)
+    payload.setdefault("passages", [])
+    payload.setdefault("match_reasons", [])
+    payload.setdefault("relevance_score", 0)
+    payload.setdefault("credibility_score", 0)
+    return payload
+
+
+def create_or_reactivate_publisher_watch(
+    *,
+    user,
+    article: dict,
+    base_filters: dict | None,
+    baseline_articles: list[dict],
+) -> tuple[NewsWatch, bool]:
+    """Create (or reactivate) a publisher watch seeded from matching articles."""
+    domain = publisher_domain(article.get("url") or "")
+    if not domain:
+        raise ValueError("The publisher domain could not be identified.")
+
+    filters = dict(base_filters or {})
+    # A publisher watch follows the source broadly rather than repeating the
+    # original topic query. Country and language still localise the feed.
+    filters["requested_details"] = ""
+    filters["industry"] = "other"
+    filters["exact_phrase"] = ""
+    filters["excluded_words"] = ""
+    filters["sort_by"] = "newest"
+    filters["source_domain"] = domain
+    if "country_code" not in filters and filters.get("country"):
+        filters["country_code"] = filters.pop("country")
+    key = watch_key(NewsWatch.Kind.PUBLISHER, filters, domain)
+    publisher = article.get("source_name") or domain
+    watch, created = NewsWatch.objects.get_or_create(
+        requested_by=user,
+        key=key,
+        defaults={
+            "kind": NewsWatch.Kind.PUBLISHER,
+            "name": publisher[:180],
+            "filters": filters,
+            "publisher_domain": domain,
+            "last_checked_at": timezone.now(),
+            "next_check_at": timezone.now() + timedelta(days=1),
+        },
+    )
+    if not watch.is_active:
+        watch.is_active = True
+        watch.next_check_at = timezone.now() + timedelta(days=1)
+        watch.save(update_fields=["is_active", "next_check_at", "updated_at"])
+    matching = [
+        item
+        for item in baseline_articles
+        if publisher_domain(item.get("url") or "") == domain
+        or item.get("source_name") == article.get("source_name")
+    ]
+    seed_watch(watch, matching or [article])
+    return watch, created
+
+
 def remember_article(
     watch: NewsWatch, article: dict
 ) -> tuple[NewsWatchArticle, bool]:
@@ -109,7 +212,7 @@ def _notify_new_article(item: NewsWatchArticle) -> None:
     if details:
         body += f"\n\n{' · '.join(details)}"
     target_url = watch.requested_by.workspace_url(
-        "dashboard", "research-blogs", "latest-news"
+        "dashboard", "research", "latest-news"
     )
     target_url = f"{target_url}?watch={watch.pk}&article={item.pk}"
     Notification.objects.get_or_create(
@@ -266,7 +369,7 @@ def _run_manual_news_watch(watch_id: int) -> None:
         result_url = ""
         if watch is not None:
             result_url = (
-                f"{watch.requested_by.workspace_url('dashboard', 'research-blogs', 'latest-news')}"
+                f"{watch.requested_by.workspace_url('dashboard', 'research', 'latest-news')}"
                 f"?watch={watch.pk}"
             )
         if found == -2 or cancelled():

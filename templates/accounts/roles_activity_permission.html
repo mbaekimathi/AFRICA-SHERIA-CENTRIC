@@ -16,6 +16,14 @@
       <p class="page-kicker">{{ module.label }}</p>
       <h2>{{ activity.label }}</h2>
       <p class="page-lead">{{ activity.path }}</p>
+      {% if has_view_all_action %}
+      <p class="page-lead">
+        <strong>View all</strong> lets this employee see every record
+        (allocated and unallocated). Turn it off to limit them to items
+        allocated or assigned to them — including related calendar entries,
+        tasks, reminders, and notifications where configured.
+      </p>
+      {% endif %}
       <p class="roles-access-summary">
         {{ allowed_role_count }} allowed · {{ locked_role_count }} locked ·
         {{ total_employee_count }} employee{{ total_employee_count|pluralize }}

@@ -56,6 +56,10 @@
             </p>
             {% elif post.status == "submitted" %}
             <p class="blog-post-item__public">Awaiting approval in Company Blogs</p>
+            {% elif post.status == "draft" and post.review_note %}
+            <p class="blog-post-item__review-note">
+              <strong>Needs changes:</strong> {{ post.review_note|truncatewords:36 }}
+            </p>
             {% endif %}
           </div>
           <div class="blog-post-item__actions">

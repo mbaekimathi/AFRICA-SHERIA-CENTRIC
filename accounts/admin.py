@@ -102,7 +102,17 @@ class EmployeeAdmin(UserAdmin):
         ("Role & status", {"fields": ("role", "status")}),
         (
             "Workspace preferences",
-            {"fields": ("ui_theme", "ui_font", "ui_density", "notification_sound", "about_me")},
+            {
+                "fields": (
+                    "ui_theme",
+                    "ui_font",
+                    "ui_density",
+                    "notification_sound",
+                    "notification_sound_volume",
+                    "notification_browser",
+                    "about_me",
+                )
+            },
         ),
         (
             "Payroll & compensation",

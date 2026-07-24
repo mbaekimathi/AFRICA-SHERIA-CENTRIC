@@ -186,6 +186,32 @@
     </div>
   </section>
 
+  <section class="news-recent-searches" aria-labelledby="news-recent-searches-title">
+    <div class="news-recent-searches__head">
+      <h3 id="news-recent-searches-title">Recent searches</h3>
+      {% if recent_news_jobs %}
+      <span>{{ recent_news_jobs|length }} shown</span>
+      {% endif %}
+    </div>
+    {% if recent_news_jobs %}
+    <ul class="research-feed-list news-recent-searches__list">
+      {% for job in recent_news_jobs %}
+      <li>
+        <a href="?job={{ job.pk }}">
+          <strong>{{ job.hub_label|truncatechars:72 }}</strong>
+          <span>
+            <span class="status-pill status-pill--{{ job.status }}">{{ job.get_status_display }}</span>
+            {{ job.created_at|date:"j M, H:i" }}
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="research-feed-empty">No searches yet. Run a filter above to start building your research history.</p>
+    {% endif %}
+  </section>
+
   {% if news_watches %}
   <section class="news-watchlist" aria-labelledby="news-watchlist-title">
     <div class="news-watchlist__head">
@@ -193,7 +219,7 @@
         <p class="page-kicker">News monitoring</p>
         <h3 id="news-watchlist-title">Favourite news updates</h3>
       </div>
-      <span>{{ news_watches|length }} active watch{{ news_watches|length|pluralize }}</span>
+      <span>{{ news_watches|length }} watch{{ news_watches|length|pluralize }}</span>
     </div>
     <div class="news-watchlist__items">
       {% for watch in news_watches %}
@@ -217,14 +243,15 @@
           </span>
           <strong>{{ watch.name }}</strong>
           <small>
-            {{ watch.get_frequency_display }}
+            {% if watch.is_active %}Active{% else %}Paused{% endif %}
+            · {{ watch.get_frequency_display }}
             {% if watch.last_checked_at %} · Last checked {{ watch.last_checked_at|date:"d M Y, H:i" }}{% endif %}
           </small>
         </a>
         {% if watch.last_error %}
         <span class="news-watch__status news-watch__status--error">Check needs attention</span>
         {% else %}
-        <span class="news-watch__status">Monitoring</span>
+        <span class="news-watch__status">{% if watch.is_active %}Monitoring{% else %}Paused{% endif %}</span>
         {% endif %}
         <div class="news-watch__actions">
           <form
@@ -269,6 +296,18 @@
       {% endfor %}
     </div>
   </section>
+  {% else %}
+  <section class="news-watchlist news-watchlist--empty" aria-labelledby="news-watchlist-empty-title">
+    <div class="news-watchlist__head">
+      <div>
+        <p class="page-kicker">News monitoring</p>
+        <h3 id="news-watchlist-empty-title">Favourite news updates</h3>
+      </div>
+    </div>
+    <p class="research-feed-empty">
+      No watches saved yet. After a search, use Save search to get scheduled updates here.
+    </p>
+  </section>
   {% endif %}
   </div>
 
@@ -294,6 +333,24 @@
           <strong>{{ news_result.articles|length }}</strong>
           <span>articles</span>
         </div>
+        {% if selected_news_watch and news_new_count %}
+        <div class="news-result__triage" aria-label="Update triage">
+          {% if news_show_new_only %}
+          <a
+            class="btn btn--quiet btn--inline"
+            href="?watch={{ selected_news_watch.pk }}"
+          >Show all</a>
+          <span class="news-result__triage-active">New only · {{ news_new_count }}</span>
+          {% else %}
+          <a
+            class="btn btn--primary btn--inline"
+            href="?watch={{ selected_news_watch.pk }}&new=1"
+          >New only · {{ news_new_count }}</a>
+          {% endif %}
+        </div>
+        {% elif selected_news_watch %}
+        <span class="news-result__watching">Monitoring “{{ selected_news_watch.name }}”</span>
+        {% endif %}
         {% if news_job %}
         <form method="post" action="{% url 'accounts:latest_news_watch_search' role=role_slug job_id=news_job.pk %}">
           {% csrf_token %}
@@ -306,17 +363,25 @@
       {% if news_result.articles %}
       <ol class="news-result__articles">
         {% for article in news_result.articles %}
-        <li class="news-article">
+        <li
+          class="news-article{% if article.is_new %} news-article--new{% endif %}{% if article.is_focused %} news-article--focused{% endif %}"
+          {% if article.is_focused %}id="news-article-focus"{% endif %}
+        >
           <span class="news-article__rank" aria-label="Result {{ forloop.counter }}">
             {{ forloop.counter|stringformat:"02d" }}
           </span>
           <div class="news-article__main">
-            <a
-              class="news-article__title"
-              href="{{ article.url }}"
-              target="_blank"
-              rel="noopener noreferrer"
-            >{{ article.title }}</a>
+            <div class="news-article__title-row">
+              <a
+                class="news-article__title"
+                href="{{ article.url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+              >{{ article.title }}</a>
+              {% if article.is_new %}
+              <span class="news-article__badge">New</span>
+              {% endif %}
+            </div>
             <p class="news-article__meta">
               {% if article.source_name %}<span>{{ article.source_name }}</span>{% endif %}
               {% if article.published_at %}<span>{{ article.published_at }}</span>{% endif %}
@@ -360,6 +425,25 @@
                 Watch publisher
               </button>
             </form>
+            {% elif selected_news_watch and article.watch_article_id %}
+            <form
+              method="post"
+              action="{% url 'accounts:latest_news_watch_article_blog_draft' role=role_slug watch_id=selected_news_watch.pk article_id=article.watch_article_id %}"
+            >
+              {% csrf_token %}
+              <button type="submit" class="btn btn--primary btn--inline">
+                Create blog draft
+              </button>
+            </form>
+            <form
+              method="post"
+              action="{% url 'accounts:latest_news_watch_article_publisher' role=role_slug watch_id=selected_news_watch.pk article_id=article.watch_article_id %}"
+            >
+              {% csrf_token %}
+              <button type="submit" class="btn btn--quiet btn--inline">
+                Watch publisher
+              </button>
+            </form>
             {% endif %}
             <a
               class="btn btn--quiet btn--inline"
@@ -373,10 +457,18 @@
       </ol>
       {% else %}
       <div class="empty-state">
+        {% if news_show_new_only %}
+        <p class="empty-state__title">No new updates in this watch</p>
+        <p class="empty-state__copy">
+          <a href="?watch={{ selected_news_watch.pk }}">Show all watched articles</a>
+          or run Check now for fresh coverage.
+        </p>
+        {% else %}
         <p class="empty-state__title">No matching news found</p>
         <p class="empty-state__copy">
           Broaden the topic, choose a longer period, or try a different industry.
         </p>
+        {% endif %}
       </div>
       {% endif %}
     </div>

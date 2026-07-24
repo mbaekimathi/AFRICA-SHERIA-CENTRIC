@@ -135,12 +135,35 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
         "HOST": _env("DB_HOST") or "127.0.0.1",
         "PORT": _env("DB_PORT") or "3306",
+        # Reuse connections across requests — critical under many concurrent sessions.
+        # Keep modest: each thread/process may hold one connection while alive.
+        "CONN_MAX_AGE": int(_env("DB_CONN_MAX_AGE") or "30"),
+        "CONN_HEALTH_CHECKS": True,
         "OPTIONS": {
             "charset": "utf8mb4",
             "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
         },
     }
 }
+
+# Process-local cache for poll throttling and short-lived API payloads.
+# Under multi-process Passenger each worker has its own cache — still cuts
+# duplicate work within a worker when many tabs poll the same endpoints.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "sheria-centric",
+        "TIMEOUT": 300,
+        "OPTIONS": {"MAX_ENTRIES": 10000},
+    }
+}
+
+# DB-backed sessions (shared across Passenger workers). Do not rewrite unless
+# the session was modified — poll endpoints must not dirty the session.
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+SESSION_SAVE_EVERY_REQUEST = False
+SESSION_COOKIE_AGE = int(_env("SESSION_COOKIE_AGE") or str(60 * 60 * 12))
+SESSION_COOKIE_HTTPONLY = True
 
 AUTH_USER_MODEL = "accounts.Employee"
 

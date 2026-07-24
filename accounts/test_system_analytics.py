@@ -178,7 +178,7 @@ class SystemAnalyticsTests(TestCase):
             submitted_at=now - timedelta(hours=2),
         )
         SystemRequestMetric.objects.create(
-            endpoint="accounts:workspace:dashboard/research-blogs/latest-news",
+            endpoint="accounts:workspace:dashboard/research/latest-news",
             method="GET",
             status_code=200,
             duration_ms=920,

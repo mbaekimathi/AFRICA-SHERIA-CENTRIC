@@ -10,8 +10,8 @@
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Control how Sheria-Centric alerts you. Sound preferences apply across
-        Tasks, Calendar, Messages, and the notification bell.
+        Control how Sheria-Centric alerts you. Sound and browser preferences apply
+        across Tasks, Calendar, Messages, and the notification bell.
       </p>
     </div>
   </header>
@@ -48,6 +48,75 @@
         <p class="field-error">{{ notification_form.notification_sound.errors.0 }}</p>
         {% endif %}
 
+        <div
+          class="settings-volume"
+          id="notification-volume-control"
+          data-volume-step="5"
+        >
+          <div class="settings-volume__copy">
+            <strong>{{ notification_form.notification_sound_volume.label }}</strong>
+            <span>Raise or lower the chime without turning notifications off.</span>
+          </div>
+          <div class="settings-volume__controls">
+            <button
+              type="button"
+              class="btn btn--quiet btn--inline settings-volume__btn"
+              id="notification-volume-down"
+              aria-label="Reduce notification volume"
+            >
+              −
+            </button>
+            {{ notification_form.notification_sound_volume }}
+            <button
+              type="button"
+              class="btn btn--quiet btn--inline settings-volume__btn"
+              id="notification-volume-up"
+              aria-label="Increase notification volume"
+            >
+              +
+            </button>
+            <output
+              class="settings-volume__value"
+              id="notification-volume-value"
+              for="id_notification_sound_volume"
+              aria-live="polite"
+            >{{ notification_form.notification_sound_volume.value }}%</output>
+          </div>
+          {% if notification_form.notification_sound_volume.errors %}
+          <p class="field-error">{{ notification_form.notification_sound_volume.errors.0 }}</p>
+          {% endif %}
+        </div>
+
+        <label class="settings-toggle" for="id_notification_browser">
+          <span class="settings-toggle__control">
+            {{ notification_form.notification_browser }}
+          </span>
+          <span class="settings-toggle__copy">
+            <strong>{{ notification_form.notification_browser.label }}</strong>
+            <span>
+              Show a desktop alert from your browser when new unread items arrive,
+              even if Sheria-Centric is in another tab.
+            </span>
+          </span>
+        </label>
+        {% if notification_form.notification_browser.errors %}
+        <p class="field-error">{{ notification_form.notification_browser.errors.0 }}</p>
+        {% endif %}
+
+        <div class="settings-browser-perm" id="notification-browser-permission">
+          <p class="settings-browser-perm__status" id="notification-browser-status" aria-live="polite">
+            Checking browser permission…
+          </p>
+          <button
+            type="button"
+            class="btn btn--quiet btn--inline"
+            id="enable-browser-notifications"
+            hidden
+          >
+            Allow browser alerts
+          </button>
+        </div>
+
         <div class="form-actions form-actions--start settings-notify-actions">
           <button
             type="button"
@@ -55,6 +124,13 @@
             id="test-notification-sound"
           >
             Test sound
+          </button>
+          <button
+            type="button"
+            class="btn btn--quiet btn--inline"
+            id="test-browser-notification"
+          >
+            Test browser alert
           </button>
           <button type="submit" class="btn btn--primary btn--inline">Save notification settings</button>
         </div>
@@ -65,7 +141,7 @@
   <section class="panel">
     <div class="panel__head">
       <h3>What you get notified about</h3>
-      <p class="panel__hint">In-app only · live while you are signed in</p>
+      <p class="panel__hint">In-app bell · browser alerts while signed in</p>
     </div>
     <div class="panel__body">
       <ul class="settings-notify-list">

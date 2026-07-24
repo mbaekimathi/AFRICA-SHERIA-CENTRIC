@@ -21,7 +21,7 @@
       </div>
     </div>
     <div class="research-hero__actions">
-      <a href="{{ research_blogs_url }}" class="btn btn--quiet btn--inline">Back</a>
+      <a href="{{ blogs_url|default:research_blogs_url }}" class="btn btn--quiet btn--inline">Back</a>
       <a href="{{ public_post_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">Open live post</a>
       <a href="{{ review_url }}" class="btn btn--quiet btn--inline">Review post</a>
     </div>

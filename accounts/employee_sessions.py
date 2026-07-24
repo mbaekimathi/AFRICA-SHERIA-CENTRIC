@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from statistics import mean
 
+from django.core.cache import cache
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -13,6 +14,8 @@ from .workspace import SESSION_STARTED_AT_KEY
 
 SESSION_PK_KEY = "employee_work_session_id"
 IDLE_TIMEOUT = timedelta(seconds=IDLE_TIMEOUT_SECONDS)
+# Poll endpoints hit every few seconds — do not write work-session rows that often.
+TOUCH_THROTTLE_SECONDS = 45
 
 
 def _ensure_session_key(request) -> str:
@@ -115,13 +118,27 @@ def ensure_employee_work_session(request) -> EmployeeWorkSession | None:
 
 
 def touch_employee_session(request) -> None:
-    """Extend active working time while the employee uses the workspace."""
+    """Extend active working time while the employee uses the workspace.
+
+    Throttled so high-frequency live polls do not UPDATE on every request.
+    """
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        return
+    if not isinstance(user, Employee):
+        return
+
+    throttle_key = f"emp_work_touch:{user.pk}"
+    if cache.get(throttle_key):
+        return
+
     session = ensure_employee_work_session(request)
     if not session:
         return
     now = timezone.now()
     _accumulate_working_time(session, now)
     session.save(update_fields=["last_active_at", "working_seconds"])
+    cache.set(throttle_key, 1, TOUCH_THROTTLE_SECONDS)
 
 
 def end_employee_session(

@@ -1,0 +1,30 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--dashboard research-page" id="research-page">
+  <header class="research-hero">
+    <div class="research-hero__main">
+      <span class="research-hero__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="25" height="25" fill="none">
+          <path d="M5 4.5h10.5A2.5 2.5 0 0 1 18 7v12.5H7.5A2.5 2.5 0 0 1 5 17V4.5Z" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M8.5 8h6M8.5 11.5h6M8.5 15h3.5M18 7h1a1.5 1.5 0 0 1 1.5 1.5V17a2.5 2.5 0 0 1-2.5 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="research-hero__copy">
+        <p class="page-kicker">{{ session_greeting }}</p>
+        <h2>{{ page_title }}</h2>
+        <p>
+          Search current developments, save watches, and turn findings into
+          draft blog posts.
+        </p>
+      </div>
+    </div>
+    <div class="research-hero__actions">
+      <a href="{{ latest_news_url }}" class="btn btn--primary btn--inline">Research news</a>
+      <a href="{{ blogs_url }}" class="btn btn--quiet btn--inline">Open blogs</a>
+    </div>
+  </header>
+</section>
+{% endblock %}

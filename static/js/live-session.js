@@ -20,8 +20,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.SheriaLivePoll.start({
     url: statusUrl,
-    minMs: 4000,
-    maxMs: 25000,
+    minMs: 10000,
+    maxMs: 60000,
+    factor: 1.8,
     onPayload: (data) => {
       if (!data || !data.redirect_url) return false;
       if (data.status === expectedStatus) return false;

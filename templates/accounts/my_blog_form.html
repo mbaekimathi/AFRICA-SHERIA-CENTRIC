@@ -27,6 +27,13 @@
     {% endif %}
   </header>
 
+  {% if blog_post and blog_post.review_note %}
+  <aside class="blog-review-feedback" aria-label="Reviewer feedback">
+    <strong>Needs changes before resubmit</strong>
+    <p>{{ blog_post.review_note }}</p>
+  </aside>
+  {% endif %}
+
   {% if news_source %}
   <aside class="blog-news-source" aria-label="Generated draft source">
     <div class="blog-news-source__icon" aria-hidden="true">N</div>

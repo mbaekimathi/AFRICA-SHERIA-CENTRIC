@@ -13,7 +13,9 @@
       </p>
     </div>
     <div class="page-intro__actions">
-      <a href="{{ company_blogs_url }}" class="btn btn--quiet btn--inline">Back to Company Blogs</a>
+      <a href="{{ company_blogs_url }}" class="btn btn--quiet btn--inline">
+        {% if review_next == "blogs" or review_next == "research-blogs" %}Back to Blogs{% else %}Back to Company Blogs{% endif %}
+      </a>
       {% if public_post_url %}
       <a href="{{ public_post_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">View on website</a>
       {% endif %}
@@ -71,6 +73,26 @@
 
         <form method="post" class="blog-review-form" id="blog-review-form">
           {% csrf_token %}
+          {% if review_next %}
+          <input type="hidden" name="next" value="{{ review_next }}">
+          {% endif %}
+
+          {% if blog_post.status == "submitted" or blog_post.status == "published" %}
+          <div class="field blog-review-note">
+            <label class="field__label" for="id_review_note">Reviewer note (optional)</label>
+            <textarea
+              name="review_note"
+              id="id_review_note"
+              class="form-input"
+              rows="3"
+              maxlength="2000"
+              placeholder="Explain what should change before the author resubmits."
+            >{% if blog_post.review_note %}{{ blog_post.review_note }}{% endif %}</textarea>
+            <p class="field-hint">
+              Saved when you return to draft or unpublish. The author is notified and sees the note on My blogs.
+            </p>
+          </div>
+          {% endif %}
 
           {% if blog_post.status == "submitted" %}
           <fieldset class="blog-share-on-approve">

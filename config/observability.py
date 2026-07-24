@@ -12,6 +12,16 @@ logger = logging.getLogger(__name__)
 _SAFE_SEGMENT = re.compile(r"^[a-z][a-z-]*$")
 _EXCLUDED_PREFIXES = ("/static/", "/media/", "/health/", "/favicon")
 _EXCLUDED_SUFFIXES = ("/dashboard/system-settings/",)
+# High-frequency live polls — skip telemetry inserts unless the request is slow.
+_HIGH_FREQ_PATHS = (
+    "/api/workspace/notifications/",
+    "/api/workspace/list-revision/",
+    "/api/workspace/entity-status/",
+    "/employee/api/status/",
+    "/client/api/status/",
+    "/client/api/notifications/",
+)
+_SLOW_POLL_MS = 750.0
 
 
 class _QueryTimer:
@@ -58,6 +68,7 @@ class SystemObservabilityMiddleware(MiddlewareMixin):
         if path.startswith(_EXCLUDED_PREFIXES) or path.endswith(_EXCLUDED_SUFFIXES):
             return self.get_response(request)
 
+        is_high_freq = path in _HIGH_FREQ_PATHS or path.endswith("/ping/")
         request._observability_error_type = ""
         timer = _QueryTimer()
         started = perf_counter()
@@ -65,6 +76,10 @@ class SystemObservabilityMiddleware(MiddlewareMixin):
             response = self.get_response(request)
 
         duration_ms = (perf_counter() - started) * 1000
+        # Poll traffic dominates write load under many concurrent tabs — only
+        # keep outlier timings so diagnostics stay useful without drowning MySQL.
+        if is_high_freq and duration_ms < _SLOW_POLL_MS:
+            return response
         self._record(request, response, duration_ms, timer)
         return response
 

@@ -226,6 +226,9 @@
             data-notifications-url="{{ notifications_url }}"
             data-mark-all-url="{{ notifications_mark_all_url }}"
             data-sound-enabled="{% if notification_sound_enabled %}true{% else %}false{% endif %}"
+            data-sound-volume="{{ notification_sound_volume|default:70 }}"
+            data-browser-enabled="{% if notification_browser_enabled %}true{% else %}false{% endif %}"
+            data-firm-name="{{ firm_name|default:'Sheria Centric' }}"
           >
             {% csrf_token %}
             <button

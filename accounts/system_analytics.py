@@ -511,7 +511,7 @@ def _recommendations(
             f"{blogs['pending_approval']} posts are awaiting approval.",
             impact="Content sits unpublished and authors lose feedback latency signals.",
             actions=[
-                "Review submitted posts in Company Blogs / Research & Blogs.",
+                "Review submitted posts in Company Blogs / Blogs.",
                 "Publish or return drafts with SEO guidance where meta fields are empty.",
             ],
         )
@@ -774,6 +774,7 @@ def build_system_analytics(range_key="24h"):
         rows,
         (
             "latest-news",
+            "/research/",
             "research-blogs",
             "news-watch",
         ),
@@ -828,6 +829,8 @@ def build_system_analytics(range_key="24h"):
             "my-blogs",
             "company-blogs",
             "my-blogs-new",
+            "/blogs/",
+            "dashboard/blogs",
         ),
     )
     blogs = {

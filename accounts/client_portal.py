@@ -154,6 +154,8 @@ def client_portal_context(request, client, *, page_title="My profile", active="p
         ),
         "notification_unread_count": unread_count,
         "notification_sound_enabled": True,
+        "notification_sound_volume": 70,
+        "notification_browser_enabled": True,
         "staff_impersonating": staff_impersonating,
         "staff_exit_portal_url": reverse("accounts:client_logout"),
     }

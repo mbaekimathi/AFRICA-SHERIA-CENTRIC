@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from django.core.cache import cache
 from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 
 from .models import ClientNotification, Invoice
+
+_PAYLOAD_TTL_SECONDS = 3
 
 
 CATEGORY_LABELS = {
@@ -102,6 +105,11 @@ def unread_counts_by_category(client) -> dict[str, int]:
 
 def client_notifications_payload(client, *, limit: int = 40) -> dict:
     """Build the live-poll payload for the client portal bell."""
+    cache_key = f"client_notif_payload:v1:{client.pk}:{limit}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     by_category = unread_counts_by_category(client)
     unread_count = sum(by_category.values())
 
@@ -130,10 +138,12 @@ def client_notifications_payload(client, *, limit: int = 40) -> dict:
         + f"|u:{unread_count}"
     )
 
-    return {
+    payload = {
         "unread_count": unread_count,
         "has_unread": unread_count > 0,
         "badges": {},
         "revision": revision,
         "groups": ordered_groups,
     }
+    cache.set(cache_key, payload, _PAYLOAD_TTL_SECONDS)
+    return payload

@@ -55,7 +55,10 @@
   <div class="docs-compose">
     <div class="docs-compose__intro">
       <h3>Add to library</h3>
-      <p>Upload an existing file or create one in Google Drive. Both land in this folder’s library.</p>
+      <p>
+        Upload a file, create one in Google Drive, or start from a firm template.
+        Copies from templates land in this folder’s library — masters stay untouched.
+      </p>
     </div>
 
     <div class="docs-actions">
@@ -260,6 +263,87 @@
           </button>
         </div>
       </form>
+
+      <form
+        method="post"
+        class="docs-tile docs-tile--template"
+        novalidate
+        data-docs-template
+      >
+        {% csrf_token %}
+        <input type="hidden" name="document_action" value="start_from_template">
+        {{ template_library.files|json_script:"template-library-files" }}
+        <div class="docs-tile__head">
+          <span class="docs-tile__icon docs-tile__icon--template" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <path d="M7 4.5h7.5L19 9v10.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+              <path d="M14.5 4.5V9H19" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+              <path d="M9 13h6M9 16.5h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <div class="docs-tile__copy">
+            <h3>Start from template</h3>
+            <p>
+              Copy a firm master from Templates and Forms into this
+              {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder.
+            </p>
+          </div>
+        </div>
+
+        {% if template_form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in template_form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="docs-tile__body">
+          {% if not template_library.files %}
+          <div class="docs-alert docs-alert--inline" role="status">
+            No templates yet.
+            {% if templates_and_forms_url %}
+            <a href="{{ templates_and_forms_url }}">Add templates in Document settings</a>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          <div class="docs-field">
+            <label for="{{ template_form.category.id_for_label }}">Category <span aria-hidden="true">*</span></label>
+            {{ template_form.category }}
+            {% if template_form.category.errors %}<span class="field-error">{{ template_form.category.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ template_form.template_file_id.id_for_label }}">Template <span aria-hidden="true">*</span></label>
+            {{ template_form.template_file_id }}
+            {% if template_form.template_file_id.errors %}<span class="field-error">{{ template_form.template_file_id.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ template_form.title.id_for_label }}">Document name <span aria-hidden="true">*</span></label>
+            {{ template_form.title }}
+            {% if template_form.title.errors %}<span class="field-error">{{ template_form.title.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ template_form.party_type.id_for_label }}">Party type <span aria-hidden="true">*</span></label>
+            {{ template_form.party_type }}
+            {% if template_form.party_type.errors %}<span class="field-error">{{ template_form.party_type.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="docs-field">
+            <label for="{{ template_form.notes.id_for_label }}">Notes <span class="docs-optional">(optional)</span></label>
+            {{ template_form.notes }}
+            {% if template_form.notes.errors %}<span class="field-error">{{ template_form.notes.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="docs-tile__foot">
+          <p class="docs-tile__hint">Copies the master — the original template stays unchanged.</p>
+          <button
+            type="submit"
+            class="btn btn--docs-template"
+            {% if not google_drive_connected or not template_library.files %}disabled{% endif %}
+          >
+            Use template
+          </button>
+        </div>
+      </form>
     </div>
   </div>
   {% endif %}
@@ -408,7 +492,7 @@
         </svg>
       </span>
       <p class="docs-empty__title">Nothing here yet</p>
-      <p class="docs-empty__text">Upload a file or create with Google to get started.</p>
+      <p class="docs-empty__text">Upload a file, create with Google, or start from a template.</p>
     </div>
     {% endif %}
   </section>
@@ -497,6 +581,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/docs-upload.js' %}?v=5" defer></script>
+<script src="{% static 'js/docs-upload.js' %}?v=6" defer></script>
 <script src="{% static 'js/docs-open.js' %}" defer></script>
 {% endblock %}

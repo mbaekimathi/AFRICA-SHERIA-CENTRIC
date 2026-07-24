@@ -20,8 +20,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.SheriaLivePoll.start({
     url: revisionUrl,
-    minMs: 5000,
-    maxMs: 30000,
+    minMs: 8000,
+    maxMs: 45000,
+    factor: 1.7,
     onPayload: (data) => {
       if (!data || typeof data.revision !== "string") return false;
       if (knownRevision === null) {

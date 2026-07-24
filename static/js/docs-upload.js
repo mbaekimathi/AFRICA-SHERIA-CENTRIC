@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initEditModal();
   initLetterheadToggle();
   initSubmitLocks();
+  initTemplatePicker();
 });
 
 function initDropzone() {
@@ -263,4 +264,69 @@ function initEditModal() {
   modal.addEventListener("click", (event) => {
     if (event.target === modal) closeModal();
   });
+}
+
+function initTemplatePicker() {
+  const form = document.querySelector("[data-docs-template]");
+  if (!form) return;
+
+  const category = form.querySelector("[data-template-category]");
+  const fileSelect = form.querySelector("[data-template-file]");
+  const titleInput = form.querySelector("[data-template-title]");
+  const payloadEl = document.getElementById("template-library-files");
+  if (!category || !fileSelect || !payloadEl) return;
+
+  let files = [];
+  try {
+    files = JSON.parse(payloadEl.textContent || "[]");
+  } catch (_err) {
+    files = [];
+  }
+  if (!Array.isArray(files)) files = [];
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a template…";
+
+  const rebuild = () => {
+    const selectedCategory = (category.value || "").trim();
+    const previous = fileSelect.value;
+    const matched = files.filter((item) => item.category === selectedCategory);
+    fileSelect.innerHTML = "";
+    fileSelect.appendChild(placeholder.cloneNode(true));
+    matched.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.name;
+      option.dataset.name = item.name;
+      fileSelect.appendChild(option);
+    });
+    if (matched.some((item) => item.id === previous)) {
+      fileSelect.value = previous;
+    } else {
+      fileSelect.value = "";
+    }
+  };
+
+  const syncTitle = () => {
+    if (!titleInput) return;
+    const selected = fileSelect.selectedOptions[0];
+    const name = selected?.dataset?.name || selected?.textContent || "";
+    if (!name || name === "Select a template…") return;
+    if (!titleInput.value.trim() || titleInput.dataset.fromTemplate === "1") {
+      titleInput.value = name;
+      titleInput.dataset.fromTemplate = "1";
+    }
+  };
+
+  category.addEventListener("change", () => {
+    rebuild();
+    syncTitle();
+  });
+  fileSelect.addEventListener("change", syncTitle);
+  titleInput?.addEventListener("input", () => {
+    titleInput.dataset.fromTemplate = "0";
+  });
+
+  rebuild();
 }

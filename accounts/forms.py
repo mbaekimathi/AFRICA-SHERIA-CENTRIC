@@ -3029,7 +3029,15 @@ class ProfileSettingsForm(forms.ModelForm):
 
     Prefills every editable field from the current user. Passwords are hashed
     and never displayed — change with current / new / confirm fields.
+    Optional re-uploads replace profile photo and compliance documents.
     """
+
+    PERSONAL_DETAIL_UPLOAD_FIELDS = (
+        "profile_photo",
+        "employment_contract",
+        "national_id_or_passport",
+        "kra_pin_certificate",
+    )
 
     courtesy_title = forms.ChoiceField(
         choices=[("", "Title")] + list(Employee.CourtesyTitle.choices),
@@ -3142,6 +3150,9 @@ class ProfileSettingsForm(forms.ModelForm):
             "identification_number",
             "alien_number",
             "profile_photo",
+            "employment_contract",
+            "national_id_or_passport",
+            "kra_pin_certificate",
             "about_me",
             "payment_method",
             "mobile_money_company",
@@ -3222,6 +3233,27 @@ class ProfileSettingsForm(forms.ModelForm):
                     "id": "id_settings_profile_photo",
                 }
             ),
+            "employment_contract": forms.FileInput(
+                attrs={
+                    "class": "form-input form-input--file",
+                    "accept": "image/*,.pdf",
+                    "id": "id_settings_employment_contract",
+                }
+            ),
+            "national_id_or_passport": forms.FileInput(
+                attrs={
+                    "class": "form-input form-input--file",
+                    "accept": "image/*,.pdf",
+                    "id": "id_settings_national_id_or_passport",
+                }
+            ),
+            "kra_pin_certificate": forms.FileInput(
+                attrs={
+                    "class": "form-input form-input--file",
+                    "accept": "image/*,.pdf",
+                    "id": "id_settings_kra_pin_certificate",
+                }
+            ),
             "about_me": forms.Textarea(
                 attrs={
                     "class": "form-input",
@@ -3269,6 +3301,9 @@ class ProfileSettingsForm(forms.ModelForm):
             "identification_number",
             "alien_number",
             "profile_photo",
+            "employment_contract",
+            "national_id_or_passport",
+            "kra_pin_certificate",
             "courtesy_title",
             "work_email",
             "work_phone",
@@ -3385,9 +3420,23 @@ class ProfileSettingsForm(forms.ModelForm):
         if method == Employee.PaymentMethod.MOBILE:
             cleaned["bank_name"] = ""
             cleaned["bank_account_number"] = ""
+            if not cleaned.get("mobile_money_company"):
+                self.add_error(
+                    "mobile_money_company",
+                    "Enter the mobile money company.",
+                )
+            if not cleaned.get("mobile_money_number"):
+                self.add_error(
+                    "mobile_money_number",
+                    "Enter the mobile money number.",
+                )
         elif method == Employee.PaymentMethod.BANK:
             cleaned["mobile_money_company"] = ""
             cleaned["mobile_money_number"] = ""
+            if not cleaned.get("bank_name"):
+                self.add_error("bank_name", "Enter the bank name.")
+            if not cleaned.get("bank_account_number"):
+                self.add_error("bank_account_number", "Enter the account number.")
         elif method == Employee.PaymentMethod.CASH:
             cleaned["mobile_money_company"] = ""
             cleaned["mobile_money_number"] = ""
@@ -3419,17 +3468,35 @@ class ProfileSettingsForm(forms.ModelForm):
         return cleaned
 
     def save(self, commit=True):
+        from django.core.files.uploadedfile import UploadedFile
+
         user = super().save(commit=False)
+        uploaded_fields: list[str] = []
+
         photo = self.cleaned_data.get("profile_photo")
-        if photo:
+        if isinstance(photo, UploadedFile):
             user.profile_photo = optimize_profile_photo(photo)
+            uploaded_fields.append("profile_photo")
+
+        for name in (
+            "employment_contract",
+            "national_id_or_passport",
+            "kra_pin_certificate",
+        ):
+            value = self.cleaned_data.get(name)
+            if isinstance(value, UploadedFile):
+                setattr(user, name, value)
+                uploaded_fields.append(name)
+
         new_password = self.cleaned_data.get("new_password") or ""
         if new_password:
             user.set_password(new_password)
         if commit:
             user.save()
-            if photo:
-                SignUpForm._sync_signup_drive_uploads(user)
+            if uploaded_fields:
+                EmployeeOnboardingForm._sync_onboarding_drive_uploads(
+                    user, uploaded_fields
+                )
         return user
 
     def save_with_request(self, request, commit=True):
@@ -3723,9 +3790,15 @@ class NotificationSettingsForm(forms.ModelForm):
 
     class Meta:
         model = Employee
-        fields = ["notification_sound"]
+        fields = [
+            "notification_sound",
+            "notification_sound_volume",
+            "notification_browser",
+        ]
         labels = {
             "notification_sound": "Play sound for new notifications",
+            "notification_sound_volume": "Alert volume",
+            "notification_browser": "Show browser notifications",
         }
         widgets = {
             "notification_sound": forms.CheckboxInput(
@@ -3734,7 +3807,33 @@ class NotificationSettingsForm(forms.ModelForm):
                     "id": "id_notification_sound",
                 }
             ),
+            "notification_sound_volume": forms.NumberInput(
+                attrs={
+                    "class": "settings-volume__slider",
+                    "id": "id_notification_sound_volume",
+                    "min": "0",
+                    "max": "100",
+                    "step": "5",
+                }
+            ),
+            "notification_browser": forms.CheckboxInput(
+                attrs={
+                    "class": "form-checkbox",
+                    "id": "id_notification_browser",
+                }
+            ),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        volume_widget = self.fields["notification_sound_volume"].widget
+        volume_widget.input_type = "range"
+
+    def clean_notification_sound_volume(self):
+        value = self.cleaned_data.get("notification_sound_volume")
+        if value is None:
+            return 70
+        return max(0, min(100, int(value)))
 
 
 class AboutMeForm(forms.ModelForm):
@@ -4032,11 +4131,13 @@ class EmployeeBlogForm(forms.ModelForm):
             post.published_at = None
             post.approved_by = None
             post.approved_at = None
+            post.review_note = ""
         elif status == EmployeeBlogPost.Status.DRAFT:
             post.submitted_at = None
             post.published_at = None
             post.approved_by = None
             post.approved_at = None
+            # Keep review_note so the author can see reviewer feedback while editing.
         # PUBLISHED left unchanged when author keeps an already-live post.
         if new_cover:
             post.cover_image = optimize_image(new_cover, max_size=1600, quality=78)
@@ -5564,6 +5665,267 @@ class UploadDocumentForm(DocumentPartyTypeMixin, forms.Form):
         if getattr(uploaded, "size", 0) > max_bytes:
             raise ValidationError("File must be 15 MB or smaller.")
         return uploaded
+
+
+class TemplatesFormsUploadForm(forms.Form):
+    """Upload a firm template or form into a Templates and Forms category folder."""
+
+    category = forms.ChoiceField(
+        choices=[],
+        label="Category",
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
+    title = forms.CharField(
+        max_length=255,
+        label="Name",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "e.g. Engagement letter, Client intake form",
+                "autocomplete": "off",
+            }
+        ),
+    )
+    file = forms.FileField(
+        label="File",
+        widget=forms.FileInput(
+            attrs={
+                "class": "form-input docs-drop__input",
+                "accept": (
+                    ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.rtf,"
+                    ".png,.jpg,.jpeg,.gif,.webp,.csv"
+                ),
+            }
+        ),
+    )
+    notes = forms.CharField(
+        required=False,
+        label="Notes",
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-input",
+                "rows": 2,
+                "placeholder": "Optional notes about this template or form",
+            }
+        ),
+    )
+
+    def __init__(self, *args, initial_category="", **kwargs):
+        from .google_drive import TEMPLATES_FORMS_CATEGORIES
+
+        super().__init__(*args, **kwargs)
+        self.fields["category"].choices = list(TEMPLATES_FORMS_CATEGORIES)
+        if initial_category and not self.is_bound:
+            self.fields["category"].initial = initial_category
+
+    def clean_category(self):
+        from .google_drive import TEMPLATES_FORMS_CATEGORY_SLUGS
+
+        value = (self.cleaned_data.get("category") or "").strip()
+        if value not in TEMPLATES_FORMS_CATEGORY_SLUGS:
+            raise ValidationError("Select a template category.")
+        return value
+
+    def clean_title(self):
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise ValidationError("Enter a name for this template or form.")
+        return title
+
+    def clean_file(self):
+        uploaded = self.cleaned_data.get("file")
+        if not uploaded:
+            raise ValidationError("Choose a file to upload.")
+        max_bytes = 15 * 1024 * 1024
+        if getattr(uploaded, "size", 0) > max_bytes:
+            raise ValidationError("File must be 15 MB or smaller.")
+        return uploaded
+
+
+class TemplatesFormsCreateForm(forms.Form):
+    """Create a blank Google Docs / Sheets / Slides template in a category folder."""
+
+    GOOGLE_TYPE_CHOICES = (
+        ("document", "Docs"),
+        ("spreadsheet", "Excel"),
+        ("presentation", "Slides"),
+    )
+
+    category = forms.ChoiceField(
+        choices=[],
+        label="Category",
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
+    title = forms.CharField(
+        max_length=255,
+        label="Template name",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "e.g. Demand letter, Fee schedule, Hearing pack",
+                "autocomplete": "off",
+            }
+        ),
+    )
+    description = forms.CharField(
+        required=False,
+        label="Description",
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-input",
+                "rows": 2,
+                "placeholder": "Optional note about when to use this template",
+            }
+        ),
+    )
+    google_type = forms.ChoiceField(
+        choices=GOOGLE_TYPE_CHOICES,
+        initial="document",
+        label="Create as",
+        widget=forms.RadioSelect(attrs={"class": "docs-type-input"}),
+    )
+    include_letterhead = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Include firm letterhead",
+        help_text=(
+            "When enabled, new Google Docs open with the company letterhead "
+            "from Document settings."
+        ),
+        widget=forms.CheckboxInput(
+            attrs={
+                "class": "form-check",
+                "data-docs-letterhead-toggle": "1",
+            }
+        ),
+    )
+
+    def __init__(self, *args, initial_category="", **kwargs):
+        from .google_drive import TEMPLATES_FORMS_CATEGORIES
+
+        super().__init__(*args, **kwargs)
+        self.fields["category"].choices = list(TEMPLATES_FORMS_CATEGORIES)
+        if initial_category and not self.is_bound:
+            self.fields["category"].initial = initial_category
+        if not self.is_bound:
+            self.fields["include_letterhead"].initial = True
+
+    def clean_category(self):
+        from .google_drive import TEMPLATES_FORMS_CATEGORY_SLUGS
+
+        value = (self.cleaned_data.get("category") or "").strip()
+        if value not in TEMPLATES_FORMS_CATEGORY_SLUGS:
+            raise ValidationError("Select a template category.")
+        return value
+
+    def clean_title(self):
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise ValidationError("Enter a template name.")
+        return title
+
+    def clean_description(self):
+        return (self.cleaned_data.get("description") or "").strip()
+
+    def clean_google_type(self):
+        value = (self.cleaned_data.get("google_type") or "").strip()
+        valid = {key for key, _label in self.GOOGLE_TYPE_CHOICES}
+        if value not in valid:
+            raise ValidationError("Choose Docs, Excel, or Slides.")
+        return value
+
+
+class StartFromTemplateForm(DocumentPartyTypeMixin, forms.Form):
+    """Copy a firm template into a case/matter Drive folder."""
+
+    category = forms.ChoiceField(
+        choices=[],
+        label="Category",
+        widget=forms.Select(
+            attrs={
+                "class": "form-input",
+                "data-template-category": "1",
+            }
+        ),
+    )
+    template_file_id = forms.ChoiceField(
+        choices=[],
+        label="Template",
+        widget=forms.Select(
+            attrs={
+                "class": "form-input",
+                "data-template-file": "1",
+            }
+        ),
+    )
+    title = forms.CharField(
+        max_length=255,
+        label="Document name",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Name for the copy in this file library",
+                "autocomplete": "off",
+                "data-template-title": "1",
+            }
+        ),
+    )
+    notes = forms.CharField(
+        required=False,
+        label="Notes",
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-input",
+                "rows": 2,
+                "placeholder": "Optional notes about this document",
+            }
+        ),
+    )
+
+    def __init__(
+        self,
+        *args,
+        party_type_choices=None,
+        template_choices=None,
+        **kwargs,
+    ):
+        kwargs.pop("default_client", None)
+        super().__init__(*args, **kwargs)
+        from .google_drive import TEMPLATES_FORMS_CATEGORIES
+
+        self.fields["category"].choices = [
+            ("", "Select category…")
+        ] + list(TEMPLATES_FORMS_CATEGORIES)
+        choices = list(template_choices or [])
+        self.fields["template_file_id"].choices = [
+            ("", "Select a template…")
+        ] + choices
+        self._template_valid = {key for key, _label in choices if key}
+        self._add_party_type_field(party_type_choices)
+
+    def clean_category(self):
+        from .google_drive import TEMPLATES_FORMS_CATEGORY_SLUGS
+
+        value = (self.cleaned_data.get("category") or "").strip()
+        if not value:
+            raise ValidationError("Select a template category.")
+        if value not in TEMPLATES_FORMS_CATEGORY_SLUGS:
+            raise ValidationError("Select a valid template category.")
+        return value
+
+    def clean_template_file_id(self):
+        value = (self.cleaned_data.get("template_file_id") or "").strip()
+        if not value:
+            raise ValidationError("Select a template.")
+        if self._template_valid and value not in self._template_valid:
+            raise ValidationError("Select a valid template.")
+        return value
+
+    def clean_title(self):
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise ValidationError("Enter a document name.")
+        return title
 
 
 class RenameDocumentForm(DocumentPartyTypeMixin, forms.Form):

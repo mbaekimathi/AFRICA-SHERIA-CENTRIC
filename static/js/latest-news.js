@@ -271,4 +271,11 @@
   });
 
   cancelButton.addEventListener("click", cancelCurrent);
+
+  var focusedArticle = document.getElementById("news-article-focus");
+  if (focusedArticle && typeof focusedArticle.scrollIntoView === "function") {
+    window.setTimeout(function () {
+      focusedArticle.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+  }
 })();

@@ -331,10 +331,7 @@ ROLE_MODULES = {
         ("People", "people", ICON_USERS),
         ("Firm settings", "firm-settings", ICON_SETTINGS),
     ],
-    Employee.Role.MANAGING_PARTNER: [
-        ("Matters", "matters", ICON_BRIEF),
-        ("Performance", "performance", ICON_SCALE),
-    ],
+    Employee.Role.MANAGING_PARTNER: [],
     Employee.Role.ADVOCATE: [
         ("My cases", "my-cases", ICON_SCALE),
         ("Documents", "documents", ICON_DOC),
@@ -453,10 +450,16 @@ SYSTEM_MODULES = (
         "hint": "Invoices, payments, and accounts",
     },
     {
-        "label": "Research & Blogs",
-        "slug": "research-blogs",
+        "label": "Research",
+        "slug": "research",
         "icon": ICON_LEARN,
-        "hint": "News research and firm blogs",
+        "hint": "News research and watches",
+    },
+    {
+        "label": "Blogs",
+        "slug": "blogs",
+        "icon": ICON_DOC,
+        "hint": "Firm blogs, drafts, and approvals",
     },
 )
 DASHBOARD_PAGE_LINKS = [
@@ -599,19 +602,34 @@ EMPLOYEE_COMMUNICATIONS_PAGE_LINKS = [
     ("Email settings", "email-settings", ICON_SETTINGS),
 ]
 
-# Research & Blogs page-only links
-RESEARCH_BLOGS_PAGE_LINKS = [
+# Research page-only links
+RESEARCH_PAGE_LINKS = [
     ("Latest News", "latest-news", ICON_LEARN),
+    ("Legal Library", "legal-library", ICON_SCALE),
+]
+
+# Blogs page-only links
+BLOGS_PAGE_LINKS = [
     ("My blogs", "my-blogs", ICON_DOC),
 ]
+
+# Backward-compatible alias used by older trails / tests.
+RESEARCH_BLOGS_PAGE_LINKS = RESEARCH_PAGE_LINKS + BLOGS_PAGE_LINKS
 
 # My tools — personal document tools (utility hub)
 MY_TOOLS_PAGE_LINKS = [
     ("My digital stamp", "my-digital-stamp", ICON_BRIEF),
     ("My digital signature", "my-digital-signature", ICON_SCALE),
+    ("Templates and forms", "templates-and-forms", ICON_DOC),
 ]
 
-MY_TOOLS_AREA_SLUGS = {"my-tools"} | {slug for _, slug, _ in MY_TOOLS_PAGE_LINKS}
+# Area for my-tools chrome — keep firm template library out of the area set so
+# Document Settings still owns that page's sidebar when opened directly.
+MY_TOOLS_AREA_SLUGS = {
+    "my-tools",
+    "my-digital-stamp",
+    "my-digital-signature",
+}
 
 # Shown only on their own hub pages — not inherited by child pages.
 PAGE_LOCAL_LINKS_NO_INHERIT = {
@@ -622,6 +640,7 @@ PAGE_LOCAL_LINKS_NO_INHERIT = {
     "company-accounts",
     "user-management",
     "employee-management",
+    "document-management",
 }
 
 SYSTEM_SETTINGS_PAGE_LINKS = [
@@ -648,8 +667,18 @@ DOCUMENT_SETTINGS_PAGE_LINKS = [
     ("Letterhead", "letterhead", ICON_DOC),
     ("Digital stamp", "digital-stamp", ICON_BRIEF),
     ("Default signature", "default-signature", ICON_SCALE),
+    ("Templates and forms", "templates-and-forms", ICON_DOC),
     ("Google Drive Settings", "google-drive-settings", ICON_SETTINGS),
 ]
+
+DOCUMENT_MANAGEMENT_PAGE_LINKS = [
+    ("Templates and forms", "templates-and-forms", ICON_DOC),
+    ("Google Drive Settings", "google-drive-settings", ICON_SETTINGS),
+]
+
+DOCUMENT_SETTINGS_CHILD_SLUGS = {
+    slug for _, slug, _ in DOCUMENT_SETTINGS_PAGE_LINKS
+}
 
 PAGE_LOCAL_LINKS = {
     "user-management": USER_MANAGEMENT_PAGE_LINKS,
@@ -669,7 +698,8 @@ PAGE_LOCAL_LINKS = {
     "payroll": PAYROLL_PAGE_LINKS,
     "employee-advances": EMPLOYEE_ADVANCES_PAGE_LINKS,
     "employee-communications": EMPLOYEE_COMMUNICATIONS_PAGE_LINKS,
-    "research-blogs": RESEARCH_BLOGS_PAGE_LINKS,
+    "research": RESEARCH_PAGE_LINKS,
+    "blogs": BLOGS_PAGE_LINKS,
     "settings": [
         ("My profile", "settings", ICON_SETTINGS),
         ("About me", "about-me", ICON_DOC),
@@ -679,6 +709,7 @@ PAGE_LOCAL_LINKS = {
     "system-settings": SYSTEM_SETTINGS_PAGE_LINKS,
     "company-information": COMPANY_INFORMATION_PAGE_LINKS,
     "document-settings": DOCUMENT_SETTINGS_PAGE_LINKS,
+    "document-management": DOCUMENT_MANAGEMENT_PAGE_LINKS,
     "my-tools": MY_TOOLS_PAGE_LINKS,
 }
 
@@ -690,13 +721,22 @@ SETTINGS_AREA_SLUGS = {
     "theme-settings",
 }
 
-# Research & Blogs subtree (sidebar when viewing research and authoring pages)
-RESEARCH_BLOGS_AREA_SLUGS = {
-    "research-blogs",
+# Research subtree (sidebar when viewing research pages)
+RESEARCH_AREA_SLUGS = {
+    "research",
     "latest-news",
+    "legal-library",
+}
+
+# Blogs subtree (sidebar when viewing authoring / blog hub pages)
+BLOGS_AREA_SLUGS = {
+    "blogs",
     "my-blogs",
     "my-blogs-new",
 }
+
+# Combined alias for older imports / trail side-page handling.
+RESEARCH_BLOGS_AREA_SLUGS = RESEARCH_AREA_SLUGS | BLOGS_AREA_SLUGS | {"research-blogs"}
 
 # Company Information subtree (sidebar when drilled into Company Information)
 COMPANY_INFORMATION_AREA_SLUGS = {
@@ -725,6 +765,8 @@ EXTRA_PAGE_SLUGS = {
     "company-faqs-new",
     "company-gallery-new",
     "topup-client-account",
+    # Legacy combined Research & Blogs hub (redirected to research / blogs).
+    "research-blogs",
 } | LEGACY_GENERAL_ACCOUNTS_SLUGS
 
 
@@ -756,6 +798,39 @@ NON_LITIGATION_MATTER_ACTION_SLUGS = {
     slug for _, slug, _ in NON_LITIGATION_MATTER_DETAIL_LINKS
 }
 
+# Case/matter sidebar actions that share a slug (one Roles toggle covers both).
+_SHARED_CASE_MATTER_ACTION_SLUGS = (
+    LITIGATION_CASE_ACTION_SLUGS & NON_LITIGATION_MATTER_ACTION_SLUGS
+)
+
+
+# Workspace utilities whose visibility (all vs allocated) is managed under
+# Matter Management → Roles & Permissions.
+WORKSPACE_VISIBILITY_ACTIVITIES = [
+    ("Tasks", "tasks", ICON_TASK),
+    ("Calendar", "calendar", ICON_CALENDAR),
+    ("Reminders", "reminders", ICON_BELL),
+    ("Notifications", "notifications", ICON_BELL),
+]
+WORKSPACE_VISIBILITY_SLUGS = {slug for _, slug, _ in WORKSPACE_VISIBILITY_ACTIVITIES}
+
+
+def _matter_management_extra_activities() -> list[tuple[str, str, str]]:
+    """Case/matter detail actions + workspace visibility utilities for Roles UI."""
+    extras: list[tuple[str, str, str]] = []
+    for label, slug, icon in LITIGATION_CASE_DETAIL_LINKS:
+        if slug in _SHARED_CASE_MATTER_ACTION_SLUGS:
+            extras.append((f"Case / Matter: {label}", slug, icon))
+        else:
+            extras.append((f"Case: {label}", slug, icon))
+    for label, slug, icon in NON_LITIGATION_MATTER_DETAIL_LINKS:
+        if slug in _SHARED_CASE_MATTER_ACTION_SLUGS:
+            continue
+        extras.append((f"Matter: {label}", slug, icon))
+    extras.extend(WORKSPACE_VISIBILITY_ACTIVITIES)
+    return extras
+
+
 # Extra activities that belong to a system module but are not in PAGE_LOCAL_LINKS.
 MODULE_EXTRA_ACTIVITIES = {
     "document-management": [
@@ -764,19 +839,14 @@ MODULE_EXTRA_ACTIVITIES = {
         ("Letterhead", "letterhead", ICON_DOC),
         ("Digital stamp", "digital-stamp", ICON_BRIEF),
         ("Default signature", "default-signature", ICON_SCALE),
+        ("Templates and forms", "templates-and-forms", ICON_DOC),
         ("Google Drive Settings", "google-drive-settings", ICON_SETTINGS),
     ],
-    "research-blogs": [
+    "blogs": [
         ("New blog post", "my-blogs-new", ICON_DOC),
         ("Company blogs", "company-blogs", ICON_DOC),
     ],
-    "matter-management": [
-        *[(f"Case: {label}", slug, icon) for label, slug, icon in LITIGATION_CASE_DETAIL_LINKS],
-        *[
-            (f"Matter: {label}", slug, icon)
-            for label, slug, icon in NON_LITIGATION_MATTER_DETAIL_LINKS
-        ],
-    ],
+    "matter-management": _matter_management_extra_activities(),
 }
 
 
@@ -786,15 +856,16 @@ def collect_module_activities(module_slug: str) -> list[dict]:
 
     Walks PAGE_LOCAL_LINKS recursively, then appends MODULE_EXTRA_ACTIVITIES.
     Skips expanding roles-permissions into other system modules.
+    Dedupes by activity slug — permissions are stored per slug, so the same
+    activity reachable via two parents (e.g. petty-cash-book) appears once.
     """
     activities: list[dict] = []
     seen: set[str] = set()
 
     def add_activity(*, label, slug, icon, path_labels, path_slugs, linkable=True):
-        key = "/".join(path_slugs) if path_slugs else slug
-        if key in seen:
+        if slug in seen:
             return
-        seen.add(key)
+        seen.add(slug)
         activities.append(
             {
                 "label": label,
@@ -837,6 +908,7 @@ def collect_module_activities(module_slug: str) -> list[dict]:
             "letterhead",
             "digital-stamp",
             "default-signature",
+            "templates-and-forms",
             "google-drive-settings",
             "document-activity",
             "upload-documents",
@@ -846,11 +918,16 @@ def collect_module_activities(module_slug: str) -> list[dict]:
                 "letterhead",
                 "digital-stamp",
                 "default-signature",
+                "templates-and-forms",
                 "google-drive-settings",
             }
-        elif module_slug == "research-blogs" and slug in {"company-blogs", "my-blogs-new"}:
+        elif module_slug == "blogs" and slug in {"company-blogs", "my-blogs-new"}:
             path_slugs = [slug]
             linkable = True
+        elif module_slug == "matter-management" and slug in WORKSPACE_VISIBILITY_SLUGS:
+            path_slugs = [slug]
+            # Notifications live in the topbar bell — no dedicated workspace page.
+            linkable = slug != "notifications"
         else:
             path_slugs = [slug]
         add_activity(
@@ -881,6 +958,7 @@ def system_module_meta(module_slug: str) -> dict | None:
 
 PERMISSION_ACTION_LABELS = {
     "view": "View",
+    "view_all": "View all",
     "register": "Register",
     "edit": "Edit",
     "delete": "Delete",
@@ -898,8 +976,12 @@ PERMISSION_ACTION_LABELS = {
 
 DEFAULT_ACTIVITY_ACTIONS = ("view", "register", "edit", "delete")
 
+# "View all" = firm-wide records; when locked, only allocated/assigned items.
+VIEW_ALL_ACTION = "view_all"
+
 MATTER_HUB_ACTIONS = (
     "view",
+    "view_all",
     "register",
     "approve",
     "edit",
@@ -912,10 +994,32 @@ MATTER_HUB_ACTIONS = (
     "status",
 )
 
+# Activities that support all-vs-allocated visibility under Matter Management.
+VISIBILITY_SCOPED_ACTIVITIES = frozenset(
+    {
+        "litigation-matters",
+        "non-litigation-matters",
+        *WORKSPACE_VISIBILITY_SLUGS,
+    }
+)
+
 FINANCE_LEDGER_ACTIONS = ("view", "register", "edit", "delete")
 
 # Optional per-activity overrides when pattern inference is not enough.
-ACTIVITY_PERMISSION_OVERRIDES: dict[str, tuple[str, ...]] = {}
+ACTIVITY_PERMISSION_OVERRIDES: dict[str, tuple[str, ...]] = {
+    "onboarding-approvals": ("view", "register", "edit", "delete", "approve"),
+    "topup-account": ("view", "register", "pay"),
+    "pay-expense": ("view", "register", "pay"),
+    "topup-client-account": ("view", "register", "pay"),
+    "trial-balance": ("view", "generate"),
+    # Shared by document hub and case/matter upload actions.
+    "upload-documents": ("view", "upload", "delete"),
+    # Workspace utilities: open page + firm-wide vs allocated-only scope.
+    "tasks": ("view", "view_all"),
+    "calendar": ("view", "view_all"),
+    "reminders": ("view", "view_all"),
+    "notifications": ("view", "view_all"),
+}
 
 _DETAIL_SLUG_PERMISSION_ACTIONS = {
     "case-calendar": "view",
@@ -985,6 +1089,7 @@ WORKSPACE_EDIT_POST_PAGES = frozenset(
         "default-signature",
         "my-digital-stamp",
         "my-digital-signature",
+        "templates-and-forms",
         "google-drive-settings",
         "email-settings",
     }
@@ -1030,6 +1135,9 @@ def infer_activity_permission_actions(
 
     detail_action = WORKSPACE_DETAIL_ACTION_MAP.get(activity_slug)
     if detail_action:
+        # Calendar (and any view-only detail) must not emit ("view", "view").
+        if detail_action == "view":
+            return ("view",)
         return ("view", detail_action)
 
     if activity_slug.startswith("approve-"):
@@ -1105,12 +1213,12 @@ def infer_activity_permission_actions(
         return ("view", "edit", "delete")
     if activity_slug == "latest-news":
         return ("view", "register")
+    if activity_slug == "legal-library":
+        return ("view",)
     if activity_slug == "my-blogs":
         return ("view", "register", "edit", "delete", "approve")
     if activity_slug == "company-blogs":
         return ("view", "approve", "edit", "delete")
-    if activity_slug == "upload-documents":
-        return ("view", "upload", "delete")
     if activity_slug == "document-activity":
         return ("view", "audit")
     if activity_slug in DOCUMENT_SETTINGS_AREA_SLUGS or activity_slug.endswith(
@@ -1123,11 +1231,14 @@ def infer_activity_permission_actions(
         "default-signature",
         "my-digital-stamp",
         "my-digital-signature",
+        "templates-and-forms",
         "google-drive-settings",
     }:
         return ("view", "edit")
-    if activity_slug == "research-blogs":
+    if activity_slug == "research":
         return ("view", "register", "edit")
+    if activity_slug == "blogs":
+        return ("view", "register", "edit", "approve")
     if module_slug == "document-management":
         return ("view", "edit")
 
@@ -1294,17 +1405,20 @@ def module_activity_url(user, module_slug: str, activity: dict) -> str | None:
         "letterhead",
         "digital-stamp",
         "default-signature",
+        "templates-and-forms",
         "google-drive-settings",
     }:
         return user.workspace_url(
             "dashboard", "system-settings", "document-settings", slug
         )
-    if module_slug == "research-blogs" and slug == "my-blogs-new":
-        return user.workspace_url("dashboard", "research-blogs", "my-blogs-new")
-    if module_slug == "research-blogs" and slug == "company-blogs":
+    if module_slug == "blogs" and slug == "my-blogs-new":
+        return user.workspace_url("dashboard", "blogs", "my-blogs-new")
+    if module_slug == "blogs" and slug == "company-blogs":
         return user.workspace_url(
             "dashboard", "system-settings", "company-information", "company-blogs"
         )
+    if module_slug == "matter-management" and slug in WORKSPACE_VISIBILITY_SLUGS:
+        return user.workspace_url("dashboard", slug)
     return user.workspace_url("dashboard", module_slug, *path_slugs)
 
 
@@ -1368,8 +1482,10 @@ def page_local_links_for(active: str, trail: list[str] | None = None):
         return None
     if active in SETTINGS_AREA_SLUGS:
         return PAGE_LOCAL_LINKS["settings"]
-    if active in RESEARCH_BLOGS_AREA_SLUGS:
-        return PAGE_LOCAL_LINKS["research-blogs"]
+    if active in RESEARCH_AREA_SLUGS:
+        return PAGE_LOCAL_LINKS["research"]
+    if active in BLOGS_AREA_SLUGS:
+        return PAGE_LOCAL_LINKS["blogs"]
     if active in COMPANY_INFORMATION_AREA_SLUGS:
         return PAGE_LOCAL_LINKS["company-information"]
     if active in DOCUMENT_SETTINGS_AREA_SLUGS:
@@ -1431,8 +1547,11 @@ def main_hub_is_active(hub_slug: str, active: str, trail: list[str]) -> bool:
 
 PAGE_TITLES = {
     "dashboard": "Dashboard",
-    "research-blogs": "Research & Blogs",
+    "research": "Research",
+    "blogs": "Blogs",
+    "research-blogs": "Research",
     "latest-news": "Latest News",
+    "legal-library": "Legal Library",
     "settings": "My profile",
     "about-me": "About me",
     "my-blogs": "My blogs",
@@ -1458,6 +1577,7 @@ PAGE_TITLES = {
     "letterhead": "Letterhead",
     "digital-stamp": "Digital stamp",
     "default-signature": "Default signature",
+    "templates-and-forms": "Templates and forms",
     "google-drive-settings": "Google Drive Settings",
     "finance-settings": "Finance Settings",
     "communication-settings": "Communication Settings",
@@ -1465,6 +1585,7 @@ PAGE_TITLES = {
     "tasks": "Tasks",
     "reminders": "Reminders",
     "calendar": "Calendar",
+    "notifications": "Notifications",
     "my-tools": "My tools",
     "my-digital-stamp": "My digital stamp",
     "my-digital-signature": "My digital signature",
@@ -1617,6 +1738,7 @@ def resolve_workspace_page(role, pages: str):
         "is_letterhead": leaf == "letterhead",
         "is_digital_stamp": leaf == "digital-stamp",
         "is_default_signature": leaf == "default-signature",
+        "is_templates_and_forms": leaf == "templates-and-forms",
         "is_my_digital_stamp": leaf == "my-digital-stamp",
         "is_my_digital_signature": leaf == "my-digital-signature",
         "is_practice_areas": leaf == "practice-areas",
@@ -1627,6 +1749,8 @@ def resolve_workspace_page(role, pages: str):
         "is_company_gallery": leaf == "company-gallery",
         "is_company_gallery_new": leaf == "company-gallery-new",
         "is_company_terms": leaf == "company-terms",
+        "is_research": leaf == "research",
+        "is_blogs": leaf == "blogs",
         "is_research_blogs": leaf == "research-blogs",
         "is_latest_news": leaf == "latest-news",
         "is_settings_area": leaf in SETTINGS_AREA_SLUGS,
@@ -1725,8 +1849,147 @@ def employee_activity_action_allowed(
         .first()
     )
     if row is None:
-        return True
+        return employee_action_default_allowed(employee, activity_slug, action)
     return bool(row.is_allowed)
+
+
+def default_view_all_allowed(employee, activity_slug: str) -> bool:
+    """
+    Default for View all when no employee override row exists.
+
+    Matters stay firm-wide (current list behaviour). Tasks / reminders /
+    notifications stay assignee-scoped. Calendar is firm-wide for managing
+    partners only (matches the former role-based calendar).
+    """
+    if activity_slug in {"litigation-matters", "non-litigation-matters"}:
+        return True
+    if activity_slug == "calendar":
+        return getattr(employee, "role", None) == Employee.Role.MANAGING_PARTNER
+    if activity_slug in WORKSPACE_VISIBILITY_SLUGS:
+        return False
+    return True
+
+
+def employee_action_default_allowed(
+    employee, activity_slug: str, action: str
+) -> bool:
+    if action == VIEW_ALL_ACTION:
+        return default_view_all_allowed(employee, activity_slug)
+    return True
+
+
+def visibility_module_slug(activity_slug: str) -> str | None:
+    if activity_slug in VISIBILITY_SCOPED_ACTIVITIES:
+        return "matter-management"
+    return module_slug_for_activity(activity_slug)
+
+
+def employee_can_view_all(employee, activity_slug: str) -> bool:
+    """True when the employee may see firm-wide records for this activity."""
+    module_slug = visibility_module_slug(activity_slug)
+    if not module_slug:
+        return default_view_all_allowed(employee, activity_slug)
+    return workspace_activity_action_permitted(
+        employee, module_slug, activity_slug, VIEW_ALL_ACTION
+    )
+
+
+def _open_case_task_statuses():
+    return (CaseTask.Status.PENDING, CaseTask.Status.ACCEPTED)
+
+
+def _open_matter_task_statuses():
+    return (MatterTask.Status.PENDING, MatterTask.Status.ACCEPTED)
+
+
+def allocated_cases_q(employee):
+    """Cases assigned to the employee or carrying their open tasks."""
+    open_task_case_ids = CaseTask.objects.filter(
+        assignee=employee,
+        status__in=_open_case_task_statuses(),
+    ).values_list("case_id", flat=True)
+    return Q(assigned_to=employee) | Q(pk__in=open_task_case_ids)
+
+
+def allocated_matters_q(employee):
+    """Matters assigned to the employee or carrying their open tasks."""
+    open_task_matter_ids = MatterTask.objects.filter(
+        assignee=employee,
+        status__in=_open_matter_task_statuses(),
+    ).values_list("matter_id", flat=True)
+    return Q(assigned_to=employee) | Q(pk__in=open_task_matter_ids)
+
+
+def cases_visible_to(employee, *, status=None):
+    """Litigation cases the employee may list (all or allocated-only)."""
+    qs = LitigationCase.objects.all()
+    if status is not None:
+        qs = qs.filter(status=status)
+    if employee_can_view_all(employee, "litigation-matters"):
+        return qs
+    return qs.filter(allocated_cases_q(employee)).distinct()
+
+
+def matters_visible_to(employee, *, status=None):
+    """Non-litigation matters the employee may list (all or allocated-only)."""
+    qs = NonLitigationMatter.objects.all()
+    if status is not None:
+        qs = qs.filter(status=status)
+    if employee_can_view_all(employee, "non-litigation-matters"):
+        return qs
+    return qs.filter(allocated_matters_q(employee)).distinct()
+
+
+def employee_can_access_case(employee, case) -> bool:
+    if employee_can_view_all(employee, "litigation-matters"):
+        return True
+    if getattr(case, "assigned_to_id", None) == employee.pk:
+        return True
+    return CaseTask.objects.filter(
+        case_id=case.pk,
+        assignee=employee,
+        status__in=_open_case_task_statuses(),
+    ).exists()
+
+
+def employee_can_access_matter(employee, matter) -> bool:
+    if employee_can_view_all(employee, "non-litigation-matters"):
+        return True
+    if getattr(matter, "assigned_to_id", None) == employee.pk:
+        return True
+    return MatterTask.objects.filter(
+        matter_id=matter.pk,
+        assignee=employee,
+        status__in=_open_matter_task_statuses(),
+    ).exists()
+
+
+def case_tasks_visible_to(employee):
+    qs = CaseTask.objects.all()
+    if employee_can_view_all(employee, "tasks"):
+        return qs
+    return qs.filter(assignee=employee)
+
+
+def matter_tasks_visible_to(employee):
+    qs = MatterTask.objects.all()
+    if employee_can_view_all(employee, "tasks"):
+        return qs
+    return qs.filter(assignee=employee)
+
+
+def reminder_case_tasks_visible_to(employee):
+    qs = CaseTask.objects.filter(reminder_at__isnull=False)
+    if employee_can_view_all(employee, "reminders"):
+        return qs
+    return qs.filter(assignee=employee)
+
+
+def reminder_matter_tasks_visible_to(employee):
+    qs = MatterTask.objects.filter(reminder_at__isnull=False)
+    if employee_can_view_all(employee, "reminders"):
+        return qs
+    return qs.filter(assignee=employee)
 
 
 ACCESS_DENIED_MODAL_SESSION_KEY = "workspace_access_denied_modal"
@@ -1864,7 +2127,9 @@ def roles_activity_permission_url(user, roles_trail: list[str], module_slug: str
 TRAIL_SIDE_PAGES = (
     {slug for _, slug, _ in SHARED_UTILITY_LINKS}
     | SETTINGS_AREA_SLUGS
-    | RESEARCH_BLOGS_AREA_SLUGS
+    | RESEARCH_AREA_SLUGS
+    | BLOGS_AREA_SLUGS
+    | {"research-blogs"}
     | SYSTEM_SETTINGS_AREA_SLUGS
 )
 
@@ -1876,10 +2141,29 @@ PAGE_PARENT: dict[str, str] = {
     "practice-areas-new": "company-information",
     "company-faqs-new": "company-information",
     "company-gallery-new": "company-information",
-    "latest-news": "research-blogs",
-    "my-blogs": "research-blogs",
+    "latest-news": "research",
+    "legal-library": "research",
+    "my-blogs": "blogs",
     "my-blogs-new": "my-blogs",
 }
+
+
+def rewrite_legacy_research_blogs_trail(trail: list[str]) -> list[str] | None:
+    """
+    Map legacy dashboard/research-blogs/... trails onto research or blogs hubs.
+    """
+    if "research-blogs" not in trail:
+        return None
+    idx = trail.index("research-blogs")
+    after = trail[idx + 1 :]
+    prefix = trail[:idx]
+    if not after:
+        return prefix + ["research"]
+    if after[0] in {"my-blogs", "my-blogs-new"}:
+        return prefix + ["blogs"] + after
+    if after[0] == "latest-news":
+        return prefix + ["research"] + after
+    return prefix + ["research"] + after
 
 
 def side_page_ancestor_hubs(slug: str) -> list[str]:
@@ -2318,18 +2602,29 @@ def workspace_context(
                 base_trail = [part for part in trail if part]
                 while base_trail and base_trail[-1] in local_slugs:
                     base_trail.pop()
-                page_nav_items = [
-                    {
-                        "label": label,
-                        "slug": slug,
-                        "url": workspace_reverse(
+                page_nav_items = []
+                for label, slug, icon in local_links:
+                    if slug in DOCUMENT_SETTINGS_CHILD_SLUGS:
+                        url = workspace_reverse(
+                            role_slug,
+                            "dashboard",
+                            "system-settings",
+                            "document-settings",
+                            slug,
+                        )
+                    else:
+                        url = workspace_reverse(
                             role_slug, *extend_page_trail(base_trail, slug)
-                        ),
-                        "icon": icon,
-                        "active": active == slug,
-                    }
-                    for label, slug, icon in local_links
-                ]
+                        )
+                    page_nav_items.append(
+                        {
+                            "label": label,
+                            "slug": slug,
+                            "url": url,
+                            "icon": icon,
+                            "active": active == slug,
+                        }
+                    )
             else:
                 page_nav_items = []
 
@@ -2389,6 +2684,12 @@ def workspace_context(
         ),
         "notification_sound_enabled": bool(
             getattr(user, "notification_sound", True)
+        ),
+        "notification_sound_volume": int(
+            getattr(user, "notification_sound_volume", 70) or 70
+        ),
+        "notification_browser_enabled": bool(
+            getattr(user, "notification_browser", True)
         ),
         "icon_bell": ICON_BELL,
         **notif_ctx,
@@ -2511,6 +2812,12 @@ def employee_preactive_context(request, user, *, page_title, active="onboarding"
         ),
         "notification_sound_enabled": bool(
             getattr(user, "notification_sound", True)
+        ),
+        "notification_sound_volume": int(
+            getattr(user, "notification_sound_volume", 70) or 70
+        ),
+        "notification_browser_enabled": bool(
+            getattr(user, "notification_browser", True)
         ),
         "icon_bell": ICON_BELL,
         **notif_ctx,

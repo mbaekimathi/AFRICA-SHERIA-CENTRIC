@@ -163,8 +163,139 @@ document.addEventListener("DOMContentLoaded", () => {
 
   syncDirty();
 
+  const volumeRoot = document.getElementById("notification-volume-control");
+  const volumeSlider = document.getElementById("id_notification_sound_volume");
+  const volumeValue = document.getElementById("notification-volume-value");
+  const volumeDown = document.getElementById("notification-volume-down");
+  const volumeUp = document.getElementById("notification-volume-up");
+  const volumeStep = Number(volumeRoot?.dataset.volumeStep || 5);
+
+  function clampVolume(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 70;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  }
+
+  function readVolume() {
+    return clampVolume(volumeSlider?.value ?? 70);
+  }
+
+  function writeVolume(value) {
+    const next = clampVolume(value);
+    if (volumeSlider) volumeSlider.value = String(next);
+    if (volumeValue) volumeValue.textContent = `${next}%`;
+    const menu = document.getElementById("notif-menu");
+    if (menu) menu.dataset.soundVolume = String(next);
+    return next;
+  }
+
+  volumeSlider?.addEventListener("input", () => {
+    writeVolume(volumeSlider.value);
+  });
+
+  volumeDown?.addEventListener("click", () => {
+    writeVolume(readVolume() - volumeStep);
+  });
+
+  volumeUp?.addEventListener("click", () => {
+    writeVolume(readVolume() + volumeStep);
+  });
+
+  if (volumeSlider) writeVolume(volumeSlider.value);
+
+  const browserToggle = document.getElementById("id_notification_browser");
+  const browserStatus = document.getElementById("notification-browser-status");
+  const enableBrowserBtn = document.getElementById("enable-browser-notifications");
+  const testBrowserBtn = document.getElementById("test-browser-notification");
+
+  function syncBrowserPermissionUi() {
+    const api = window.SheriaBrowserNotifications;
+    if (!browserStatus) return;
+
+    browserStatus.classList.remove("is-granted", "is-denied");
+    if (!api || !api.supported()) {
+      browserStatus.textContent =
+        "This browser does not support desktop notifications.";
+      if (enableBrowserBtn) {
+        enableBrowserBtn.hidden = true;
+      }
+      return;
+    }
+
+    const perm = api.permission();
+    if (perm === "granted") {
+      browserStatus.textContent = "Browser alerts are allowed on this device.";
+      browserStatus.classList.add("is-granted");
+      if (enableBrowserBtn) enableBrowserBtn.hidden = true;
+      return;
+    }
+    if (perm === "denied") {
+      browserStatus.textContent =
+        "Browser alerts are blocked. Allow notifications for this site in your browser settings.";
+      browserStatus.classList.add("is-denied");
+      if (enableBrowserBtn) enableBrowserBtn.hidden = true;
+      return;
+    }
+
+    browserStatus.textContent =
+      "Browser permission is not granted yet. Click Allow browser alerts to enable them.";
+    if (enableBrowserBtn) {
+      enableBrowserBtn.hidden = false;
+      enableBrowserBtn.removeAttribute("hidden");
+    }
+  }
+
+  enableBrowserBtn?.addEventListener("click", async () => {
+    const api = window.SheriaBrowserNotifications;
+    if (!api) return;
+    await api.requestPermission();
+    syncBrowserPermissionUi();
+    if (api.permission() === "granted" && browserToggle && !browserToggle.checked) {
+      browserToggle.checked = true;
+    }
+  });
+
+  browserToggle?.addEventListener("change", async () => {
+    const menu = document.getElementById("notif-menu");
+    if (menu) {
+      menu.dataset.browserEnabled = browserToggle.checked ? "true" : "false";
+    }
+    if (browserToggle.checked) {
+      const api = window.SheriaBrowserNotifications;
+      if (api && api.permission() === "default") {
+        await api.requestPermission();
+      }
+    }
+    syncBrowserPermissionUi();
+  });
+
+  testBrowserBtn?.addEventListener("click", async () => {
+    const api = window.SheriaBrowserNotifications;
+    if (!api) return;
+    if (api.permission() === "default") {
+      await api.requestPermission();
+      syncBrowserPermissionUi();
+    }
+    if (api.permission() !== "granted") {
+      syncBrowserPermissionUi();
+      return;
+    }
+    api.show(
+      {
+        id: `test-${Date.now()}`,
+        title: "Test browser alert",
+        body: "Browser notifications are working for Sheria Centric.",
+        url: window.location.href,
+      },
+      { force: true }
+    );
+  });
+
+  syncBrowserPermissionUi();
+
   const testSoundBtn = document.getElementById("test-notification-sound");
   testSoundBtn?.addEventListener("click", () => {
+    const volumePct = readVolume();
     const sound = window.SheriaNotificationSound;
     if (sound) {
       sound.unlock();
@@ -175,6 +306,8 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       if (!AudioContext) return;
+      if (volumePct <= 0) return;
+      const volumeScale = volumePct / 100;
       const ctx = new AudioContext();
       const playTone = (frequency, startAt, duration, gainValue) => {
         const oscillator = ctx.createOscillator();
@@ -190,8 +323,8 @@ document.addEventListener("DOMContentLoaded", () => {
         oscillator.stop(startAt + duration + 0.02);
       };
       const t = ctx.currentTime;
-      playTone(880, t, 0.14, 0.045);
-      playTone(1174.7, t + 0.12, 0.18, 0.035);
+      playTone(880, t, 0.14, 0.045 * volumeScale);
+      playTone(1174.7, t + 0.12, 0.18, 0.035 * volumeScale);
     } catch (_error) {
       // Ignore audio failures in restricted environments.
     }

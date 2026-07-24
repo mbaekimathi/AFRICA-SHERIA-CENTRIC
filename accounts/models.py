@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser, BaseUserManager
-from django.core.validators import RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.db.models import F
 from django.utils import timezone
@@ -364,6 +364,15 @@ class Employee(AbstractUser):
         default=True,
         help_text="Play a sound when new unread notifications arrive.",
     )
+    notification_sound_volume = models.PositiveSmallIntegerField(
+        default=70,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Notification alert volume from 0 (mute) to 100 (loudest).",
+    )
+    notification_browser = models.BooleanField(
+        default=True,
+        help_text="Show browser desktop notifications for new unread alerts.",
+    )
     about_me = models.TextField(
         blank=True,
         default="",
@@ -580,6 +589,11 @@ class EmployeeBlogPost(models.Model):
         related_name="approved_blog_posts",
     )
     approved_at = models.DateTimeField(blank=True, null=True)
+    review_note = models.TextField(
+        blank=True,
+        default="",
+        help_text="Optional feedback when a reviewer returns or unpublishes a post.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2096,6 +2110,9 @@ class Notification(models.Model):
         self.is_read = True
         self.read_at = timezone.now()
         self.save(update_fields=["is_read", "read_at"])
+        from .notifications import invalidate_notification_payload_cache
+
+        invalidate_notification_payload_cache(self.recipient_id)
 
 
 class ClientNotification(models.Model):
@@ -2973,10 +2990,24 @@ class GoogleDriveConnection(models.Model):
     scopes = models.TextField(blank=True, default="")
     account_email = models.EmailField(blank=True, default="")
     account_name = models.CharField(max_length=255, blank=True, default="")
-    # Firm Drive tree: Company / Clients / Work
+    # Firm Drive tree: Company / Clients / Employees / Templates and Forms
     root_folder_id = models.CharField(max_length=128, blank=True, default="")
     clients_folder_id = models.CharField(max_length=128, blank=True, default="")
     work_folder_id = models.CharField(max_length=128, blank=True, default="")
+    templates_forms_folder_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Google Drive folder for firm templates and forms.",
+    )
+    templates_forms_category_folder_ids = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Map of template category slug → Google Drive folder id under "
+            "Templates and Forms."
+        ),
+    )
     employees_details_folder_id = models.CharField(
         max_length=128,
         blank=True,
@@ -3047,12 +3078,16 @@ class GoogleDriveConnection(models.Model):
             self.root_folder_id = ""
             self.clients_folder_id = ""
             self.work_folder_id = ""
+            self.templates_forms_folder_id = ""
+            self.templates_forms_category_folder_ids = {}
             self.employees_details_folder_id = ""
             update_fields.extend(
                 [
                     "root_folder_id",
                     "clients_folder_id",
                     "work_folder_id",
+                    "templates_forms_folder_id",
+                    "templates_forms_category_folder_ids",
                     "employees_details_folder_id",
                 ]
             )

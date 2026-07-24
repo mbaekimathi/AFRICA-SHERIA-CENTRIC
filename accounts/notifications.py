@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from django.core.cache import cache
 from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils import timezone
 
 from .models import CaseTask, Employee, Invoice, MatterTask, Notification
 from .workspace import workspace_reverse
+
+# Materialise reminders/tasks/news watches at most once per window per employee.
+_MATERIALIZE_TTL_SECONDS = 60
+# Short payload cache so concurrent tabs on the same session share one build.
+_PAYLOAD_TTL_SECONDS = 3
 
 
 CATEGORY_LABELS = {
@@ -271,6 +277,39 @@ def notify_message(
     return notification
 
 
+def notify_blog_returned(
+    post,
+    *,
+    reviewer: Employee,
+    note: str = "",
+    unpublished: bool = False,
+) -> Notification | None:
+    """Tell the author their post was returned to draft (or unpublished)."""
+    author = getattr(post, "author", None)
+    if author is None or author.pk == reviewer.pk:
+        return None
+    reviewer_name = reviewer.get_full_name() or reviewer.login_code
+    cleaned = (note or "").strip()
+    action = "unpublished and returned to draft" if unpublished else "returned to draft"
+    body = f"{reviewer_name} {action}."
+    if cleaned:
+        body = f"{body}\n\nReviewer note:\n{cleaned}"
+    else:
+        body = f"{body} Open My blogs to revise and resubmit."
+    notification = Notification.objects.create(
+        recipient=author,
+        category=Notification.Category.MESSAGE,
+        title=f"Blog needs changes: {post.title}",
+        body=body,
+        target_url=author.workspace_url("dashboard", "my-blogs"),
+        source_key=(
+            f"blog_return:{post.pk}:{int(timezone.now().timestamp())}"
+        ),
+    )
+    invalidate_notification_payload_cache(author.pk)
+    return notification
+
+
 def _invoice_amount_display(invoice: Invoice) -> str:
     amount = invoice.total_amount
     try:
@@ -457,9 +496,11 @@ def _notify_google_drive_disconnected(
     return created
 
 
-def serialize_notification(notification: Notification) -> dict:
+def serialize_notification(
+    notification: Notification, *, include_recipient: bool = False
+) -> dict:
     created = timezone.localtime(notification.created_at)
-    return {
+    payload = {
         "id": notification.pk,
         "category": notification.category,
         "category_label": notification.get_category_display(),
@@ -473,6 +514,12 @@ def serialize_notification(notification: Notification) -> dict:
         "created_at": created.isoformat(),
         "created_display": created.strftime("%d %b · %H:%M"),
     }
+    if include_recipient:
+        recipient = getattr(notification, "recipient", None)
+        payload["recipient_name"] = (
+            recipient.get_full_name() if recipient else ""
+        )
+    return payload
 
 
 def pending_assigned_tasks_count(employee) -> int:
@@ -522,35 +569,71 @@ def utility_badge_counts(
     return counts
 
 
+def _notification_payload_cache_key(
+    employee_id: int, limit: int, *, view_all: bool = False
+) -> str:
+    scope = "all" if view_all else "own"
+    return f"notif_payload:v2:{employee_id}:{limit}:{scope}"
+
+
+def invalidate_notification_payload_cache(employee_id: int) -> None:
+    """Drop cached bell payloads after reads / writes change the feed."""
+    for limit in (40, 60, 20):
+        for view_all in (False, True):
+            cache.delete(
+                _notification_payload_cache_key(
+                    employee_id, limit, view_all=view_all
+                )
+            )
+
+
 def mark_category_read(employee, category: str) -> int:
     """Mark all unread notifications in a category as read. Returns rows updated."""
     now = timezone.now()
-    return Notification.objects.filter(
+    updated = Notification.objects.filter(
         recipient=employee,
         category=category,
         is_read=False,
     ).update(is_read=True, read_at=now)
+    invalidate_notification_payload_cache(employee.pk)
+    return updated
 
 
 def mark_all_read(employee) -> int:
     """Mark every unread notification for an employee as read. Returns rows updated."""
     now = timezone.now()
-    return Notification.objects.filter(
+    updated = Notification.objects.filter(
         recipient=employee,
         is_read=False,
     ).update(is_read=True, read_at=now)
+    invalidate_notification_payload_cache(employee.pk)
+    return updated
 
 
 def notifications_payload(employee, *, limit: int = 40) -> dict:
     """Build the live-poll payload, grouped by category (latest first)."""
-    ensure_task_notifications(employee)
-    ensure_task_outcome_messages(employee)
-    ensure_due_reminders(employee)
-    # The polling request only claims work; network checks run off-request.
-    from .news_watch import launch_due_news_watches
+    from .workspace import employee_can_view_all
 
-    launch_due_news_watches(employee_id=employee.pk)
+    view_all = employee_can_view_all(employee, "notifications")
+    cache_key = _notification_payload_cache_key(
+        employee.pk, limit, view_all=view_all
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
 
+    # Side-effectful materialisation is expensive — run at most once per minute.
+    materialize_key = f"notif_materialize:{employee.pk}"
+    if cache.add(materialize_key, 1, _MATERIALIZE_TTL_SECONDS):
+        ensure_task_notifications(employee)
+        ensure_task_outcome_messages(employee)
+        ensure_due_reminders(employee)
+        # The polling request only claims work; network checks run off-request.
+        from .news_watch import launch_due_news_watches
+
+        launch_due_news_watches(employee_id=employee.pk)
+
+    # Badges stay personal so the bell is not flooded by firm-wide unread.
     by_category = unread_counts_by_category(employee)
     unread_count = sum(by_category.values())
     badges = utility_badge_counts(employee, by_category=by_category)
@@ -565,12 +648,13 @@ def notifications_payload(employee, *, limit: int = 40) -> dict:
         Notification.Category.REMINDER,
         Notification.Category.MESSAGE,
     ):
-        items_qs = list(
-            Notification.objects.filter(recipient=employee, category=category).order_by(
-                "-created_at"
-            )[:per_category]
-        )
-        recent.extend(items_qs)
+        items_qs = Notification.objects.filter(category=category)
+        if view_all:
+            items_qs = items_qs.select_related("recipient")
+        else:
+            items_qs = items_qs.filter(recipient=employee)
+        items = list(items_qs.order_by("-created_at")[:per_category])
+        recent.extend(items)
         # Tasks group unread mirrors pending assignments for the sidebar badge.
         group_unread = (
             badges.get("tasks", 0)
@@ -583,21 +667,28 @@ def notifications_payload(employee, *, limit: int = 40) -> dict:
                 "label": CATEGORY_LABELS[category],
                 "page_url": _utility_url(employee, CATEGORY_PAGE[category]),
                 "unread": group_unread,
-                "items": [serialize_notification(item) for item in items_qs],
+                "items": [
+                    serialize_notification(item, include_recipient=view_all)
+                    for item in items
+                ],
             }
         )
 
     revision = (
         "|".join(f"{n.pk}:{'1' if n.is_read else '0'}" for n in recent)
         + f"|u:{unread_count}"
+        + f"|scope:{'all' if view_all else 'own'}"
         + "|b:"
         + ",".join(f"{slug}:{count}" for slug, count in sorted(badges.items()))
     )
 
-    return {
+    payload = {
         "unread_count": unread_count,
         "has_unread": unread_count > 0,
         "badges": badges,
+        "view_all": view_all,
         "revision": revision,
         "groups": ordered_groups,
     }
+    cache.set(cache_key, payload, _PAYLOAD_TTL_SECONDS)
+    return payload

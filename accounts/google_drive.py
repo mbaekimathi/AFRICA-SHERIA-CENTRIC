@@ -62,10 +62,23 @@ GOOGLE_WORKSPACE_TYPES = {
 
 CLIENTS_FOLDER_NAME = "Clients"
 WORK_FOLDER_NAME = "Employees"
+TEMPLATES_FORMS_FOLDER_NAME = "Templates and Forms"
 PERSONAL_FOLDER_NAME = "Personal"
 PERSONAL_DOCUMENTS_FOLDER_NAME = "Personal Documents"
 LITIGATION_FOLDER_NAME = "Litigation"
 NON_LITIGATION_FOLDER_NAME = "Non-Litigation"
+
+# Firm template library categories under Templates and Forms/.
+TEMPLATES_FORMS_CATEGORIES = (
+    ("court-forms", "Court forms"),
+    ("affidavits", "Affidavits"),
+    ("notices", "Notices"),
+    ("agreements", "Agreements"),
+    ("letters", "Letters"),
+    ("applications", "Applications"),
+)
+TEMPLATES_FORMS_CATEGORY_SLUGS = {slug for slug, _label in TEMPLATES_FORMS_CATEGORIES}
+TEMPLATES_FORMS_CATEGORY_LABELS = dict(TEMPLATES_FORMS_CATEGORIES)
 
 EMPLOYEE_PERSONAL_DETAIL_FIELDS = (
     ("profile_photo", "Profile Photo"),
@@ -768,14 +781,53 @@ def ensure_folder(
     if existing_id and folder_exists(access_token, existing_id):
         _ensure_folder_name(access_token, existing_id, name)
         return existing_id
+    if parent_id:
+        found = find_child_folder_by_name(access_token, parent_id, name)
+        if found:
+            return found
     return create_folder(access_token, name, parent_id=parent_id)
+
+
+def _escape_drive_query_value(value: str) -> str:
+    return (value or "").replace("\\", "\\\\").replace("'", "\\'")
+
+
+def find_child_folder_by_name(
+    access_token: str, parent_id: str, name: str
+) -> str:
+    """Return the first non-trashed child folder with this exact name, if any."""
+    parent_id = (parent_id or "").strip()
+    safe_name = sanitize_drive_name(name)
+    if not parent_id or not safe_name:
+        return ""
+    q = (
+        f"'{parent_id}' in parents and trashed = false "
+        f"and mimeType = '{FOLDER_MIME}' "
+        f"and name = '{_escape_drive_query_value(safe_name)}'"
+    )
+    params = {
+        "q": q,
+        "fields": "files(id,name)",
+        "pageSize": "1",
+        "supportsAllDrives": "true",
+        "includeItemsFromAllDrives": "true",
+    }
+    data = _request_json(
+        "GET",
+        f"{DRIVE_FILES_URL}?{urllib.parse.urlencode(params)}",
+        access_token=access_token,
+    )
+    files = data.get("files") or []
+    if not files:
+        return ""
+    return (files[0].get("id") or "").strip()
 
 
 def ensure_firm_folder_structure(
     connection: GoogleDriveConnection | None = None,
 ) -> GoogleDriveConnection:
     """
-    Ensure Company / Clients / Employees folders exist on the connected Drive.
+    Ensure Company / Clients / Employees / Templates and Forms folders exist.
     """
     connection = connection or GoogleDriveConnection.get_solo()
     if not connection.is_connected:
@@ -799,19 +851,199 @@ def ensure_firm_folder_structure(
         parent_id=root_id,
         existing_id=connection.work_folder_id,
     )
+    templates_forms_id = ensure_folder(
+        token,
+        name=TEMPLATES_FORMS_FOLDER_NAME,
+        parent_id=root_id,
+        existing_id=connection.templates_forms_folder_id,
+    )
 
     connection.root_folder_id = root_id
     connection.clients_folder_id = clients_id
     connection.work_folder_id = work_id
+    connection.templates_forms_folder_id = templates_forms_id
     connection.save(
         update_fields=[
             "root_folder_id",
             "clients_folder_id",
             "work_folder_id",
+            "templates_forms_folder_id",
             "updated_at",
         ]
     )
+    return ensure_templates_forms_categories(connection)
+
+
+def ensure_templates_forms_folder(
+    connection: GoogleDriveConnection | None = None,
+) -> GoogleDriveConnection:
+    """Ensure Templates and Forms plus its category subfolders exist."""
+    return ensure_firm_folder_structure(connection)
+
+
+def ensure_templates_forms_categories(
+    connection: GoogleDriveConnection | None = None,
+) -> GoogleDriveConnection:
+    """
+    Ensure category folders under Templates and Forms and cache their Drive ids.
+    """
+    connection = connection or GoogleDriveConnection.get_solo()
+    if not connection.is_connected:
+        raise GoogleDriveAPIError("Google Drive is not connected.")
+    parent_id = (connection.templates_forms_folder_id or "").strip()
+    if not parent_id:
+        connection = ensure_firm_folder_structure(connection)
+        parent_id = (connection.templates_forms_folder_id or "").strip()
+    if not parent_id:
+        raise GoogleDriveAPIError("Templates and Forms folder is not available.")
+
+    token = get_valid_access_token(connection)
+    stored = dict(connection.templates_forms_category_folder_ids or {})
+    updated = False
+    for slug, label in TEMPLATES_FORMS_CATEGORIES:
+        existing = (stored.get(slug) or "").strip()
+        folder_id = ensure_folder(
+            token,
+            name=label,
+            parent_id=parent_id,
+            existing_id=existing,
+        )
+        if stored.get(slug) != folder_id:
+            stored[slug] = folder_id
+            updated = True
+    # Drop stale keys that are no longer categories.
+    stale = [key for key in stored if key not in TEMPLATES_FORMS_CATEGORY_SLUGS]
+    for key in stale:
+        stored.pop(key, None)
+        updated = True
+    if updated or connection.templates_forms_category_folder_ids != stored:
+        connection.templates_forms_category_folder_ids = stored
+        connection.save(
+            update_fields=["templates_forms_category_folder_ids", "updated_at"]
+        )
     return connection
+
+
+def templates_forms_category_folder_id(
+    category_slug: str,
+    *,
+    connection: GoogleDriveConnection | None = None,
+) -> str:
+    """Return the Drive folder id for a template category, creating it if needed."""
+    slug = (category_slug or "").strip()
+    if slug not in TEMPLATES_FORMS_CATEGORY_SLUGS:
+        raise GoogleDriveAPIError("Unknown template category.")
+    connection = ensure_templates_forms_categories(connection)
+    folder_id = (
+        (connection.templates_forms_category_folder_ids or {}).get(slug) or ""
+    ).strip()
+    if not folder_id:
+        raise GoogleDriveAPIError(
+            f"Could not prepare the {TEMPLATES_FORMS_CATEGORY_LABELS[slug]} folder."
+        )
+    return folder_id
+
+
+def list_templates_forms_library(
+    connection: GoogleDriveConnection | None = None,
+) -> list[dict]:
+    """
+    List each Templates and Forms category with its non-folder Drive files.
+    """
+    connection = ensure_templates_forms_categories(connection)
+    library: list[dict] = []
+    for slug, label in TEMPLATES_FORMS_CATEGORIES:
+        folder_id = (
+            (connection.templates_forms_category_folder_ids or {}).get(slug) or ""
+        ).strip()
+        files: list[dict] = []
+        folder_url = (
+            f"https://drive.google.com/drive/folders/{folder_id}" if folder_id else ""
+        )
+        if folder_id:
+            try:
+                children = list_drive_children(folder_id)
+            except GoogleDriveAPIError:
+                children = []
+            for raw in children:
+                mime = (raw.get("mimeType") or "").strip()
+                file_id = (raw.get("id") or "").strip()
+                if not file_id or mime == FOLDER_MIME:
+                    continue
+                open_url = google_edit_url(file_id, mime) or (
+                    raw.get("webViewLink") or ""
+                ).strip() or (
+                    f"https://drive.google.com/file/d/{file_id}/view"
+                )
+                files.append(
+                    {
+                        "id": file_id,
+                        "name": (raw.get("name") or "Untitled").strip() or "Untitled",
+                        "mime_type": mime,
+                        "modified_at": raw.get("modifiedTime") or "",
+                        "open_url": open_url,
+                        "category": slug,
+                        "category_label": label,
+                    }
+                )
+        library.append(
+            {
+                "slug": slug,
+                "label": label,
+                "folder_id": folder_id,
+                "folder_url": folder_url,
+                "files": files,
+                "count": len(files),
+            }
+        )
+    return library
+
+
+def get_drive_file_meta(file_id: str) -> dict:
+    """Fetch basic Drive file metadata."""
+    file_id = (file_id or "").strip()
+    if not file_id:
+        raise GoogleDriveAPIError("Missing Drive file id.")
+    token = get_valid_access_token()
+    return _request_json(
+        "GET",
+        (
+            f"{DRIVE_FILES_URL}/{urllib.parse.quote(file_id)}"
+            f"?fields={DRIVE_FILE_FIELDS},parents,trashed"
+            "&supportsAllDrives=true"
+        ),
+        access_token=token,
+    )
+
+
+def copy_drive_file(
+    file_id: str,
+    *,
+    name: str,
+    parent_id: str | None = None,
+) -> dict:
+    """Copy a Drive file into a destination folder (used for Start from template)."""
+    file_id = (file_id or "").strip()
+    if not file_id:
+        raise GoogleDriveAPIError("Missing template file id.")
+    token = get_valid_access_token()
+    payload: dict = {"name": sanitize_drive_name(name)}
+    if parent_id:
+        payload["parents"] = [parent_id]
+    created = _request_json(
+        "POST",
+        (
+            f"{DRIVE_FILES_URL}/{urllib.parse.quote(file_id)}/copy"
+            f"?fields={DRIVE_FILE_FIELDS}"
+            "&supportsAllDrives=true"
+        ),
+        access_token=token,
+        payload=payload,
+    )
+    new_id = (created.get("id") or "").strip()
+    if not new_id:
+        raise GoogleDriveAPIError(f"Failed to copy “{name}” from the template.")
+    return created
 
 
 def ensure_employee_folder_structure(employee: Employee) -> Employee:
