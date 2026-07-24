@@ -1,0 +1,428 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page"
+  id="employee-advances-page"
+  {% if open_register_modal %}data-open-register="1"{% endif %}
+  {% if selected_payroll_run_id %}data-payroll-run="{{ selected_payroll_run_id }}"{% endif %}
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Employees with registered payroll appear below. Advances are allowed only when salary is above half the remaining payroll amount, and are capped at half of salary.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <button
+        type="button"
+        class="btn btn--primary btn--inline js-open-register-advance"
+        {% if no_eligible_employees %}disabled{% endif %}
+      >
+        Register advance
+      </button>
+    </div>
+  </header>
+
+  <div class="metrics metrics--dash">
+    <div class="metric metric--glass">
+      <p class="metric__label">Employees</p>
+      <p class="metric__value">{{ employee_count }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Eligible</p>
+      <p class="metric__value">{{ eligible_employee_count }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Outstanding advances</p>
+      <p class="metric__value">KES {{ total_outstanding|floatformat:2 }}</p>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employees</h3>
+      <p class="panel__hint">
+        {{ employee_count }} with registered payroll · {{ eligible_employee_count }} eligible
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if employee_rows %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Employee</th>
+              <th scope="col">Payroll</th>
+              <th scope="col">Salary</th>
+              <th scope="col">Half salary</th>
+              <th scope="col">Payable</th>
+              <th scope="col">Max advance</th>
+              <th scope="col">Eligibility</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if eligible_rows %}
+            <tr class="data-table__section-row">
+              <td colspan="8">
+                <span class="data-table__section-label">Eligible</span>
+                <span class="data-table__section-count">{{ eligible_rows|length }}</span>
+              </td>
+            </tr>
+            {% for row in eligible_rows %}
+            <tr>
+              <td>
+                <div class="person-cell">
+                  {% if row.employee.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ row.employee.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {{ row.employee.first_name|slice:":1"|upper }}{{ row.employee.last_name|slice:":1"|upper }}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <strong>{{ row.employee.get_full_name|default:row.employee.login_code }}</strong>
+                    <span class="person-cell__meta">{{ row.employee.get_role_display }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ row.payroll_run.get_pay_frequency_display }}</strong>
+                  <span class="person-cell__meta">
+                    {{ row.payroll_run.pay_period_start|date:"j M Y" }}
+                    –
+                    {{ row.payroll_run.pay_period_end|date:"j M Y" }}
+                  </span>
+                </div>
+              </td>
+              <td class="mono">KES {{ row.salary|floatformat:2 }}</td>
+              <td class="mono">KES {{ row.half_salary|floatformat:2 }}</td>
+              <td class="mono">KES {{ row.payable|floatformat:2 }}</td>
+              <td class="mono"><strong>KES {{ row.max_advance|floatformat:2 }}</strong></td>
+              <td>
+                <span class="status-pill status-pill--registered">{{ row.eligibility_label }}</span>
+              </td>
+              <td class="data-table__action">
+                <button
+                  type="button"
+                  class="btn btn--primary btn--inline js-open-register-advance"
+                  data-payroll-run="{{ row.payroll_run.pk }}"
+                  data-employee-name="{{ row.employee.get_full_name|default:row.employee.login_code }}"
+                  data-max-advance="{{ row.max_advance|floatformat:2 }}"
+                >Register</button>
+              </td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+
+            {% if ineligible_rows %}
+            <tr class="data-table__section-row">
+              <td colspan="8">
+                <span class="data-table__section-label data-table__section-label--warn">Not eligible</span>
+                <span class="data-table__section-count">{{ ineligible_rows|length }}</span>
+              </td>
+            </tr>
+            {% for row in ineligible_rows %}
+            <tr>
+              <td>
+                <div class="person-cell">
+                  {% if row.employee.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ row.employee.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {{ row.employee.first_name|slice:":1"|upper }}{{ row.employee.last_name|slice:":1"|upper }}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <strong>{{ row.employee.get_full_name|default:row.employee.login_code }}</strong>
+                    <span class="person-cell__meta">{{ row.employee.get_role_display }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ row.payroll_run.get_pay_frequency_display }}</strong>
+                  <span class="person-cell__meta">
+                    {{ row.payroll_run.pay_period_start|date:"j M Y" }}
+                    –
+                    {{ row.payroll_run.pay_period_end|date:"j M Y" }}
+                  </span>
+                </div>
+              </td>
+              <td class="mono">KES {{ row.salary|floatformat:2 }}</td>
+              <td class="mono">KES {{ row.half_salary|floatformat:2 }}</td>
+              <td class="mono">KES {{ row.payable|floatformat:2 }}</td>
+              <td class="mono">KES {{ row.max_advance|floatformat:2 }}</td>
+              <td>
+                <span class="status-pill status-pill--not-registered">{{ row.eligibility_label }}</span>
+              </td>
+              <td class="muted">—</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No registered payroll yet</p>
+        <p class="empty-state__text">
+          Register payroll for an employee first. Eligible employees will appear here for advances.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Advance history</h3>
+      <p class="panel__hint">{{ advance_count }} advance(s)</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if advances %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Employee</th>
+              <th scope="col">Payroll</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Status</th>
+              <th scope="col">Recorded</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for advance in advances %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ advance.employee.get_full_name|default:advance.employee.login_code }}</strong>
+                  <span class="person-cell__meta">{{ advance.employee.get_role_display }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ advance.payroll_run.get_pay_frequency_display }}</strong>
+                  <span class="person-cell__meta">
+                    {{ advance.payroll_run.pay_period_start|date:"j M Y" }}
+                    –
+                    {{ advance.payroll_run.pay_period_end|date:"j M Y" }}
+                  </span>
+                </div>
+              </td>
+              <td class="mono">KES {{ advance.amount|floatformat:2 }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ advance.status }}">
+                  {{ advance.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ advance.created_at|date:"j M Y" }}</strong>
+                  <span class="person-cell__meta">
+                    {{ advance.get_reason_display }}
+                    · {{ advance.recorded_by.get_full_name|default:"—" }}
+                  </span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No advances recorded</p>
+        <p class="empty-state__text">
+          Registered advances appear here and reduce the amount due when payroll is paid.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <dialog class="workspace-modal" id="register-employee-advance-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Register advance</h2>
+        <p id="register-advance-subtitle">
+          Select an eligible employee payroll. Advance cannot exceed half of salary or remaining payable.
+        </p>
+      </header>
+      <form method="post" class="workspace-form" id="register-employee-advance-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="register-advance">
+        <div class="workspace-modal__body">
+          {% if form.non_field_errors %}
+          <div class="form-alert" role="alert">
+            {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="form-field">
+            <label for="{{ form.payroll_run.id_for_label }}">
+              Registered payroll <span aria-hidden="true">*</span>
+            </label>
+            {{ form.payroll_run }}
+            <p class="field-hint" id="advance-payable-hint">
+              Options show employee name and max advance amount.
+            </p>
+            {% if form.payroll_run.errors %}
+            <span class="field-error">{{ form.payroll_run.errors.0 }}</span>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ form.amount.id_for_label }}">
+              Advance amount (KES) <span aria-hidden="true">*</span>
+            </label>
+            {{ form.amount }}
+            {% if form.amount.errors %}
+            <span class="field-error">{{ form.amount.errors.0 }}</span>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ form.reason.id_for_label }}">
+              Reason <span aria-hidden="true">*</span>
+            </label>
+            {{ form.reason }}
+            {% if form.reason.errors %}
+            <span class="field-error">{{ form.reason.errors.0 }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="workspace-modal__actions">
+          <button type="button" class="btn btn--quiet" id="register-advance-cancel">Cancel</button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            id="register-advance-submit"
+            {% if no_eligible_employees %}disabled{% endif %}
+          >
+            Register advance
+          </button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  var page = document.getElementById("employee-advances-page");
+  var modal = document.getElementById("register-employee-advance-modal");
+  var payrollSelect = document.getElementById("id_advance_payroll_run");
+  var amountInput = document.getElementById("id_advance_amount");
+  var hint = document.getElementById("advance-payable-hint");
+  var subtitle = document.getElementById("register-advance-subtitle");
+  var maxAdvanceMap = {};
+  var payableMap = {};
+  var salaryMap = {};
+  try {
+    maxAdvanceMap = JSON.parse("{{ payroll_max_advance_map_json|escapejs }}");
+    payableMap = JSON.parse("{{ payroll_payable_map_json|escapejs }}");
+    salaryMap = JSON.parse("{{ payroll_salary_map_json|escapejs }}");
+  } catch (_error) {}
+
+  function money(value) {
+    return Number(value || 0).toLocaleString("en-KE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function openDialog(payrollRunId, employeeName) {
+    if (!modal || typeof modal.showModal !== "function") return;
+    if (payrollSelect && payrollRunId) {
+      payrollSelect.value = String(payrollRunId);
+    }
+    updatePayableHint(true);
+    if (subtitle) {
+      subtitle.textContent = employeeName
+        ? "Register an advance for " + employeeName + "."
+        : "Select an eligible employee payroll. Advance cannot exceed half of salary or remaining payable.";
+    }
+    modal.showModal();
+  }
+
+  function closeDialog() {
+    if (modal && typeof modal.close === "function") modal.close();
+    if (window.location.hash === "#register-employee-advance") {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }
+
+  function updatePayableHint(prefillAmount) {
+    if (!hint || !payrollSelect) return;
+    var runId = payrollSelect.value;
+    var maxAdvance = maxAdvanceMap[runId];
+    var payable = payableMap[runId];
+    var salary = salaryMap[runId];
+    if (maxAdvance) {
+      hint.textContent =
+        "Salary KES " + money(salary) +
+        " · payable KES " + money(payable) +
+        " · max advance KES " + money(maxAdvance) + ".";
+      if (amountInput) {
+        amountInput.max = maxAdvance;
+        if (prefillAmount || !amountInput.value) {
+          amountInput.value = Number(maxAdvance).toFixed(2);
+        }
+      }
+    } else {
+      hint.textContent =
+        "Only eligible employees are listed. Max advance is the lower of half salary and payable.";
+    }
+  }
+
+  document.querySelectorAll(".js-open-register-advance").forEach(function (el) {
+    el.addEventListener("click", function (event) {
+      event.preventDefault();
+      if (el.disabled) return;
+      openDialog(
+        el.getAttribute("data-payroll-run") || "",
+        el.getAttribute("data-employee-name") || ""
+      );
+    });
+  });
+  document.querySelectorAll('a[href="#register-employee-advance"]').forEach(function (el) {
+    el.addEventListener("click", function (event) {
+      event.preventDefault();
+      openDialog("", "");
+    });
+  });
+
+  var cancel = document.getElementById("register-advance-cancel");
+  if (cancel) cancel.addEventListener("click", closeDialog);
+  if (modal) {
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) closeDialog();
+    });
+  }
+  if (payrollSelect) {
+    payrollSelect.addEventListener("change", function () {
+      updatePayableHint(true);
+    });
+  }
+
+  if (page && page.dataset.openRegister === "1") {
+    openDialog(page.getAttribute("data-payroll-run") || "", "");
+  }
+  if (window.location.hash === "#register-employee-advance") openDialog("", "");
+})();
+</script>
+{% endblock %}

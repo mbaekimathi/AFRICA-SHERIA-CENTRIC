@@ -16,6 +16,10 @@ from .models import (
     EmployeeActivityPermission,
     EmployeeBlogPost,
     CommunicationSettings,
+    CompanyExpenseAccount,
+    CompanyAccountTopup,
+    CompanyExpensePayment,
+    ClientAccountTopup,
     FirmCompanyInformation,
     FirmCompanyProfileImage,
     FirmFAQ,
@@ -38,8 +42,12 @@ from .models import (
     PayrollDeduction,
     PayrollPayment,
     PayrollRun,
+    EmployeeAdvance,
+    PettyCashExpenseRequest,
     RoleActivityPermission,
     WebsiteTemplateSetting,
+    CompanyThemeSetting,
+    CompanyLetterheadSetting,
 )
 
 
@@ -173,6 +181,7 @@ class ClientAdmin(admin.ModelAdmin):
         "client_type",
         "display_name",
         "phone",
+        "credit_balance",
         "status",
         "date_joined",
     )
@@ -780,6 +789,96 @@ class WebsiteTemplateSettingAdmin(admin.ModelAdmin):
     readonly_fields = ("updated_at", "updated_by")
 
 
+@admin.register(CompanyThemeSetting)
+class CompanyThemeSettingAdmin(admin.ModelAdmin):
+    list_display = ("default_ui_theme", "updated_at", "updated_by")
+    readonly_fields = ("updated_at", "updated_by")
+
+
+@admin.register(CompanyLetterheadSetting)
+class CompanyLetterheadSettingAdmin(admin.ModelAdmin):
+    list_display = (
+        "template",
+        "accent",
+        "show_logo",
+        "show_tagline",
+        "show_address",
+        "show_contacts",
+        "updated_at",
+        "updated_by",
+    )
+    readonly_fields = ("updated_at", "updated_by")
+
+
+@admin.register(CompanyExpenseAccount)
+class CompanyExpenseAccountAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "system_key",
+        "bank_name",
+        "bank_account_number",
+        "balance",
+        "created_by",
+        "created_at",
+    )
+    search_fields = ("name", "bank_name", "bank_account_number", "description", "system_key")
+    list_filter = ("created_at",)
+    readonly_fields = ("system_key", "created_at", "updated_at")
+    raw_id_fields = ("created_by",)
+
+
+@admin.register(CompanyAccountTopup)
+class CompanyAccountTopupAdmin(admin.ModelAdmin):
+    list_display = (
+        "account",
+        "amount",
+        "source_type",
+        "balance_after",
+        "created_by",
+        "created_at",
+    )
+    search_fields = (
+        "account__name",
+        "account__bank_name",
+        "source_note",
+        "source_client__company_name",
+        "source_client__email",
+        "source_company_account__name",
+    )
+    list_filter = ("source_type", "created_at")
+    readonly_fields = ("created_at",)
+    raw_id_fields = (
+        "account",
+        "source_client",
+        "source_company_account",
+        "created_by",
+    )
+
+
+@admin.register(CompanyExpensePayment)
+class CompanyExpensePaymentAdmin(admin.ModelAdmin):
+    list_display = (
+        "account",
+        "expense_type",
+        "employee",
+        "amount",
+        "balance_after",
+        "created_by",
+        "created_at",
+    )
+    search_fields = (
+        "account__name",
+        "account__bank_name",
+        "description",
+        "employee__first_name",
+        "employee__last_name",
+        "employee__login_code",
+    )
+    list_filter = ("expense_type", "created_at")
+    readonly_fields = ("created_at",)
+    raw_id_fields = ("account", "employee", "payroll_payment", "created_by")
+
+
 @admin.register(FinanceSettings)
 class FinanceSettingsAdmin(admin.ModelAdmin):
     list_display = (
@@ -1092,7 +1191,9 @@ class InvoiceAdmin(admin.ModelAdmin):
 class MpesaStkRequestAdmin(admin.ModelAdmin):
     list_display = (
         "checkout_request_id",
+        "purpose",
         "invoice",
+        "client",
         "amount",
         "phone",
         "status",
@@ -1100,16 +1201,41 @@ class MpesaStkRequestAdmin(admin.ModelAdmin):
         "payment_applied",
         "created_at",
     )
-    list_filter = ("status", "simulated", "payment_applied")
+    list_filter = ("purpose", "status", "simulated", "payment_applied")
     search_fields = (
         "checkout_request_id",
         "merchant_request_id",
         "mpesa_receipt",
         "phone",
         "invoice__invoice_number",
+        "client__email",
+        "client__company_name",
     )
     readonly_fields = ("created_at", "updated_at")
-    raw_id_fields = ("invoice",)
+    raw_id_fields = ("invoice", "client")
+
+
+@admin.register(ClientAccountTopup)
+class ClientAccountTopupAdmin(admin.ModelAdmin):
+    list_display = (
+        "client",
+        "amount",
+        "method",
+        "status",
+        "balance_after",
+        "created_by",
+        "created_at",
+    )
+    list_filter = ("method", "status", "created_at")
+    search_fields = (
+        "client__email",
+        "client__company_name",
+        "note",
+        "mpesa_receipt",
+        "phone",
+    )
+    readonly_fields = ("created_at", "updated_at")
+    raw_id_fields = ("client", "created_by", "stk_request")
 
 
 @admin.register(EmployeeActivityPermission)
@@ -1178,6 +1304,58 @@ class PayrollPaymentAdmin(admin.ModelAdmin):
     search_fields = ("receipt_number", "reference_code")
     readonly_fields = ("paid_at",)
     raw_id_fields = ("payroll_run", "recorded_by")
+
+
+@admin.register(EmployeeAdvance)
+class EmployeeAdvanceAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee",
+        "payroll_run",
+        "amount",
+        "reason",
+        "status",
+        "recorded_by",
+        "created_at",
+        "recovered_at",
+    )
+    list_filter = ("status", "reason", "created_at")
+    search_fields = (
+        "employee__first_name",
+        "employee__last_name",
+        "employee__login_code",
+        "notes",
+    )
+    readonly_fields = ("created_at", "recovered_at")
+    raw_id_fields = ("employee", "payroll_run", "recorded_by")
+
+
+@admin.register(PettyCashExpenseRequest)
+class PettyCashExpenseRequestAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee",
+        "expense_type",
+        "amount",
+        "status",
+        "submitted_by",
+        "reviewed_by",
+        "created_at",
+        "reviewed_at",
+    )
+    list_filter = ("status", "expense_type", "created_at")
+    search_fields = (
+        "employee__first_name",
+        "employee__last_name",
+        "employee__login_code",
+        "description",
+        "rejection_reason",
+    )
+    readonly_fields = ("created_at", "updated_at", "reviewed_at")
+    raw_id_fields = (
+        "employee",
+        "submitted_by",
+        "reviewed_by",
+        "expense_payment",
+    )
 
 
 @admin.register(RoleActivityPermission)

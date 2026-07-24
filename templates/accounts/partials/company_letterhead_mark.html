@@ -1,0 +1,13 @@
+{% if firm.main_image %}
+<img
+  class="doc-letterhead__logo"
+  src="{{ firm.main_image.image.url }}"
+  alt=""
+  width="56"
+  height="56"
+>
+{% else %}
+<div class="doc-letterhead__mark" aria-hidden="true">
+  {{ firm.display_name|slice:":1"|upper }}
+</div>
+{% endif %}

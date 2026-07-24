@@ -1,0 +1,45 @@
+{% comment %}
+Expects: event dict with due_date, url, subject, subject_meta, status,
+status_label, kind, optional virtual_link, optional is_virtual, optional is_past
+Renders a table row for calendar agenda tables.
+{% endcomment %}
+<tr class="calendar-agenda-row{% if event.is_past %} calendar-agenda-row--past{% endif %}">
+  <td>
+    <time datetime="{{ event.due_date|date:'Y-m-d' }}">{{ event.due_date|date:"d M Y" }}</time>
+  </td>
+  <td>
+    <span class="calendar-agenda__kind calendar-agenda__kind--{{ event.kind|default:'other' }}">
+      {% include "accounts/partials/calendar_kind_label.html" %}
+    </span>
+  </td>
+  <td>
+    <a class="calendar-agenda__title" href="{{ event.url }}">{{ event.subject }}</a>
+    {% if event.subject_meta %}
+    <p class="calendar-agenda__meta">{{ event.subject_meta }}</p>
+    {% endif %}
+  </td>
+  <td>
+    <span class="status-pill status-pill--{{ event.status }}">{{ event.status_label }}</span>
+  </td>
+  <td>
+    {% if event.virtual_link %}
+    <a
+      class="calendar-agenda__virtual"
+      href="{{ event.virtual_link }}"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open virtual meeting"
+    >
+      <span class="calendar-agenda__virtual-dot" aria-hidden="true"></span>
+      Join virtual
+    </a>
+    {% elif event.is_virtual %}
+    <span class="calendar-agenda__virtual calendar-agenda__virtual--muted">
+      <span class="calendar-agenda__virtual-dot" aria-hidden="true"></span>
+      Virtual
+    </span>
+    {% else %}
+    <span class="calendar-agenda__dash">—</span>
+    {% endif %}
+  </td>
+</tr>

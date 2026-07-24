@@ -12,9 +12,9 @@
   <header class="matter-browse__intro" data-reveal>
     <div class="matter-browse__title-row">
       {% if group_by == "client" %}
-      {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="lg" float=True extra_class="matter-browse__hero-3d" %}
+      {% include "accounts/partials/icon_flat.html" with icon="clients" tone=2 size="lg" extra_class="matter-browse__hero-flat" %}
       {% else %}
-      {% include "accounts/partials/icon_3d.html" with icon="courthouse" tone=3 size="lg" float=True extra_class="matter-browse__hero-3d" %}
+      {% include "accounts/partials/icon_flat.html" with icon="courthouse" tone=3 size="lg" extra_class="matter-browse__hero-flat" %}
       {% endif %}
       <div>
         <h2>{{ page_title }}</h2>
@@ -38,7 +38,7 @@
             role="tab"
             aria-selected="{% if group_by == 'client' %}true{% else %}false{% endif %}"
           >
-            {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="sm" extra_class="matter-view__tab-3d" %}
+            {% include "accounts/partials/icon_flat.html" with icon="clients" tone=2 size="sm" extra_class="matter-view__tab-flat" %}
             Client
           </a>
           <a
@@ -47,7 +47,7 @@
             role="tab"
             aria-selected="{% if group_by == 'court' %}true{% else %}false{% endif %}"
           >
-            {% include "accounts/partials/icon_3d.html" with icon="courthouse" tone=3 size="sm" extra_class="matter-view__tab-3d" %}
+            {% include "accounts/partials/icon_flat.html" with icon="courthouse" tone=3 size="sm" extra_class="matter-view__tab-flat" %}
             Court Rank
           </a>
         </div>
@@ -85,10 +85,10 @@
     <header class="matter-browse__panel-head">
       <h3>
         {% if group_by == "client" %}
-        {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="sm" float=True extra_class="matter-browse__panel-3d" %}
+        {% include "accounts/partials/icon_flat.html" with icon="clients" tone=2 size="sm" extra_class="matter-browse__panel-flat" %}
         Clients with Matters: <span id="matter-browse-group-count">{{ case_groups|length }}</span>
         {% else %}
-        {% include "accounts/partials/icon_3d.html" with icon="courthouse" tone=3 size="sm" float=True extra_class="matter-browse__panel-3d" %}
+        {% include "accounts/partials/icon_flat.html" with icon="courthouse" tone=3 size="sm" extra_class="matter-browse__panel-flat" %}
         Courts with Matters: <span id="matter-browse-group-count">{{ case_groups|length }}</span>
         {% endif %}
       </h3>
@@ -106,9 +106,9 @@
       >
         <summary class="matter-card__summary">
           {% if group.kind == "client" and group.profile %}
-          {% include "accounts/partials/icon_3d_profile.html" with profile=group.profile tone=group.icon_tone extra_class="matter-card__icon-3d" %}
+          {% include "accounts/partials/icon_flat_profile.html" with profile=group.profile tone=group.icon_tone extra_class="matter-card__icon-flat" %}
           {% else %}
-          {% include "accounts/partials/icon_3d.html" with icon=group.icon tone=group.icon_tone extra_class="matter-card__icon-3d" %}
+          {% include "accounts/partials/icon_flat.html" with icon=group.icon tone=group.icon_tone extra_class="matter-card__icon-flat" %}
           {% endif %}
           <span class="matter-card__main">
             <span class="matter-card__name">{{ group.label }}</span>
@@ -183,7 +183,7 @@
       {% endfor %}
     </div>
     <div class="empty-state" id="matter-browse-filtered-empty" hidden>
-      {% include "accounts/partials/icon_3d.html" with icon="search-doc" tone=3 size="lg" float=True extra_class="empty-state__icon-3d" %}
+      {% include "accounts/partials/icon_flat.html" with icon="search-doc" tone=3 size="lg" extra_class="empty-state__icon-flat" %}
       <div class="empty-state__rule" aria-hidden="true"></div>
       <p class="empty-state__title">No matches</p>
       <p class="empty-state__text">Try another court, client, or case number.</p>
@@ -191,9 +191,9 @@
     {% else %}
     <div class="empty-state">
       {% if group_by == "client" %}
-      {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="lg" float=True extra_class="empty-state__icon-3d" %}
+      {% include "accounts/partials/icon_flat.html" with icon="clients" tone=2 size="lg" extra_class="empty-state__icon-flat" %}
       {% else %}
-      {% include "accounts/partials/icon_3d.html" with icon="courthouse" tone=3 size="lg" float=True extra_class="empty-state__icon-3d" %}
+      {% include "accounts/partials/icon_flat.html" with icon="courthouse" tone=3 size="lg" extra_class="empty-state__icon-flat" %}
       {% endif %}
       <div class="empty-state__rule" aria-hidden="true"></div>
       <p class="empty-state__title">No active cases</p>

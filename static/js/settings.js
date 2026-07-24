@@ -92,7 +92,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const currentValues = () => ({
-    theme: form?.querySelector('input[name="ui_theme"]:checked')?.value || saved.theme,
+    theme:
+      form?.querySelector('input[name="ui_theme"]:checked')?.value ||
+      form?.querySelector('input[name="default_ui_theme"]:checked')?.value ||
+      saved.theme,
     font: form?.querySelector('input[name="ui_font"]:checked')?.value || saved.font,
     density:
       form?.querySelector('input[name="ui_density"]:checked')?.value || saved.density,

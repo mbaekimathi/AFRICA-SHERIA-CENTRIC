@@ -395,6 +395,7 @@
 /* —— Advanced motion icons & dashboard —— */
 .icon-tile {
   --tile-color: var(--icon-1);
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 2.55rem;
@@ -402,16 +403,10 @@
   flex-shrink: 0;
   border-radius: 0.8rem;
   color: var(--tile-color);
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--tile-color) 16%, #fff),
-    color-mix(in srgb, var(--tile-color) 8%, #fff)
-  );
+  background: color-mix(in srgb, var(--tile-color) 12%, #fff);
   border: 1px solid color-mix(in srgb, var(--tile-color) 22%, var(--line));
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--tile-color) 10%, transparent),
-    0 8px 18px color-mix(in srgb, var(--tile-color) 12%, transparent);
-  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease);
+  box-shadow: none;
+  transition: transform 0.25s var(--ease-out), background 0.2s var(--ease);
 }
 
 .icon-tile svg {
@@ -475,6 +470,43 @@
 
 .icon-tile--8 {
   --tile-color: var(--icon-1);
+}
+
+.icon-tile--profile {
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 0;
+}
+
+.icon-flat-profile__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.icon-flat-profile__initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--tile-color);
+  background: color-mix(in srgb, var(--tile-color) 10%, #fff);
+}
+
+.icon-flat-profile__initials--corp {
+  font-size: 0.64rem;
+}
+
+.icon-tile--sm .icon-flat-profile__initials {
+  font-size: 0.62rem;
+}
+
+.icon-tile--lg .icon-flat-profile__initials {
+  font-size: 0.9rem;
 }
 
 .module-card__icon.icon-tile {
@@ -1066,14 +1098,22 @@
   transition: opacity 0.25s var(--ease);
 }
 
-.module-card--pro:has(.icon-orb--tone-1) { --card-accent: var(--icon-1); }
-.module-card--pro:has(.icon-orb--tone-2) { --card-accent: var(--icon-2); }
-.module-card--pro:has(.icon-orb--tone-3) { --card-accent: var(--icon-3); }
-.module-card--pro:has(.icon-orb--tone-4) { --card-accent: var(--icon-4); }
-.module-card--pro:has(.icon-orb--tone-5) { --card-accent: var(--icon-5); }
-.module-card--pro:has(.icon-orb--tone-6) { --card-accent: var(--icon-6); }
-.module-card--pro:has(.icon-orb--tone-7) { --card-accent: var(--icon-7); }
-.module-card--pro:has(.icon-orb--tone-8) { --card-accent: var(--icon-1); }
+.module-card--pro:has(.icon-orb--tone-1),
+.module-card--pro:has(.icon-tile--1) { --card-accent: var(--icon-1); }
+.module-card--pro:has(.icon-orb--tone-2),
+.module-card--pro:has(.icon-tile--2) { --card-accent: var(--icon-2); }
+.module-card--pro:has(.icon-orb--tone-3),
+.module-card--pro:has(.icon-tile--3) { --card-accent: var(--icon-3); }
+.module-card--pro:has(.icon-orb--tone-4),
+.module-card--pro:has(.icon-tile--4) { --card-accent: var(--icon-4); }
+.module-card--pro:has(.icon-orb--tone-5),
+.module-card--pro:has(.icon-tile--5) { --card-accent: var(--icon-5); }
+.module-card--pro:has(.icon-orb--tone-6),
+.module-card--pro:has(.icon-tile--6) { --card-accent: var(--icon-6); }
+.module-card--pro:has(.icon-orb--tone-7),
+.module-card--pro:has(.icon-tile--7) { --card-accent: var(--icon-7); }
+.module-card--pro:has(.icon-orb--tone-8),
+.module-card--pro:has(.icon-tile--8) { --card-accent: var(--icon-1); }
 
 .module-card--pro::after {
   content: "";

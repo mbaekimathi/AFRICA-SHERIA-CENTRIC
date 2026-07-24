@@ -1,0 +1,17 @@
+{# Flat profile face tile for client groups. Expects: profile, tone, optional size/extra_class #}
+<span
+  class="icon-tile icon-tile--profile icon-tile--{{ tone|default:1 }}{% if size %} icon-tile--{{ size }}{% endif %}{% if extra_class %} {{ extra_class }}{% endif %}"
+  aria-hidden="true"
+>
+  {% if profile.photo_url %}
+  <img
+    class="icon-flat-profile__photo"
+    src="{{ profile.photo_url }}"
+    alt=""
+  >
+  {% elif profile.is_corporate %}
+  <span class="icon-flat-profile__initials icon-flat-profile__initials--corp">{{ profile.initials }}</span>
+  {% else %}
+  <span class="icon-flat-profile__initials">{{ profile.initials }}</span>
+  {% endif %}
+</span>

@@ -215,9 +215,14 @@
 
     function refreshEmployeeOptions() {
       if (!employeeSelect) return;
-      const registered = new Set(registeredPayrollMap[periodKey()] || []);
-      const previousValue = employeeSelect.value;
-      const available = employeeChoices.filter((employee) => !registered.has(employee.id));
+      const registered = new Set(
+        (registeredPayrollMap[periodKey()] || []).map((id) => String(id))
+      );
+      const preferredEmployee =
+        (form.dataset.selectedEmployee || "").trim() || employeeSelect.value;
+      const available = employeeChoices.filter(
+        (employee) => !registered.has(String(employee.id))
+      );
 
       employeeSelect.innerHTML = "";
       const placeholder = document.createElement("option");
@@ -231,7 +236,7 @@
         const option = document.createElement("option");
         option.value = String(employee.id);
         option.textContent = employee.label;
-        if (String(employee.id) === previousValue) option.selected = true;
+        if (String(employee.id) === String(preferredEmployee)) option.selected = true;
         employeeSelect.appendChild(option);
       });
 
@@ -240,10 +245,32 @@
       if (submitButton) submitButton.disabled = !hasAvailable;
       if (noEmployeesHint) noEmployeesHint.hidden = hasAvailable;
 
-      if (previousValue && !available.some((employee) => String(employee.id) === previousValue)) {
+      if (
+        preferredEmployee &&
+        available.some((employee) => String(employee.id) === String(preferredEmployee))
+      ) {
+        employeeSelect.value = String(preferredEmployee);
+        const employee = employeeChoices.find(
+          (entry) => String(entry.id) === String(preferredEmployee)
+        );
+        const basicInput = document.getElementById("id_payroll_basic_salary");
+        if (employee && employee.salary && basicInput && !basicInput.value) {
+          basicInput.value = employee.salary;
+        }
+      } else if (
+        preferredEmployee &&
+        !available.some((employee) => String(employee.id) === String(preferredEmployee))
+      ) {
         employeeSelect.value = "";
       }
     }
+
+    function applySelectedEmployee() {
+      refreshEmployeeOptions();
+      recalculatePayroll();
+    }
+
+    window.sheriaRefreshPayrollRegister = applySelectedEmployee;
 
     function recalculatePayroll() {
       const gross = sumEarnings();
@@ -289,6 +316,7 @@
 
     if (employeeSelect) {
       employeeSelect.addEventListener("change", () => {
+        form.dataset.selectedEmployee = employeeSelect.value || "";
         const employee = employeeChoices.find(
           (entry) => String(entry.id) === employeeSelect.value
         );

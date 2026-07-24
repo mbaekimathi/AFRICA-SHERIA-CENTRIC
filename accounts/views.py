@@ -4,8 +4,9 @@ from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import ProtectedError, Q, Value
+from django.db.models import F, ProtectedError, Q, Value
 from django.db.models.functions import Concat
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -21,8 +22,9 @@ import json
 import logging
 from collections import defaultdict
 from datetime import date, timedelta
+from decimal import Decimal
 from django.utils.safestring import mark_safe
-from .appearance import appearance_catalog
+from .appearance import appearance_catalog, sync_session_appearance
 from .client_auth import (
     end_staff_impersonation,
     get_client,
@@ -48,6 +50,8 @@ from .forms import (
     StaffRegisterClientForm,
     CompanyInformationForm,
     CompanyContactsForm,
+    CompanyThemeForm,
+    CompanyLetterheadForm,
     AboutCompanyForm,
     CompanyTermsForm,
     CourtAttendanceAdvocateFormSet,
@@ -74,8 +78,15 @@ from .forms import (
     PracticeAreaForm,
     ProfileSettingsForm,
     RegisterCaseForm,
+    RegisterCompanyAccountForm,
+    TopupClientAccountForm,
+    TopupCompanyAccountForm,
+    PayCompanyExpenseForm,
     RegisterMatterForm,
     RegisterPayrollForm,
+    RegisterEmployeeAdvanceForm,
+    RegisterPettyCashExpenseForm,
+    UpdateEmployeeSalaryForm,
     RejectTaskForm,
     AcceptTaskForm,
     RenameDocumentForm,
@@ -146,6 +157,8 @@ from .models import (
     EmployeeBlogPost,
     EmployeeWorkSession,
     CommunicationSettings,
+    CompanyLetterheadSetting,
+    CompanyThemeSetting,
     FinanceSettings,
     FirmCompanyInformation,
     FirmCompanyProfileImage,
@@ -155,12 +168,17 @@ from .models import (
     FirmPracticeAreaImage,
     GoogleDriveConnection,
     Invoice,
+    CompanyExpenseAccount,
+    CompanyAccountTopup,
+    CompanyExpensePayment,
+    ClientAccountTopup,
     LitigationCase,
     MatterAttendance,
     MatterAttendanceBringUpItem,
     MatterAttendanceQuorumMember,
     MatterParty,
     MatterTask,
+    MpesaStkRequest,
     NewsSearchJob,
     NewsWatch,
     NonLitigationMatter,
@@ -168,10 +186,15 @@ from .models import (
     PayrollDeduction,
     PayrollPayment,
     PayrollRun,
+    EmployeeAdvance,
+    PettyCashExpenseRequest,
     RoleActivityPermission,
     WebsiteTemplateSetting,
 )
 from .notifications import (
+    ensure_due_reminders,
+    ensure_task_notifications,
+    mark_category_read,
     notifications_payload,
     notify_case_task,
     notify_google_drive_disconnected,
@@ -194,6 +217,7 @@ from .employee_sessions import (
 )
 from .workspace import (
     activity_permission_actions,
+    apply_notification_badges,
     assign_session_greeting,
     attach_greeting_cookie,
     client_account_page_nav_items,
@@ -982,6 +1006,8 @@ class AdvocateLoginView(LoginView):
         assign_session_greeting(self.request, user)
         mark_session_start(self.request)
         start_employee_session(self.request, user)
+        # Personal theme (if any) overrides company theme for this role session only.
+        sync_session_appearance(self.request, user)
         return redirect_for_employee(self.request, user)
 
     def form_invalid(self, form):
@@ -1441,6 +1467,67 @@ def _poll_invoice_stk_status(request, invoice, session_key: str) -> dict:
 
 @login_required
 @require_GET
+def client_account_topup_stk_status(request, role, client_id):
+    """Live poll: M-Pesa STK result for client account top-up."""
+    user = request.user
+    if not isinstance(user, Employee) or user.status != Employee.Status.ACTIVE:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    if role != user.role_slug:
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    client = get_object_or_404(Client, pk=client_id, status=Client.Status.ACTIVE)
+    session_key = RoleWorkspaceView.client_topup_session_key
+    push = dict(request.session.get(session_key) or {})
+    if not push or push.get("client_id") != client.pk:
+        return JsonResponse(
+            _stk_status_response({"status": "idle", "result_desc": "No active STK push."})
+        )
+
+    from .mpesa import MpesaError, refresh_stk_request
+
+    checkout_id = (push.get("checkout_request_id") or "").strip()
+    try:
+        stk = MpesaStkRequest.objects.select_related("client").get(
+            checkout_request_id=checkout_id,
+            client=client,
+            purpose=MpesaStkRequest.Purpose.CLIENT_TOPUP,
+        )
+    except MpesaStkRequest.DoesNotExist:
+        return JsonResponse(
+            _stk_status_response(
+                {
+                    "status": "error",
+                    "result_desc": "Could not find this STK request. Send a new prompt.",
+                }
+            )
+        )
+
+    try:
+        outcome = refresh_stk_request(stk)
+    except MpesaError as exc:
+        return JsonResponse(_stk_status_response({"status": "error", "result_desc": str(exc)}))
+
+    push.update(
+        {
+            "stk_status": outcome.get("status") or push.get("stk_status"),
+            "result_code": outcome.get("result_code") or "",
+            "result_desc": outcome.get("result_desc") or "",
+            "mpesa_receipt": outcome.get("mpesa_receipt") or "",
+            "invoice_status_label": outcome.get("invoice_status_label") or "",
+            "credit_balance": outcome.get("credit_balance") or "",
+            "payment_applied": outcome.get("payment_applied"),
+        }
+    )
+    if outcome.get("status") in {"success", "failed"}:
+        # Keep success briefly for UI, then allow refresh to clear.
+        pass
+    request.session[session_key] = push
+    request.session.modified = True
+    return JsonResponse(_stk_status_response(outcome))
+
+
+@login_required
+@require_GET
 def invoice_stk_status(request, role, invoice_id):
     """Live poll: M-Pesa STK result for staff pay invoice page."""
     user, denied = _guard_invoicing(request, role, action="pay")
@@ -1742,10 +1829,12 @@ class ClientInvoiceView(View):
             page_title=invoice.invoice_number,
             active="billing",
         )
+        from .letterhead import letterhead_render_context
+
+        context.update(letterhead_render_context(firm=firm))
         context.update(
             {
                 "invoice": invoice,
-                "firm": firm,
                 "list_url": reverse("accounts:client_billing"),
                 "pay_url": reverse(
                     "accounts:client_pay_invoice",
@@ -2177,15 +2266,13 @@ def workspace_notification_open(request, notification_id):
 @require_POST
 def workspace_notifications_mark_all_read(request):
     """Mark every unread notification for the current employee as read."""
+    from .notifications import mark_all_read
+
     user = request.user
     if user.status != Employee.Status.ACTIVE:
         return JsonResponse({"error": "forbidden"}, status=403)
 
-    now = timezone.now()
-    updated = Notification.objects.filter(recipient=user, is_read=False).update(
-        is_read=True,
-        read_at=now,
-    )
+    updated = mark_all_read(user)
     return JsonResponse(
         {
             "ok": True,
@@ -3024,6 +3111,7 @@ def build_client_account_summaries(clients):
                 "total_invoiced": total_invoiced,
                 "total_paid": total_paid,
                 "balance_due": balance_due,
+                "credit_balance": client.credit_balance or Decimal("0.00"),
                 "open_count": open_count,
                 "tone": index % 6,
                 "search_text": " ".join(search_bits).lower(),
@@ -3078,6 +3166,8 @@ class RoleWorkspaceView(View):
     register_matter_template = "accounts/register_matter.html"
     approve_registered_matters_template = "accounts/approve_registered_matters.html"
     non_litigation_matters_template = "accounts/non_litigation_matters.html"
+    matter_management_template = "accounts/matter_management.html"
+    document_management_template = "accounts/document_management.html"
     tasks_template = "accounts/tasks.html"
     calendar_template = "accounts/calendar.html"
     reminders_template = "accounts/reminders.html"
@@ -3102,6 +3192,8 @@ class RoleWorkspaceView(View):
     latest_news_template = "accounts/latest_news.html"
     company_faq_form_template = "accounts/company_faq_form.html"
     website_template_template = "accounts/website_template.html"
+    company_theme_template = "accounts/company_theme.html"
+    letterhead_template = "accounts/letterhead.html"
     system_settings_template = "accounts/system_settings.html"
     finance_settings_template = "accounts/finance_settings.html"
     communication_settings_template = "accounts/communication_settings.html"
@@ -3114,6 +3206,10 @@ class RoleWorkspaceView(View):
     employee_payroll_detail_template = "accounts/employee_payroll_detail.html"
     register_payroll_template = "accounts/register_payroll.html"
     payroll_receipt_template = "accounts/payroll_receipt.html"
+    employee_advances_template = "accounts/employee_advances.html"
+    employee_petty_cashbook_template = "accounts/employee_petty_cashbook.html"
+    company_accounts_template = "accounts/company_accounts.html"
+    petty_cash_book_template = "accounts/petty_cash_book.html"
     roles_permissions_template = "accounts/roles_permissions.html"
     roles_module_detail_template = "accounts/roles_module_detail.html"
     roles_activity_permission_template = "accounts/roles_activity_permission.html"
@@ -3209,6 +3305,12 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_website_template"):
             context.update(self._website_template_context(user))
             response = render(request, self.website_template_template, context)
+        elif resolved.get("is_company_theme"):
+            context.update(self._company_theme_context())
+            response = render(request, self.company_theme_template, context)
+        elif resolved.get("is_letterhead"):
+            context.update(self._letterhead_context(user))
+            response = render(request, self.letterhead_template, context)
         elif resolved.get("is_finance_settings"):
             context.update(self._finance_settings_context(form=None))
             response = render(request, self.finance_settings_template, context)
@@ -3335,12 +3437,29 @@ class RoleWorkspaceView(View):
                     resolved["trail"],
                     client_pk=client_context["selected_client"].pk,
                 )
+                context.update(
+                    self._client_account_topup_context(
+                        request,
+                        client_context["selected_client"],
+                    )
+                )
             template = (
                 self.client_account_detail_template
                 if client_context.get("account_detail")
                 else self.client_accounts_template
             )
             response = render(request, template, context)
+        elif resolved["leaf"] == "topup-client-account":
+            client_param = (request.GET.get("client") or "").strip()
+            trail = [
+                part
+                for part in resolved["trail"]
+                if part != "topup-client-account"
+            ]
+            url = user.workspace_url(*trail)
+            if client_param.isdigit():
+                url = f"{url}?client={client_param}#topup-client-account"
+            return redirect(url)
         elif resolved["leaf"] == "payroll":
             payroll_context = self._payroll_context(request, user, resolved)
             context.update(payroll_context)
@@ -3351,11 +3470,59 @@ class RoleWorkspaceView(View):
             )
             response = render(request, template, context)
         elif resolved["leaf"] == "register-payroll":
-            context.update(self._register_payroll_context(user, resolved))
+            context.update(
+                self._register_payroll_context(user, resolved, request=request)
+            )
             response = render(request, self.register_payroll_template, context)
         elif resolved["leaf"] == "payroll-receipt":
             context.update(self._payroll_receipt_context(request, user, resolved))
             response = render(request, self.payroll_receipt_template, context)
+        elif resolved["leaf"] == "employee-advances":
+            context.update(
+                self._employee_advances_context(request, user, resolved)
+            )
+            self._employee_advances_register_nav(context)
+            response = render(request, self.employee_advances_template, context)
+        elif resolved["leaf"] == "register-advance":
+            return redirect(
+                self._employee_advances_url(user, resolved["trail"]) + "?register=1"
+            )
+        elif resolved["leaf"] == "employee-petty-cashbook":
+            context.update(
+                self._employee_petty_cashbook_context(request, user, resolved)
+            )
+            self._employee_petty_cashbook_register_nav(context)
+            response = render(
+                request, self.employee_petty_cashbook_template, context
+            )
+        elif resolved["leaf"] == "register-petty-cash-expense":
+            return redirect(
+                self._employee_petty_cashbook_url(user, resolved["trail"])
+                + "?register=1"
+            )
+        elif resolved["leaf"] == "company-accounts":
+            context.update(
+                self._company_accounts_context(
+                    request, user, resolved, form=None
+                )
+            )
+            self._company_accounts_register_nav(context)
+            response = render(request, self.company_accounts_template, context)
+        elif resolved["leaf"] == "register-account":
+            return redirect(self._company_accounts_url(user, resolved["trail"]))
+        elif resolved["leaf"] == "topup-account":
+            return redirect(
+                self._company_accounts_url(user, resolved["trail"]) + "?topup=1"
+            )
+        elif resolved["leaf"] == "pay-expense":
+            return redirect(
+                self._company_accounts_url(user, resolved["trail"]) + "?expense=1"
+            )
+        elif resolved["leaf"] == "petty-cash-book":
+            context.update(
+                self._petty_cash_book_context(request, user, resolved)
+            )
+            response = render(request, self.petty_cash_book_template, context)
         elif resolved["is_dashboard"]:
             response = render(request, self.dashboard_template, context)
         elif resolved["leaf"] == "employee-management":
@@ -3427,6 +3594,37 @@ class RoleWorkspaceView(View):
             ).order_by("status", "company_name", "first_name", "last_name", "email")
             context["client_count"] = context["clients"].count()
             response = render(request, self.client_profile_template, context)
+        elif resolved["leaf"] == "matter-management":
+            from .matter_analytics import build_matter_management_analytics
+
+            context["analytics"] = build_matter_management_analytics(request.GET)
+            if request.headers.get("X-Matter-Analytics") == "live":
+                response = render(
+                    request,
+                    "accounts/partials/matter_analytics_results.html",
+                    context,
+                )
+            else:
+                response = render(
+                    request, self.matter_management_template, context
+                )
+        elif resolved["leaf"] == "document-management":
+            from .document_management import build_document_management_browser
+
+            browser = build_document_management_browser(
+                folder_id=(request.GET.get("folder") or "").strip(),
+                role_slug=user.role_slug,
+            )
+            browser["google_drive_settings_url"] = user.workspace_url(
+                "dashboard",
+                "system-settings",
+                "document-settings",
+                "google-drive-settings",
+            )
+            context["drive_browser"] = browser
+            response = render(
+                request, self.document_management_template, context
+            )
         elif resolved["leaf"] == "litigation-matters":
             cases = list(
                 LitigationCase.objects.filter(
@@ -3507,15 +3705,19 @@ class RoleWorkspaceView(View):
             )
         elif resolved["leaf"] == "tasks":
             context.update(self._tasks_context(user, request))
+            apply_notification_badges(context, user)
             response = render(request, self.tasks_template, context)
         elif resolved["leaf"] == "messages":
             context.update(self._messages_context(user, request))
+            apply_notification_badges(context, user)
             response = render(request, self.messages_template, context)
         elif resolved["leaf"] == "calendar":
             context.update(self._calendar_context(user, request))
+            apply_notification_badges(context, user)
             response = render(request, self.calendar_template, context)
         elif resolved["leaf"] == "reminders":
             context.update(self._reminders_context(user, request))
+            apply_notification_badges(context, user)
             response = render(request, self.reminders_template, context)
         else:
             response = render(request, self.page_template, context)
@@ -3593,6 +3795,8 @@ class RoleWorkspaceView(View):
             "company-gallery-new",
             "company-terms",
             "website-template",
+            "company-theme",
+            "letterhead",
             "finance-settings",
             "communication-settings",
             "register-case",
@@ -3600,7 +3804,13 @@ class RoleWorkspaceView(View):
             "register-client",
             "register-employee",
             "generate-invoice",
+            "payroll",
             "register-payroll",
+            "employee-advances",
+            "employee-petty-cashbook",
+            "company-accounts",
+            "petty-cash-book",
+            "client-accounts",
             "latest-news",
         }:
             return redirect(user.dashboard_url)
@@ -3617,6 +3827,12 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "website-template":
             return self._post_website_template(request, user, resolved)
+
+        if resolved["leaf"] == "company-theme":
+            return self._post_company_theme(request, user, resolved)
+
+        if resolved["leaf"] == "letterhead":
+            return self._post_letterhead(request, user, resolved)
 
         if resolved["leaf"] == "finance-settings":
             return self._post_finance_settings(request, user, resolved)
@@ -3659,6 +3875,21 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "register-payroll":
             return self._post_register_payroll(request, user, resolved)
+
+        if resolved["leaf"] == "employee-advances":
+            return self._post_employee_advances(request, user, resolved)
+
+        if resolved["leaf"] == "employee-petty-cashbook":
+            return self._post_employee_petty_cashbook(request, user, resolved)
+
+        if resolved["leaf"] == "company-accounts":
+            return self._post_company_accounts(request, user, resolved)
+
+        if resolved["leaf"] == "petty-cash-book":
+            return self._post_petty_cash_book(request, user, resolved)
+
+        if resolved["leaf"] == "client-accounts":
+            return self._post_client_accounts(request, user, resolved)
 
         if resolved["leaf"] == "latest-news":
             return self._post_latest_news(request, user, resolved)
@@ -3730,10 +3961,20 @@ class RoleWorkspaceView(View):
             about_me_form = AboutMeForm(instance=user)
             if appearance_form.is_valid():
                 appearance_form.save()
-                messages.success(
-                    request,
-                    "Your appearance preferences were saved for your account only.",
-                )
+                # Session-scoped for this user/role only — never writes company theme.
+                sync_session_appearance(request, user)
+                if user.has_personal_theme_override():
+                    messages.success(
+                        request,
+                        "Theme saved for your account. It overrides the company theme "
+                        f"on your {user.get_role_display()} pages only — other roles are unchanged.",
+                    )
+                else:
+                    messages.success(
+                        request,
+                        "Using the company theme on your "
+                        f"{user.get_role_display()} pages.",
+                    )
                 return redirect(user.workspace_url(*resolved["trail"]))
             context.update(
                 self._settings_context(
@@ -4152,12 +4393,29 @@ class RoleWorkspaceView(View):
     ):
         resolved_appearance = appearance_form or AppearanceSettingsForm(instance=user)
         form_theme = resolved_appearance["ui_theme"].value() or user.ui_theme
-        catalog = appearance_catalog(current_theme=form_theme)
-        theme_key = (
+        company = CompanyThemeSetting.get_solo()
+        company_css = company.resolved_theme()
+        company_theme_key = (
             Employee.UiTheme.DEFAULT
-            if (form_theme or "") in {"", "product", "default"}
-            else form_theme
+            if company_css == Employee.UiTheme.PRODUCT
+            else company_css
         )
+        company_theme_label = dict(Employee.UiTheme.choices).get(
+            company_theme_key, "Black & White"
+        )
+        catalog = appearance_catalog(
+            current_theme=form_theme,
+            company_theme_label=company_theme_label,
+            company_theme_preview=company.default_ui_theme,
+        )
+        theme_key = form_theme or Employee.UiTheme.DEFAULT
+        if theme_key == Employee.UiTheme.DEFAULT:
+            current_theme_label = f"Company default ({company_theme_label})"
+        else:
+            current_theme_label = dict(Employee.UiTheme.choices).get(
+                theme_key,
+                "Black & White",
+            )
         return {
             "profile_form": profile_form or ProfileSettingsForm(instance=user),
             "appearance_form": resolved_appearance,
@@ -4174,10 +4432,7 @@ class RoleWorkspaceView(View):
             "font_choices": Employee.UiFont.choices,
             "open_edit_modal": open_edit,
             "open_view_modal": open_view,
-            "current_theme_label": dict(Employee.UiTheme.choices).get(
-                theme_key,
-                "Black & White",
-            ),
+            "current_theme_label": current_theme_label,
             "current_font_label": dict(Employee.UiFont.choices).get(
                 user.workspace_font, "Plex Chambers"
             ),
@@ -4185,6 +4440,10 @@ class RoleWorkspaceView(View):
                 user.workspace_density, "Comfortable"
             ),
             "notification_sound_enabled": bool(user.notification_sound),
+            "company_theme_label": company_theme_label,
+            "has_personal_theme_override": not (
+                (form_theme or "") in {"", "default"}
+            ),
         }
 
     @staticmethod
@@ -4909,6 +5168,137 @@ class RoleWorkspaceView(View):
         return attach_greeting_cookie(response, request)
 
     @staticmethod
+    def _company_theme_context(*, form=None):
+        setting = CompanyThemeSetting.get_solo()
+        resolved_form = form or CompanyThemeForm(instance=setting)
+        form_theme = resolved_form["default_ui_theme"].value() or setting.default_ui_theme
+        catalog = appearance_catalog(
+            current_theme=form_theme,
+            company_mode=True,
+        )
+        theme_key = (
+            Employee.UiTheme.DEFAULT
+            if (form_theme or "") in {"", "product", "default"}
+            else form_theme
+        )
+        return {
+            "company_theme_setting": setting,
+            "form": resolved_form,
+            "theme_groups": catalog["theme_groups"],
+            "theme_count": catalog["theme_count"],
+            "current_theme_label": dict(Employee.UiTheme.choices).get(
+                theme_key, "Black & White"
+            ),
+        }
+
+    def _post_company_theme(self, request, user, resolved):
+        setting = CompanyThemeSetting.get_solo()
+        form = CompanyThemeForm(request.POST, instance=setting)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            choice = form.save(commit=False)
+            choice.updated_by = user
+            choice.save()
+            label = choice.get_default_ui_theme_display()
+            if (choice.default_ui_theme or "") in {
+                Employee.UiTheme.DEFAULT,
+                Employee.UiTheme.PRODUCT,
+            }:
+                label = "Black & White"
+            messages.success(
+                request,
+                f"Company theme set to {label}. Users without a personal theme see this on their role pages; personal Theme settings still override per account.",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._company_theme_context(form=form))
+        response = render(request, self.company_theme_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _letterhead_context(user, *, form=None):
+        from .letterhead import (
+            accent_samples,
+            letterhead_render_context,
+            letterhead_samples,
+        )
+
+        setting = CompanyLetterheadSetting.get_solo()
+        firm = FirmCompanyInformation.get_solo()
+        resolved_form = form or CompanyLetterheadForm(instance=setting)
+        template_value = (
+            resolved_form["template"].value() or setting.template
+        )
+        accent_value = resolved_form["accent"].value() or setting.accent
+        if form is not None and form.is_bound:
+            data = form.data
+            show_logo = data.get("show_logo") in {"on", "true", "1"}
+            show_tagline = data.get("show_tagline") in {"on", "true", "1"}
+            show_address = data.get("show_address") in {"on", "true", "1"}
+            show_contacts = data.get("show_contacts") in {"on", "true", "1"}
+        else:
+            show_logo = bool(setting.show_logo)
+            show_tagline = bool(setting.show_tagline)
+            show_address = bool(setting.show_address)
+            show_contacts = bool(setting.show_contacts)
+        preview_setting = CompanyLetterheadSetting(
+            template=template_value,
+            accent=accent_value,
+            show_logo=show_logo,
+            show_tagline=show_tagline,
+            show_address=show_address,
+            show_contacts=show_contacts,
+        )
+        ctx = letterhead_render_context(firm=firm, setting=preview_setting)
+        return {
+            **ctx,
+            "letterhead_setting": setting,
+            "form": resolved_form,
+            "letterhead_samples": letterhead_samples(current=template_value),
+            "accent_samples": accent_samples(current=accent_value),
+            "company_profile_url": user.workspace_url(
+                "dashboard",
+                "system-settings",
+                "company-information",
+                "company-profile",
+            ),
+            "current_template_label": dict(
+                CompanyLetterheadSetting.Template.choices
+            ).get(template_value, "Classic split"),
+        }
+
+    def _post_letterhead(self, request, user, resolved):
+        setting = CompanyLetterheadSetting.get_solo()
+        form = CompanyLetterheadForm(request.POST, instance=setting)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            choice = form.save(commit=False)
+            choice.updated_by = user
+            choice.save()
+            messages.success(
+                request,
+                f"Letterhead saved as {choice.get_template_display()} "
+                f"({choice.get_accent_display()}). It will appear on invoices and receipts.",
+            )
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._letterhead_context(user, form=form))
+        response = render(request, self.letterhead_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
     def _finance_settings_context(*, form=None):
         setting = FinanceSettings.get_solo()
         from .mpesa import MPESA_CALLBACK_PATH, is_valid_mpesa_callback_url
@@ -5142,6 +5532,231 @@ class RoleWorkspaceView(View):
             "client_search_url": reverse("accounts:workspace_client_search"),
         }
 
+    client_topup_session_key = "client_account_topup_stk"
+
+    @classmethod
+    def _client_account_detail_url(cls, user, trail, client):
+        clean = [
+            part
+            for part in trail
+            if part and part not in {"generate-invoice", "topup-client-account"}
+        ]
+        if not clean or clean[-1] != "client-accounts":
+            clean = extend_page_trail(clean, "client-accounts")
+        return f"{user.workspace_url(*clean)}?client={client.pk}"
+
+    @classmethod
+    def _client_account_topup_context(
+        cls,
+        request,
+        client,
+        *,
+        form=None,
+        open_topup_modal=False,
+    ):
+        from .mpesa import mpesa_configured, mpesa_stk_allowed
+
+        if form is None:
+            form = TopupClientAccountForm(client=client)
+        stk_push = request.session.get(cls.client_topup_session_key) or {}
+        if stk_push.get("client_id") != client.pk:
+            stk_push = {}
+        open_modal = open_topup_modal or bool(stk_push) or (
+            (request.GET.get("topup") or "").strip() in {"1", "true", "yes"}
+        )
+        recent_topups = list(
+            client.account_topups.select_related("created_by").order_by(
+                "-created_at", "-id"
+            )[:8]
+        )
+        return {
+            "topup_form": form,
+            "open_topup_modal": open_modal,
+            "stk_push": stk_push or None,
+            "stk_poll_url": reverse(
+                "accounts:client_account_topup_stk_status",
+                kwargs={"role": request.user.role_slug, "client_id": client.pk},
+            )
+            if getattr(request, "user", None) and getattr(request.user, "role_slug", None)
+            else "",
+            "mpesa_live": mpesa_configured(),
+            "mpesa_stk_allowed": mpesa_stk_allowed(),
+            "recent_topups": recent_topups,
+        }
+
+    def _post_client_accounts(self, request, user, resolved):
+        action = (request.POST.get("action") or "").strip()
+        client_param = (
+            request.POST.get("client") or request.GET.get("client") or ""
+        ).strip()
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if not client_param.isdigit():
+            messages.error(request, "Select a client account first.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        client = Client.objects.filter(
+            pk=int(client_param), status=Client.Status.ACTIVE
+        ).first()
+        if client is None:
+            messages.error(request, "Client account not found.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        detail_url = self._client_account_detail_url(user, resolved["trail"], client)
+
+        if action != "topup-client-account":
+            messages.error(request, "Unknown action.")
+            return redirect(detail_url)
+
+        form = TopupClientAccountForm(request.POST, client=client)
+        if not form.is_valid():
+            client_context = self._client_accounts_context(
+                request, user=user, resolved=resolved
+            )
+            context.update(client_context)
+            context["page_nav_items"] = client_account_page_nav_items(
+                user,
+                resolved["trail"],
+                client_pk=client.pk,
+            )
+            context.update(
+                self._client_account_topup_context(
+                    request,
+                    client,
+                    form=form,
+                    open_topup_modal=True,
+                )
+            )
+            response = render(
+                request, self.client_account_detail_template, context
+            )
+            return attach_greeting_cookie(response, request)
+
+        amount = form.cleaned_data["amount"]
+        note = form.cleaned_data["note"]
+        method = form.cleaned_data["method"]
+
+        if method == ClientAccountTopup.Method.MANUAL:
+            result = client.apply_inbound_payment(
+                amount,
+                note=note,
+                method=ClientAccountTopup.Method.MANUAL,
+                created_by=user,
+            )
+            parts = [f"Payment of KES {result['total']:,.2f} recorded."]
+            if result["applied_to_invoices"] > 0:
+                parts.append(
+                    f"KES {result['applied_to_invoices']:,.2f} applied to "
+                    f"{result['invoices_updated']} invoice(s) "
+                    f"(income to Main Client Accounts)."
+                )
+            if result["credit_added"] > 0:
+                parts.append(
+                    f"KES {result['credit_added']:,.2f} added as credit "
+                    f"(balance KES {result['credit_balance']:,.2f})."
+                )
+            elif result["applied_to_invoices"] > 0:
+                parts.append(
+                    f"Credit balance remains KES {result['credit_balance']:,.2f}."
+                )
+            messages.success(request, " ".join(parts))
+            return redirect(detail_url)
+
+        # M-Pesa STK prompt
+        from .mpesa import (
+            MpesaError,
+            create_stk_request,
+            initiate_stk_push,
+            mpesa_configured,
+            mpesa_stk_allowed,
+        )
+
+        if not mpesa_stk_allowed():
+            messages.error(
+                request,
+                "M-Pesa STK Push is not enabled. Turn it on in Finance Settings.",
+            )
+            return redirect(detail_url + "#topup-client-account")
+
+        phone = form.cleaned_data["phone"]
+        try:
+            result = initiate_stk_push(
+                phone=phone,
+                amount=amount,
+                account_reference=f"CLTOP{client.pk}",
+                description=f"Payment {client.get_full_name()}"[:20],
+                callback_url=getattr(settings, "MPESA_CALLBACK_URL", "") or "",
+            )
+            stk = create_stk_request(
+                result=result,
+                client=client,
+                purpose=MpesaStkRequest.Purpose.CLIENT_TOPUP,
+            )
+            ClientAccountTopup.objects.create(
+                client=client,
+                amount=amount,
+                method=ClientAccountTopup.Method.MPESA,
+                status=ClientAccountTopup.Status.PENDING,
+                note=note or "M-Pesa client payment",
+                phone=phone,
+                stk_request=stk,
+                created_by=user,
+            )
+        except MpesaError as exc:
+            messages.error(request, str(exc))
+            client_context = self._client_accounts_context(
+                request, user=user, resolved=resolved
+            )
+            context.update(client_context)
+            context["page_nav_items"] = client_account_page_nav_items(
+                user,
+                resolved["trail"],
+                client_pk=client.pk,
+            )
+            context.update(
+                self._client_account_topup_context(
+                    request,
+                    client,
+                    form=form,
+                    open_topup_modal=True,
+                )
+            )
+            response = render(
+                request, self.client_account_detail_template, context
+            )
+            return attach_greeting_cookie(response, request)
+
+        request.session[self.client_topup_session_key] = {
+            "client_id": client.pk,
+            "checkout_request_id": stk.checkout_request_id,
+            "merchant_request_id": stk.merchant_request_id,
+            "phone": stk.phone,
+            "amount": str(stk.amount),
+            "simulated": stk.simulated,
+            "stk_status": stk.status,
+            "result_code": "",
+            "result_desc": result.get("customer_message")
+            or "STK push sent. Enter the M-Pesa PIN on the phone.",
+            "mpesa_receipt": "",
+            "invoice_status_label": f"Credit KES {client.credit_balance:,.2f}",
+        }
+        request.session.modified = True
+        live = mpesa_configured()
+        messages.info(
+            request,
+            (
+                f"STK push sent to {phone} for KES {amount:,.2f}."
+                if live
+                else f"Simulated STK push sent to {phone} for KES {amount:,.2f}."
+            ),
+        )
+        return redirect(detail_url + "#topup-client-account")
+
     @staticmethod
     def _payroll_url(user, trail, *, employee_id=None):
         clean = [
@@ -5175,8 +5790,17 @@ class RoleWorkspaceView(View):
             "payroll-receipt",
         )
 
+        open_register = (request.GET.get("register") or "").strip() in {
+            "1",
+            "true",
+            "yes",
+        }
         employee_param = (request.GET.get("employee") or "").strip()
-        if employee_param.isdigit():
+        selected_register_employee_id = (
+            int(employee_param) if employee_param.isdigit() else None
+        )
+
+        if employee_param.isdigit() and not open_register:
             detail = cls._employee_payroll_detail_context(
                 int(employee_param),
                 user=user,
@@ -5184,6 +5808,7 @@ class RoleWorkspaceView(View):
                 payroll_base_url=payroll_base_url,
                 register_payroll_url=register_payroll_url,
                 payroll_receipt_base_url=payroll_receipt_base_url,
+                request=request,
             )
             if detail is not None:
                 return detail
@@ -5241,6 +5866,12 @@ class RoleWorkspaceView(View):
             row for row in employee_rows if row["payroll_status"] != "not_registered"
         ]
 
+        register_context = cls._register_payroll_context(
+            user,
+            resolved,
+            preferred_employee_id=selected_register_employee_id,
+        )
+
         return {
             "employee_rows": employee_rows,
             "unregistered_rows": unregistered_rows,
@@ -5251,6 +5882,9 @@ class RoleWorkspaceView(View):
             "payroll_run_count": payroll_run_count,
             "register_payroll_url": register_payroll_url,
             "payroll_receipt_base_url": payroll_receipt_base_url,
+            "open_register_modal": open_register,
+            "selected_register_employee_id": selected_register_employee_id or "",
+            **register_context,
         }
 
     @staticmethod
@@ -5262,7 +5896,12 @@ class RoleWorkspaceView(View):
         payroll_base_url,
         register_payroll_url,
         payroll_receipt_base_url,
+        request=None,
+        salary_form=None,
+        open_update_salary_modal=False,
     ):
+        from decimal import Decimal
+
         employee = (
             Employee.objects.filter(
                 pk=employee_id,
@@ -5279,7 +5918,7 @@ class RoleWorkspaceView(View):
 
         payroll_runs = list(
             PayrollRun.objects.filter(employee=employee)
-            .prefetch_related("deductions", "payments")
+            .prefetch_related("deductions", "payments", "salary_advances")
             .order_by("-pay_period_start", "-registered_at")
         )
         payments = list(
@@ -5288,12 +5927,72 @@ class RoleWorkspaceView(View):
             .order_by("-paid_at")
         )
 
+        zero = Decimal("0.00")
+        total_paid = sum((p.amount_paid for p in payments), zero)
+        outstanding_net = sum(
+            (
+                run.amount_payable()
+                for run in payroll_runs
+                if run.status == PayrollRun.Status.REGISTERED
+            ),
+            zero,
+        )
+        paid_run_count = sum(
+            1 for run in payroll_runs if run.status == PayrollRun.Status.PAID
+        )
+        awaiting_run_count = sum(
+            1 for run in payroll_runs if run.status == PayrollRun.Status.REGISTERED
+        )
+
+        run_rows = []
+        for run in payroll_runs:
+            latest_payment = next(iter(run.payments.all()), None)
+            advance_total = run.outstanding_advance_total()
+            run_rows.append(
+                {
+                    "run": run,
+                    "latest_payment": latest_payment,
+                    "deductions": list(run.deductions.all()),
+                    "advance_total": advance_total,
+                    "amount_payable": run.amount_payable(),
+                    "net_pay": run.net_pay,
+                }
+            )
+
+        # One payable session: latest registered (unpaid) run for this employee.
+        payable_row = next(
+            (
+                row
+                for row in run_rows
+                if row["run"].status == PayrollRun.Status.REGISTERED
+            ),
+            None,
+        )
+
+        open_update_salary = open_update_salary_modal
+        if request is not None and not open_update_salary:
+            open_update_salary = (request.GET.get("update_salary") or "").strip() in {
+                "1",
+                "true",
+                "yes",
+            }
+        if salary_form is None:
+            salary_form = UpdateEmployeeSalaryForm(employee)
+
         return {
             "employee_detail": employee,
             "selected_employee": employee,
             "page_title": f"{employee.get_full_name() or employee.login_code} — Payroll account",
             "payroll_runs": payroll_runs,
+            "payroll_run_rows": run_rows,
+            "payable_row": payable_row,
+            "salary_form": salary_form,
+            "open_update_salary_modal": open_update_salary,
             "payments": payments,
+            "total_paid": total_paid,
+            "outstanding_net": outstanding_net,
+            "paid_run_count": paid_run_count,
+            "awaiting_run_count": awaiting_run_count,
             "payroll_url": payroll_base_url,
             "back_url": payroll_base_url,
             "register_payroll_url": register_payroll_url,
@@ -5303,15 +6002,83 @@ class RoleWorkspaceView(View):
     def _post_payroll(self, request, user, resolved):
         from decimal import Decimal, InvalidOperation
 
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
         action = (request.POST.get("action") or "").strip()
         return_employee_id = (request.POST.get("return_employee_id") or "").strip()
 
-        def payroll_return_url():
-            if return_employee_id.isdigit():
+        def payroll_return_url(*, employee_id=None):
+            target = employee_id
+            if target is None and return_employee_id.isdigit():
+                target = int(return_employee_id)
+            if target:
                 return self._payroll_url(
-                    user, resolved["trail"], employee_id=int(return_employee_id)
+                    user, resolved["trail"], employee_id=int(target)
                 )
             return self._payroll_url(user, resolved["trail"])
+
+        if action == "update-salary":
+            employee = get_object_or_404(Employee, pk=return_employee_id)
+            form = UpdateEmployeeSalaryForm(employee, request.POST)
+            if form.is_valid():
+                try:
+                    payroll_run = form.save(registered_by=user)
+                except DjangoValidationError as exc:
+                    messages.error(
+                        request,
+                        "; ".join(exc.messages)
+                        if hasattr(exc, "messages")
+                        else str(exc),
+                    )
+                    detail_url = payroll_return_url(employee_id=employee.pk)
+                    sep = "&" if "?" in detail_url else "?"
+                    return redirect(f"{detail_url}{sep}update_salary=1")
+                messages.success(
+                    request,
+                    f"Salary updated to KES {payroll_run.basic_salary:,.2f}. "
+                    f"New payroll run registered (net KES {payroll_run.net_pay:,.2f}).",
+                )
+                return redirect(payroll_return_url(employee_id=employee.pk))
+
+            payroll_base_url = self._payroll_url(user, resolved["trail"])
+            register_payroll_url = user.workspace_url(
+                "dashboard",
+                "finance-billing",
+                "employee-accounts",
+                "payroll",
+                "register-payroll",
+            )
+            payroll_receipt_base_url = user.workspace_url(
+                "dashboard",
+                "finance-billing",
+                "employee-accounts",
+                "payroll",
+                "payroll-receipt",
+            )
+            context = workspace_context(
+                user,
+                request=request,
+                page_title=resolved["page_title"],
+                page_trail=resolved["trail"],
+                active_page=resolved["leaf"],
+            )
+            detail = self._employee_payroll_detail_context(
+                employee.pk,
+                user=user,
+                resolved=resolved,
+                payroll_base_url=payroll_base_url,
+                register_payroll_url=register_payroll_url,
+                payroll_receipt_base_url=payroll_receipt_base_url,
+                salary_form=form,
+                open_update_salary_modal=True,
+            )
+            if detail is None:
+                return redirect(payroll_return_url())
+            context.update(detail)
+            response = render(
+                request, self.employee_payroll_detail_template, context
+            )
+            return attach_greeting_cookie(response, request)
 
         if action != "pay-payroll":
             return redirect(payroll_return_url())
@@ -5344,6 +6111,24 @@ class RoleWorkspaceView(View):
             messages.error(request, "Enter a payment reference code.")
             return redirect(payroll_return_url())
 
+        deduct_advances = (request.POST.get("deduct_advances") or "").strip() in {
+            "1",
+            "true",
+            "on",
+            "yes",
+        }
+        amount_due = payroll_run.amount_payable(deduct_advances=deduct_advances)
+        if amount_paid > amount_due:
+            messages.error(
+                request,
+                (
+                    f"Amount due after advances is KES {amount_due:,.2f}."
+                    if deduct_advances
+                    else f"Amount due is KES {amount_due:,.2f}."
+                ),
+            )
+            return redirect(payroll_return_url())
+
         payment = PayrollPayment.objects.create(
             receipt_number=PayrollPayment.next_receipt_number(),
             payroll_run=payroll_run,
@@ -5354,6 +6139,16 @@ class RoleWorkspaceView(View):
 
         payroll_run.status = PayrollRun.Status.PAID
         payroll_run.save(update_fields=["status", "updated_at"])
+
+        if deduct_advances:
+            from django.utils import timezone as dj_timezone
+
+            payroll_run.salary_advances.filter(
+                status=EmployeeAdvance.Status.OUTSTANDING
+            ).update(
+                status=EmployeeAdvance.Status.RECOVERED,
+                recovered_at=dj_timezone.now(),
+            )
 
         receipt_url = user.workspace_url(
             "dashboard",
@@ -5381,22 +6176,31 @@ class RoleWorkspaceView(View):
         )
         firm = FirmCompanyInformation.get_solo()
         employee = payment.payroll_run.employee
+        from .letterhead import letterhead_render_context
+
         return {
+            **letterhead_render_context(firm=firm),
             "payment": payment,
             "run": payment.payroll_run,
             "employee": employee,
-            "firm": firm,
             "payroll_url": self._payroll_url(
                 user, resolved["trail"], employee_id=employee.pk
             ),
         }
 
     @classmethod
-    def _register_payroll_context(cls, user, resolved, form=None):
+    def _register_payroll_context(
+        cls, user, resolved, form=None, *, preferred_employee_id=None, request=None
+    ):
         import json
 
         from .forms import default_pay_period
         from .payroll_calc import payroll_rate_defaults_json
+
+        if preferred_employee_id is None and request is not None:
+            raw = (request.GET.get("employee") or "").strip()
+            if raw.isdigit():
+                preferred_employee_id = int(raw)
 
         period_start, period_end, frequency = default_pay_period()
         if form is not None:
@@ -5434,13 +6238,32 @@ class RoleWorkspaceView(View):
             )
             registered_map.setdefault(key, []).append(row["employee_id"])
 
+        if form is None:
+            initial = {}
+            preferred = None
+            if preferred_employee_id:
+                preferred = employees.filter(pk=preferred_employee_id).first()
+                if preferred is not None:
+                    initial["employee"] = preferred.pk
+                    if preferred.monthly_salary is not None:
+                        initial["basic_salary"] = preferred.monthly_salary
+            form = RegisterPayrollForm(initial=initial if initial else None)
+
         return {
-            "form": form or RegisterPayrollForm(),
+            "form": form,
             "payroll_url": cls._payroll_url(user, resolved["trail"]),
+            "register_payroll_url": user.workspace_url(
+                "dashboard",
+                "finance-billing",
+                "employee-accounts",
+                "payroll",
+                "register-payroll",
+            ),
             "employee_choices_json": json.dumps(employee_choices),
             "registered_payroll_map_json": json.dumps(registered_map),
             "payroll_rate_defaults_json": json.dumps(payroll_rate_defaults_json()),
             "no_eligible_employees": not employees.exists(),
+            "selected_register_employee_id": preferred_employee_id or "",
         }
 
     def _post_register_payroll(self, request, user, resolved):
@@ -5471,11 +6294,889 @@ class RoleWorkspaceView(View):
                 f"Payroll registered for {employee.get_full_name()} "
                 f"(net KES {payroll_run.net_pay:,.2f}).",
             )
-            return redirect(self._payroll_url(user, resolved["trail"]))
+            return redirect(
+                self._payroll_url(
+                    user, resolved["trail"], employee_id=employee.pk
+                )
+            )
 
-        context.update(self._register_payroll_context(user, resolved, form=form))
+        context.update(
+            self._register_payroll_context(
+                user,
+                resolved,
+                form=form,
+                preferred_employee_id=(
+                    int(form.data.get("employee"))
+                    if str(form.data.get("employee") or "").isdigit()
+                    else None
+                ),
+            )
+        )
         response = render(request, self.register_payroll_template, context)
         return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _employee_advances_url(user, trail):
+        clean = [
+            part
+            for part in trail
+            if part and part not in {"register-advance"}
+        ]
+        if not clean or clean[-1] != "employee-advances":
+            clean = extend_page_trail(clean, "employee-advances")
+        return user.workspace_url(*clean)
+
+    @staticmethod
+    def _employee_advances_register_nav(context):
+        for item in context.get("page_nav_items") or []:
+            if item.get("slug") == "register-advance":
+                item["url"] = "#register-employee-advance"
+                item["active"] = False
+
+    @classmethod
+    def _employee_advances_context(
+        cls,
+        request,
+        user,
+        resolved,
+        *,
+        form=None,
+        open_register_modal=False,
+    ):
+        import json
+        from decimal import Decimal
+
+        preferred_run = (request.GET.get("payroll_run") or "").strip()
+        preferred_payroll_run_id = (
+            int(preferred_run) if preferred_run.isdigit() else None
+        )
+
+        if form is None:
+            form = RegisterEmployeeAdvanceForm(
+                preferred_payroll_run_id=preferred_payroll_run_id
+            )
+
+        registered_runs = list(
+            PayrollRun.objects.filter(status=PayrollRun.Status.REGISTERED)
+            .select_related("employee")
+            .prefetch_related("salary_advances")
+            .order_by(
+                "employee__first_name",
+                "employee__last_name",
+                "-pay_period_start",
+                "-id",
+            )
+        )
+
+        # One row per employee (latest registered unpaid run).
+        employee_rows = []
+        seen_employees = set()
+        for run in registered_runs:
+            if run.employee_id in seen_employees:
+                continue
+            seen_employees.add(run.employee_id)
+            salary = run.advance_salary_basis()
+            half_salary = run.half_salary_cap()
+            payable = run.amount_payable()
+            max_advance = run.max_advance_amount()
+            eligible = run.is_advance_eligible()
+            employee_rows.append(
+                {
+                    "employee": run.employee,
+                    "payroll_run": run,
+                    "salary": salary,
+                    "half_salary": half_salary,
+                    "payable": payable,
+                    "max_advance": max_advance,
+                    "eligible": eligible,
+                    "eligibility_label": (
+                        "Eligible" if eligible else "Not eligible"
+                    ),
+                    "eligibility_reason": (
+                        ""
+                        if eligible
+                        else (
+                            "Salary must be above half of the remaining payroll amount, "
+                            "and advance headroom must remain."
+                        )
+                    ),
+                }
+            )
+
+        eligible_rows = [row for row in employee_rows if row["eligible"]]
+        ineligible_rows = [row for row in employee_rows if not row["eligible"]]
+
+        advances = list(
+            EmployeeAdvance.objects.select_related(
+                "employee",
+                "payroll_run",
+                "recorded_by",
+            ).order_by("-created_at", "-id")
+        )
+        outstanding = [
+            row
+            for row in advances
+            if row.status == EmployeeAdvance.Status.OUTSTANDING
+        ]
+        total_outstanding = sum(
+            (row.amount for row in outstanding), Decimal("0.00")
+        )
+        open_modal = open_register_modal or (
+            (request.GET.get("register") or "").strip() in {"1", "true", "yes"}
+        ) or preferred_payroll_run_id is not None
+
+        return {
+            "form": form,
+            "employee_rows": employee_rows,
+            "eligible_rows": eligible_rows,
+            "ineligible_rows": ineligible_rows,
+            "eligible_employee_count": len(eligible_rows),
+            "employee_count": len(employee_rows),
+            "advances": advances,
+            "advance_count": len(advances),
+            "outstanding_count": len(outstanding),
+            "total_outstanding": total_outstanding,
+            "open_register_modal": open_modal,
+            "selected_payroll_run_id": preferred_payroll_run_id or "",
+            "no_registered_payroll": not employee_rows,
+            "no_eligible_employees": not eligible_rows,
+            "payroll_payable_map_json": json.dumps(
+                getattr(form, "payroll_payable_map", {}) or {}
+            ),
+            "payroll_max_advance_map_json": json.dumps(
+                getattr(form, "payroll_max_advance_map", {}) or {}
+            ),
+            "payroll_salary_map_json": json.dumps(
+                getattr(form, "payroll_salary_map", {}) or {}
+            ),
+            "advances_url": cls._employee_advances_url(user, resolved["trail"]),
+        }
+
+    def _post_employee_advances(self, request, user, resolved):
+        action = (request.POST.get("action") or "").strip()
+        advances_url = self._employee_advances_url(user, resolved["trail"])
+
+        if action != "register-advance":
+            return redirect(advances_url)
+
+        form = RegisterEmployeeAdvanceForm(request.POST)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+
+        if form.is_valid():
+            advance = form.save(recorded_by=user)
+            messages.success(
+                request,
+                f"Advance of KES {advance.amount:,.2f} registered for "
+                f"{advance.employee.get_full_name()}. "
+                f"Remaining payroll payable is KES "
+                f"{advance.payroll_run.amount_payable():,.2f}.",
+            )
+            return redirect(advances_url)
+
+        context.update(
+            self._employee_advances_context(
+                request,
+                user,
+                resolved,
+                form=form,
+                open_register_modal=True,
+            )
+        )
+        self._employee_advances_register_nav(context)
+        response = render(request, self.employee_advances_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _employee_petty_cashbook_url(user, trail):
+        clean = [
+            part
+            for part in trail
+            if part and part not in {"register-petty-cash-expense"}
+        ]
+        if not clean or clean[-1] != "employee-petty-cashbook":
+            clean = extend_page_trail(clean, "employee-petty-cashbook")
+        return user.workspace_url(*clean)
+
+    @staticmethod
+    def _employee_petty_cashbook_register_nav(context):
+        for item in context.get("page_nav_items") or []:
+            if item.get("slug") == "register-petty-cash-expense":
+                item["url"] = "#register-petty-cash-expense"
+                item["active"] = False
+
+    @classmethod
+    def _employee_petty_cashbook_context(
+        cls,
+        request,
+        user,
+        resolved,
+        *,
+        form=None,
+        open_register_modal=False,
+    ):
+        if form is None:
+            form = RegisterPettyCashExpenseForm(submitted_by=user)
+
+        expense_requests = list(
+            PettyCashExpenseRequest.objects.filter(employee=user)
+            .select_related(
+                "employee",
+                "submitted_by",
+                "reviewed_by",
+            )
+            .order_by("-created_at", "-id")[:100]
+        )
+        pending = [
+            row
+            for row in expense_requests
+            if row.status == PettyCashExpenseRequest.Status.PENDING
+        ]
+        approved = [
+            row
+            for row in expense_requests
+            if row.status == PettyCashExpenseRequest.Status.APPROVED
+        ]
+        total_pending = sum((row.amount for row in pending), Decimal("0.00"))
+        total_approved = sum((row.amount for row in approved), Decimal("0.00"))
+        open_modal = open_register_modal or (
+            (request.GET.get("register") or "").strip() in {"1", "true", "yes"}
+        )
+
+        CompanyExpenseAccount.ensure_default_accounts()
+        try:
+            petty_book = CompanyExpenseAccount.get_petty_cash_book()
+            petty_balance = petty_book.balance
+        except CompanyExpenseAccount.DoesNotExist:
+            petty_balance = Decimal("0.00")
+
+        return {
+            "form": form,
+            "expense_requests": expense_requests,
+            "expense_request_count": len(expense_requests),
+            "pending_count": len(pending),
+            "total_pending": total_pending,
+            "total_approved": total_approved,
+            "petty_cash_balance": petty_balance,
+            "open_register_modal": open_modal,
+            "petty_cashbook_url": cls._employee_petty_cashbook_url(
+                user, resolved["trail"]
+            ),
+        }
+
+    def _post_employee_petty_cashbook(self, request, user, resolved):
+        action = (request.POST.get("action") or "").strip()
+        page_url = self._employee_petty_cashbook_url(user, resolved["trail"])
+
+        if action != "register-petty-cash-expense":
+            return redirect(page_url)
+
+        form = RegisterPettyCashExpenseForm(request.POST, submitted_by=user)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+
+        if form.is_valid():
+            expense = form.save(submitted_by=user)
+            messages.success(
+                request,
+                f"Expense of KES {expense.amount:,.2f} submitted. "
+                "It is pending approval in the Petty Cash Book.",
+            )
+            return redirect(page_url)
+
+        context.update(
+            self._employee_petty_cashbook_context(
+                request,
+                user,
+                resolved,
+                form=form,
+                open_register_modal=True,
+            )
+        )
+        self._employee_petty_cashbook_register_nav(context)
+        response = render(
+            request, self.employee_petty_cashbook_template, context
+        )
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_accounts_url(user, trail):
+        clean = [
+            part
+            for part in trail
+            if part
+            and part
+            not in {
+                "register-account",
+                "topup-account",
+                "pay-expense",
+                "petty-cash-book",
+            }
+        ]
+        if not clean or clean[-1] != "company-accounts":
+            clean = extend_page_trail(clean, "company-accounts")
+        return user.workspace_url(*clean)
+
+    @staticmethod
+    def _company_accounts_register_nav(context):
+        for item in context.get("page_nav_items") or []:
+            if item.get("slug") == "register-account":
+                item["url"] = "#register-expense-account"
+                item["active"] = False
+            elif item.get("slug") == "topup-account":
+                item["url"] = "#topup-expense-account"
+                item["active"] = False
+            elif item.get("slug") == "pay-expense":
+                item["url"] = "#pay-company-expense"
+                item["active"] = False
+
+    @classmethod
+    def _company_accounts_context(
+        cls,
+        request,
+        user,
+        resolved,
+        *,
+        form=None,
+        topup_form=None,
+        expense_form=None,
+        open_register_modal=False,
+        open_topup_modal=False,
+        open_expense_modal=False,
+    ):
+        if form is None:
+            form = RegisterCompanyAccountForm()
+        if topup_form is None:
+            topup_form = TopupCompanyAccountForm()
+        if expense_form is None:
+            expense_form = PayCompanyExpenseForm()
+        from django.db.models import Case, IntegerField, When
+
+        CompanyExpenseAccount.ensure_default_accounts()
+        accounts = list(
+            CompanyExpenseAccount.objects.select_related("created_by")
+            .annotate(
+                _default_rank=Case(
+                    When(system_key__isnull=False, then=Value(0)),
+                    default=Value(1),
+                    output_field=IntegerField(),
+                )
+            )
+            .order_by("_default_rank", "name", "id")
+        )
+        total_balance = sum(
+            (account.balance for account in accounts),
+            Decimal("0.00"),
+        )
+        recent_expenses = list(
+            CompanyExpensePayment.objects.select_related(
+                "account", "created_by", "employee"
+            ).order_by("-created_at", "-id")[:12]
+        )
+        recent_topups = list(
+            CompanyAccountTopup.objects.select_related(
+                "account",
+                "source_client",
+                "source_company_account",
+                "created_by",
+            ).order_by("-created_at", "-id")[:12]
+        )
+        open_modal = open_register_modal or (
+            (request.GET.get("register") or "").strip() in {"1", "true", "yes"}
+        )
+        open_topup = open_topup_modal or (
+            (request.GET.get("topup") or "").strip() in {"1", "true", "yes"}
+        )
+        open_expense = open_expense_modal or (
+            (request.GET.get("expense") or "").strip() in {"1", "true", "yes"}
+        )
+        import json
+
+        return {
+            "form": form,
+            "topup_form": topup_form,
+            "expense_form": expense_form,
+            "expense_payroll_net_map_json": json.dumps(
+                getattr(expense_form, "payroll_net_map", {}) or {}
+            ),
+            "expense_accounts": accounts,
+            "expense_account_count": len(accounts),
+            "total_account_balance": total_balance,
+            "recent_account_topups": recent_topups,
+            "recent_expense_payments": recent_expenses,
+            "open_register_modal": open_modal,
+            "open_topup_modal": open_topup,
+            "open_expense_modal": open_expense,
+            "company_accounts_url": cls._company_accounts_url(
+                user, resolved["trail"]
+            ),
+            "petty_cash_book_url": cls._petty_cash_book_url(
+                user, resolved["trail"]
+            ),
+        }
+
+    def _post_company_accounts(self, request, user, resolved):
+        action = (request.POST.get("action") or "").strip()
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+
+        if action == "pay-company-expense":
+            expense_form = PayCompanyExpenseForm(request.POST)
+            if expense_form.is_valid():
+                account = expense_form.cleaned_data["account"]
+                amount = expense_form.cleaned_data["amount"]
+                expense_type = expense_form.cleaned_data["expense_type"]
+                employee = expense_form.cleaned_data.get("employee")
+                payroll_run = expense_form.cleaned_data.get("payroll_run")
+                description = expense_form.cleaned_data["description"]
+                try:
+                    with transaction.atomic():
+                        locked = CompanyExpenseAccount.objects.select_for_update().get(
+                            pk=account.pk
+                        )
+                        balance = (locked.balance or Decimal("0.00")).quantize(
+                            Decimal("0.01")
+                        )
+                        if amount > balance:
+                            raise ValidationError(
+                                f"Account balance is only KES {balance:,.2f}."
+                            )
+
+                        payroll_payment = None
+                        if (
+                            expense_type == CompanyExpensePayment.ExpenseType.PAYROLL
+                            and payroll_run is not None
+                        ):
+                            run = (
+                                PayrollRun.objects.select_for_update()
+                                .select_related("employee")
+                                .get(pk=payroll_run.pk)
+                            )
+                            if run.status == PayrollRun.Status.PAID:
+                                raise ValidationError(
+                                    "That payroll run is already marked as paid."
+                                )
+                            payroll_payment = PayrollPayment.objects.create(
+                                receipt_number=PayrollPayment.next_receipt_number(),
+                                payroll_run=run,
+                                amount_paid=amount,
+                                reference_code=(
+                                    f"EXP-{locked.name[:24]}-{timezone.now():%Y%m%d%H%M}"
+                                )[:100],
+                                recorded_by=user,
+                                notes=description,
+                            )
+                            run.status = PayrollRun.Status.PAID
+                            run.save(update_fields=["status", "updated_at"])
+                            employee = run.employee
+
+                        CompanyExpenseAccount.objects.filter(pk=locked.pk).update(
+                            balance=F("balance") - amount
+                        )
+                        locked.refresh_from_db(fields=["balance"])
+                        CompanyExpensePayment.objects.create(
+                            account=locked,
+                            expense_type=expense_type,
+                            description=description,
+                            amount=amount,
+                            balance_after=locked.balance,
+                            employee=employee,
+                            payroll_payment=payroll_payment,
+                            created_by=user,
+                        )
+                except ValidationError as exc:
+                    message = (
+                        "; ".join(exc.messages)
+                        if hasattr(exc, "messages")
+                        else str(exc)
+                    )
+                    expense_form.add_error("amount", message)
+                else:
+                    if (
+                        expense_type == CompanyExpensePayment.ExpenseType.PAYROLL
+                        and employee is not None
+                    ):
+                        messages.success(
+                            request,
+                            f"Payroll payment of KES {amount:,.2f} recorded for "
+                            f"{employee.get_full_name() or employee.login_code}. "
+                            f"Deducted from “{locked.name}” "
+                            f"(balance now KES {locked.balance:,.2f}).",
+                        )
+                        return redirect(
+                            self._payroll_url(
+                                user,
+                                ["dashboard", "finance-billing", "employee-accounts", "payroll"],
+                                employee_id=employee.pk,
+                            )
+                        )
+                    messages.success(
+                        request,
+                        f"Paid KES {amount:,.2f} from “{locked.name}”. "
+                        f"Balance is now KES {locked.balance:,.2f}.",
+                    )
+                    return redirect(
+                        self._company_accounts_url(user, resolved["trail"])
+                    )
+
+            context.update(
+                self._company_accounts_context(
+                    request,
+                    user,
+                    resolved,
+                    expense_form=expense_form,
+                    open_expense_modal=True,
+                )
+            )
+            self._company_accounts_register_nav(context)
+            response = render(request, self.company_accounts_template, context)
+            return attach_greeting_cookie(response, request)
+
+        if action == "topup-company-account":
+            topup_form = TopupCompanyAccountForm(request.POST)
+            if topup_form.is_valid():
+                account = topup_form.cleaned_data["account"]
+                amount = topup_form.cleaned_data["amount"]
+                source_type = topup_form.cleaned_data["source_type"]
+                source_client = topup_form.cleaned_data.get("source_client")
+                source_company = topup_form.cleaned_data.get(
+                    "source_company_account"
+                )
+                try:
+                    with transaction.atomic():
+                        locked = CompanyExpenseAccount.objects.select_for_update().get(
+                            pk=account.pk
+                        )
+                        source_label = ""
+
+                        if source_type == CompanyAccountTopup.SourceType.CLIENT:
+                            if source_client is None:
+                                raise ValidationError("Select a client source.")
+                            client_locked = Client.objects.select_for_update().get(
+                                pk=source_client.pk
+                            )
+                            credit = (
+                                client_locked.credit_balance or Decimal("0.00")
+                            ).quantize(Decimal("0.01"))
+                            if amount > credit:
+                                raise ValidationError(
+                                    f"Client credit is only KES {credit:,.2f}."
+                                )
+                            Client.objects.filter(pk=client_locked.pk).update(
+                                credit_balance=F("credit_balance") - amount
+                            )
+                            client_locked.refresh_from_db(fields=["credit_balance"])
+                            source_label = (
+                                f" Moved from {client_locked.get_full_name()} "
+                                f"(credit now KES {client_locked.credit_balance:,.2f})."
+                            )
+
+                        elif (
+                            source_type
+                            == CompanyAccountTopup.SourceType.COMPANY_ACCOUNT
+                        ):
+                            if source_company is None:
+                                raise ValidationError(
+                                    "Select a company account source."
+                                )
+                            if source_company.pk == locked.pk:
+                                raise ValidationError(
+                                    "Source account must be different from the "
+                                    "account being topped up."
+                                )
+                            source_locked = (
+                                CompanyExpenseAccount.objects.select_for_update().get(
+                                    pk=source_company.pk
+                                )
+                            )
+                            source_balance = (
+                                source_locked.balance or Decimal("0.00")
+                            ).quantize(Decimal("0.01"))
+                            if amount > source_balance:
+                                raise ValidationError(
+                                    f"Source account balance is only "
+                                    f"KES {source_balance:,.2f}."
+                                )
+                            CompanyExpenseAccount.objects.filter(
+                                pk=source_locked.pk
+                            ).update(balance=F("balance") - amount)
+                            source_locked.refresh_from_db(fields=["balance"])
+                            source_label = (
+                                f" Moved from {source_locked.name} "
+                                f"(now KES {source_locked.balance:,.2f})."
+                            )
+
+                        CompanyExpenseAccount.objects.filter(pk=locked.pk).update(
+                            balance=F("balance") + amount
+                        )
+                        locked.refresh_from_db(fields=["balance"])
+                        CompanyAccountTopup.objects.create(
+                            account=locked,
+                            amount=amount,
+                            source_type=source_type,
+                            source_client=source_client,
+                            source_company_account=source_company,
+                            source_note=topup_form.cleaned_data.get("source_note")
+                            or "",
+                            balance_after=locked.balance,
+                            created_by=user,
+                        )
+                except ValidationError as exc:
+                    message = "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc)
+                    topup_form.add_error("amount", message)
+                else:
+                    messages.success(
+                        request,
+                        f"Topped up “{locked.name}” with KES {amount:,.2f}. "
+                        f"Balance is now KES {locked.balance:,.2f}.{source_label}",
+                    )
+                    return redirect(
+                        self._company_accounts_url(user, resolved["trail"])
+                    )
+
+            context.update(
+                self._company_accounts_context(
+                    request,
+                    user,
+                    resolved,
+                    topup_form=topup_form,
+                    open_topup_modal=True,
+                )
+            )
+            self._company_accounts_register_nav(context)
+            response = render(request, self.company_accounts_template, context)
+            return attach_greeting_cookie(response, request)
+
+        if action != "register-company-account":
+            messages.error(request, "Unknown action.")
+            context.update(
+                self._company_accounts_context(request, user, resolved)
+            )
+            self._company_accounts_register_nav(context)
+            response = render(request, self.company_accounts_template, context)
+            return attach_greeting_cookie(response, request)
+
+        form = RegisterCompanyAccountForm(request.POST)
+        if form.is_valid():
+            account = form.save(commit=False)
+            account.created_by = user
+            account.save()
+            messages.success(
+                request,
+                f"Account “{account.name}” registered at {account.bank_name}.",
+            )
+            return redirect(self._company_accounts_url(user, resolved["trail"]))
+
+        context.update(
+            self._company_accounts_context(
+                request,
+                user,
+                resolved,
+                form=form,
+                open_register_modal=True,
+            )
+        )
+        self._company_accounts_register_nav(context)
+        response = render(request, self.company_accounts_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _petty_cash_book_url(user, trail):
+        clean = [
+            part
+            for part in trail
+            if part
+            and part
+            not in {"register-account", "topup-account", "pay-expense"}
+        ]
+        if clean and clean[-1] == "petty-cash-book":
+            return user.workspace_url(*clean)
+        if clean and clean[-1] in {"company-accounts", "accounting"}:
+            clean = extend_page_trail(clean, "petty-cash-book")
+        elif clean and "accounting" in clean:
+            idx = clean.index("accounting")
+            clean = extend_page_trail(clean[: idx + 1], "petty-cash-book")
+        else:
+            clean = extend_page_trail(
+                clean, "company-accounts", "petty-cash-book"
+            )
+        return user.workspace_url(*clean)
+
+    @classmethod
+    def _petty_cash_book_context(cls, request, user, resolved):
+        CompanyExpenseAccount.ensure_default_accounts()
+        petty_book = CompanyExpenseAccount.get_petty_cash_book()
+        pending_requests = list(
+            PettyCashExpenseRequest.objects.filter(
+                status=PettyCashExpenseRequest.Status.PENDING
+            )
+            .select_related("employee", "submitted_by")
+            .order_by("created_at", "id")
+        )
+        recent_requests = list(
+            PettyCashExpenseRequest.objects.exclude(
+                status=PettyCashExpenseRequest.Status.PENDING
+            )
+            .select_related("employee", "submitted_by", "reviewed_by")
+            .order_by("-reviewed_at", "-updated_at", "-id")[:40]
+        )
+        recent_payments = list(
+            CompanyExpensePayment.objects.filter(account=petty_book)
+            .select_related("created_by", "employee")
+            .order_by("-created_at", "-id")[:20]
+        )
+        total_pending = sum(
+            (row.amount for row in pending_requests), Decimal("0.00")
+        )
+        return {
+            "petty_cash_account": petty_book,
+            "petty_cash_balance": petty_book.balance,
+            "pending_requests": pending_requests,
+            "pending_count": len(pending_requests),
+            "total_pending": total_pending,
+            "recent_requests": recent_requests,
+            "recent_petty_payments": recent_payments,
+            "company_accounts_url": cls._company_accounts_url(
+                user, resolved["trail"]
+            ),
+            "petty_cash_book_url": cls._petty_cash_book_url(
+                user, resolved["trail"]
+            ),
+        }
+
+    def _post_petty_cash_book(self, request, user, resolved):
+        action = (request.POST.get("action") or "").strip()
+        page_url = self._petty_cash_book_url(user, resolved["trail"])
+        request_id = (request.POST.get("request_id") or "").strip()
+
+        if action not in {"approve-petty-cash-expense", "reject-petty-cash-expense"}:
+            return redirect(page_url)
+
+        if not request_id.isdigit():
+            messages.error(request, "Select a valid expense request.")
+            return redirect(page_url)
+
+        expense_request = (
+            PettyCashExpenseRequest.objects.select_related("employee")
+            .filter(pk=int(request_id))
+            .first()
+        )
+        if expense_request is None:
+            messages.error(request, "That expense request was not found.")
+            return redirect(page_url)
+
+        if expense_request.status != PettyCashExpenseRequest.Status.PENDING:
+            messages.error(
+                request,
+                "That expense request has already been reviewed.",
+            )
+            return redirect(page_url)
+
+        if action == "reject-petty-cash-expense":
+            reason = (request.POST.get("rejection_reason") or "").strip()
+            expense_request.status = PettyCashExpenseRequest.Status.REJECTED
+            expense_request.rejection_reason = reason
+            expense_request.reviewed_by = user
+            expense_request.reviewed_at = timezone.now()
+            expense_request.save(
+                update_fields=[
+                    "status",
+                    "rejection_reason",
+                    "reviewed_by",
+                    "reviewed_at",
+                    "updated_at",
+                ]
+            )
+            messages.success(
+                request,
+                f"Rejected expense of KES {expense_request.amount:,.2f} for "
+                f"{expense_request.employee.get_full_name() or expense_request.employee.login_code}.",
+            )
+            return redirect(page_url)
+
+        # approve
+        try:
+            with transaction.atomic():
+                locked_request = (
+                    PettyCashExpenseRequest.objects.select_for_update()
+                    .select_related("employee")
+                    .get(pk=expense_request.pk)
+                )
+                if locked_request.status != PettyCashExpenseRequest.Status.PENDING:
+                    raise ValidationError(
+                        "That expense request has already been reviewed."
+                    )
+
+                CompanyExpenseAccount.ensure_default_accounts()
+                locked_account = CompanyExpenseAccount.objects.select_for_update().get(
+                    system_key=CompanyExpenseAccount.SYSTEM_PETTY_CASH_BOOK
+                )
+                balance = (locked_account.balance or Decimal("0.00")).quantize(
+                    Decimal("0.01")
+                )
+                amount = locked_request.amount.quantize(Decimal("0.01"))
+                if amount > balance:
+                    raise ValidationError(
+                        f"Petty Cash Book balance is only KES {balance:,.2f}."
+                    )
+
+                CompanyExpenseAccount.objects.filter(pk=locked_account.pk).update(
+                    balance=F("balance") - amount
+                )
+                locked_account.refresh_from_db(fields=["balance"])
+                payment = CompanyExpensePayment.objects.create(
+                    account=locked_account,
+                    expense_type=locked_request.expense_type,
+                    description=locked_request.description,
+                    amount=amount,
+                    balance_after=locked_account.balance,
+                    employee=locked_request.employee,
+                    created_by=user,
+                )
+                locked_request.status = PettyCashExpenseRequest.Status.APPROVED
+                locked_request.reviewed_by = user
+                locked_request.reviewed_at = timezone.now()
+                locked_request.rejection_reason = ""
+                locked_request.expense_payment = payment
+                locked_request.save(
+                    update_fields=[
+                        "status",
+                        "reviewed_by",
+                        "reviewed_at",
+                        "rejection_reason",
+                        "expense_payment",
+                        "updated_at",
+                    ]
+                )
+        except ValidationError as exc:
+            message = (
+                "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc)
+            )
+            messages.error(request, message)
+            return redirect(page_url)
+
+        messages.success(
+            request,
+            f"Approved KES {amount:,.2f} for "
+            f"{locked_request.employee.get_full_name() or locked_request.employee.login_code}. "
+            f"Petty Cash Book balance is now KES {locked_account.balance:,.2f}.",
+        )
+        return redirect(page_url)
 
     @staticmethod
     def _invoicing_url(user, trail):
@@ -5705,6 +7406,10 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _tasks_context(user, request):
         """Build assignee-only task list for the Tasks utility page."""
+        # Viewing Tasks clears the sidebar badge for this category.
+        ensure_task_notifications(user)
+        mark_category_read(user, Notification.Category.TASK)
+
         case_tasks = list(
             CaseTask.objects.filter(assignee=user)
             .select_related("case", "case__client", "created_by")
@@ -5856,6 +7561,10 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _calendar_context(user, request):
         """Month calendar: tasks for most roles; cases/matters for managing partner."""
+        # Calendar and Reminders share the reminder notification category.
+        ensure_due_reminders(user)
+        mark_category_read(user, Notification.Category.REMINDER)
+
         if user.role == Employee.Role.MANAGING_PARTNER:
             return RoleWorkspaceView._managing_partner_calendar_context(
                 user, request
@@ -5971,6 +7680,7 @@ class RoleWorkspaceView(View):
                     "subject": f"{activity} — {attendance.case}",
                     "subject_meta": attendance.case.client.get_full_name(),
                     "virtual_link": extras["virtual_link"],
+                    "is_virtual": extras["is_virtual"],
                     "url": reverse(
                         "accounts:view_litigation_case",
                         kwargs={
@@ -5999,15 +7709,18 @@ class RoleWorkspaceView(View):
                 or attendance.activity_type
                 or "Matter attendance"
             )
+            extras = _matter_appearance_calendar_extras(attendance)
             by_day.setdefault(appearance_date.day, []).append(
                 {
                     "kind": "matter_attendance",
                     "task": None,
                     "due_date": appearance_date,
                     "status": "active",
-                    "status_label": "Matter date",
+                    "status_label": extras["status_label"],
                     "subject": f"{activity} — {attendance.matter.matter_title}",
                     "subject_meta": attendance.matter.client.get_full_name(),
+                    "virtual_link": extras["virtual_link"],
+                    "is_virtual": extras["is_virtual"],
                     "url": reverse(
                         "accounts:view_non_litigation_matter",
                         kwargs={
@@ -6018,101 +7731,35 @@ class RoleWorkspaceView(View):
                 }
             )
 
-        weeks = calendar_mod.Calendar(firstweekday=0).monthdayscalendar(year, month)
-        calendar_weeks = []
-        for week in weeks:
-            days = []
-            for day_num in week:
-                if day_num == 0:
-                    days.append(
-                        {
-                            "day": None,
-                            "is_today": False,
-                            "events": [],
-                            "event_count": 0,
-                        }
-                    )
-                else:
-                    events = by_day.get(day_num, [])
-                    days.append(
-                        {
-                            "day": day_num,
-                            "is_today": (
-                                year == today.year
-                                and month == today.month
-                                and day_num == today.day
-                            ),
-                            "events": events,
-                            "event_count": len(events),
-                        }
-                    )
-            calendar_weeks.append(days)
-
-        if month == 1:
-            prev_year, prev_month = year - 1, 12
-        else:
-            prev_year, prev_month = year, month - 1
-        if month == 12:
-            next_year, next_month = year + 1, 1
-        else:
-            next_year, next_month = year, month + 1
-
         base_url = user.workspace_url("dashboard", "calendar")
-        month_label = month_start.strftime("%B %Y")
-        due_count = sum(len(v) for v in by_day.values())
-
-        upcoming = []
-        for day_num in sorted(by_day):
-            for item in by_day[day_num]:
-                upcoming.append(item)
-
-        kind_order = {
-            "court": 0,
-            "matter_attendance": 1,
-            "case": 2,
-            "matter": 3,
-            "filing": 4,
-            "opened": 5,
-        }
-        upcoming_by_kind = sorted(
-            upcoming,
-            key=lambda event: (
-                kind_order.get(event.get("kind"), 99),
-                event.get("due_date") or date.max,
-                event.get("subject") or "",
-            ),
+        payload = _calendar_grid_payload(today, year, month, by_day, base_url)
+        payload.update(
+            {
+                "calendar_lead": (
+                    "Due dates for tasks assigned to you, plus next court "
+                    "appearances on your cases."
+                ),
+                "calendar_list_hint": (
+                    "Your assigned tasks and court appearances"
+                ),
+                "calendar_empty_copy": (
+                    "Task due dates and next court appearances on your cases "
+                    "will appear here."
+                ),
+                "calendar_shows_cases_matters": False,
+                "calendar_legend_kinds": (
+                    "court",
+                    "matter_attendance",
+                    "case",
+                    "matter",
+                ),
+            }
         )
-
-        return {
-            "calendar_weeks": calendar_weeks,
-            "calendar_year": year,
-            "calendar_month": month,
-            "calendar_month_label": month_label,
-            "calendar_today": today,
-            "calendar_due_count": due_count,
-            "calendar_upcoming": upcoming,
-            "calendar_upcoming_by_kind": upcoming_by_kind,
-            "calendar_prev_url": f"{base_url}?year={prev_year}&month={prev_month}",
-            "calendar_next_url": f"{base_url}?year={next_year}&month={next_month}",
-            "calendar_today_url": (
-                f"{base_url}?year={today.year}&month={today.month}"
-            ),
-            "weekday_labels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-            "calendar_lead": (
-                "Due dates for tasks assigned to you, plus next court "
-                "appearances on your cases."
-            ),
-            "calendar_list_hint": "Your assigned tasks and court appearances",
-            "calendar_empty_copy": (
-                "Task due dates and next court appearances on your cases "
-                "will appear here."
-            ),
-            "calendar_shows_cases_matters": False,
-        }
+        return payload
 
     @staticmethod
     def _managing_partner_calendar_context(user, request):
-        """Firm-wide upcoming cases and matters (no tasks) for managing partner."""
+        """Firm-wide court and matter attendances (upcoming + history) for MP."""
         today, year, month, month_start, month_end = _calendar_month_from_request(
             request
         )
@@ -6124,179 +7771,169 @@ class RoleWorkspaceView(View):
         ).select_related("client", "assigned_to")
         case_ids = list(active_cases.values_list("pk", flat=True))
 
-        for case in active_cases.filter(
-            filing_date__gte=month_start,
-            filing_date__lte=month_end,
-        ):
-            assignee = (
-                case.assigned_to.get_full_name()
-                if case.assigned_to_id
-                else "Unassigned"
-            )
-            _append_calendar_event(
-                by_day,
-                case.filing_date,
-                {
-                    "kind": "filing",
-                    "due_date": case.filing_date,
-                    "status": "active",
-                    "status_label": "Filing date",
-                    "subject": f"Filed — {case}",
-                    "subject_meta": f"{case.client.get_full_name()} · {assignee}",
-                    "url": reverse(
-                        "accounts:view_litigation_case",
-                        kwargs={"role": role, "case_id": case.pk},
-                    ),
-                },
-            )
-
-        court_appearances = (
-            CourtAttendance.objects.filter(
-                case_id__in=case_ids,
-                next_court_date__gte=month_start,
-                next_court_date__lte=month_end,
+        court_attendances = (
+            CourtAttendance.objects.filter(case_id__in=case_ids)
+            .filter(
+                Q(attendance_date__gte=month_start, attendance_date__lte=month_end)
+                | Q(
+                    next_court_date__gte=month_start,
+                    next_court_date__lte=month_end,
+                )
             )
             .select_related("case", "case__client", "case__assigned_to")
-            .order_by("next_court_date", "pk")
+            .order_by("attendance_date", "pk")
         )
-        for attendance in court_appearances:
-            appearance_date = attendance.next_court_date
-            if not appearance_date:
-                continue
-            activity = (
-                attendance.next_activity_type
-                or attendance.activity_type
-                or "Court appearance"
-            )
+        for attendance in court_attendances:
             assignee = (
                 attendance.case.assigned_to.get_full_name()
                 if attendance.case.assigned_to_id
                 else "Unassigned"
             )
-            extras = _court_appearance_calendar_extras(attendance)
-            _append_calendar_event(
-                by_day,
-                appearance_date,
-                {
-                    "kind": "court",
-                    "due_date": appearance_date,
-                    "status": "active",
-                    "status_label": extras["status_label"],
-                    "subject": f"{activity} — {attendance.case}",
-                    "subject_meta": (
-                        f"{attendance.case.client.get_full_name()} · {assignee}"
-                    ),
-                    "virtual_link": extras["virtual_link"],
-                    "url": reverse(
-                        "accounts:view_litigation_case",
-                        kwargs={
-                            "role": role,
-                            "case_id": attendance.case_id,
-                        },
-                    ),
-                },
+            case_url = reverse(
+                "accounts:view_litigation_case",
+                kwargs={"role": role, "case_id": attendance.case_id},
             )
+            subject_meta = (
+                f"{attendance.case.client.get_full_name()} · {assignee}"
+            )
+            if month_start <= attendance.attendance_date <= month_end:
+                activity = attendance.activity_type or "Court attendance"
+                _append_calendar_event(
+                    by_day,
+                    attendance.attendance_date,
+                    {
+                        "kind": "court",
+                        "due_date": attendance.attendance_date,
+                        "status": "done",
+                        "status_label": "Recorded",
+                        "subject": f"{activity} — {attendance.case}",
+                        "subject_meta": subject_meta,
+                        "url": case_url,
+                    },
+                )
+            if (
+                attendance.next_court_date
+                and month_start <= attendance.next_court_date <= month_end
+            ):
+                activity = (
+                    attendance.next_activity_type
+                    or attendance.activity_type
+                    or "Court appearance"
+                )
+                extras = _court_appearance_calendar_extras(attendance)
+                _append_calendar_event(
+                    by_day,
+                    attendance.next_court_date,
+                    {
+                        "kind": "court",
+                        "due_date": attendance.next_court_date,
+                        "status": "active",
+                        "status_label": extras["status_label"],
+                        "subject": f"{activity} — {attendance.case}",
+                        "subject_meta": subject_meta,
+                        "virtual_link": extras["virtual_link"],
+                        "is_virtual": extras["is_virtual"],
+                        "url": case_url,
+                    },
+                )
 
         active_matters = NonLitigationMatter.objects.filter(
             status=NonLitigationMatter.Status.ACTIVE
         ).select_related("client", "assigned_to")
         matter_ids = list(active_matters.values_list("pk", flat=True))
 
-        for matter in active_matters.filter(
-            date_opened__gte=month_start,
-            date_opened__lte=month_end,
-        ):
-            assignee = (
-                matter.assigned_to.get_full_name()
-                if matter.assigned_to_id
-                else "Unassigned"
-            )
-            _append_calendar_event(
-                by_day,
-                matter.date_opened,
-                {
-                    "kind": "opened",
-                    "due_date": matter.date_opened,
-                    "status": "active",
-                    "status_label": "Date opened",
-                    "subject": f"Opened — {matter.matter_title}",
-                    "subject_meta": (
-                        f"{matter.client.get_full_name()} · {assignee}"
-                    ),
-                    "url": reverse(
-                        "accounts:view_non_litigation_matter",
-                        kwargs={"role": role, "matter_id": matter.pk},
-                    ),
-                },
-            )
-
-        matter_appearances = (
-            MatterAttendance.objects.filter(
-                matter_id__in=matter_ids,
-                next_attendance_date__gte=month_start,
-                next_attendance_date__lte=month_end,
+        matter_attendances = (
+            MatterAttendance.objects.filter(matter_id__in=matter_ids)
+            .filter(
+                Q(
+                    attendance_date__gte=month_start,
+                    attendance_date__lte=month_end,
+                )
+                | Q(
+                    next_attendance_date__gte=month_start,
+                    next_attendance_date__lte=month_end,
+                )
             )
             .select_related("matter", "matter__client", "matter__assigned_to")
-            .order_by("next_attendance_date", "pk")
+            .order_by("attendance_date", "pk")
         )
-        for attendance in matter_appearances:
-            appearance_date = attendance.next_attendance_date
-            if not appearance_date:
-                continue
-            activity = (
-                attendance.next_activity_type
-                or attendance.activity_type
-                or "Matter attendance"
-            )
+        for attendance in matter_attendances:
             assignee = (
                 attendance.matter.assigned_to.get_full_name()
                 if attendance.matter.assigned_to_id
                 else "Unassigned"
             )
-            client_flag = ""
-            if attendance.next_client_attendance:
-                client_flag = (
-                    f" · {attendance.get_next_client_attendance_display()}"
-                )
-            _append_calendar_event(
-                by_day,
-                appearance_date,
-                {
-                    "kind": "matter_attendance",
-                    "due_date": appearance_date,
-                    "status": "active",
-                    "status_label": f"Matter date{client_flag}",
-                    "subject": f"{activity} — {attendance.matter.matter_title}",
-                    "subject_meta": (
-                        f"{attendance.matter.client.get_full_name()} · {assignee}"
-                    ),
-                    "url": reverse(
-                        "accounts:view_non_litigation_matter",
-                        kwargs={
-                            "role": role,
-                            "matter_id": attendance.matter_id,
-                        },
-                    ),
-                },
+            matter_url = reverse(
+                "accounts:view_non_litigation_matter",
+                kwargs={"role": role, "matter_id": attendance.matter_id},
             )
+            subject_meta = (
+                f"{attendance.matter.client.get_full_name()} · {assignee}"
+            )
+            if month_start <= attendance.attendance_date <= month_end:
+                activity = attendance.activity_type or "Matter attendance"
+                _append_calendar_event(
+                    by_day,
+                    attendance.attendance_date,
+                    {
+                        "kind": "matter_attendance",
+                        "due_date": attendance.attendance_date,
+                        "status": "done",
+                        "status_label": "Recorded",
+                        "subject": (
+                            f"{activity} — {attendance.matter.matter_title}"
+                        ),
+                        "subject_meta": subject_meta,
+                        "url": matter_url,
+                    },
+                )
+            if (
+                attendance.next_attendance_date
+                and month_start
+                <= attendance.next_attendance_date
+                <= month_end
+            ):
+                activity = (
+                    attendance.next_activity_type
+                    or attendance.activity_type
+                    or "Matter attendance"
+                )
+                extras = _matter_appearance_calendar_extras(attendance)
+                _append_calendar_event(
+                    by_day,
+                    attendance.next_attendance_date,
+                    {
+                        "kind": "matter_attendance",
+                        "due_date": attendance.next_attendance_date,
+                        "status": "active",
+                        "status_label": extras["status_label"],
+                        "subject": (
+                            f"{activity} — {attendance.matter.matter_title}"
+                        ),
+                        "subject_meta": subject_meta,
+                        "virtual_link": extras["virtual_link"],
+                        "is_virtual": extras["is_virtual"],
+                        "url": matter_url,
+                    },
+                )
 
         base_url = user.workspace_url("dashboard", "calendar")
         payload = _calendar_grid_payload(today, year, month, by_day, base_url)
         payload.update(
             {
                 "calendar_lead": (
-                    "Upcoming litigation cases and non-litigation matters "
-                    "across the firm — filing dates, court dates, and matter "
-                    "attendances."
+                    "Firm-wide court appearances and matter attendances — "
+                    "upcoming schedule and recorded history for the month."
                 ),
                 "calendar_list_hint": (
-                    "Active cases and matters with dates this month"
+                    "Upcoming next dates and recorded attendances this month"
                 ),
                 "calendar_empty_copy": (
-                    "Filing dates, next court appearances, matter opened dates, "
-                    "and next matter attendances will appear here."
+                    "Next court appearances, matter attendances, and recorded "
+                    "history for active matters will appear here."
                 ),
                 "calendar_shows_cases_matters": True,
+                "calendar_legend_kinds": ("court", "matter_attendance"),
             }
         )
         return payload
@@ -6304,6 +7941,10 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _reminders_context(user, request):
         """List personal task reminders set by this employee."""
+        # Viewing Reminders clears the calendar/reminders sidebar badges.
+        ensure_due_reminders(user)
+        mark_category_read(user, Notification.Category.REMINDER)
+
         now = timezone.now()
         visible_statuses = (
             CaseTask.Status.PENDING,
@@ -6387,6 +8028,8 @@ class RoleWorkspaceView(View):
         from .notifications import ensure_task_outcome_messages
 
         ensure_task_outcome_messages(user)
+        # Viewing Messages clears the sidebar badge for this category.
+        mark_category_read(user, Notification.Category.MESSAGE)
         message_list = list(
             Notification.objects.filter(
                 recipient=user,
@@ -6485,20 +8128,21 @@ def _calendar_grid_payload(today, year, month, by_day, base_url):
                     {
                         "day": None,
                         "is_today": False,
+                        "is_past": False,
                         "events": [],
                         "event_count": 0,
                     }
                 )
             else:
                 events = by_day.get(day_num, [])
+                day_date = date(year, month, day_num)
+                for event in events:
+                    event["is_past"] = (event.get("due_date") or day_date) < today
                 days.append(
                     {
                         "day": day_num,
-                        "is_today": (
-                            year == today.year
-                            and month == today.month
-                            and day_num == today.day
-                        ),
+                        "is_today": day_date == today,
+                        "is_past": day_date < today,
                         "events": events,
                         "event_count": len(events),
                     }
@@ -6518,11 +8162,10 @@ def _calendar_grid_payload(today, year, month, by_day, base_url):
     month_label = month_start.strftime("%B %Y")
     due_count = sum(len(v) for v in by_day.values())
 
-    upcoming = []
+    all_events = []
     for day_num in sorted(by_day):
-        upcoming.extend(by_day[day_num])
+        all_events.extend(by_day[day_num])
 
-    # Grouped list (by category, then date) for the agenda panel.
     kind_order = {
         "court": 0,
         "matter_attendance": 1,
@@ -6531,14 +8174,36 @@ def _calendar_grid_payload(today, year, month, by_day, base_url):
         "filing": 4,
         "opened": 5,
     }
-    upcoming_by_kind = sorted(
-        upcoming,
-        key=lambda event: (
+
+    def _event_sort_key(event, *, reverse_date=False):
+        due = event.get("due_date") or date.max
+        due_key = due if not reverse_date else date.max - due
+        return (
             kind_order.get(event.get("kind"), 99),
-            event.get("due_date") or date.max,
+            due_key,
             event.get("subject") or "",
+        )
+
+    upcoming_events = sorted(
+        [e for e in all_events if (e.get("due_date") or date.max) >= today],
+        key=lambda e: (
+            e.get("due_date") or date.max,
+            kind_order.get(e.get("kind"), 99),
+            e.get("subject") or "",
         ),
     )
+    history_events = sorted(
+        [e for e in all_events if (e.get("due_date") or date.max) < today],
+        key=lambda e: (
+            e.get("due_date") or date.min,
+            kind_order.get(e.get("kind"), 99),
+            e.get("subject") or "",
+        ),
+        reverse=True,
+    )
+
+    # Kept for older templates that regroup by kind within "this month".
+    upcoming_by_kind = sorted(all_events, key=_event_sort_key)
 
     return {
         "calendar_weeks": calendar_weeks,
@@ -6547,7 +8212,11 @@ def _calendar_grid_payload(today, year, month, by_day, base_url):
         "calendar_month_label": month_label,
         "calendar_today": today,
         "calendar_due_count": due_count,
-        "calendar_upcoming": upcoming,
+        "calendar_upcoming": upcoming_events,
+        "calendar_upcoming_events": upcoming_events,
+        "calendar_history_events": history_events,
+        "calendar_upcoming_count": len(upcoming_events),
+        "calendar_history_count": len(history_events),
         "calendar_upcoming_by_kind": upcoming_by_kind,
         "calendar_prev_url": f"{base_url}?year={prev_year}&month={prev_month}",
         "calendar_next_url": f"{base_url}?year={next_year}&month={next_month}",
@@ -6555,6 +8224,14 @@ def _calendar_grid_payload(today, year, month, by_day, base_url):
             f"{base_url}?year={today.year}&month={today.month}"
         ),
         "weekday_labels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        "calendar_legend_kinds": (
+            "court",
+            "matter_attendance",
+            "case",
+            "matter",
+            "filing",
+            "opened",
+        ),
     }
 
 
@@ -6569,15 +8246,32 @@ def _court_appearance_calendar_extras(attendance):
     client_flag = ""
     if attendance.next_client_attendance:
         client_flag = f" · {attendance.get_next_client_attendance_display()}"
-    virtual_link = ""
-    if (
+    is_virtual = (
         attendance.next_client_attendance
         == CourtAttendance.ClientAttendance.VIRTUAL
-    ):
-        virtual_link = (attendance.virtual_link or "").strip()
+    )
+    virtual_link = (attendance.virtual_link or "").strip() if is_virtual else ""
     return {
         "status_label": f"Court date{client_flag}",
         "virtual_link": virtual_link,
+        "is_virtual": is_virtual,
+    }
+
+
+def _matter_appearance_calendar_extras(attendance):
+    """Status label and virtual link for a next matter attendance."""
+    client_flag = ""
+    if attendance.next_client_attendance:
+        client_flag = f" · {attendance.get_next_client_attendance_display()}"
+    is_virtual = (
+        attendance.next_client_attendance
+        == MatterAttendance.ClientAttendance.VIRTUAL
+    )
+    virtual_link = (attendance.virtual_link or "").strip() if is_virtual else ""
+    return {
+        "status_label": f"Matter date{client_flag}",
+        "virtual_link": virtual_link,
+        "is_virtual": is_virtual,
     }
 
 
@@ -6594,27 +8288,6 @@ def _client_case_calendar_by_day(user, client, month_start, month_end):
         status=LitigationCase.Status.PENDING_APPROVAL
     )
     case_ids = list(client_cases.values_list("pk", flat=True))
-
-    for case in client_cases.filter(
-        filing_date__gte=month_start,
-        filing_date__lte=month_end,
-    ):
-        _append_calendar_event(
-            by_day,
-            case.filing_date,
-            {
-                "kind": "filing",
-                "due_date": case.filing_date,
-                "status": "active",
-                "status_label": "Filing date",
-                "subject": f"Filed — {case}",
-                "subject_meta": client.get_full_name(),
-                "url": reverse(
-                    "accounts:view_litigation_case",
-                    kwargs={"role": role, "case_id": case.pk},
-                ),
-            },
-        )
 
     attendances = (
         CourtAttendance.objects.filter(case_id__in=case_ids)
@@ -6642,7 +8315,7 @@ def _client_case_calendar_by_day(user, client, month_start, month_end):
                     "kind": "court",
                     "due_date": attendance.attendance_date,
                     "status": "done",
-                    "status_label": "Court attendance",
+                    "status_label": "Recorded",
                     "subject": f"{activity} — {attendance.case}",
                     "subject_meta": client.get_full_name(),
                     "url": case_url,
@@ -6669,6 +8342,7 @@ def _client_case_calendar_by_day(user, client, month_start, month_end):
                     "subject": f"{activity} — {attendance.case}",
                     "subject_meta": client.get_full_name(),
                     "virtual_link": extras["virtual_link"],
+                    "is_virtual": extras["is_virtual"],
                     "url": case_url,
                 },
             )
@@ -6724,27 +8398,6 @@ def _client_matter_calendar_by_day(user, client, month_start, month_end):
     )
     matter_ids = list(client_matters.values_list("pk", flat=True))
 
-    for matter in client_matters.filter(
-        date_opened__gte=month_start,
-        date_opened__lte=month_end,
-    ):
-        _append_calendar_event(
-            by_day,
-            matter.date_opened,
-            {
-                "kind": "opened",
-                "due_date": matter.date_opened,
-                "status": "active",
-                "status_label": "Date opened",
-                "subject": f"Opened — {matter.matter_title}",
-                "subject_meta": client.get_full_name(),
-                "url": reverse(
-                    "accounts:view_non_litigation_matter",
-                    kwargs={"role": role, "matter_id": matter.pk},
-                ),
-            },
-        )
-
     attendances = (
         MatterAttendance.objects.filter(matter_id__in=matter_ids)
         .filter(
@@ -6774,7 +8427,7 @@ def _client_matter_calendar_by_day(user, client, month_start, month_end):
                     "kind": "matter_attendance",
                     "due_date": attendance.attendance_date,
                     "status": "done",
-                    "status_label": "Matter attendance",
+                    "status_label": "Recorded",
                     "subject": f"{activity} — {attendance.matter.matter_title}",
                     "subject_meta": client.get_full_name(),
                     "url": matter_url,
@@ -6789,11 +8442,7 @@ def _client_matter_calendar_by_day(user, client, month_start, month_end):
                 or attendance.activity_type
                 or "Matter attendance"
             )
-            client_flag = ""
-            if attendance.next_client_attendance:
-                client_flag = (
-                    f" · {attendance.get_next_client_attendance_display()}"
-                )
+            extras = _matter_appearance_calendar_extras(attendance)
             _append_calendar_event(
                 by_day,
                 attendance.next_attendance_date,
@@ -6801,9 +8450,11 @@ def _client_matter_calendar_by_day(user, client, month_start, month_end):
                     "kind": "matter_attendance",
                     "due_date": attendance.next_attendance_date,
                     "status": "active",
-                    "status_label": f"Matter date{client_flag}",
+                    "status_label": extras["status_label"],
                     "subject": f"{activity} — {attendance.matter.matter_title}",
                     "subject_meta": client.get_full_name(),
+                    "virtual_link": extras["virtual_link"],
+                    "is_virtual": extras["is_virtual"],
                     "url": matter_url,
                 },
             )
@@ -8240,8 +9891,40 @@ class ApproveLitigationCaseView(View):
                 "case_id": case.pk,
             },
         )
+        context["decline_url"] = reverse(
+            "accounts:decline_litigation_case",
+            kwargs={
+                "role": user.role_slug,
+                "case_id": case.pk,
+            },
+        )
         context["open_allocate_modal"] = open_modal
         return context
+
+
+@method_decorator(login_required, name="dispatch")
+class DeclineLitigationCaseView(View):
+    """Decline a pending litigation case from the approval queue."""
+
+    def post(self, request, role, case_id):
+        user, denied = _guard_case_approve(request, role, action="approve")
+        if denied:
+            return denied
+
+        case = get_object_or_404(LitigationCase, pk=case_id)
+        if case.status != LitigationCase.Status.PENDING_APPROVAL:
+            messages.info(request, "This case is not awaiting approval.")
+            return redirect(_pending_cases_list_url(user))
+
+        label = (case.court_case_number or "").strip() or f"Case #{case.pk}"
+        case.status = LitigationCase.Status.REJECTED
+        case.save(update_fields=["status", "updated_at"])
+
+        messages.success(
+            request,
+            f"Declined {label}. It has been marked as rejected.",
+        )
+        return redirect(_pending_cases_list_url(user))
 
 
 @method_decorator(login_required, name="dispatch")
@@ -8619,8 +10302,40 @@ class ApproveNonLitigationMatterView(View):
                 "matter_id": matter.pk,
             },
         )
+        context["decline_url"] = reverse(
+            "accounts:decline_non_litigation_matter",
+            kwargs={
+                "role": user.role_slug,
+                "matter_id": matter.pk,
+            },
+        )
         context["open_allocate_modal"] = open_modal
         return context
+
+
+@method_decorator(login_required, name="dispatch")
+class DeclineNonLitigationMatterView(View):
+    """Decline a pending non-litigation matter from the approval queue."""
+
+    def post(self, request, role, matter_id):
+        user, denied = _guard_matter_approve(request, role, action="approve")
+        if denied:
+            return denied
+
+        matter = get_object_or_404(NonLitigationMatter, pk=matter_id)
+        if matter.status != NonLitigationMatter.Status.PENDING_APPROVAL:
+            messages.info(request, "This matter is not awaiting approval.")
+            return redirect(_pending_matters_list_url(user))
+
+        label = (matter.matter_title or "").strip() or f"Matter #{matter.pk}"
+        matter.status = NonLitigationMatter.Status.REJECTED
+        matter.save(update_fields=["status", "updated_at"])
+
+        messages.success(
+            request,
+            f"Declined {label}. It has been marked as rejected.",
+        )
+        return redirect(_pending_matters_list_url(user))
 
 
 @method_decorator(login_required, name="dispatch")
@@ -9715,6 +11430,8 @@ class ViewInvoiceView(View):
         ]
 
         firm = FirmCompanyInformation.get_solo()
+        from .letterhead import letterhead_render_context
+
         pay_url = _invoice_pay_url(user, invoice.pk)
         pdf_download_url = reverse(
             "accounts:invoice_pdf",
@@ -9740,7 +11457,7 @@ class ViewInvoiceView(View):
 
         share_message = (
             f"Invoice {invoice.invoice_number} from {firm.display_name}\n"
-            f"Amount due: KES {invoice.total_amount}\n"
+            f"Amount due: KES {invoice.balance_due}\n"
             f"Due date: {invoice.due_date.strftime('%d %b %Y')}"
         )
         if absolute_pdf_url:
@@ -9782,11 +11499,11 @@ class ViewInvoiceView(View):
             active_page="invoicing",
             page_nav_items=page_nav_items,
         )
+        context.update(letterhead_render_context(firm=firm))
         context.update(
             {
                 "invoice": invoice,
                 "list_url": _invoicing_list_url(user),
-                "firm": firm,
                 "pay_url": pay_url,
                 "pdf_url": pdf_download_url,
                 "pdf_share_url": absolute_pdf_url or pdf_share_path,
@@ -10016,7 +11733,7 @@ class SharedInvoicePayView(View):
 
 @method_decorator(login_required, name="dispatch")
 class PayInvoiceView(View):
-    """Payments page for an invoice — send M-Pesa STK push."""
+    """Payments page for an invoice — manual payment or M-Pesa STK push."""
 
     template_name = "accounts/pay_invoice.html"
     session_key = "invoice_stk_push"
@@ -10045,7 +11762,7 @@ class PayInvoiceView(View):
             return denied
 
         invoice = self.get_invoice(invoice_id)
-        action = (request.POST.get("action") or "stk").strip()
+        action = (request.POST.get("action") or "pay").strip()
 
         if invoice.status == Invoice.Status.PAID:
             messages.info(request, "This invoice is already paid.")
@@ -10064,13 +11781,49 @@ class PayInvoiceView(View):
             response = render(request, self.template_name, context)
             return attach_greeting_cookie(response, request)
 
+        method = form.cleaned_data.get("method") or InvoiceStkPaymentForm.METHOD_MPESA
+        amount = form.cleaned_data["amount"]
+
+        if method == InvoiceStkPaymentForm.METHOD_MANUAL:
+            reference = form.cleaned_data.get("reference") or ""
+            due_before = invoice.balance_due
+            applied, new_status = invoice.apply_payment(
+                amount,
+                mpesa_receipt=reference[:64] if reference else "",
+            )
+            invoice.refresh_from_db()
+            excess = (amount - applied).quantize(Decimal("0.01"))
+            if due_before <= 0:
+                excess = amount.quantize(Decimal("0.01"))
+            msg = (
+                f"Manual payment of KES {amount:,.2f} recorded. "
+                f"KES {applied:,.2f} applied to the invoice. "
+                f"Income topped up to Main Client Accounts. "
+                f"Invoice is now {invoice.get_status_display()} "
+                f"(paid KES {invoice.amount_paid:,.2f}, "
+                f"balance KES {invoice.balance_due:,.2f})."
+            )
+            if excess > 0:
+                invoice.client.refresh_from_db(fields=["credit_balance"])
+                msg += (
+                    f" Excess KES {excess:,.2f} added to client credit "
+                    f"and Main Client Accounts "
+                    f"(credit now KES {invoice.client.credit_balance:,.2f})."
+                )
+            messages.success(request, msg)
+            if invoice.status == Invoice.Status.PAID:
+                return redirect(
+                    "accounts:view_invoice", role=role, invoice_id=invoice.pk
+                )
+            return redirect("accounts:pay_invoice", role=role, invoice_id=invoice.pk)
+
         from .mpesa import MpesaError
 
         try:
             result, stk, live = _start_invoice_stk(
                 invoice,
                 phone=form.cleaned_data["phone"],
-                amount=form.cleaned_data["amount"],
+                amount=amount,
             )
             push = _session_stk_payload(stk)
             push["started_at"] = result.get("started_at") or ""
@@ -10085,7 +11838,8 @@ class PayInvoiceView(View):
         messages.success(
             request,
             result.get("customer_message")
-            or "STK push sent. We are checking payment status live.",
+            or "STK push sent. We are checking payment status live. "
+            "Successful payment will top up Main Client Accounts.",
         )
         if not live:
             messages.info(
@@ -10117,6 +11871,7 @@ class PayInvoiceView(View):
             messages.success(
                 request,
                 f"Payment successful. M-Pesa receipt {receipt}. "
+                f"Income topped up to Main Client Accounts. "
                 f"Invoice is now {outcome.get('invoice_status_label')} "
                 f"(paid KES {outcome.get('amount_paid')}, "
                 f"balance KES {outcome.get('balance_due')}).",
@@ -10793,6 +12548,8 @@ class CreateCaseTaskView(View):
 
 def _group_documents_by_party_type(documents, party_type_choices):
     """Group library documents into party-type sections (known order first)."""
+    from .document_management import _PARTY_GROUP_META
+
     buckets = {key: [] for key, _label in party_type_choices}
     uncategorized = []
     for document in documents:
@@ -10807,19 +12564,27 @@ def _group_documents_by_party_type(documents, party_type_choices):
         items = buckets.get(key) or []
         if not items:
             continue
+        meta = _PARTY_GROUP_META.get(key) or _PARTY_GROUP_META["other"]
         groups.append(
             {
                 "key": key,
                 "label": label,
+                "hint": meta["hint"],
+                "icon": meta["icon"],
+                "tone": meta["tone"],
                 "documents": items,
                 "count": len(items),
             }
         )
     if uncategorized:
+        meta = _PARTY_GROUP_META["uncategorized"]
         groups.append(
             {
                 "key": "uncategorized",
                 "label": "Uncategorized",
+                "hint": meta["hint"],
+                "icon": meta["icon"],
+                "tone": meta["tone"],
                 "documents": uncategorized,
                 "count": len(uncategorized),
             }
@@ -11251,12 +13016,13 @@ class CaseCalendarView(View):
                     f"{case.client.get_full_name()}."
                 ),
                 "calendar_list_hint": (
-                    "All litigation dates for this client this month"
+                    "Upcoming and recorded litigation dates for this client"
                 ),
                 "calendar_empty_copy": (
-                    "Court attendances, next hearing dates, filing dates, "
-                    "and case task due dates for this client will appear here."
+                    "Court attendances, next hearing dates, and case task due "
+                    "dates for this client will appear here."
                 ),
+                "calendar_legend_kinds": ("court", "case"),
                 "entity_kind": "case",
             }
         )
@@ -12935,12 +14701,13 @@ class MatterCalendarView(View):
                     f"{matter.client.get_full_name()}."
                 ),
                 "calendar_list_hint": (
-                    "All non-litigation dates for this client this month"
+                    "Upcoming and recorded matter dates for this client"
                 ),
                 "calendar_empty_copy": (
-                    "Matter attendances, next attendance dates, opened dates, "
-                    "and matter task due dates for this client will appear here."
+                    "Matter attendances, next attendance dates, and matter "
+                    "task due dates for this client will appear here."
                 ),
+                "calendar_legend_kinds": ("matter_attendance", "matter"),
                 "entity_kind": "matter",
             }
         )
@@ -13404,6 +15171,7 @@ class RespondCaseTaskView(View):
             active_page="tasks",
         )
         context.update(RoleWorkspaceView._tasks_context(user, request))
+        apply_notification_badges(context, user)
         if accept_form is not None:
             context["accept_form"] = accept_form
         if reject_form is not None:

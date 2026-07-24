@@ -1,0 +1,232 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="petty-cash-book-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Main petty cash ledger for daily unplanned expenses. Approve employee claims
+        submitted from Employee Petty Cashbook; approved amounts debit this book.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ company_accounts_url }}" class="btn btn--quiet btn--inline">
+        Back to company accounts
+      </a>
+    </div>
+  </header>
+
+  <div class="metrics metrics--dash">
+    <div class="metric metric--glass">
+      <p class="metric__label">Book balance</p>
+      <p class="metric__value">KES {{ petty_cash_balance|floatformat:2 }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Pending approval</p>
+      <p class="metric__value">{{ pending_count }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Pending amount</p>
+      <p class="metric__value">KES {{ total_pending|floatformat:2 }}</p>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Pending expense claims</h3>
+      <p class="panel__hint">{{ pending_count }} awaiting approval</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if pending_requests %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Submitted</th>
+              <th scope="col">Employee</th>
+              <th scope="col">Type</th>
+              <th scope="col">Description</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in pending_requests %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ row.created_at|date:"j M Y H:i" }}</strong>
+                  <span class="person-cell__meta">
+                    by {{ row.submitted_by.get_full_name|default:"—" }}
+                  </span>
+                </div>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ row.employee.get_full_name|default:row.employee.login_code }}</strong>
+                  <span class="person-cell__meta">{{ row.employee.get_role_display }}</span>
+                </div>
+              </td>
+              <td>{{ row.get_expense_type_display }}</td>
+              <td>{{ row.description|truncatechars:90 }}</td>
+              <td class="mono"><strong>KES {{ row.amount|floatformat:2 }}</strong></td>
+              <td class="data-table__action">
+                <form method="post" class="inline-form" style="display:inline;">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="approve-petty-cash-expense">
+                  <input type="hidden" name="request_id" value="{{ row.pk }}">
+                  <button type="submit" class="btn btn--primary btn--inline">Approve</button>
+                </form>
+                <form method="post" class="inline-form" style="display:inline;margin-left:0.35rem;">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="reject-petty-cash-expense">
+                  <input type="hidden" name="request_id" value="{{ row.pk }}">
+                  <input
+                    type="text"
+                    name="rejection_reason"
+                    class="form-input"
+                    placeholder="Reason (optional)"
+                    style="max-width:10rem;display:inline-block;margin-right:0.35rem;"
+                  >
+                  <button type="submit" class="btn btn--quiet btn--inline">Reject</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No pending claims</p>
+        <p class="empty-state__copy">
+          Employee petty cash claims awaiting approval will appear here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Recently reviewed</h3>
+      <p class="panel__hint">{{ recent_requests|length }} shown</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if recent_requests %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Reviewed</th>
+              <th scope="col">Employee</th>
+              <th scope="col">Type</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Status</th>
+              <th scope="col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in recent_requests %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  <strong>
+                    {% if row.reviewed_at %}
+                    {{ row.reviewed_at|date:"j M Y H:i" }}
+                    {% else %}
+                    {{ row.updated_at|date:"j M Y H:i" }}
+                    {% endif %}
+                  </strong>
+                  <span class="person-cell__meta">
+                    {{ row.reviewed_by.get_full_name|default:"—" }}
+                  </span>
+                </div>
+              </td>
+              <td>{{ row.employee.get_full_name|default:row.employee.login_code }}</td>
+              <td>{{ row.get_expense_type_display }}</td>
+              <td class="mono">KES {{ row.amount|floatformat:2 }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ row.status }}">
+                  {{ row.get_status_display }}
+                </span>
+              </td>
+              <td>
+                {% if row.status == "rejected" and row.rejection_reason %}
+                {{ row.rejection_reason|truncatechars:72 }}
+                {% else %}
+                {{ row.description|truncatechars:72 }}
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No reviewed claims yet</p>
+        <p class="empty-state__copy">Approved and rejected claims will list here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Ledger payments</h3>
+      <p class="panel__hint">{{ recent_petty_payments|length }} from this book</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if recent_petty_payments %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Type</th>
+              <th scope="col">Employee</th>
+              <th scope="col">Description</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Balance after</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in recent_petty_payments %}
+            <tr>
+              <td>{{ payment.created_at|date:"d M Y H:i" }}</td>
+              <td>{{ payment.get_expense_type_display }}</td>
+              <td>
+                {% if payment.employee %}
+                {{ payment.employee.get_full_name|default:payment.employee.login_code }}
+                {% else %}
+                <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>{{ payment.description|truncatechars:72 }}</td>
+              <td class="mono">KES {{ payment.amount|floatformat:2 }}</td>
+              <td class="mono">KES {{ payment.balance_after|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No ledger payments yet</p>
+        <p class="empty-state__copy">
+          Payments from this book (including approved employee claims) appear here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

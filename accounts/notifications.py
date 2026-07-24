@@ -372,6 +372,25 @@ def utility_badge_counts(employee) -> dict[str, int]:
     }
 
 
+def mark_category_read(employee, category: str) -> int:
+    """Mark all unread notifications in a category as read. Returns rows updated."""
+    now = timezone.now()
+    return Notification.objects.filter(
+        recipient=employee,
+        category=category,
+        is_read=False,
+    ).update(is_read=True, read_at=now)
+
+
+def mark_all_read(employee) -> int:
+    """Mark every unread notification for an employee as read. Returns rows updated."""
+    now = timezone.now()
+    return Notification.objects.filter(
+        recipient=employee,
+        is_read=False,
+    ).update(is_read=True, read_at=now)
+
+
 def notifications_payload(employee, *, limit: int = 40) -> dict:
     """Build the live-poll payload, grouped by category (latest first)."""
     ensure_task_notifications(employee)

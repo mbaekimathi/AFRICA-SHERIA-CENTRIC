@@ -1,0 +1,7 @@
+{# Flat icon tile. Expects: icon, optional tone (1-7), size (sm|lg), extra_class #}
+<span
+  class="icon-tile icon-tile--{{ tone|default:1 }}{% if size %} icon-tile--{{ size }}{% endif %}{% if extra_class %} {{ extra_class }}{% endif %}"
+  aria-hidden="true"
+>
+  {% include "accounts/partials/icon_flat_glyph.html" with icon=icon %}
+</span>

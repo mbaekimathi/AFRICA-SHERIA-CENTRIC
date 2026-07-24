@@ -1,0 +1,31 @@
+<header
+  class="doc-letterhead {{ letterhead.css_modifier }}{% if not letterhead.show_logo %} doc-letterhead--no-logo{% endif %}{% if not letterhead.show_tagline %} doc-letterhead--no-tagline{% endif %}{% if not letterhead.show_address %} doc-letterhead--no-address{% endif %}{% if not letterhead.show_contacts %} doc-letterhead--no-contacts{% endif %}"
+  style="--lh-accent: {{ letterhead_accent_hex }};"
+  aria-label="{{ firm.display_name }} letterhead"
+>
+  <div class="doc-letterhead__brand">
+    {% include "accounts/partials/company_letterhead_mark.html" %}
+    <div class="doc-letterhead__identity">
+      <p class="doc-letterhead__name">{{ firm.display_name }}</p>
+      {% if firm.tagline %}
+      <p class="doc-letterhead__tagline">{{ firm.tagline }}</p>
+      {% endif %}
+      {% if firm.city or firm.country %}
+      <p class="doc-letterhead__place">
+        {{ firm.city }}{% if firm.city and firm.country %}, {% endif %}{{ firm.country }}
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if letterhead_contact_lines or letterhead_address_lines %}
+  <div class="doc-letterhead__details">
+    {% for line in letterhead_contact_lines %}
+    <p>{{ line }}</p>
+    {% endfor %}
+    {% for line in letterhead_address_lines %}
+    <p class="doc-letterhead__address">{{ line }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+</header>

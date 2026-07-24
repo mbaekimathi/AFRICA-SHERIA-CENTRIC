@@ -469,19 +469,32 @@ def query_stk_status(*, checkout_request_id: str, simulated: bool = False) -> di
     }
 
 
-def create_stk_request(invoice, result: dict):
-    """Persist a newly initiated STK push."""
+def create_stk_request(invoice=None, result=None, *, client=None, purpose=None):
+    """Persist a newly initiated STK push for an invoice or client top-up."""
     from .models import MpesaStkRequest
 
+    result = result or {}
     checkout_id = (result.get("checkout_request_id") or "").strip()
     if not checkout_id:
         raise MpesaError("M-Pesa did not return a CheckoutRequestID.")
 
     amount = Decimal(str(result.get("amount") or 0)).quantize(Decimal("0.01"))
+    resolved_purpose = purpose or (
+        MpesaStkRequest.Purpose.CLIENT_TOPUP
+        if client is not None and invoice is None
+        else MpesaStkRequest.Purpose.INVOICE_PAYMENT
+    )
+    if resolved_purpose == MpesaStkRequest.Purpose.INVOICE_PAYMENT and invoice is None:
+        raise MpesaError("Invoice is required for invoice STK payments.")
+    if resolved_purpose == MpesaStkRequest.Purpose.CLIENT_TOPUP and client is None:
+        raise MpesaError("Client is required for account top-up STK payments.")
+
     obj, _ = MpesaStkRequest.objects.update_or_create(
         checkout_request_id=checkout_id,
         defaults={
             "invoice": invoice,
+            "client": client or (getattr(invoice, "client", None) if invoice else None),
+            "purpose": resolved_purpose,
             "merchant_request_id": (result.get("merchant_request_id") or "")[:128],
             "phone": (result.get("phone") or "")[:20],
             "amount": amount,
@@ -498,13 +511,13 @@ def create_stk_request(invoice, result: dict):
 
 def apply_stk_outcome(stk_request, outcome: dict):
     """
-    Update STK request + invoice from a query/callback outcome.
+    Update STK request + invoice/client credit from a query/callback outcome.
 
     Returns a dict suitable for UI/session: status, receipt, reason, invoice_status, etc.
     """
     from django.db import transaction
 
-    from .models import MpesaStkRequest
+    from .models import Client, ClientAccountTopup, MpesaStkRequest
 
     result_code = str(outcome.get("result_code") or "")
     result_desc = (outcome.get("result_desc") or "").strip()
@@ -515,34 +528,62 @@ def apply_stk_outcome(stk_request, outcome: dict):
     with transaction.atomic():
         stk = (
             MpesaStkRequest.objects.select_for_update()
-            .select_related("invoice")
+            .select_related("invoice", "client")
             .get(pk=stk_request.pk)
         )
         invoice = stk.invoice
+        client = stk.client
+
+        def _payload(**extra):
+            data = {
+                "status": extra.get("status", stk.status),
+                "result_code": extra.get("result_code", stk.result_code),
+                "result_desc": extra.get("result_desc", stk.result_desc),
+                "mpesa_receipt": extra.get("mpesa_receipt", stk.mpesa_receipt),
+                "amount": str(stk.amount),
+                "phone": stk.phone,
+                "checkout_request_id": stk.checkout_request_id,
+                "payment_applied": extra.get("payment_applied", stk.payment_applied),
+                "purpose": stk.purpose,
+                "invoice_status": "",
+                "invoice_status_label": "",
+                "amount_paid": "",
+                "balance_due": "",
+                "credit_balance": "",
+            }
+            if invoice is not None:
+                data["invoice_status"] = invoice.status
+                data["invoice_status_label"] = invoice.get_status_display()
+                data["amount_paid"] = str(invoice.amount_paid)
+                data["balance_due"] = str(invoice.balance_due)
+            if client is not None:
+                data["credit_balance"] = str(client.credit_balance)
+                if stk.is_client_topup:
+                    data["invoice_status_label"] = (
+                        stk.result_desc
+                        or f"Credit KES {client.credit_balance:,.2f}"
+                    )
+            for key, value in extra.items():
+                if value is not None:
+                    data[key] = value
+            return data
 
         if pending:
             stk.result_desc = result_desc or stk.result_desc
             stk.save(update_fields=["result_desc", "updated_at"])
-            return {
-                "status": "pending",
-                "result_code": result_code,
-                "result_desc": result_desc
+            return _payload(
+                status="pending",
+                result_code=result_code,
+                result_desc=result_desc
                 or "Waiting for the customer to enter their M-Pesa PIN.",
-                "mpesa_receipt": stk.mpesa_receipt,
-                "amount": str(stk.amount),
-                "phone": stk.phone,
-                "checkout_request_id": stk.checkout_request_id,
-                "invoice_status": invoice.status,
-                "invoice_status_label": invoice.get_status_display(),
-                "amount_paid": str(invoice.amount_paid),
-                "balance_due": str(invoice.balance_due),
-                "payment_applied": stk.payment_applied,
-            }
+            )
 
         if success:
             stk.status = MpesaStkRequest.Status.SUCCESS
             stk.result_code = result_code or "0"
-            stk.result_desc = result_desc or "The service request is processed successfully."
+            stk.result_desc = (
+                result_desc or "The service request is processed successfully."
+            )
             if receipt:
                 stk.mpesa_receipt = receipt[:64]
             elif not stk.mpesa_receipt and stk.simulated:
@@ -559,60 +600,81 @@ def apply_stk_outcome(stk_request, outcome: dict):
 
             if not stk.payment_applied:
                 if not stk.mpesa_receipt:
-                    # Success without receipt yet — keep success but wait to apply
-                    # until callback supplies MpesaReceiptNumber when possible.
-                    # For simulated / query-only success, synthesize a receipt.
                     stk.mpesa_receipt = f"MPX{stk.checkout_request_id[-8:].upper()}"
                     stk.save(update_fields=["mpesa_receipt", "updated_at"])
 
-                applied, new_status = invoice.apply_payment(
-                    stk.amount,
-                    mpesa_receipt=stk.mpesa_receipt,
-                )
+                if stk.is_client_topup:
+                    if client is None:
+                        raise MpesaError("Client top-up STK is missing the client.")
+                    topup = ClientAccountTopup.objects.filter(stk_request=stk).first()
+                    result = client.apply_inbound_payment(
+                        stk.amount,
+                        mpesa_receipt=stk.mpesa_receipt,
+                        note=(topup.note if topup else "") or "M-Pesa client payment",
+                        method=ClientAccountTopup.Method.MPESA,
+                        phone=stk.phone,
+                        stk_request=stk,
+                        created_by=getattr(topup, "created_by", None),
+                    )
+                    applied = Decimal(str(result["total"]))
+                    parts = []
+                    if result["applied_to_invoices"] > 0:
+                        parts.append(
+                            f"KES {result['applied_to_invoices']:,.2f} → "
+                            f"{result['invoices_updated']} invoice(s)"
+                        )
+                    if result["credit_added"] > 0:
+                        parts.append(
+                            f"KES {result['credit_added']:,.2f} credit "
+                            f"(now KES {result['credit_balance']:,.2f})"
+                        )
+                    elif not parts:
+                        parts.append(
+                            f"Credit KES {result['credit_balance']:,.2f}"
+                        )
+                    # Shown in STK success banner via invoice_status_label.
+                    if parts:
+                        stk.result_desc = "; ".join(parts)
+                        stk.save(update_fields=["result_desc", "updated_at"])
+                else:
+                    if invoice is None:
+                        raise MpesaError("Invoice STK is missing the invoice.")
+                    applied, _new_status = invoice.apply_payment(
+                        stk.amount,
+                        mpesa_receipt=stk.mpesa_receipt,
+                    )
                 stk.payment_applied = True
                 stk.save(update_fields=["payment_applied", "updated_at"])
             else:
                 applied = Decimal("0.00")
-                new_status = invoice.status
-                invoice.refresh_from_db()
+                if invoice is not None:
+                    invoice.refresh_from_db()
+                if client is not None:
+                    client.refresh_from_db(fields=["credit_balance"])
 
-            return {
-                "status": "success",
-                "result_code": stk.result_code,
-                "result_desc": stk.result_desc,
-                "mpesa_receipt": stk.mpesa_receipt,
-                "amount": str(stk.amount),
-                "applied_amount": str(applied),
-                "phone": stk.phone,
-                "checkout_request_id": stk.checkout_request_id,
-                "invoice_status": new_status,
-                "invoice_status_label": invoice.get_status_display(),
-                "amount_paid": str(invoice.amount_paid),
-                "balance_due": str(invoice.balance_due),
-                "payment_applied": True,
-            }
+            return _payload(
+                status="success",
+                applied_amount=str(applied),
+                payment_applied=True,
+            )
 
-        # Failed
         stk.status = MpesaStkRequest.Status.FAILED
         stk.result_code = result_code
         stk.result_desc = result_desc or "Payment failed."
         stk.save(
             update_fields=["status", "result_code", "result_desc", "updated_at"]
         )
-        return {
-            "status": "failed",
-            "result_code": stk.result_code,
-            "result_desc": stk.result_desc,
-            "mpesa_receipt": "",
-            "amount": str(stk.amount),
-            "phone": stk.phone,
-            "checkout_request_id": stk.checkout_request_id,
-            "invoice_status": invoice.status,
-            "invoice_status_label": invoice.get_status_display(),
-            "amount_paid": str(invoice.amount_paid),
-            "balance_due": str(invoice.balance_due),
-            "payment_applied": False,
-        }
+        topup = ClientAccountTopup.objects.filter(stk_request=stk).first()
+        if topup is not None and topup.status == ClientAccountTopup.Status.PENDING:
+            topup.status = ClientAccountTopup.Status.FAILED
+            topup.save(update_fields=["status", "updated_at"])
+        return _payload(
+            status="failed",
+            result_code=stk.result_code,
+            result_desc=stk.result_desc,
+            mpesa_receipt="",
+            payment_applied=False,
+        )
 
 
 def refresh_stk_request(stk_request):

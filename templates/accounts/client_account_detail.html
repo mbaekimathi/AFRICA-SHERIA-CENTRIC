@@ -1,9 +1,14 @@
 {% extends "layouts/workspace.html" %}
+{% load static %}
 
 {% block title %}{{ selected_client.get_full_name }} — {{ page_title }}{% endblock %}
 
 {% block content %}
-<section class="page page--client-accounts page--client-account-detail">
+<section
+  class="page page--client-accounts page--client-account-detail"
+  id="client-account-detail-page"
+  {% if open_topup_modal %}data-open-topup="1"{% endif %}
+>
   <header class="client-account-profile">
     <div class="client-account-profile__top">
       <a href="{{ back_url }}" class="client-account-back">
@@ -40,7 +45,7 @@
       <div class="client-account-profile__copy">
         <h2>{{ selected_client.get_full_name }}</h2>
         <p class="client-account-profile__lead">
-          Client account overview for invoices, payments, and outstanding balances.
+          Client account overview for invoices, payments, credit balance, and outstanding balances.
         </p>
         <div class="client-account-profile__meta">
           <span>
@@ -82,6 +87,10 @@
       <span class="client-account-metric__label">Balance due</span>
       <strong class="client-account-metric__value">KES {{ account_detail.balance_due|floatformat:2 }}</strong>
     </article>
+    <article class="client-account-metric client-account-metric--paid">
+      <span class="client-account-metric__label">Credit balance</span>
+      <strong class="client-account-metric__value">KES {{ account_detail.credit_balance|floatformat:2 }}</strong>
+    </article>
   </div>
 
   <section class="client-account-panel">
@@ -90,11 +99,16 @@
         <h3>Invoice history</h3>
         <p>{{ account_detail.invoice_count }} invoice{{ account_detail.invoice_count|pluralize }} · {{ account_detail.open_count }} open</p>
       </div>
-      {% for item in page_nav_items %}
-      {% if item.slug == "generate-invoice" %}
-      <a href="{{ item.url }}" class="btn btn--primary btn--inline">Generate invoice</a>
-      {% endif %}
-      {% endfor %}
+      <div class="client-account-panel__actions">
+        <button type="button" class="btn btn--quiet btn--inline js-open-topup-client">
+          Record payment
+        </button>
+        {% for item in page_nav_items %}
+        {% if item.slug == "generate-invoice" %}
+        <a href="{{ item.url }}" class="btn btn--primary btn--inline">Generate invoice</a>
+        {% endif %}
+        {% endfor %}
+      </div>
     </header>
 
     <div class="client-account-panel__body client-account-panel__body--table">
@@ -108,10 +122,6 @@
               <th scope="col">Issued</th>
               <th scope="col">Due</th>
               <th scope="col">Total</th>
-              <th scope="col">Paid</th>
-              <th scope="col">Balance</th>
-              <th scope="col">Status</th>
-              <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr>
           </thead>
           <tbody>
@@ -127,19 +137,6 @@
               <td>{{ invoice.issue_date|date:"d M Y" }}</td>
               <td>{{ invoice.due_date|date:"d M Y" }}</td>
               <td class="mono">KES {{ invoice.total_amount|floatformat:2 }}</td>
-              <td class="mono">KES {{ invoice.amount_paid|floatformat:2 }}</td>
-              <td class="mono">KES {{ invoice.balance_due|floatformat:2 }}</td>
-              <td>
-                <span class="invoice-status invoice-status--{{ invoice.status }}">
-                  {{ invoice.get_status_display }}
-                </span>
-              </td>
-              <td class="data-table__actions">
-                <a
-                  href="{% url 'accounts:view_invoice' role=role_slug invoice_id=invoice.pk %}"
-                  class="btn btn--quiet btn--inline"
-                >View</a>
-              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -159,6 +156,168 @@
       {% endif %}
     </div>
   </section>
+
+  {% if recent_topups %}
+  <section class="client-account-panel">
+    <header class="client-account-panel__head">
+      <div>
+        <h3>Recent payments</h3>
+        <p>Amounts the client has paid up on this account</p>
+      </div>
+    </header>
+    <div class="client-account-panel__body client-account-panel__body--table">
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Method</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Status</th>
+              <th scope="col">Note / receipt</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for topup in recent_topups %}
+            <tr>
+              <td>{{ topup.created_at|date:"d M Y H:i" }}</td>
+              <td>{{ topup.get_method_display }}</td>
+              <td class="mono">KES {{ topup.amount|floatformat:2 }}</td>
+              <td>{{ topup.get_status_display }}</td>
+              <td>
+                {% if topup.mpesa_receipt %}
+                <span class="mono">{{ topup.mpesa_receipt }}</span>
+                {% elif topup.note %}
+                {{ topup.note|truncatechars:60 }}
+                {% else %}
+                <span class="muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <dialog class="workspace-modal" id="topup-client-account-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Record client payment</h2>
+        <p>
+          Apply money from {{ selected_client.get_full_name }} to open invoices first
+          (updates amount paid and balance due; income goes to Main Client Accounts).
+          Any surplus is kept as credit
+          (<strong>KES {{ account_detail.credit_balance|floatformat:2 }}</strong> now).
+        </p>
+      </header>
+      <form method="post" class="workspace-form" id="topup-client-account-form" data-stk-loading novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="topup-client-account">
+        <input type="hidden" name="client" value="{{ selected_client.pk }}">
+        <div class="workspace-modal__body">
+          {% if topup_form.non_field_errors %}
+          <div class="form-alert" role="alert">
+            {% for error in topup_form.non_field_errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="form-field">
+            <label for="{{ topup_form.method.id_for_label }}">
+              {{ topup_form.method.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.method }}
+            {% if topup_form.method.errors %}
+            <p class="field-error">{{ topup_form.method.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ topup_form.amount.id_for_label }}">
+              {{ topup_form.amount.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.amount }}
+            {% if topup_form.amount.errors %}
+            <p class="field-error">{{ topup_form.amount.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field is-hidden" id="client-topup-phone-field" hidden>
+            <label for="{{ topup_form.phone.id_for_label }}">
+              {{ topup_form.phone.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.phone }}
+            <p class="field-hint">
+              Safaricom number that will receive the STK push prompt.
+              {% if not mpesa_live %}Live M-Pesa credentials are not set — STK will be simulated.{% endif %}
+            </p>
+            {% if topup_form.phone.errors %}
+            <p class="field-error">{{ topup_form.phone.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ topup_form.note.id_for_label }}">{{ topup_form.note.label }}</label>
+            {{ topup_form.note }}
+            {% if topup_form.note.errors %}
+            <p class="field-error">{{ topup_form.note.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          {% if stk_push %}
+          <div
+            id="stk-live-monitor"
+            class="pay-stk-status pay-stk-status--{{ stk_push.stk_status|default:'pending' }}"
+            role="status"
+            aria-live="polite"
+            {% if stk_poll_url and stk_push.stk_status != "success" and stk_push.stk_status != "failed" %}
+            data-stk-live
+            data-poll-url="{{ stk_poll_url }}"
+            data-status="{{ stk_push.stk_status|default:'pending' }}"
+            {% endif %}
+          >
+            <h3>STK payment status</h3>
+            <p>
+              Prompt sent to <strong>{{ stk_push.phone }}</strong>
+              for <strong>KES {{ stk_push.amount }}</strong>.
+            </p>
+            <p class="pay-stk-banner pay-stk-banner--success js-stk-banner" {% if stk_push.stk_status != "success" %}hidden{% endif %}>
+              Payment successful.
+              {% if stk_push.mpesa_receipt %}
+              M-Pesa receipt: <strong class="js-stk-receipt">{{ stk_push.mpesa_receipt }}</strong>.
+              {% else %}
+              <strong class="js-stk-receipt"></strong>
+              {% endif %}
+              <span class="js-stk-invoice-status">{{ stk_push.invoice_status_label }}</span>
+            </p>
+            <p class="pay-stk-banner pay-stk-banner--failed js-stk-banner" {% if stk_push.stk_status != "failed" %}hidden{% endif %}>
+              Payment failed<span class="js-stk-fail-reason">{% if stk_push.result_desc %}: {{ stk_push.result_desc }}{% endif %}</span>.
+            </p>
+            <p class="pay-stk-banner pay-stk-banner--pending js-stk-banner" {% if stk_push.stk_status == "success" or stk_push.stk_status == "failed" %}hidden{% endif %}>
+              <span class="pay-stk-live">
+                <span class="btn-spinner" aria-hidden="true"></span>
+                <span class="pay-stk-live__label js-stk-live-label">
+                  {% if stk_push.result_desc %}{{ stk_push.result_desc }}{% else %}Checking payment status live — enter the M-Pesa PIN on the phone.{% endif %}
+                </span>
+              </span>
+            </p>
+          </div>
+          {% endif %}
+        </div>
+        <div class="workspace-modal__actions">
+          <button type="button" class="btn btn--quiet" id="topup-client-cancel">Cancel</button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            id="topup-client-submit"
+            data-loading-text="Processing…"
+          >Record payment</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
   {% else %}
   <section class="client-account-panel">
     <div class="client-account-panel__body">
@@ -171,4 +330,65 @@
   </section>
   {% endif %}
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/stk-pay.js' %}" defer></script>
+<script src="{% static 'js/stk-live.js' %}" defer></script>
+<script>
+(function () {
+  "use strict";
+  var page = document.getElementById("client-account-detail-page");
+  var modal = document.getElementById("topup-client-account-modal");
+  if (!modal) return;
+
+  function openModal() {
+    if (typeof modal.showModal === "function") modal.showModal();
+  }
+  function closeModal() {
+    if (typeof modal.close === "function") modal.close();
+    if (window.location.hash === "#topup-client-account") {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }
+
+  document.querySelectorAll(".js-open-topup-client, a[href='#topup-client-account']").forEach(function (el) {
+    el.addEventListener("click", function (event) {
+      event.preventDefault();
+      openModal();
+    });
+  });
+
+  var cancel = document.getElementById("topup-client-cancel");
+  if (cancel) cancel.addEventListener("click", closeModal);
+  modal.addEventListener("click", function (event) {
+    if (event.target === modal) closeModal();
+  });
+
+  var method = document.getElementById("id_client_topup_method");
+  var phoneField = document.getElementById("client-topup-phone-field");
+  var submitBtn = document.getElementById("topup-client-submit");
+
+  function syncMethodFields() {
+    var value = method ? method.value : "manual";
+    var isMpesa = value === "mpesa";
+    if (phoneField) {
+      phoneField.hidden = !isMpesa;
+      phoneField.classList.toggle("is-hidden", !isMpesa);
+    }
+    if (submitBtn) {
+      submitBtn.textContent = isMpesa ? "Send STK prompt" : "Record payment";
+      submitBtn.setAttribute("data-loading-text", isMpesa ? "Sending STK push…" : "Recording…");
+    }
+  }
+
+  if (method) {
+    method.addEventListener("change", syncMethodFields);
+    syncMethodFields();
+  }
+
+  if (page && page.dataset.openTopup === "1") openModal();
+  if (window.location.hash === "#topup-client-account") openModal();
+})();
+</script>
 {% endblock %}

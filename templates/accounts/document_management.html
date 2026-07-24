@@ -1,0 +1,264 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--drive-browser" id="document-management-page" data-reveal-root>
+  <header class="drive-browser__hero" data-reveal>
+    <div class="drive-browser__hero-main">
+      {% include "accounts/partials/icon_3d.html" with icon="folder" tone=3 size="lg" float=True extra_class="drive-browser__hero-icon" %}
+      <div class="drive-browser__copy">
+        <p class="page-kicker">{{ session_greeting }}</p>
+        <h2>{{ page_title }}</h2>
+        <p class="page-lead">
+          Browse the firm document tree with the same structure used for clients,
+          matters, and case filings.
+        </p>
+      </div>
+    </div>
+
+    <div class="drive-browser__hero-aside">
+      <div class="drive-browser__stats" aria-label="Folder summary">
+        {% if drive_browser.grouping_mode == "clients" %}
+        <div class="drive-browser__stat">
+          <strong>{{ drive_browser.item_count }}</strong>
+          <span>Clients</span>
+        </div>
+        {% elif drive_browser.grouping_mode == "party" %}
+        <div class="drive-browser__stat">
+          <strong>{{ drive_browser.item_count }}</strong>
+          <span>Documents</span>
+        </div>
+        <div class="drive-browser__stat">
+          <strong>{{ drive_browser.item_groups|length }}</strong>
+          <span>Party types</span>
+        </div>
+        {% else %}
+        <div class="drive-browser__stat">
+          <strong>{{ drive_browser.folder_count }}</strong>
+          <span>Folders</span>
+        </div>
+        <div class="drive-browser__stat">
+          <strong>{{ drive_browser.file_count }}</strong>
+          <span>Files</span>
+        </div>
+        {% endif %}
+      </div>
+      <div class="drive-browser__hero-meta">
+        {% if drive_browser.google_drive_connected %}
+        <span class="drive-browser__pill drive-browser__pill--on">Connected</span>
+        {% if drive_browser.google_drive.account_email %}
+        <span class="drive-browser__account">{{ drive_browser.google_drive.account_email }}</span>
+        {% endif %}
+        {% else %}
+        <a class="drive-browser__pill drive-browser__pill--off" href="{{ drive_browser.google_drive_settings_url }}">
+          Connect Drive
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  {% if drive_browser.drive_error %}
+  <div class="drive-browser__alert" role="alert" data-reveal>
+    <div class="drive-browser__alert-copy">
+      <strong>Unable to load this folder</strong>
+      <p>{{ drive_browser.drive_error }}</p>
+    </div>
+    {% if drive_browser.google_drive_settings_url %}
+    <a class="btn btn--quiet btn--inline" href="{{ drive_browser.google_drive_settings_url }}">Open settings</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if drive_browser.google_drive_connected %}
+  <div class="drive-browser__toolbar" data-reveal>
+    <nav class="drive-browser__crumbs" aria-label="Folder path">
+      {% if drive_browser.parent_folder_id %}
+      <a class="drive-browser__up" href="?folder={{ drive_browser.parent_folder_id }}" title="Up one folder">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+          <path d="M15 6 9 12l6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Up</span>
+      </a>
+      {% endif %}
+      <ol class="drive-browser__crumb-list">
+        {% for crumb in drive_browser.breadcrumbs %}
+        <li>
+          {% if forloop.last %}
+          <span aria-current="page">{{ crumb.name }}</span>
+          {% else %}
+          <a href="?folder={{ crumb.id }}">{{ crumb.name }}</a>
+          {% endif %}
+        </li>
+        {% empty %}
+        <li><span aria-current="page">{{ drive_browser.firm_drive_root_name }}</span></li>
+        {% endfor %}
+      </ol>
+    </nav>
+
+    <label class="drive-browser__search" for="drive-browser-filter">
+      <span class="drive-browser__search-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+          <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.7"/>
+          <path d="m16 16 3.25 3.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="visually-hidden">
+        {% if drive_browser.grouping_mode == "clients" %}Search clients{% elif drive_browser.grouping_mode == "party" %}Search documents{% else %}Filter this folder{% endif %}
+      </span>
+      <input
+        id="drive-browser-filter"
+        type="search"
+        placeholder="{% if drive_browser.grouping_mode == 'clients' %}Search clients…{% elif drive_browser.grouping_mode == 'party' %}Search documents…{% else %}Filter this folder…{% endif %}"
+        autocomplete="off"
+        data-drive-filter
+      >
+    </label>
+  </div>
+
+  <section class="drive-browser__panel" aria-labelledby="drive-folder-title" data-reveal>
+    <div class="drive-browser__panel-head">
+      <div class="drive-browser__panel-title">
+        {% if drive_browser.grouping_mode == "clients" %}
+        {% include "accounts/partials/icon_3d.html" with icon="clients" tone=2 size="sm" float=True extra_class="drive-browser__panel-icon" %}
+        {% elif drive_browser.grouping_mode == "party" %}
+        {% include "accounts/partials/icon_3d.html" with icon="document" tone=5 size="sm" float=True extra_class="drive-browser__panel-icon" %}
+        {% else %}
+        {% include "accounts/partials/icon_3d.html" with icon="folder" tone=3 size="sm" float=True extra_class="drive-browser__panel-icon" %}
+        {% endif %}
+        <div>
+          <h3 id="drive-folder-title">{{ drive_browser.current_folder_name }}</h3>
+          <p class="drive-browser__panel-sub">
+            {% if drive_browser.grouping_mode == "clients" %}
+            {{ drive_browser.item_count }} client folder{{ drive_browser.item_count|pluralize }}
+            · individual and corporate
+            {% elif drive_browser.grouping_mode == "party" %}
+            {{ drive_browser.item_count }} document{{ drive_browser.item_count|pluralize }}
+            · grouped by party type
+            {% else %}
+            {{ drive_browser.folder_count }} folder{{ drive_browser.folder_count|pluralize }}
+            · {{ drive_browser.file_count }} file{{ drive_browser.file_count|pluralize }}
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {% if drive_browser.items %}
+    {% if drive_browser.item_groups %}
+    <div class="drive-browser__groups" data-drive-groups>
+      {% for group in drive_browser.item_groups %}
+      <details
+        class="drive-browser__group drive-browser__group--{{ group.key }}"
+        data-drive-group
+        data-reveal
+        style="--stagger: {{ forloop.counter0 }}"
+        {% if group.count %}open{% endif %}
+        {% if not group.count %}hidden{% endif %}
+      >
+        <summary class="drive-browser__group-summary">
+          {% include "accounts/partials/icon_3d.html" with icon=group.icon tone=group.tone size="sm" float=True extra_class="drive-browser__group-icon" %}
+          <span class="drive-browser__group-copy">
+            <strong>{{ group.label }}</strong>
+            <span>{{ group.hint }}</span>
+          </span>
+          <span class="drive-browser__group-count" data-drive-group-count>{{ group.count }}</span>
+          <span class="drive-browser__group-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+              <path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </summary>
+        {% if group.items %}
+        <div class="drive-browser__table-wrap">
+          <table class="drive-browser__table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Owner</th>
+                <th scope="col">Last modified</th>
+                <th scope="col">Size</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% include "accounts/partials/drive_browser_rows.html" with items=group.items group_key=group.key %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="drive-browser__group-empty">No {{ group.label|lower }} in this folder.</p>
+        {% endif %}
+      </details>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="drive-browser__table-wrap">
+      <table class="drive-browser__table">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Owner</th>
+            <th scope="col">Last modified</th>
+            <th scope="col">Size</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% include "accounts/partials/drive_browser_rows.html" with items=drive_browser.items %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    <p class="drive-browser__empty-filter" hidden data-drive-empty-filter>
+      No items match this filter.
+    </p>
+    {% elif not drive_browser.drive_error %}
+    <div class="drive-browser__empty">
+      {% include "accounts/partials/icon_3d.html" with icon="folder" tone=3 size="lg" float=True %}
+      <p class="empty-state__title">This folder is empty</p>
+      <p class="empty-state__copy">
+        Nothing is in <strong>{{ drive_browser.current_folder_name }}</strong> yet.
+      </p>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var input = document.querySelector("[data-drive-filter]");
+  if (!input) return;
+  var rows = Array.prototype.slice.call(document.querySelectorAll("[data-drive-row]"));
+  var groups = Array.prototype.slice.call(document.querySelectorAll("[data-drive-group]"));
+  var empty = document.querySelector("[data-drive-empty-filter]");
+  input.addEventListener("input", function () {
+    var q = (input.value || "").trim().toLowerCase();
+    var visible = 0;
+    rows.forEach(function (row) {
+      var name = row.getAttribute("data-name") || "";
+      var show = !q || name.indexOf(q) !== -1;
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    groups.forEach(function (group) {
+      var groupRows = group.querySelectorAll("[data-drive-row]");
+      var count = 0;
+      groupRows.forEach(function (row) {
+        if (!row.hidden) count += 1;
+      });
+      var countEl = group.querySelector("[data-drive-group-count]");
+      if (countEl) countEl.textContent = String(count);
+      group.hidden = count === 0 && !!q;
+      if (!q && groupRows.length === 0) group.hidden = true;
+      if (!q && groupRows.length > 0) group.hidden = false;
+    });
+    if (empty) empty.hidden = visible !== 0 || !rows.length;
+  });
+})();
+</script>
+{% endblock %}

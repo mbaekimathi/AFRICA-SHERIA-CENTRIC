@@ -4,17 +4,24 @@
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
 {% block content %}
-<section class="page" id="payroll-page">
+<section
+  class="page"
+  id="payroll-page"
+  {% if open_register_modal %}data-open-register="1"{% endif %}
+  {% if selected_register_employee_id %}data-register-employee="{{ selected_register_employee_id }}"{% endif %}
+>
   <header class="page-intro">
     <div class="page-intro__copy">
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Click an employee row to open their payroll account and view all transactions.
+        Click a registered employee to open their payroll account. Click an unregistered employee to register payroll for them.
       </p>
     </div>
     <div class="page-intro__actions">
-      <a href="{{ register_payroll_url }}" class="btn btn--primary btn--inline">Register payroll</a>
+      <button type="button" class="btn btn--primary btn--inline js-open-register-payroll">
+        Register payroll
+      </button>
     </div>
   </header>
   <div class="metrics metrics--dash">
@@ -48,12 +55,13 @@
               <th scope="col">Status</th>
               <th scope="col">Payroll status</th>
               <th scope="col">Runs</th>
+              <th scope="col"><span class="visually-hidden">Open</span></th>
             </tr>
           </thead>
           <tbody>
             {% if unregistered_rows %}
             <tr class="data-table__section-row">
-              <td colspan="5">
+              <td colspan="6">
                 <span class="data-table__section-label data-table__section-label--warn">Not registered</span>
                 <span class="data-table__section-count">{{ unregistered_rows|length }}</span>
               </td>
@@ -61,10 +69,10 @@
             {% for row in unregistered_rows %}
             <tr
               class="is-clickable-row"
-              data-href="{{ row.detail_url }}"
+              data-register-employee="{{ row.employee.pk }}"
               tabindex="0"
-              role="link"
-              aria-label="View payroll for {{ row.employee.get_full_name|default:row.employee.login_code }}"
+              role="button"
+              aria-label="Register payroll for {{ row.employee.get_full_name|default:row.employee.login_code }}"
             >
               <td>
                 <div class="person-cell">
@@ -76,9 +84,13 @@
                   </div>
                   {% endif %}
                   <div class="person-cell__text">
-                    <a href="{{ row.detail_url }}" class="person-cell__name person-cell__name--link">
+                    <button
+                      type="button"
+                      class="person-cell__name person-cell__name--link js-open-register-payroll"
+                      data-register-employee="{{ row.employee.pk }}"
+                    >
                       {{ row.employee.get_full_name|default:row.employee.login_code }}
-                    </a>
+                    </button>
                     <span class="person-cell__meta">{{ row.employee.personal_email }}</span>
                   </div>
                 </div>
@@ -93,13 +105,20 @@
                 <span class="status-pill status-pill--not-registered">{{ row.payroll_status_label }}</span>
               </td>
               <td class="muted">—</td>
+              <td class="data-table__action">
+                <button
+                  type="button"
+                  class="btn btn--quiet btn--inline js-open-register-payroll"
+                  data-register-employee="{{ row.employee.pk }}"
+                >Register</button>
+              </td>
             </tr>
             {% endfor %}
             {% endif %}
 
             {% if registered_rows %}
             <tr class="data-table__section-row">
-              <td colspan="5">
+              <td colspan="6">
                 <span class="data-table__section-label">Registered</span>
                 <span class="data-table__section-count">{{ registered_rows|length }}</span>
               </td>
@@ -139,6 +158,9 @@
                 <span class="status-pill status-pill--{{ row.payroll_status }}">{{ row.payroll_status_label }}</span>
               </td>
               <td>{{ row.run_count }}</td>
+              <td class="data-table__action">
+                <a href="{{ row.detail_url }}" class="btn btn--quiet btn--inline">Open</a>
+              </td>
             </tr>
             {% endfor %}
             {% endif %}
@@ -156,9 +178,24 @@
       {% endif %}
     </div>
   </section>
+
+  <dialog class="workspace-modal workspace-modal--wide" id="register-payroll-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Register payroll</h2>
+        <p id="register-payroll-modal-subtitle">
+          Register earnings, statutory deductions, and employer costs.
+        </p>
+      </header>
+      <div class="workspace-modal__body workspace-modal__body--scroll">
+        {% include "accounts/partials/register_payroll_form.html" with register_form_in_modal=True %}
+      </div>
+    </div>
+  </dialog>
 </section>
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/register-payroll.js' %}" defer></script>
 <script src="{% static 'js/payroll-list.js' %}" defer></script>
 {% endblock %}

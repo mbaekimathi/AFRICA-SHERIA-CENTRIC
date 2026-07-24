@@ -10,7 +10,9 @@
       <p class="page-kicker">Payments · {{ invoice.client.get_full_name }}</p>
       <h2>Pay invoice</h2>
       <p class="page-lead">
-        Review status, balance, and payment records for {{ invoice.invoice_number }}, then send an M-Pesa STK push if a balance remains.
+        Record a manual payment or send an M-Pesa STK push for {{ invoice.invoice_number }}.
+        Successful payments are topped up as income in
+        <strong>Main Client Accounts</strong> (MAIN-CLIENT).
       </p>
     </div>
   </header>
@@ -40,11 +42,11 @@
         </div>
         <div>
           <dt>Amount paid</dt>
-          <dd>KES {{ invoice.amount_paid|floatformat:2 }}</dd>
+          <dd class="js-pay-amount-paid">KES {{ invoice.amount_paid|floatformat:2 }}</dd>
         </div>
         <div>
           <dt>Balance due</dt>
-          <dd><strong>KES {{ invoice.balance_due|floatformat:2 }}</strong></dd>
+          <dd class="js-pay-balance-due"><strong>KES {{ invoice.balance_due|floatformat:2 }}</strong></dd>
         </div>
         {% if invoice.last_mpesa_receipt %}
         <div>
@@ -68,13 +70,21 @@
       {% if can_pay %}
       <form method="post" class="workspace-form" id="stk-pay-form" data-stk-loading novalidate>
         {% csrf_token %}
-        <input type="hidden" name="action" value="stk">
+        <input type="hidden" name="action" value="pay">
 
         {% if form.non_field_errors %}
         <div class="form-alert" role="alert">
           {% for error in form.non_field_errors %}{{ error }}{% endfor %}
         </div>
         {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.method.id_for_label }}">
+            {{ form.method.label }} <span aria-hidden="true">*</span>
+          </label>
+          {{ form.method }}
+          {% if form.method.errors %}<span class="field-error">{{ form.method.errors.0 }}</span>{% endif %}
+        </div>
 
         <div class="form-field">
           <label for="{{ form.amount.id_for_label }}">
@@ -87,7 +97,7 @@
           {% if form.amount.errors %}<span class="field-error">{{ form.amount.errors.0 }}</span>{% endif %}
         </div>
 
-        <div class="form-field">
+        <div class="form-field" id="pay-phone-field">
           <label for="{{ form.phone.id_for_label }}">
             {{ form.phone.label }} <span aria-hidden="true">*</span>
           </label>
@@ -99,10 +109,18 @@
           {% if form.phone.errors %}<span class="field-error">{{ form.phone.errors.0 }}</span>{% endif %}
         </div>
 
+        <div class="form-field is-hidden" id="pay-reference-field" hidden>
+          <label for="{{ form.reference.id_for_label }}">{{ form.reference.label }}</label>
+          {{ form.reference }}
+          <span class="field-hint">Optional bank, cash, or cheque reference for this manual payment.</span>
+          {% if form.reference.errors %}<span class="field-error">{{ form.reference.errors.0 }}</span>{% endif %}
+        </div>
+
         <div class="form-actions form-actions--start">
           <button
             type="submit"
             class="btn btn--primary btn--inline"
+            id="pay-submit-btn"
             data-loading-text="Sending STK push…"
           >Send STK push</button>
         </div>
@@ -117,7 +135,7 @@
   <section class="panel">
     <div class="panel__head">
       <h3>Payment records</h3>
-      <p class="panel__hint">{{ payment_records|length }} payment(s)</p>
+      <p class="panel__hint">{{ payment_records|length }} M-Pesa payment(s)</p>
     </div>
     <div class="panel__body panel__body--table">
       {% if payment_records %}
@@ -157,4 +175,36 @@
 {% block extra_js %}
 <script src="{% static 'js/stk-pay.js' %}" defer></script>
 <script src="{% static 'js/stk-live.js' %}" defer></script>
+<script>
+(function () {
+  "use strict";
+  var method = document.getElementById("id_pay_method");
+  var phoneField = document.getElementById("pay-phone-field");
+  var referenceField = document.getElementById("pay-reference-field");
+  var submitBtn = document.getElementById("pay-submit-btn");
+  if (!method) return;
+
+  function syncPayMethod() {
+    var isMpesa = method.value !== "manual";
+    if (phoneField) {
+      phoneField.hidden = !isMpesa;
+      phoneField.classList.toggle("is-hidden", !isMpesa);
+    }
+    if (referenceField) {
+      referenceField.hidden = isMpesa;
+      referenceField.classList.toggle("is-hidden", isMpesa);
+    }
+    if (submitBtn) {
+      submitBtn.textContent = isMpesa ? "Send STK push" : "Record manual payment";
+      submitBtn.setAttribute(
+        "data-loading-text",
+        isMpesa ? "Sending STK push…" : "Recording payment…"
+      );
+    }
+  }
+
+  method.addEventListener("change", syncPayMethod);
+  syncPayMethod();
+})();
+</script>
 {% endblock %}

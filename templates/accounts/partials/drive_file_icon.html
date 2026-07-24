@@ -1,0 +1,84 @@
+{# Soft 3D file/folder glyph for Drive browser. Expects: kind (folder|docs|sheets|slides|pdf|image|file) #}
+<span class="drive-file-3d drive-file-3d--{{ kind|default:'file' }}" aria-hidden="true">
+  <span class="drive-file-3d__shadow"></span>
+  <span class="drive-file-3d__body">
+    {% if kind == "folder" %}
+    <svg class="drive-file-3d__art" viewBox="0 0 48 48" fill="none">
+      <ellipse class="drive-file-3d__ground" cx="24" cy="42.5" rx="14" ry="2.4"/>
+      <path class="drive-file-3d__depth" d="M8 16.5c0-1.8 1.4-3.2 3.2-3.2h9.1l2.4 2.5h14.1c1.8 0 3.2 1.4 3.2 3.2v18.1c0 1.8-1.4 3.2-3.2 3.2H11.2c-1.8 0-3.2-1.4-3.2-3.2V16.5z"/>
+      <path class="drive-file-3d__face" d="M7 15.2c0-1.9 1.5-3.4 3.4-3.4h9.4l2.6 2.7H36.6c1.9 0 3.4 1.5 3.4 3.4v18.4c0 1.9-1.5 3.4-3.4 3.4H10.4c-1.9 0-3.4-1.5-3.4-3.4V15.2z"/>
+      <path class="drive-file-3d__tab" d="M7 11.8c0-1.5 1.2-2.7 2.7-2.7h8.3l2.2 2.4H9.7C8.2 11.5 7 12.7 7 14.2v-2.4z"/>
+      <path class="drive-file-3d__shine" d="M7 18.4h33v3.2H7z"/>
+      <path class="drive-file-3d__lip" d="M7 21.2h33v1.4c0 .5-.4.9-.9.9H7.9c-.5 0-.9-.4-.9-.9v-1.4z"/>
+    </svg>
+    {% elif kind == "docs" %}
+    <svg class="drive-file-3d__art" viewBox="0 0 48 48" fill="none">
+      <ellipse class="drive-file-3d__ground" cx="24" cy="43" rx="11.5" ry="2.1"/>
+      <path class="drive-file-3d__depth" d="M14.2 7.4h14.8L37 15.4v24.2c0 1.5-1.2 2.7-2.7 2.7H14.2c-1.5 0-2.7-1.2-2.7-2.7V10.1c0-1.5 1.2-2.7 2.7-2.7z"/>
+      <path class="drive-file-3d__face" d="M12.8 6h15.2L36.2 14.2v24.8c0 1.7-1.3 3-3 3H12.8c-1.7 0-3-1.3-3-3V9c0-1.7 1.3-3 3-3z"/>
+      <path class="drive-file-3d__fold" d="M28 6v6.4c0 1.1.9 2 2 2h6.2L28 6z"/>
+      <path class="drive-file-3d__line" d="M15.4 22.2h14.4"/>
+      <path class="drive-file-3d__line" d="M15.4 26.8h14.4"/>
+      <path class="drive-file-3d__line" d="M15.4 31.4h9.8"/>
+      <rect class="drive-file-3d__badge" x="15" y="12.2" width="8.2" height="5.4" rx="1.2"/>
+      <text class="drive-file-3d__label" x="19.1" y="16.1" text-anchor="middle">W</text>
+    </svg>
+    {% elif kind == "sheets" %}
+    <svg class="drive-file-3d__art" viewBox="0 0 48 48" fill="none">
+      <ellipse class="drive-file-3d__ground" cx="24" cy="43" rx="11.5" ry="2.1"/>
+      <path class="drive-file-3d__depth" d="M14.2 7.4h14.8L37 15.4v24.2c0 1.5-1.2 2.7-2.7 2.7H14.2c-1.5 0-2.7-1.2-2.7-2.7V10.1c0-1.5 1.2-2.7 2.7-2.7z"/>
+      <path class="drive-file-3d__face" d="M12.8 6h15.2L36.2 14.2v24.8c0 1.7-1.3 3-3 3H12.8c-1.7 0-3-1.3-3-3V9c0-1.7 1.3-3 3-3z"/>
+      <path class="drive-file-3d__fold" d="M28 6v6.4c0 1.1.9 2 2 2h6.2L28 6z"/>
+      <rect class="drive-file-3d__grid" x="14.6" y="18.5" width="16" height="14.8" rx="1.1"/>
+      <path class="drive-file-3d__grid-line" d="M14.6 22.2h16M14.6 25.9h16M14.6 29.6h16M19.9 18.5v14.8M25.2 18.5v14.8"/>
+      <rect class="drive-file-3d__badge" x="14.8" y="11.8" width="8.6" height="4.8" rx="1.1"/>
+      <text class="drive-file-3d__label" x="19.1" y="15.3" text-anchor="middle">X</text>
+    </svg>
+    {% elif kind == "slides" %}
+    <svg class="drive-file-3d__art" viewBox="0 0 48 48" fill="none">
+      <ellipse class="drive-file-3d__ground" cx="24" cy="43" rx="11.5" ry="2.1"/>
+      <path class="drive-file-3d__depth" d="M14.2 7.4h14.8L37 15.4v24.2c0 1.5-1.2 2.7-2.7 2.7H14.2c-1.5 0-2.7-1.2-2.7-2.7V10.1c0-1.5 1.2-2.7 2.7-2.7z"/>
+      <path class="drive-file-3d__face" d="M12.8 6h15.2L36.2 14.2v24.8c0 1.7-1.3 3-3 3H12.8c-1.7 0-3-1.3-3-3V9c0-1.7 1.3-3 3-3z"/>
+      <path class="drive-file-3d__fold" d="M28 6v6.4c0 1.1.9 2 2 2h6.2L28 6z"/>
+      <rect class="drive-file-3d__slide" x="14.8" y="18.8" width="15.6" height="11.4" rx="1.3"/>
+      <rect class="drive-file-3d__slide-bar" x="17" y="21.2" width="7.2" height="1.5" rx=".6"/>
+      <rect class="drive-file-3d__slide-bar drive-file-3d__slide-bar--soft" x="17" y="24.2" width="11" height="1.2" rx=".5"/>
+      <rect class="drive-file-3d__slide-bar drive-file-3d__slide-bar--soft" x="17" y="27" width="9" height="1.2" rx=".5"/>
+      <rect class="drive-file-3d__badge" x="14.8" y="11.8" width="8.6" height="4.8" rx="1.1"/>
+      <text class="drive-file-3d__label" x="19.1" y="15.3" text-anchor="middle">P</text>
+    </svg>
+    {% elif kind == "pdf" %}
+    <svg class="drive-file-3d__art" viewBox="0 0 48 48" fill="none">
+      <ellipse class="drive-file-3d__ground" cx="24" cy="43" rx="11.5" ry="2.1"/>
+      <path class="drive-file-3d__depth" d="M14.2 7.4h14.8L37 15.4v24.2c0 1.5-1.2 2.7-2.7 2.7H14.2c-1.5 0-2.7-1.2-2.7-2.7V10.1c0-1.5 1.2-2.7 2.7-2.7z"/>
+      <path class="drive-file-3d__face" d="M12.8 6h15.2L36.2 14.2v24.8c0 1.7-1.3 3-3 3H12.8c-1.7 0-3-1.3-3-3V9c0-1.7 1.3-3 3-3z"/>
+      <path class="drive-file-3d__fold" d="M28 6v6.4c0 1.1.9 2 2 2h6.2L28 6z"/>
+      <path class="drive-file-3d__line" d="M15.4 24.4h14.4"/>
+      <path class="drive-file-3d__line" d="M15.4 28.8h11.2"/>
+      <path class="drive-file-3d__line" d="M15.4 33.2h8.4"/>
+      <rect class="drive-file-3d__badge" x="14.6" y="13.2" width="12.2" height="6.4" rx="1.3"/>
+      <text class="drive-file-3d__label" x="20.7" y="17.7" text-anchor="middle">PDF</text>
+    </svg>
+    {% elif kind == "image" %}
+    <svg class="drive-file-3d__art" viewBox="0 0 48 48" fill="none">
+      <ellipse class="drive-file-3d__ground" cx="24" cy="43" rx="11.5" ry="2.1"/>
+      <path class="drive-file-3d__depth" d="M11.4 10.2h26.4c1.5 0 2.7 1.2 2.7 2.7v22.2c0 1.5-1.2 2.7-2.7 2.7H11.4c-1.5 0-2.7-1.2-2.7-2.7V12.9c0-1.5 1.2-2.7 2.7-2.7z"/>
+      <path class="drive-file-3d__face" d="M10 8.8h28c1.7 0 3 1.3 3 3v22.6c0 1.7-1.3 3-3 3H10c-1.7 0-3-1.3-3-3V11.8c0-1.7 1.3-3 3-3z"/>
+      <rect class="drive-file-3d__photo" x="13.2" y="13.4" width="21.6" height="16.8" rx="1.6"/>
+      <circle class="drive-file-3d__sun" cx="18.4" cy="18.6" r="2.2"/>
+      <path class="drive-file-3d__hill" d="M13.2 26.4 18.8 20.8l4.1 4.2 3.2-3.5 5.5 5.9v1.2c0 .9-.7 1.6-1.6 1.6H14.8c-.9 0-1.6-.7-1.6-1.6v-1.2z"/>
+    </svg>
+    {% else %}
+    <svg class="drive-file-3d__art" viewBox="0 0 48 48" fill="none">
+      <ellipse class="drive-file-3d__ground" cx="24" cy="43" rx="11.5" ry="2.1"/>
+      <path class="drive-file-3d__depth" d="M14.2 7.4h14.8L37 15.4v24.2c0 1.5-1.2 2.7-2.7 2.7H14.2c-1.5 0-2.7-1.2-2.7-2.7V10.1c0-1.5 1.2-2.7 2.7-2.7z"/>
+      <path class="drive-file-3d__face" d="M12.8 6h15.2L36.2 14.2v24.8c0 1.7-1.3 3-3 3H12.8c-1.7 0-3-1.3-3-3V9c0-1.7 1.3-3 3-3z"/>
+      <path class="drive-file-3d__fold" d="M28 6v6.4c0 1.1.9 2 2 2h6.2L28 6z"/>
+      <path class="drive-file-3d__line" d="M15.4 21.6h14.4"/>
+      <path class="drive-file-3d__line" d="M15.4 26.2h14.4"/>
+      <path class="drive-file-3d__line" d="M15.4 30.8h10.2"/>
+      <path class="drive-file-3d__line" d="M15.4 35.4h7.4"/>
+    </svg>
+    {% endif %}
+  </span>
+</span>

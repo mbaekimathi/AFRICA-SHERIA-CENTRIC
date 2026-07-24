@@ -1,0 +1,207 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page"
+  id="employee-petty-cashbook-page"
+  {% if open_register_modal %}data-open-register="1"{% endif %}
+>
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Register your petty cash expenses. Submitted claims stay pending until
+        they are approved from Company Accounts → Petty Cash Book.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <button type="button" class="btn btn--primary btn--inline js-open-register-petty-cash">
+        Register expense
+      </button>
+    </div>
+  </header>
+
+  <div class="metrics metrics--dash">
+    <div class="metric metric--glass">
+      <p class="metric__label">Petty cash balance</p>
+      <p class="metric__value">KES {{ petty_cash_balance|floatformat:2 }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Pending claims</p>
+      <p class="metric__value">{{ pending_count }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Pending amount</p>
+      <p class="metric__value">KES {{ total_pending|floatformat:2 }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Approved (shown)</p>
+      <p class="metric__value">KES {{ total_approved|floatformat:2 }}</p>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Expense claims</h3>
+      <p class="panel__hint">{{ expense_request_count }} shown</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if expense_requests %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Type</th>
+              <th scope="col">Description</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Status</th>
+              <th scope="col">Submitted</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in expense_requests %}
+            <tr>
+              <td>{{ row.get_expense_type_display }}</td>
+              <td>{{ row.description|truncatechars:80 }}</td>
+              <td class="mono">KES {{ row.amount|floatformat:2 }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ row.status }}">
+                  {{ row.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ row.created_at|date:"j M Y" }}</strong>
+                  <span class="person-cell__meta">
+                    {% if row.status == "rejected" and row.rejection_reason %}
+                    {{ row.rejection_reason|truncatechars:48 }}
+                    {% elif row.reviewed_by %}
+                    {{ row.get_status_display|lower }} by {{ row.reviewed_by.get_full_name|default:row.reviewed_by.login_code }}
+                    {% else %}
+                    Awaiting approval
+                    {% endif %}
+                  </span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No petty cash expenses yet</p>
+        <p class="empty-state__copy">
+          Use <strong>Register expense</strong> to submit a claim for approval.
+        </p>
+        <button type="button" class="btn btn--primary btn--inline js-open-register-petty-cash">
+          Register expense
+        </button>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <dialog class="workspace-modal" id="register-petty-cash-expense-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Register expense</h2>
+        <p>
+          Submit your petty cash claim. It will remain pending until approved from
+          the company Petty Cash Book.
+        </p>
+      </header>
+      <form method="post" class="workspace-form" id="register-petty-cash-expense-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="register-petty-cash-expense">
+        <div class="workspace-modal__body">
+          {% if form.non_field_errors %}
+          <div class="form-alert" role="alert">
+            {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="form-field">
+            <label for="{{ form.expense_type.id_for_label }}">
+              {{ form.expense_type.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.expense_type }}
+            {% if form.expense_type.errors %}
+            <p class="field-error">{{ form.expense_type.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ form.amount.id_for_label }}">
+              {{ form.amount.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.amount }}
+            {% if form.amount.errors %}
+            <p class="field-error">{{ form.amount.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ form.description.id_for_label }}">
+              {{ form.description.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.description }}
+            {% if form.description.errors %}
+            <p class="field-error">{{ form.description.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="workspace-modal__actions">
+          <button type="button" class="btn btn--quiet" id="register-petty-cash-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary">Submit for approval</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  var page = document.getElementById("employee-petty-cashbook-page");
+  var modal = document.getElementById("register-petty-cash-expense-modal");
+
+  function openDialog() {
+    if (!modal || typeof modal.showModal !== "function") return;
+    modal.showModal();
+  }
+
+  function closeDialog() {
+    if (modal && typeof modal.close === "function") modal.close();
+    if (window.location.hash === "#register-petty-cash-expense") {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }
+
+  document.querySelectorAll(".js-open-register-petty-cash").forEach(function (el) {
+    el.addEventListener("click", function (event) {
+      event.preventDefault();
+      openDialog();
+    });
+  });
+
+  var cancel = document.getElementById("register-petty-cash-cancel");
+  if (cancel) cancel.addEventListener("click", closeDialog);
+  if (modal) {
+    modal.addEventListener("cancel", function (event) {
+      event.preventDefault();
+      closeDialog();
+    });
+  }
+
+  if (page && page.getAttribute("data-open-register") === "1") openDialog();
+  if (window.location.hash === "#register-petty-cash-expense") openDialog();
+})();
+</script>
+{% endblock %}

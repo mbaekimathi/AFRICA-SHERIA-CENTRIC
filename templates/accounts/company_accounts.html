@@ -1,0 +1,659 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--company-accounts"
+  id="company-accounts-page"
+  {% if open_register_modal %}data-open-register="1"{% endif %}
+  {% if open_topup_modal %}data-open-topup="1"{% endif %}
+  {% if open_expense_modal %}data-open-expense="1"{% endif %}
+>
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Register and manage firm accounts. Default ledgers include
+        <strong>Main Client Accounts</strong> (invoice and client money) and
+        <strong>Petty Cash Book</strong> (daily unplanned expenses).
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <button type="button" class="btn btn--quiet btn--inline js-open-register-account">
+        Register account
+      </button>
+      <button type="button" class="btn btn--quiet btn--inline js-open-topup-account"{% if not expense_accounts %} disabled{% endif %}>
+        Topup account
+      </button>
+      <button type="button" class="btn btn--primary btn--inline js-open-pay-expense"{% if not expense_accounts %} disabled{% endif %}>
+        Pay expense
+      </button>
+    </div>
+  </header>
+
+  <div class="metrics metrics--dash company-accounts-metrics">
+    <div class="metric metric--glass">
+      <p class="metric__label">Registered accounts</p>
+      <p class="metric__value">{{ expense_account_count }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Total balance</p>
+      <p class="metric__value">KES {{ total_account_balance|floatformat:2 }}</p>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Company accounts</h3>
+      <p class="panel__hint">{{ expense_account_count }} account(s)</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if expense_accounts %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Account name</th>
+              <th scope="col">Bank details</th>
+              <th scope="col">Payment methods</th>
+              <th scope="col">Current balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for account in expense_accounts %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  <strong>
+                    {% if account.system_key == "petty_cash_book" and petty_cash_book_url %}
+                    <a href="{{ petty_cash_book_url }}">{{ account.name }}</a>
+                    {% else %}
+                    {{ account.name }}
+                    {% endif %}
+                    {% if account.is_system_default %}
+                    <span class="invoice-status invoice-status--issued">Default</span>
+                    {% endif %}
+                  </strong>
+                  {% if account.description %}
+                  <span class="person-cell__meta">{{ account.description|truncatechars:140 }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ account.bank_name }}</strong>
+                  <span class="person-cell__meta">{{ account.bank_account_number }}</span>
+                </div>
+              </td>
+              <td>
+                {% if account.payment_method_labels %}
+                {{ account.payment_method_labels|join:", " }}
+                {% else %}
+                <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                <strong>KES {{ account.balance|floatformat:2 }}</strong>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No expense accounts yet</p>
+        <p class="empty-state__copy">
+          Use <strong>Register Account</strong> in the sidebar to add the first company expense account.
+        </p>
+        <button type="button" class="btn btn--primary btn--inline js-open-register-account">
+          Register account
+        </button>
+      </div>
+      {% endif %}
+    </div>
+    </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Recent topups</h3>
+      <p class="panel__hint">{{ recent_account_topups|length }} shown</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if recent_account_topups %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Account</th>
+              <th scope="col">Source</th>
+              <th scope="col">Recorded by</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Balance after</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for topup in recent_account_topups %}
+            <tr>
+              <td>{{ topup.created_at|date:"d M Y H:i" }}</td>
+              <td>{{ topup.account.name }}</td>
+              <td>{{ topup.source_display }}</td>
+              <td>
+                {% if topup.created_by %}
+                {{ topup.created_by.get_full_name|default:topup.created_by.login_code }}
+                {% else %}
+                <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td class="mono">KES {{ topup.amount|floatformat:2 }}</td>
+              <td class="mono">KES {{ topup.balance_after|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No topups yet</p>
+        <p class="empty-state__copy">
+          Use <strong>Topup account</strong> to add funds to a company account.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Recent expense payments</h3>
+      <p class="panel__hint">{{ recent_expense_payments|length }} shown</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if recent_expense_payments %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Account</th>
+              <th scope="col">Type</th>
+              <th scope="col">Employee</th>
+              <th scope="col">Description</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Balance after</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in recent_expense_payments %}
+            <tr>
+              <td>{{ payment.created_at|date:"d M Y H:i" }}</td>
+              <td>{{ payment.account.name }}</td>
+              <td>{{ payment.get_expense_type_display }}</td>
+              <td>
+                {% if payment.employee %}
+                {{ payment.employee.get_full_name|default:payment.employee.login_code }}
+                {% else %}
+                <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td>{{ payment.description|truncatechars:72 }}</td>
+              <td class="mono">KES {{ payment.amount|floatformat:2 }}</td>
+              <td class="mono">KES {{ payment.balance_after|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-state__rule" aria-hidden="true"></div>
+        <p class="empty-state__title">No expense payments yet</p>
+        <p class="empty-state__copy">
+          Use <strong>Pay expense</strong> to record a payment from a company account.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <dialog class="workspace-modal" id="register-expense-account-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Register expense account</h2>
+        <p>Add a company expense account and the payment methods it uses.</p>
+      </header>
+      <form method="post" class="workspace-form" id="register-company-account-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="register-company-account">
+        <div class="workspace-modal__body">
+          {% if form.non_field_errors %}
+          <div class="form-alert" role="alert">
+            {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="form-field">
+            <label for="{{ form.name.id_for_label }}">
+              {{ form.name.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.name }}
+            {% if form.name.errors %}
+            <p class="field-error">{{ form.name.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ form.bank_name.id_for_label }}">
+              {{ form.bank_name.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.bank_name }}
+            <p class="field-hint">Bank holding the money for this expense account.</p>
+            {% if form.bank_name.errors %}
+            <p class="field-error">{{ form.bank_name.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ form.bank_account_number.id_for_label }}">
+              {{ form.bank_account_number.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ form.bank_account_number }}
+            {% if form.bank_account_number.errors %}
+            <p class="field-error">{{ form.bank_account_number.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>
+            {{ form.description }}
+            {% if form.description.errors %}
+            <p class="field-error">{{ form.description.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <fieldset class="form-field">
+            <legend>{{ form.payment_methods.label }} <span aria-hidden="true">*</span></legend>
+            <div class="finance-method-grid company-account-method-grid" role="group" aria-label="{{ form.payment_methods.label }}">
+              {% for checkbox in form.payment_methods %}
+              <label class="settings-toggle" for="{{ checkbox.id_for_label }}">
+                <span class="settings-toggle__control">{{ checkbox.tag }}</span>
+                <span class="settings-toggle__copy">
+                  <strong>{{ checkbox.choice_label }}</strong>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% if form.payment_methods.errors %}
+            <p class="field-error">{{ form.payment_methods.errors.0 }}</p>
+            {% endif %}
+          </fieldset>
+        </div>
+        <div class="workspace-modal__actions">
+          <button type="button" class="btn btn--quiet" id="register-account-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary">Register account</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="workspace-modal" id="topup-expense-account-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Topup account</h2>
+        <p>
+          Start with where the money is coming from, then choose the account that
+          will receive it. Client or company sources move that amount from the
+          source balance into the receiving account.
+        </p>
+      </header>
+      <form method="post" class="workspace-form" id="topup-company-account-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="topup-company-account">
+        <div class="workspace-modal__body">
+          {% if topup_form.non_field_errors %}
+          <div class="form-alert" role="alert">
+            {% for error in topup_form.non_field_errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="form-field">
+            <label for="{{ topup_form.source_type.id_for_label }}">
+              {{ topup_form.source_type.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.source_type }}
+            {% if topup_form.source_type.errors %}
+            <p class="field-error">{{ topup_form.source_type.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field is-hidden" id="topup-source-client-field" hidden>
+            <label for="{{ topup_form.source_client.id_for_label }}">
+              {{ topup_form.source_client.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.source_client }}
+            {% if topup_form.source_client.errors %}
+            <p class="field-error">{{ topup_form.source_client.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field is-hidden" id="topup-source-company-field" hidden>
+            <label for="{{ topup_form.source_company_account.id_for_label }}">
+              {{ topup_form.source_company_account.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.source_company_account }}
+            {% if topup_form.source_company_account.errors %}
+            <p class="field-error">{{ topup_form.source_company_account.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field is-hidden" id="topup-source-note-field" hidden>
+            <label for="{{ topup_form.source_note.id_for_label }}">
+              {{ topup_form.source_note.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.source_note }}
+            <p class="field-hint">Describe where this income came from.</p>
+            {% if topup_form.source_note.errors %}
+            <p class="field-error">{{ topup_form.source_note.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ topup_form.amount.id_for_label }}">
+              {{ topup_form.amount.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.amount }}
+            {% if topup_form.amount.errors %}
+            <p class="field-error">{{ topup_form.amount.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ topup_form.account.id_for_label }}">
+              {{ topup_form.account.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ topup_form.account }}
+            {% if topup_form.account.errors %}
+            <p class="field-error">{{ topup_form.account.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="workspace-modal__actions">
+          <button type="button" class="btn btn--quiet" id="topup-account-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary">Add income</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="workspace-modal" id="pay-company-expense-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Pay expense</h2>
+        <p>
+          Choose the account to pay from and the expense type. For payroll, select
+          the employee — their unpaid payroll run is marked paid and listed on their
+          payroll account. The amount is deducted from the selected account balance.
+        </p>
+      </header>
+      <form
+        method="post"
+        class="workspace-form"
+        id="pay-company-expense-form"
+        novalidate
+        data-payroll-net-map='{{ expense_payroll_net_map_json }}'
+      >
+        {% csrf_token %}
+        <input type="hidden" name="action" value="pay-company-expense">
+        <div class="workspace-modal__body">
+          {% if expense_form.non_field_errors %}
+          <div class="form-alert" role="alert">
+            {% for error in expense_form.non_field_errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="form-field">
+            <label for="{{ expense_form.account.id_for_label }}">
+              {{ expense_form.account.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ expense_form.account }}
+            {% if expense_form.account.errors %}
+            <p class="field-error">{{ expense_form.account.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ expense_form.expense_type.id_for_label }}">
+              {{ expense_form.expense_type.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ expense_form.expense_type }}
+            {% if expense_form.expense_type.errors %}
+            <p class="field-error">{{ expense_form.expense_type.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field is-hidden" id="expense-pay-employee-field" hidden>
+            <label for="{{ expense_form.employee.id_for_label }}">
+              {{ expense_form.employee.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ expense_form.employee }}
+            <p class="field-hint">
+              Active employees with unpaid registered payroll can be paid here.
+            </p>
+            {% if expense_form.employee.errors %}
+            <p class="field-error">{{ expense_form.employee.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ expense_form.description.id_for_label }}">
+              {{ expense_form.description.label }}
+              <span id="expense-desc-required" aria-hidden="true">*</span>
+            </label>
+            {{ expense_form.description }}
+            <p class="field-hint" id="expense-desc-hint">
+              For payroll, leave blank to auto-fill from the unpaid period.
+            </p>
+            {% if expense_form.description.errors %}
+            <p class="field-error">{{ expense_form.description.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ expense_form.amount.id_for_label }}">
+              {{ expense_form.amount.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ expense_form.amount }}
+            {% if expense_form.amount.errors %}
+            <p class="field-error">{{ expense_form.amount.errors.0 }}</p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="workspace-modal__actions">
+          <button type="button" class="btn btn--quiet" id="pay-expense-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary" id="pay-expense-submit">Pay</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  var page = document.getElementById("company-accounts-page");
+  var registerModal = document.getElementById("register-expense-account-modal");
+  var topupModal = document.getElementById("topup-expense-account-modal");
+  var expenseModal = document.getElementById("pay-company-expense-modal");
+
+  function openDialog(modal) {
+    if (modal && typeof modal.showModal === "function") modal.showModal();
+  }
+
+  function closeDialog(modal, hash) {
+    if (modal && typeof modal.close === "function") modal.close();
+    if (hash && window.location.hash === hash) {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }
+
+  function bindOpeners(selector, modal) {
+    document.querySelectorAll(selector).forEach(function (el) {
+      el.addEventListener("click", function (event) {
+        event.preventDefault();
+        if (el.disabled) return;
+        openDialog(modal);
+      });
+    });
+  }
+
+  bindOpeners(".js-open-register-account", registerModal);
+  bindOpeners('a[href="#register-expense-account"]', registerModal);
+  bindOpeners(".js-open-topup-account", topupModal);
+  bindOpeners('a[href="#topup-expense-account"]', topupModal);
+  bindOpeners(".js-open-pay-expense", expenseModal);
+  bindOpeners('a[href="#pay-company-expense"]', expenseModal);
+
+  var registerCancel = document.getElementById("register-account-cancel");
+  if (registerCancel) {
+    registerCancel.addEventListener("click", function () {
+      closeDialog(registerModal, "#register-expense-account");
+    });
+  }
+  var topupCancel = document.getElementById("topup-account-cancel");
+  if (topupCancel) {
+    topupCancel.addEventListener("click", function () {
+      closeDialog(topupModal, "#topup-expense-account");
+    });
+  }
+  var expenseCancel = document.getElementById("pay-expense-cancel");
+  if (expenseCancel) {
+    expenseCancel.addEventListener("click", function () {
+      closeDialog(expenseModal, "#pay-company-expense");
+    });
+  }
+
+  if (registerModal) {
+    registerModal.addEventListener("click", function (event) {
+      if (event.target === registerModal) {
+        closeDialog(registerModal, "#register-expense-account");
+      }
+    });
+  }
+  if (topupModal) {
+    topupModal.addEventListener("click", function (event) {
+      if (event.target === topupModal) {
+        closeDialog(topupModal, "#topup-expense-account");
+      }
+    });
+  }
+  if (expenseModal) {
+    expenseModal.addEventListener("click", function (event) {
+      if (event.target === expenseModal) {
+        closeDialog(expenseModal, "#pay-company-expense");
+      }
+    });
+  }
+
+  if (registerModal) {
+    registerModal.querySelectorAll(".form-input--uppercase").forEach(function (input) {
+      input.addEventListener("input", function () {
+        var start = input.selectionStart;
+        var end = input.selectionEnd;
+        input.value = input.value.toUpperCase();
+        if (typeof start === "number" && typeof end === "number") {
+          input.setSelectionRange(start, end);
+        }
+      });
+    });
+  }
+
+  if (page && page.dataset.openRegister === "1") openDialog(registerModal);
+  if (page && page.dataset.openTopup === "1") openDialog(topupModal);
+  if (page && page.dataset.openExpense === "1") openDialog(expenseModal);
+  if (window.location.hash === "#register-expense-account") openDialog(registerModal);
+  if (window.location.hash === "#topup-expense-account") openDialog(topupModal);
+  if (window.location.hash === "#pay-company-expense") openDialog(expenseModal);
+
+  var sourceType = document.getElementById("id_topup_source_type");
+  var clientField = document.getElementById("topup-source-client-field");
+  var companyField = document.getElementById("topup-source-company-field");
+  var noteField = document.getElementById("topup-source-note-field");
+
+  function syncTopupSourceFields() {
+    var value = sourceType ? sourceType.value : "";
+    function setVisible(field, visible) {
+      if (!field) return;
+      field.hidden = !visible;
+      field.classList.toggle("is-hidden", !visible);
+    }
+    setVisible(clientField, value === "client");
+    setVisible(companyField, value === "company_account");
+    setVisible(noteField, value === "other");
+  }
+
+  if (sourceType) {
+    sourceType.addEventListener("change", syncTopupSourceFields);
+    sourceType.addEventListener("input", syncTopupSourceFields);
+    syncTopupSourceFields();
+  }
+
+  if (topupModal) {
+    topupModal.addEventListener("close", syncTopupSourceFields);
+  }
+
+  var expenseType = document.getElementById("id_expense_pay_type");
+  var employeeField = document.getElementById("expense-pay-employee-field");
+  var employeeSelect = document.getElementById("id_expense_pay_employee");
+  var amountInput = document.getElementById("id_expense_pay_amount");
+  var expenseForm = document.getElementById("pay-company-expense-form");
+  var descRequired = document.getElementById("expense-desc-required");
+  var payrollNetMap = {};
+  try {
+    payrollNetMap = JSON.parse(
+      (expenseForm && expenseForm.getAttribute("data-payroll-net-map")) || "{}"
+    );
+  } catch (err) {
+    payrollNetMap = {};
+  }
+
+  function syncExpenseTypeFields() {
+    var isPayroll = expenseType && expenseType.value === "payroll";
+    if (employeeField) {
+      employeeField.hidden = !isPayroll;
+      employeeField.classList.toggle("is-hidden", !isPayroll);
+    }
+    if (descRequired) descRequired.hidden = !!isPayroll;
+  }
+
+  function syncPayrollAmount() {
+    if (!expenseType || expenseType.value !== "payroll" || !employeeSelect || !amountInput) {
+      return;
+    }
+    var net = payrollNetMap[String(employeeSelect.value)] || "";
+    if (net) amountInput.value = net;
+  }
+
+  if (expenseType) {
+    expenseType.addEventListener("change", function () {
+      syncExpenseTypeFields();
+      syncPayrollAmount();
+    });
+    syncExpenseTypeFields();
+  }
+  if (employeeSelect) {
+    employeeSelect.addEventListener("change", syncPayrollAmount);
+  }
+  // Re-open with validation errors for payroll should show employee field.
+  if (expenseForm && page && page.dataset.openExpense === "1") {
+    syncExpenseTypeFields();
+  }
+})();
+</script>
+{% endblock %}

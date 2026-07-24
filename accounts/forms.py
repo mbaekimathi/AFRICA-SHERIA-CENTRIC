@@ -20,12 +20,18 @@ from .models import (
     CaseParty,
     CaseTask,
     Client,
+    CompanyExpenseAccount,
+    CompanyAccountTopup,
+    CompanyExpensePayment,
+    ClientAccountTopup,
     CourtAttendance,
     CourtAttendanceAdvocate,
     CourtAttendanceBringUpItem,
     Employee,
     EmployeeBlogPost,
     CommunicationSettings,
+    CompanyLetterheadSetting,
+    CompanyThemeSetting,
     FinanceSettings,
     FirmCompanyInformation,
     FirmFAQ,
@@ -41,6 +47,8 @@ from .models import (
     NonLitigationMatter,
     PayrollDeduction,
     PayrollRun,
+    EmployeeAdvance,
+    PettyCashExpenseRequest,
     WebsiteTemplateSetting,
 )
 from .utils import optimize_image, optimize_profile_photo
@@ -3437,9 +3445,9 @@ class ProfileSettingsForm(forms.ModelForm):
 
 class AppearanceSettingsForm(forms.ModelForm):
     """
-    Personal theme, font, and density for the signed-in employee only.
+    Personal theme, font, and density for the signed-in employee.
 
-    Saves to that employee's row — never a firm-wide or system default.
+    `default` follows the firm Company Theme; other values override it.
     """
 
     class Meta:
@@ -3453,22 +3461,12 @@ class AppearanceSettingsForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # `product` is an alias of `default` — keep a single recommended choice in the UI.
-        self.fields["ui_theme"].choices = [
-            (key, label)
-            for key, label in Employee.UiTheme.choices
-            if key != Employee.UiTheme.PRODUCT
-        ]
+        self.fields["ui_theme"].choices = list(Employee.UiTheme.choices)
         self.fields["ui_font"].choices = list(Employee.UiFont.choices)
         self.fields["ui_density"].choices = list(Employee.UiDensity.choices)
-        if self.instance and (self.instance.ui_theme or "") == Employee.UiTheme.PRODUCT:
-            self.initial["ui_theme"] = Employee.UiTheme.DEFAULT
 
     def clean_ui_theme(self):
-        value = self.cleaned_data.get("ui_theme") or Employee.UiTheme.DEFAULT
-        if value == Employee.UiTheme.PRODUCT:
-            return Employee.UiTheme.DEFAULT
-        return value
+        return self.cleaned_data.get("ui_theme") or Employee.UiTheme.DEFAULT
 
     def save(self, commit=True):
         """Persist appearance only on this employee instance."""
@@ -3476,6 +3474,89 @@ class AppearanceSettingsForm(forms.ModelForm):
         if commit:
             employee.save(update_fields=["ui_theme", "ui_font", "ui_density"])
         return employee
+
+
+class CompanyThemeForm(forms.ModelForm):
+    """Firm-wide default workspace theme (System settings)."""
+
+    class Meta:
+        model = CompanyThemeSetting
+        fields = ["default_ui_theme"]
+        labels = {
+            "default_ui_theme": "Company theme",
+        }
+        widgets = {
+            "default_ui_theme": forms.RadioSelect(
+                attrs={"class": "theme-choice-group"}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Hide legacy product alias — default means Black & White in company mode.
+        self.fields["default_ui_theme"].choices = [
+            (key, label)
+            for key, label in Employee.UiTheme.choices
+            if key != Employee.UiTheme.PRODUCT
+        ]
+        self.fields["default_ui_theme"].required = True
+        if (
+            self.instance
+            and (self.instance.default_ui_theme or "") == Employee.UiTheme.PRODUCT
+        ):
+            self.initial["default_ui_theme"] = Employee.UiTheme.DEFAULT
+
+    def clean_default_ui_theme(self):
+        value = self.cleaned_data.get("default_ui_theme") or Employee.UiTheme.DEFAULT
+        if value == Employee.UiTheme.PRODUCT:
+            return Employee.UiTheme.DEFAULT
+        return value
+
+
+class CompanyLetterheadForm(forms.ModelForm):
+    """Firm letterhead layout and accents (Document settings)."""
+
+    class Meta:
+        model = CompanyLetterheadSetting
+        fields = [
+            "template",
+            "accent",
+            "show_logo",
+            "show_tagline",
+            "show_address",
+            "show_contacts",
+        ]
+        labels = {
+            "template": "Letterhead sample",
+            "accent": "Accent colour",
+            "show_logo": "Show logo / mark",
+            "show_tagline": "Show tagline",
+            "show_address": "Show address",
+            "show_contacts": "Show contacts",
+        }
+        widgets = {
+            "template": forms.RadioSelect(
+                attrs={"class": "letterhead-choice-group"}
+            ),
+            "accent": forms.RadioSelect(
+                attrs={"class": "letterhead-accent-group"}
+            ),
+            "show_logo": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_tagline": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_address": forms.CheckboxInput(attrs={"class": "form-check"}),
+            "show_contacts": forms.CheckboxInput(attrs={"class": "form-check"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["template"].choices = list(
+            CompanyLetterheadSetting.Template.choices
+        )
+        self.fields["accent"].choices = list(
+            CompanyLetterheadSetting.Accent.choices
+        )
+        self.fields["template"].required = True
+        self.fields["accent"].required = True
 
 
 class NotificationSettingsForm(forms.ModelForm):
@@ -5418,9 +5499,26 @@ class GenerateInvoiceForm(forms.ModelForm):
 
 
 class InvoiceStkPaymentForm(forms.Form):
-    """Collect the M-Pesa number and amount for an invoice STK push."""
+    """Collect payment method, amount, and M-Pesa details for an invoice."""
 
+    METHOD_MANUAL = "manual"
+    METHOD_MPESA = "mpesa"
+    METHOD_CHOICES = (
+        (METHOD_MANUAL, "Manual"),
+        (METHOD_MPESA, "M-Pesa STK"),
+    )
+
+    method = forms.ChoiceField(
+        choices=METHOD_CHOICES,
+        label="Payment method",
+        required=False,
+        initial=METHOD_MPESA,
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_pay_method"}
+        ),
+    )
     phone = forms.CharField(
+        required=False,
         label="M-Pesa phone number",
         max_length=20,
         widget=forms.TextInput(
@@ -5449,6 +5547,18 @@ class InvoiceStkPaymentForm(forms.Form):
             }
         ),
     )
+    reference = forms.CharField(
+        required=False,
+        label="Reference / note",
+        max_length=120,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "e.g. bank ref, cash receipt",
+                "id": "id_pay_reference",
+            }
+        ),
+    )
 
     def __init__(self, *args, max_amount=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -5459,9 +5569,10 @@ class InvoiceStkPaymentForm(forms.Form):
             except Exception:
                 self.max_amount = None
         if self.max_amount is not None and self.max_amount >= 1:
-            self.fields["amount"].widget.attrs["max"] = str(self.max_amount)
             self.fields["amount"].help_text = (
-                f"Balance due is KES {self.max_amount}. You can pay this or a lower amount."
+                f"Balance due is KES {self.max_amount}. "
+                "You may pay more — the excess is kept as client credit and "
+                "added to Main Client Accounts."
             )
 
     def clean_phone(self):
@@ -5469,11 +5580,14 @@ class InvoiceStkPaymentForm(forms.Form):
 
         phone = (self.cleaned_data.get("phone") or "").strip()
         if not phone:
-            raise ValidationError("Enter the Safaricom number that will receive the STK push.")
+            return ""
         try:
             return normalize_msisdn(phone)
         except MpesaError as exc:
             raise ValidationError(str(exc)) from exc
+
+    def clean_reference(self):
+        return (self.cleaned_data.get("reference") or "").strip()
 
     def clean_amount(self):
         amount = self.cleaned_data.get("amount")
@@ -5482,11 +5596,21 @@ class InvoiceStkPaymentForm(forms.Form):
         amount = Decimal(amount).quantize(Decimal("0.01"))
         if amount < 1:
             raise ValidationError("Amount must be at least KES 1.")
-        if self.max_amount is not None and amount > self.max_amount:
-            raise ValidationError(
-                f"Amount cannot exceed the balance due of KES {self.max_amount}."
-            )
+        # Overpayments are allowed: invoice is settled and surplus credits
+        # Main Client Accounts + the client's credit balance.
         return amount
+
+    def clean(self):
+        cleaned = super().clean()
+        method = cleaned.get("method") or self.METHOD_MPESA
+        cleaned["method"] = method
+        phone = cleaned.get("phone") or ""
+        if method == self.METHOD_MPESA and not phone:
+            self.add_error(
+                "phone",
+                "Enter the Safaricom number that will receive the STK push.",
+            )
+        return cleaned
 
 
 class PayrollDeductionForm(forms.Form):
@@ -5818,36 +5942,70 @@ class RegisterPayrollForm(forms.ModelForm):
         if self.errors:
             return cleaned
 
+        # Optional blank money inputs become None; coerce to 0 so MySQL NOT NULL columns save.
+        money_defaults = (
+            "house_allowance",
+            "transport_allowance",
+            "medical_allowance",
+            "other_allowances",
+            "bonuses_overtime_commissions",
+            "nssf_tier1_limit",
+            "nssf_pensionable_cap",
+            "paye_personal_relief",
+            "paye_band_1_max",
+            "paye_band_2_max",
+            "paye_band_3_max",
+            "nita_levy_amount",
+            "wiba_insurance_amount",
+        )
+        for name in money_defaults:
+            if cleaned.get(name) is None:
+                cleaned[name] = Decimal("0.00")
+
+        rate_defaults = (
+            "nssf_employee_rate",
+            "nssf_employer_rate",
+            "shif_rate",
+            "housing_levy_employee_rate",
+            "housing_levy_employer_rate",
+            "paye_band_1_rate",
+            "paye_band_2_rate",
+            "paye_band_3_rate",
+            "paye_band_4_rate",
+        )
+        for name in rate_defaults:
+            if cleaned.get(name) is None:
+                cleaned[name] = Decimal("0.00")
+
         earnings = PayrollEarnings(
             basic_salary=cleaned.get("basic_salary") or Decimal("0"),
-            house_allowance=cleaned.get("house_allowance") or Decimal("0"),
-            transport_allowance=cleaned.get("transport_allowance") or Decimal("0"),
-            medical_allowance=cleaned.get("medical_allowance") or Decimal("0"),
-            other_allowances=cleaned.get("other_allowances") or Decimal("0"),
-            bonuses_overtime_commissions=cleaned.get("bonuses_overtime_commissions")
-            or Decimal("0"),
+            house_allowance=cleaned["house_allowance"],
+            transport_allowance=cleaned["transport_allowance"],
+            medical_allowance=cleaned["medical_allowance"],
+            other_allowances=cleaned["other_allowances"],
+            bonuses_overtime_commissions=cleaned["bonuses_overtime_commissions"],
         )
         if earnings.gross_salary <= 0:
             raise ValidationError("Total earnings must be greater than zero.")
 
         rates = PayrollRates(
-            nssf_employee_rate=cleaned.get("nssf_employee_rate"),
-            nssf_employer_rate=cleaned.get("nssf_employer_rate"),
-            nssf_tier1_limit=cleaned.get("nssf_tier1_limit"),
-            nssf_pensionable_cap=cleaned.get("nssf_pensionable_cap"),
-            shif_rate=cleaned.get("shif_rate"),
-            housing_levy_employee_rate=cleaned.get("housing_levy_employee_rate"),
-            housing_levy_employer_rate=cleaned.get("housing_levy_employer_rate"),
-            paye_personal_relief=cleaned.get("paye_personal_relief"),
-            paye_band_1_max=cleaned.get("paye_band_1_max"),
-            paye_band_1_rate=cleaned.get("paye_band_1_rate"),
-            paye_band_2_max=cleaned.get("paye_band_2_max"),
-            paye_band_2_rate=cleaned.get("paye_band_2_rate"),
-            paye_band_3_max=cleaned.get("paye_band_3_max"),
-            paye_band_3_rate=cleaned.get("paye_band_3_rate"),
-            paye_band_4_rate=cleaned.get("paye_band_4_rate"),
-            nita_levy_amount=cleaned.get("nita_levy_amount"),
-            wiba_insurance_amount=cleaned.get("wiba_insurance_amount"),
+            nssf_employee_rate=cleaned["nssf_employee_rate"],
+            nssf_employer_rate=cleaned["nssf_employer_rate"],
+            nssf_tier1_limit=cleaned["nssf_tier1_limit"],
+            nssf_pensionable_cap=cleaned["nssf_pensionable_cap"],
+            shif_rate=cleaned["shif_rate"],
+            housing_levy_employee_rate=cleaned["housing_levy_employee_rate"],
+            housing_levy_employer_rate=cleaned["housing_levy_employer_rate"],
+            paye_personal_relief=cleaned["paye_personal_relief"],
+            paye_band_1_max=cleaned["paye_band_1_max"],
+            paye_band_1_rate=cleaned["paye_band_1_rate"],
+            paye_band_2_max=cleaned["paye_band_2_max"],
+            paye_band_2_rate=cleaned["paye_band_2_rate"],
+            paye_band_3_max=cleaned["paye_band_3_max"],
+            paye_band_3_rate=cleaned["paye_band_3_rate"],
+            paye_band_4_rate=cleaned["paye_band_4_rate"],
+            nita_levy_amount=cleaned["nita_levy_amount"],
+            wiba_insurance_amount=cleaned["wiba_insurance_amount"],
         )
         breakdown = calculate_payroll(earnings, rates)
         if breakdown.net_pay < 0:
@@ -5889,3 +6047,909 @@ class RegisterPayrollForm(forms.ModelForm):
             payroll_run.save()
             payroll_run.sync_deduction_lines()
         return payroll_run
+
+
+def next_available_pay_period(employee, frequency=None):
+    """Return the next pay period for an employee that has no payroll run yet."""
+    from datetime import timedelta
+
+    from .payroll_calc import (
+        DEFAULT_PAY_FREQUENCY,
+        pay_period_end_for_frequency,
+        resolve_pay_period,
+    )
+
+    frequency = frequency or DEFAULT_PAY_FREQUENCY
+    start, end, frequency = resolve_pay_period(None, frequency)
+    for _ in range(48):
+        if employee.pk not in payroll_registered_employee_ids(start, end, frequency):
+            return start, end, frequency
+        if frequency == PayrollRun.PayFrequency.DAILY:
+            start = start + timedelta(days=1)
+        elif frequency == PayrollRun.PayFrequency.WEEKLY:
+            start = start + timedelta(days=7)
+        elif frequency == PayrollRun.PayFrequency.ANNUALLY:
+            start = start.replace(year=start.year + 1)
+        else:
+            if start.month == 12:
+                start = start.replace(year=start.year + 1, month=1, day=1)
+            else:
+                start = start.replace(month=start.month + 1, day=1)
+        end = pay_period_end_for_frequency(start, frequency)
+    return start, end, frequency
+
+
+class UpdateEmployeeSalaryForm(forms.Form):
+    """Update an employee's monthly salary and create a new payroll run."""
+
+    monthly_salary = forms.DecimalField(
+        min_value=Decimal("0.01"),
+        max_digits=14,
+        decimal_places=2,
+        label="Monthly salary (KES)",
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_update_salary_amount",
+                "min": "0.01",
+                "step": "0.01",
+                "placeholder": "0.00",
+            }
+        ),
+    )
+    pay_frequency = forms.ChoiceField(
+        choices=PayrollRun.PayFrequency.choices,
+        label="Pay frequency",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_update_salary_frequency"}
+        ),
+    )
+    pay_period_start = forms.DateField(
+        label="Pay period start",
+        widget=forms.DateInput(
+            attrs={
+                "class": "form-input",
+                "type": "date",
+                "id": "id_update_salary_period_start",
+            }
+        ),
+    )
+
+    def __init__(self, employee, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.employee = employee
+        start, _end, frequency = next_available_pay_period(employee)
+        if not self.is_bound:
+            self.fields["pay_frequency"].initial = frequency
+            self.fields["pay_period_start"].initial = start
+            if employee.monthly_salary is not None:
+                self.fields["monthly_salary"].initial = employee.monthly_salary
+
+    def clean_monthly_salary(self):
+        salary = self.cleaned_data["monthly_salary"]
+        salary = Decimal(salary).quantize(Decimal("0.01"))
+        if salary <= 0:
+            raise ValidationError("Salary must be greater than zero.")
+        return salary
+
+    def clean(self):
+        from .payroll_calc import pay_period_end_for_frequency
+
+        cleaned = super().clean()
+        start = cleaned.get("pay_period_start")
+        frequency = cleaned.get("pay_frequency") or PayrollRun.PayFrequency.MONTHLY
+        if not start:
+            return cleaned
+        end = pay_period_end_for_frequency(start, frequency)
+        cleaned["pay_period_end"] = end
+        if self.employee.pk in payroll_registered_employee_ids(start, end, frequency):
+            raise ValidationError(
+                "Payroll is already registered for this employee and pay period. "
+                "Choose a different start date."
+            )
+        return cleaned
+
+    def save(self, *, registered_by):
+        from .payroll_calc import PAYROLL_RATE_DEFAULTS
+
+        salary = self.cleaned_data["monthly_salary"]
+        frequency = self.cleaned_data["pay_frequency"]
+        start = self.cleaned_data["pay_period_start"]
+
+        self.employee.monthly_salary = salary
+        self.employee.save(update_fields=["monthly_salary"])
+
+        last_run = (
+            self.employee.payroll_runs.order_by(
+                "-pay_period_start", "-registered_at"
+            ).first()
+        )
+
+        data = {
+            "employee": str(self.employee.pk),
+            "pay_frequency": frequency,
+            "pay_period_start": start.isoformat(),
+            "basic_salary": str(salary),
+            "house_allowance": str(last_run.house_allowance if last_run else "0"),
+            "transport_allowance": str(
+                last_run.transport_allowance if last_run else "0"
+            ),
+            "medical_allowance": str(last_run.medical_allowance if last_run else "0"),
+            "other_allowances": str(last_run.other_allowances if last_run else "0"),
+            "bonuses_overtime_commissions": str(
+                last_run.bonuses_overtime_commissions if last_run else "0"
+            ),
+            "notes": "Salary update",
+        }
+        for key, value in PAYROLL_RATE_DEFAULTS.items():
+            if last_run is not None and hasattr(last_run, key):
+                data[key] = str(getattr(last_run, key))
+            else:
+                data[key] = str(value)
+
+        register_form = RegisterPayrollForm(data)
+        if not register_form.is_valid():
+            errors = []
+            for field_errors in register_form.errors.values():
+                errors.extend(str(err) for err in field_errors)
+            raise ValidationError(errors or ["Could not create the payroll run."])
+
+        payroll_run = register_form.save(commit=False)
+        payroll_run.payment_method = self.employee.payment_method or ""
+        payroll_run.payment_method_label = (
+            self.employee.get_payment_method_display()
+            if self.employee.payment_method
+            else ""
+        )
+        payroll_run.payout_destination = self.employee.payroll_payout_destination()
+        payroll_run.registered_by = registered_by
+        payroll_run.notes = "Salary update"
+        payroll_run.save()
+        payroll_run.sync_deduction_lines()
+        return payroll_run
+
+
+class RegisterCompanyAccountForm(forms.ModelForm):
+    """Register a firm expense account under Company Accounts."""
+
+    payment_methods = forms.MultipleChoiceField(
+        choices=CompanyExpenseAccount.PaymentMethod.choices,
+        required=True,
+        widget=forms.CheckboxSelectMultiple(
+            attrs={"class": "company-account-method-checks"}
+        ),
+        label="Payment methods used",
+        error_messages={
+            "required": "Select at least one payment method.",
+        },
+    )
+
+    class Meta:
+        model = CompanyExpenseAccount
+        fields = [
+            "name",
+            "bank_name",
+            "bank_account_number",
+            "description",
+            "payment_methods",
+        ]
+        labels = {
+            "name": "Account name",
+            "bank_name": "Bank name",
+            "bank_account_number": "Bank account number",
+            "description": "Description of the expense account",
+        }
+        widgets = {
+            "name": forms.TextInput(
+                attrs={
+                    "class": "form-input form-input--uppercase",
+                    "placeholder": "E.G. OFFICE SUPPLIES, TRAVEL, UTILITIES",
+                    "autocomplete": "off",
+                    "style": "text-transform: uppercase;",
+                }
+            ),
+            "bank_name": forms.TextInput(
+                attrs={
+                    "class": "form-input form-input--uppercase",
+                    "placeholder": "E.G. EQUITY BANK, KCB, ABSA",
+                    "autocomplete": "organization",
+                    "style": "text-transform: uppercase;",
+                }
+            ),
+            "bank_account_number": forms.TextInput(
+                attrs={
+                    "class": "form-input form-input--uppercase",
+                    "placeholder": "ACCOUNT NUMBER",
+                    "autocomplete": "off",
+                    "inputmode": "text",
+                    "style": "text-transform: uppercase;",
+                }
+            ),
+            "description": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "What this expense account is used for",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["name"].required = True
+        self.fields["bank_name"].required = True
+        self.fields["bank_account_number"].required = True
+        self.fields["description"].required = False
+        if self.instance and self.instance.pk and self.instance.payment_methods:
+            self.initial["payment_methods"] = list(self.instance.payment_methods)
+
+    def clean_name(self):
+        return (self.cleaned_data.get("name") or "").strip().upper()
+
+    def clean_bank_name(self):
+        return (self.cleaned_data.get("bank_name") or "").strip().upper()
+
+    def clean_bank_account_number(self):
+        return (self.cleaned_data.get("bank_account_number") or "").strip().upper()
+
+    def clean_description(self):
+        return (self.cleaned_data.get("description") or "").strip()
+
+    def clean_payment_methods(self):
+        methods = list(self.cleaned_data.get("payment_methods") or [])
+        if not methods:
+            raise ValidationError("Select at least one payment method.")
+        return methods
+
+
+class TopupClientAccountForm(forms.Form):
+    """Record a client payment (manual or M-Pesa) against their account."""
+
+    METHOD_MANUAL = ClientAccountTopup.Method.MANUAL
+    METHOD_MPESA = ClientAccountTopup.Method.MPESA
+
+    method = forms.ChoiceField(
+        choices=ClientAccountTopup.Method.choices,
+        label="Payment method",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_client_topup_method"}
+        ),
+        initial=ClientAccountTopup.Method.MANUAL,
+    )
+    amount = forms.DecimalField(
+        min_value=Decimal("1.00"),
+        max_digits=14,
+        decimal_places=2,
+        label="Amount (KES)",
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input",
+                "step": "0.01",
+                "min": "1",
+                "placeholder": "0.00",
+                "id": "id_client_topup_amount",
+            }
+        ),
+    )
+    phone = forms.CharField(
+        required=False,
+        label="M-Pesa phone number",
+        max_length=20,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "07XX XXX XXX",
+                "inputmode": "tel",
+                "autocomplete": "tel",
+                "id": "id_client_topup_phone",
+            }
+        ),
+    )
+    note = forms.CharField(
+        required=False,
+        label="Note",
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-input",
+                "rows": 2,
+                "placeholder": "Optional note for this payment",
+                "id": "id_client_topup_note",
+            }
+        ),
+    )
+
+    def __init__(self, *args, client=None, **kwargs):
+        self.client = client
+        super().__init__(*args, **kwargs)
+        if client and client.phone and not self.is_bound:
+            self.fields["phone"].initial = client.phone
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get("amount")
+        if amount is None:
+            return amount
+        amount = amount.quantize(Decimal("0.01"))
+        if amount < 1:
+            raise ValidationError("Amount must be at least KES 1.")
+        return amount
+
+    def clean_note(self):
+        return (self.cleaned_data.get("note") or "").strip()
+
+    def clean_phone(self):
+        from .mpesa import MpesaError, normalize_msisdn
+
+        phone = (self.cleaned_data.get("phone") or "").strip()
+        if not phone:
+            return ""
+        try:
+            return normalize_msisdn(phone)
+        except MpesaError as exc:
+            raise ValidationError(str(exc)) from exc
+
+    def clean(self):
+        cleaned = super().clean()
+        method = cleaned.get("method")
+        phone = cleaned.get("phone") or ""
+        if method == ClientAccountTopup.Method.MPESA and not phone:
+            self.add_error(
+                "phone",
+                "Enter the Safaricom number that will receive the STK push.",
+            )
+        return cleaned
+
+
+class TopupCompanyAccountForm(forms.Form):
+    """Add income to a registered company account."""
+
+    account = forms.ModelChoiceField(
+        queryset=CompanyExpenseAccount.objects.none(),
+        label="Receiving account",
+        empty_label="Select receiving account",
+        widget=forms.Select(attrs={"class": "form-input", "id": "id_topup_account"}),
+        error_messages={"required": "Select the account that will receive the money."},
+    )
+    amount = forms.DecimalField(
+        min_value=Decimal("0.01"),
+        max_digits=14,
+        decimal_places=2,
+        label="Amount (KES)",
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input",
+                "step": "0.01",
+                "min": "0.01",
+                "placeholder": "0.00",
+                "id": "id_topup_amount",
+            }
+        ),
+        error_messages={"required": "Enter the amount to move."},
+    )
+    source_type = forms.ChoiceField(
+        choices=CompanyAccountTopup.SourceType.choices,
+        label="Source of funds",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_topup_source_type"}
+        ),
+        error_messages={"required": "Select where this money is coming from."},
+    )
+    source_client = forms.ModelChoiceField(
+        queryset=Client.objects.none(),
+        required=False,
+        label="From client",
+        empty_label="Select client",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_topup_source_client"}
+        ),
+    )
+    source_company_account = forms.ModelChoiceField(
+        queryset=CompanyExpenseAccount.objects.none(),
+        required=False,
+        label="From company account",
+        empty_label="Select source account",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_topup_source_company_account"}
+        ),
+    )
+    source_note = forms.CharField(
+        required=False,
+        label="Source note",
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-input",
+                "rows": 3,
+                "placeholder": "Where this income came from",
+                "id": "id_topup_source_note",
+            }
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        accounts = CompanyExpenseAccount.objects.order_by("name", "id")
+        self.fields["account"].queryset = accounts
+        self.fields["account"].label_from_instance = (
+            lambda obj: f"{obj.name} — {obj.bank_name} (KES {obj.balance:,.2f})"
+        )
+        self.fields["source_company_account"].queryset = accounts
+        self.fields["source_company_account"].label_from_instance = (
+            lambda obj: f"{obj.name} — {obj.bank_name} (KES {obj.balance:,.2f})"
+        )
+
+        clients = list(
+            Client.objects.filter(status=Client.Status.ACTIVE).order_by(
+                "company_name", "first_name", "last_name", "email"
+            )
+        )
+        self.fields["source_client"].queryset = Client.objects.filter(
+            pk__in=[client.pk for client in clients]
+        ).order_by("company_name", "first_name", "last_name", "email")
+        self.fields["source_client"].label_from_instance = (
+            lambda obj: (
+                f"{obj.get_full_name()} "
+                f"(credit KES {(obj.credit_balance or Decimal('0.00')):,.2f})"
+            )
+        )
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get("amount")
+        if amount is None:
+            return amount
+        amount = amount.quantize(Decimal("0.01"))
+        if amount <= 0:
+            raise ValidationError("Amount must be greater than zero.")
+        return amount
+
+    def clean_source_note(self):
+        return (self.cleaned_data.get("source_note") or "").strip()
+
+    def clean(self):
+        cleaned = super().clean()
+        source_type = cleaned.get("source_type")
+        account = cleaned.get("account")
+        amount = cleaned.get("amount")
+        source_client = cleaned.get("source_client")
+        source_company_account = cleaned.get("source_company_account")
+        source_note = cleaned.get("source_note") or ""
+
+        if source_type == CompanyAccountTopup.SourceType.CLIENT:
+            if not source_client:
+                self.add_error("source_client", "Select the client this income came from.")
+            elif amount is not None:
+                credit = (source_client.credit_balance or Decimal("0.00")).quantize(
+                    Decimal("0.01")
+                )
+                if amount > credit:
+                    self.add_error(
+                        "amount",
+                        f"Client credit is only KES {credit:,.2f}.",
+                    )
+            cleaned["source_company_account"] = None
+            cleaned["source_note"] = ""
+        elif source_type == CompanyAccountTopup.SourceType.COMPANY_ACCOUNT:
+            if not source_company_account:
+                self.add_error(
+                    "source_company_account",
+                    "Select the company account this income came from.",
+                )
+            elif account and source_company_account.pk == account.pk:
+                self.add_error(
+                    "source_company_account",
+                    "Source account must be different from the account being topped up.",
+                )
+            elif amount is not None and source_company_account:
+                # Re-read balance in case the cached instance is stale.
+                source_balance = (
+                    CompanyExpenseAccount.objects.filter(
+                        pk=source_company_account.pk
+                    )
+                    .values_list("balance", flat=True)
+                    .first()
+                )
+                source_balance = (source_balance or Decimal("0.00")).quantize(
+                    Decimal("0.01")
+                )
+                if amount > source_balance:
+                    self.add_error(
+                        "amount",
+                        f"Source account balance is only KES {source_balance:,.2f}.",
+                    )
+            cleaned["source_client"] = None
+            cleaned["source_note"] = ""
+        elif source_type == CompanyAccountTopup.SourceType.OTHER:
+            if not source_note:
+                self.add_error("source_note", "Enter a source note for Others.")
+            cleaned["source_client"] = None
+            cleaned["source_company_account"] = None
+        return cleaned
+
+class PayCompanyExpenseForm(forms.Form):
+    """Pay an expense from a company account (debits the account balance)."""
+
+    account = forms.ModelChoiceField(
+        queryset=CompanyExpenseAccount.objects.none(),
+        label="Pay from account",
+        empty_label="Select account",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_expense_pay_account"}
+        ),
+        error_messages={"required": "Select the account to pay from."},
+    )
+    expense_type = forms.ChoiceField(
+        choices=CompanyExpensePayment.ExpenseType.choices,
+        label="Expense type",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_expense_pay_type"}
+        ),
+        error_messages={"required": "Select an expense type."},
+    )
+    employee = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        required=False,
+        label="Employee",
+        empty_label="Select employee",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_expense_pay_employee"}
+        ),
+    )
+    description = forms.CharField(
+        label="Description",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-input",
+                "rows": 3,
+                "placeholder": "Describe this expense",
+                "id": "id_expense_pay_description",
+            }
+        ),
+    )
+    amount = forms.DecimalField(
+        min_value=Decimal("0.01"),
+        max_digits=14,
+        decimal_places=2,
+        label="Amount (KES)",
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input",
+                "step": "0.01",
+                "min": "0.01",
+                "placeholder": "0.00",
+                "id": "id_expense_pay_amount",
+            }
+        ),
+        error_messages={"required": "Enter the amount being paid."},
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        accounts = CompanyExpenseAccount.objects.order_by("name", "id")
+        self.fields["account"].queryset = accounts
+        self.fields["account"].label_from_instance = (
+            lambda obj: f"{obj.name} — {obj.bank_name} (KES {obj.balance:,.2f})"
+        )
+
+        employees = list(
+            Employee.objects.filter(status=Employee.Status.ACTIVE).order_by(
+                "first_name", "last_name", "login_code"
+            )
+        )
+        # Earliest unpaid registered run per employee.
+        unpaid_by_employee = {}
+        for run in PayrollRun.objects.filter(
+            employee_id__in=[e.pk for e in employees],
+            status=PayrollRun.Status.REGISTERED,
+        ).order_by("pay_period_end", "id"):
+            unpaid_by_employee.setdefault(run.employee_id, run)
+
+        self.unpaid_payroll_by_employee = unpaid_by_employee
+        self.payroll_net_map = {
+            str(emp_id): str(run.net_pay.quantize(Decimal("0.01")))
+            for emp_id, run in unpaid_by_employee.items()
+        }
+
+        self.fields["employee"].queryset = Employee.objects.filter(
+            pk__in=[e.pk for e in employees]
+        ).order_by("first_name", "last_name", "login_code")
+
+        def employee_label(obj):
+            name = obj.get_full_name() or obj.login_code
+            run = unpaid_by_employee.get(obj.pk)
+            if run is None:
+                return f"{name} — no unpaid payroll"
+            return (
+                f"{name} — unpaid "
+                f"{run.pay_period_start:%d %b}–{run.pay_period_end:%d %b %Y} "
+                f"(KES {run.net_pay:,.2f})"
+            )
+
+        self.fields["employee"].label_from_instance = employee_label
+
+    def clean_description(self):
+        return (self.cleaned_data.get("description") or "").strip()
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get("amount")
+        if amount is None:
+            return amount
+        amount = amount.quantize(Decimal("0.01"))
+        if amount <= 0:
+            raise ValidationError("Amount must be greater than zero.")
+        return amount
+
+    def clean(self):
+        cleaned = super().clean()
+        account = cleaned.get("account")
+        amount = cleaned.get("amount")
+        expense_type = cleaned.get("expense_type")
+        employee = cleaned.get("employee")
+
+        if expense_type == CompanyExpensePayment.ExpenseType.PAYROLL:
+            if not employee:
+                self.add_error("employee", "Select the employee to pay.")
+            else:
+                run = getattr(self, "unpaid_payroll_by_employee", {}).get(employee.pk)
+                if run is None:
+                    # Fresh lookup in case form was rebound.
+                    run = (
+                        PayrollRun.objects.filter(
+                            employee=employee,
+                            status=PayrollRun.Status.REGISTERED,
+                        )
+                        .order_by("pay_period_end", "id")
+                        .first()
+                    )
+                if run is None:
+                    self.add_error(
+                        "employee",
+                        "This employee has no unpaid registered payroll. "
+                        "Register payroll first.",
+                    )
+                else:
+                    cleaned["payroll_run"] = run
+                    if not cleaned.get("description"):
+                        cleaned["description"] = (
+                            f"Payroll — {employee.get_full_name() or employee.login_code} "
+                            f"({run.pay_period_start:%d %b %Y}–"
+                            f"{run.pay_period_end:%d %b %Y})"
+                        )
+        else:
+            cleaned["employee"] = None
+            cleaned["payroll_run"] = None
+            if not cleaned.get("description"):
+                self.add_error("description", "Enter a description for this expense.")
+
+        if account is not None and amount is not None:
+            balance = (
+                CompanyExpenseAccount.objects.filter(pk=account.pk)
+                .values_list("balance", flat=True)
+                .first()
+            )
+            balance = (balance or Decimal("0.00")).quantize(Decimal("0.01"))
+            if amount > balance:
+                self.add_error(
+                    "amount",
+                    f"Account balance is only KES {balance:,.2f}.",
+                )
+        return cleaned
+
+
+class RegisterEmployeeAdvanceForm(forms.ModelForm):
+    """Register a salary advance against an eligible registered payroll run."""
+
+    class Meta:
+        model = EmployeeAdvance
+        fields = ["payroll_run", "amount", "reason"]
+        widgets = {
+            "payroll_run": forms.Select(
+                attrs={"class": "form-input", "id": "id_advance_payroll_run"}
+            ),
+            "amount": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "id": "id_advance_amount",
+                    "min": "0.01",
+                    "step": "0.01",
+                    "placeholder": "0.00",
+                }
+            ),
+            "reason": forms.Select(
+                attrs={"class": "form-input", "id": "id_advance_reason"}
+            ),
+        }
+
+    def __init__(self, *args, preferred_payroll_run_id=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        all_registered = (
+            PayrollRun.objects.filter(status=PayrollRun.Status.REGISTERED)
+            .select_related("employee")
+            .prefetch_related("salary_advances")
+            .order_by(
+                "employee__first_name",
+                "employee__last_name",
+                "-pay_period_start",
+            )
+        )
+        eligible_ids = [
+            run.pk for run in all_registered if run.is_advance_eligible()
+        ]
+        runs = all_registered.filter(pk__in=eligible_ids)
+        self.fields["payroll_run"].queryset = runs
+        self.fields["payroll_run"].empty_label = (
+            "Select employee"
+            if runs.exists()
+            else "No eligible employees for advances"
+        )
+        self.fields["payroll_run"].label = "Registered payroll"
+        self.fields["amount"].label = "Advance amount (KES)"
+        self.fields["reason"].label = "Reason"
+        self.fields["reason"].choices = [
+            ("", "Select reason")
+        ] + list(EmployeeAdvance.Reason.choices)
+
+        if preferred_payroll_run_id and not self.is_bound:
+            preferred = runs.filter(pk=preferred_payroll_run_id).first()
+            if preferred is not None:
+                self.fields["payroll_run"].initial = preferred.pk
+                self.fields["amount"].initial = preferred.max_advance_amount()
+
+        self.payroll_payable_map = {}
+        self.payroll_max_advance_map = {}
+        self.payroll_salary_map = {}
+        for run in runs:
+            self.payroll_payable_map[str(run.pk)] = str(run.amount_payable())
+            self.payroll_max_advance_map[str(run.pk)] = str(run.max_advance_amount())
+            self.payroll_salary_map[str(run.pk)] = str(run.advance_salary_basis())
+
+        def label_from_instance(obj):
+            name = obj.employee.get_full_name() or obj.employee.login_code
+            amount = obj.max_advance_amount()
+            return f"{name} — KES {amount:,.2f}"
+
+        self.fields["payroll_run"].label_from_instance = label_from_instance
+
+    def clean_reason(self):
+        reason = (self.cleaned_data.get("reason") or "").strip()
+        if not reason:
+            raise forms.ValidationError("Select a reason for this advance.")
+        return reason
+
+    def clean(self):
+        cleaned = super().clean()
+        payroll_run = cleaned.get("payroll_run")
+        amount = cleaned.get("amount")
+        if payroll_run is None or amount is None:
+            return cleaned
+
+        if payroll_run.status != PayrollRun.Status.REGISTERED:
+            self.add_error(
+                "payroll_run",
+                "Advances can only be registered against unpaid payroll runs.",
+            )
+            return cleaned
+
+        if not payroll_run.is_advance_eligible():
+            self.add_error(
+                "payroll_run",
+                "This employee is not eligible for an advance. "
+                "Salary must be above half of the remaining payroll amount.",
+            )
+            return cleaned
+
+        max_advance = payroll_run.max_advance_amount()
+        half_salary = payroll_run.half_salary_cap()
+        payable = payroll_run.amount_payable()
+        if amount <= 0:
+            self.add_error("amount", "Enter an advance amount greater than zero.")
+        elif amount > max_advance:
+            self.add_error(
+                "amount",
+                f"Advance cannot exceed KES {max_advance:,.2f} "
+                f"(half salary KES {half_salary:,.2f}, "
+                f"payable KES {payable:,.2f}).",
+            )
+        return cleaned
+
+    def save(self, commit=True, *, recorded_by=None):
+        advance = super().save(commit=False)
+        advance.employee = advance.payroll_run.employee
+        advance.status = EmployeeAdvance.Status.OUTSTANDING
+        advance.notes = ""
+        if recorded_by is not None:
+            advance.recorded_by = recorded_by
+        if commit:
+            advance.save()
+        return advance
+
+
+class RegisterPettyCashExpenseForm(forms.ModelForm):
+    """Register an employee petty-cash expense (submitted as pending approval)."""
+
+    CLAIM_EXPENSE_TYPES = [
+        choice
+        for choice in CompanyExpensePayment.ExpenseType.choices
+        if choice[0] != CompanyExpensePayment.ExpenseType.PAYROLL
+    ]
+
+    class Meta:
+        model = PettyCashExpenseRequest
+        fields = ["expense_type", "description", "amount"]
+        widgets = {
+            "expense_type": forms.Select(
+                attrs={"class": "form-input", "id": "id_petty_cash_expense_type"}
+            ),
+            "description": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Describe this petty cash expense",
+                    "id": "id_petty_cash_description",
+                }
+            ),
+            "amount": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "id": "id_petty_cash_amount",
+                    "min": "0.01",
+                    "step": "0.01",
+                    "placeholder": "0.00",
+                }
+            ),
+        }
+
+    def __init__(self, *args, submitted_by=None, **kwargs):
+        self.submitted_by = submitted_by
+        super().__init__(*args, **kwargs)
+        self.fields["expense_type"].choices = [
+            ("", "Select expense type")
+        ] + list(self.CLAIM_EXPENSE_TYPES)
+        self.fields["expense_type"].label = "Expense type"
+        self.fields["description"].label = "Description"
+        self.fields["amount"].label = "Amount (KES)"
+
+    def clean_expense_type(self):
+        expense_type = (self.cleaned_data.get("expense_type") or "").strip()
+        if not expense_type:
+            raise ValidationError("Select an expense type.")
+        if expense_type == CompanyExpensePayment.ExpenseType.PAYROLL:
+            raise ValidationError(
+                "Payroll is paid from Company Accounts, not petty cash claims."
+            )
+        return expense_type
+
+    def clean_description(self):
+        description = (self.cleaned_data.get("description") or "").strip()
+        if not description:
+            raise ValidationError("Describe this expense.")
+        return description
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get("amount")
+        if amount is None:
+            return amount
+        amount = amount.quantize(Decimal("0.01"))
+        if amount <= 0:
+            raise ValidationError("Amount must be greater than zero.")
+        return amount
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.submitted_by is None:
+            raise ValidationError("You must be signed in to register an expense.")
+        return cleaned
+
+    def save(self, commit=True, *, submitted_by=None):
+        request_row = super().save(commit=False)
+        actor = submitted_by if submitted_by is not None else self.submitted_by
+        if actor is None:
+            raise ValidationError("You must be signed in to register an expense.")
+        request_row.employee = actor
+        request_row.status = PettyCashExpenseRequest.Status.PENDING
+        request_row.rejection_reason = ""
+        request_row.reviewed_by = None
+        request_row.reviewed_at = None
+        request_row.expense_payment = None
+        request_row.submitted_by = actor
+        if commit:
+            request_row.save()
+        return request_row

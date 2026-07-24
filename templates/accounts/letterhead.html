@@ -1,0 +1,186 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page settings-page letterhead-page"
+  id="letterhead-page"
+  data-template="{{ form.template.value|default:letterhead.template }}"
+  data-accent="{{ form.accent.value|default:letterhead.accent }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Document settings</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Design the firm letterhead used on invoices and receipts. Pick a sample layout,
+        tune accents and details, then save. Content comes from
+        <a href="{{ company_profile_url }}">Company profile</a>
+        and contacts.
+      </p>
+    </div>
+  </header>
+
+  <div class="letterhead-studio__current" aria-label="Current letterhead">
+    <p class="letterhead-studio__current-kicker">Active letterhead</p>
+    <p class="letterhead-studio__current-name" id="letterhead-current-label">
+      {{ current_template_label }}
+    </p>
+    <p class="letterhead-studio__current-meta">
+      <span>{{ letterhead_samples|length }} samples</span>
+      <span aria-hidden="true">·</span>
+      <span id="letterhead-current-accent">{{ letterhead.get_accent_display }}</span>
+    </p>
+  </div>
+
+  <form method="post" class="letterhead-studio" id="letterhead-form" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="form-alert" role="alert">
+      {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="letterhead-studio__main">
+      <section class="letterhead-studio__samples" aria-labelledby="letterhead-samples-title">
+        <div class="settings-panel__intro">
+          <h3 id="letterhead-samples-title">Layout samples</h3>
+          <p>Select a starting design. The live preview updates as you choose.</p>
+        </div>
+        <div class="letterhead-sample-grid" role="radiogroup" aria-label="Letterhead samples">
+          {% for sample in letterhead_samples %}
+          <label
+            class="letterhead-sample-card letterhead-sample-card--{{ sample.value }}{% if form.template.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-sample-card--current{% endif %}"
+          >
+            <input
+              type="radio"
+              name="{{ form.template.name }}"
+              value="{{ sample.value }}"
+              {% if form.template.value == sample.value %}checked{% endif %}
+              data-letterhead-template="{{ sample.value }}"
+              data-letterhead-label="{{ sample.label }}"
+            >
+            {% if sample.is_current %}
+            <span class="letterhead-sample-card__badge">Active</span>
+            {% endif %}
+            <span class="letterhead-sample-card__stage" aria-hidden="true">
+              <span class="letterhead-mini letterhead-mini--{{ sample.value }}">
+                <span class="letterhead-mini__mark"></span>
+                <span class="letterhead-mini__lines">
+                  <i></i><i></i><i></i>
+                </span>
+                <span class="letterhead-mini__side">
+                  <em></em><em></em>
+                </span>
+              </span>
+            </span>
+            <span class="letterhead-sample-card__meta">
+              <span class="letterhead-sample-card__name">{{ sample.label }}</span>
+              <span class="letterhead-sample-card__blurb">{{ sample.blurb }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% if form.template.errors %}
+        <p class="field-error">{{ form.template.errors.0 }}</p>
+        {% endif %}
+      </section>
+
+      <section class="letterhead-studio__accents" aria-labelledby="letterhead-accents-title">
+        <div class="settings-panel__intro">
+          <h3 id="letterhead-accents-title">Accent colour</h3>
+          <p>Used on marks, rules, and banner backgrounds.</p>
+        </div>
+        <div class="letterhead-accent-grid" role="radiogroup" aria-label="Accent colour">
+          {% for sample in accent_samples %}
+          <label
+            class="letterhead-accent-chip{% if form.accent.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-accent-chip--current{% endif %}"
+            style="--chip-accent: {{ sample.hex }};"
+          >
+            <input
+              type="radio"
+              name="{{ form.accent.name }}"
+              value="{{ sample.value }}"
+              {% if form.accent.value == sample.value %}checked{% endif %}
+              data-letterhead-accent="{{ sample.value }}"
+              data-letterhead-accent-hex="{{ sample.hex }}"
+              data-letterhead-accent-label="{{ sample.label }}"
+            >
+            <span class="letterhead-accent-chip__swatch" aria-hidden="true"></span>
+            <span class="letterhead-accent-chip__name">{{ sample.label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        {% if form.accent.errors %}
+        <p class="field-error">{{ form.accent.errors.0 }}</p>
+        {% endif %}
+      </section>
+
+      <section class="letterhead-studio__options" aria-labelledby="letterhead-options-title">
+        <div class="settings-panel__intro">
+          <h3 id="letterhead-options-title">Details</h3>
+          <p>Choose which firm details appear on the letterhead.</p>
+        </div>
+        <div class="letterhead-option-grid">
+          <label class="letterhead-option">
+            {{ form.show_logo }}
+            <span>{{ form.show_logo.label }}</span>
+          </label>
+          <label class="letterhead-option">
+            {{ form.show_tagline }}
+            <span>{{ form.show_tagline.label }}</span>
+          </label>
+          <label class="letterhead-option">
+            {{ form.show_address }}
+            <span>{{ form.show_address.label }}</span>
+          </label>
+          <label class="letterhead-option">
+            {{ form.show_contacts }}
+            <span>{{ form.show_contacts.label }}</span>
+          </label>
+        </div>
+      </section>
+    </div>
+
+    <aside class="letterhead-studio__aside" aria-label="Live letterhead preview">
+      <div class="letterhead-preview">
+        <div class="letterhead-preview__head">
+          <h3>Live preview</h3>
+          <span class="settings-preview__badge">Realtime</span>
+        </div>
+        <div class="letterhead-preview__stage" id="letterhead-preview-stage">
+          {% include "accounts/partials/company_letterhead.html" %}
+          <div class="letterhead-preview__body" aria-hidden="true">
+            <span class="letterhead-preview__title"></span>
+            <span class="letterhead-preview__line"></span>
+            <span class="letterhead-preview__line letterhead-preview__line--short"></span>
+            <span class="letterhead-preview__line"></span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="form-actions form-actions--start letterhead-studio__actions">
+      <button type="submit" class="btn btn--primary btn--inline">
+        Save letterhead
+      </button>
+    </div>
+  </form>
+
+  {% if letterhead_setting.updated_at %}
+  <p class="website-template-meta">
+    Last updated {{ letterhead_setting.updated_at|date:"j M Y, H:i" }}
+    {% if letterhead_setting.updated_by %}
+    by {{ letterhead_setting.updated_by.get_full_name|default:letterhead_setting.updated_by.login_code }}
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/letterhead.js' %}" defer></script>
+{% endblock %}

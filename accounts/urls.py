@@ -138,6 +138,12 @@ urlpatterns = [
         name="latest_news_watch_cancel",
     ),
     path(
+        "<slug:role>/dashboard/finance-billing/client-accounts/"
+        "client/<int:client_id>/topup-stk-status/",
+        views.client_account_topup_stk_status,
+        name="client_account_topup_stk_status",
+    ),
+    path(
         "<slug:role>/dashboard/finance-billing/general-accounts/payments/"
         "invoice/<int:invoice_id>/stk-status/",
         views.invoice_stk_status,
@@ -441,6 +447,12 @@ urlpatterns = [
     ),
     path(
         "<slug:role>/dashboard/matter-management/litigation-matters/"
+        "approve-registered-cases/decline/<int:case_id>/",
+        views.DeclineLitigationCaseView.as_view(),
+        name="decline_litigation_case",
+    ),
+    path(
+        "<slug:role>/dashboard/matter-management/litigation-matters/"
         "approve-registered-cases/approve/<int:case_id>/edit/",
         views.EditLitigationCaseView.as_view(),
         name="edit_litigation_case",
@@ -499,6 +511,12 @@ urlpatterns = [
         "approve-registered-matters/approve/<int:matter_id>/",
         views.ApproveNonLitigationMatterView.as_view(),
         name="approve_non_litigation_matter",
+    ),
+    path(
+        "<slug:role>/dashboard/matter-management/non-litigation-matters/"
+        "approve-registered-matters/decline/<int:matter_id>/",
+        views.DeclineNonLitigationMatterView.as_view(),
+        name="decline_non_litigation_matter",
     ),
     path(
         "<slug:role>/dashboard/matter-management/non-litigation-matters/"

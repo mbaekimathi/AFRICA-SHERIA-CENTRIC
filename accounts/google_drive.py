@@ -369,6 +369,113 @@ def get_drive_file_meta(file_id: str) -> dict:
     )
 
 
+DRIVE_BROWSER_FIELDS = (
+    "id,name,mimeType,webViewLink,webContentLink,modifiedTime,size,"
+    "owners(displayName,emailAddress),lastModifyingUser(displayName)"
+)
+
+
+def list_drive_children(
+    folder_id: str,
+    *,
+    page_size: int = 200,
+) -> list[dict]:
+    """
+    List non-trashed children of a Drive folder (folders first, then name).
+    """
+    folder_id = (folder_id or "").strip()
+    if not folder_id:
+        raise GoogleDriveAPIError("Missing Drive folder id.")
+
+    token = get_valid_access_token()
+    q = f"'{folder_id}' in parents and trashed = false"
+    files: list[dict] = []
+    page_token = ""
+    while True:
+        params: dict[str, str] = {
+            "q": q,
+            "fields": f"nextPageToken,files({DRIVE_BROWSER_FIELDS})",
+            "orderBy": "folder,name",
+            "pageSize": str(max(1, min(int(page_size or 200), 1000))),
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        data = _request_json(
+            "GET",
+            f"{DRIVE_FILES_URL}?{urllib.parse.urlencode(params)}",
+            access_token=token,
+        )
+        files.extend(data.get("files") or [])
+        page_token = (data.get("nextPageToken") or "").strip()
+        if not page_token:
+            break
+    return files
+
+
+def get_drive_folder_meta(folder_id: str) -> dict:
+    """Fetch folder metadata including parents for breadcrumb walks."""
+    folder_id = (folder_id or "").strip()
+    if not folder_id:
+        raise GoogleDriveAPIError("Missing Drive folder id.")
+    token = get_valid_access_token()
+    return _request_json(
+        "GET",
+        (
+            f"{DRIVE_FILES_URL}/{urllib.parse.quote(folder_id)}"
+            "?fields=id,name,mimeType,trashed,parents,webViewLink"
+            "&supportsAllDrives=true"
+        ),
+        access_token=token,
+    )
+
+
+def build_drive_folder_breadcrumbs(
+    folder_id: str,
+    *,
+    root_folder_id: str,
+    root_name: str = "",
+) -> list[dict]:
+    """
+    Walk parents from folder_id up to root_folder_id (inclusive).
+
+    Returns crumbs ordered root → current. Raises if folder is outside root.
+    """
+    folder_id = (folder_id or "").strip()
+    root_folder_id = (root_folder_id or "").strip()
+    if not folder_id or not root_folder_id:
+        raise GoogleDriveAPIError("Missing Drive folder id.")
+
+    chain: list[dict] = []
+    seen: set[str] = set()
+    current = folder_id
+    while current and current not in seen:
+        seen.add(current)
+        meta = get_drive_folder_meta(current)
+        if meta.get("trashed") or meta.get("mimeType") != FOLDER_MIME:
+            raise GoogleDriveAPIError("That Drive folder is not available.")
+        name = (meta.get("name") or "").strip() or "Untitled"
+        if current == root_folder_id and root_name:
+            name = root_name
+        chain.append(
+            {
+                "id": current,
+                "name": name,
+                "web_view_link": (meta.get("webViewLink") or "").strip(),
+            }
+        )
+        if current == root_folder_id:
+            chain.reverse()
+            return chain
+        parents = meta.get("parents") or []
+        current = (parents[0] if parents else "") or ""
+
+    raise GoogleDriveAPIError(
+        "That folder is outside the firm Google Drive structure."
+    )
+
+
 def list_drive_revisions(file_id: str, *, page_size: int = 20) -> list[dict]:
     """Return recent Drive revisions for a file (newest first when available)."""
     if not file_id:

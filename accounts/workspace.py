@@ -6,6 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .models import Employee, get_firm_display_name
+from .appearance import resolve_user_workspace_theme
 
 SESSION_GREETING_KEY = "greeting_name_key"
 SESSION_STARTED_AT_KEY = "session_started_at"
@@ -38,6 +39,14 @@ def _notification_badge_context(user) -> dict:
         "notification_unread_count": sum(badges.values()),
         "notification_badges": badges,
     }
+
+
+def apply_notification_badges(context: dict, user) -> None:
+    """Refresh bell + utility icon badge counts on an existing workspace context."""
+    notif_ctx = _notification_badge_context(user)
+    context.update(notif_ctx)
+    for item in context.get("utility_items") or []:
+        item["badge_count"] = notif_ctx["notification_badges"].get(item["slug"], 0)
 
 
 def pending_clients_count() -> int:
@@ -80,6 +89,13 @@ def pending_non_litigation_matters_count() -> int:
     ).count()
 
 
+def pending_petty_cash_expenses_count() -> int:
+    """Employee petty-cash expense claims awaiting approval."""
+    from .models import PettyCashExpenseRequest
+
+    return PettyCashExpenseRequest.pending_count()
+
+
 def _attach_page_nav_badges(page_nav_items: list[dict]) -> None:
     """Attach count badges to section nav / dashboard items that need them."""
     if not page_nav_items:
@@ -88,6 +104,7 @@ def _attach_page_nav_badges(page_nav_items: list[dict]) -> None:
     pending_employees = None
     pending_cases = None
     pending_matters = None
+    pending_petty_cash = None
     for item in page_nav_items:
         slug = item.get("slug")
         if slug == "user-management":
@@ -118,6 +135,10 @@ def _attach_page_nav_badges(page_nav_items: list[dict]) -> None:
             if pending_matters is None:
                 pending_matters = pending_non_litigation_matters_count()
             item["badge_count"] = pending_matters
+        elif slug == "petty-cash-book":
+            if pending_petty_cash is None:
+                pending_petty_cash = pending_petty_cash_expenses_count()
+            item["badge_count"] = pending_petty_cash
 
 
 def time_of_day_greeting(when=None) -> str:
@@ -491,23 +512,60 @@ EMPLOYEE_ACCOUNTS_PAGE_LINKS = [
     ("Employee Petty Cashbook", "employee-petty-cashbook", ICON_DOC),
 ]
 
+# Company Accounts page-only links (register / top-up / pay open in-page modals)
+COMPANY_ACCOUNTS_PAGE_LINKS = [
+    ("Register Account", "register-account", ICON_DOC),
+    ("Topup Account", "topup-account", ICON_FINANCE),
+    ("Pay Expense", "pay-expense", ICON_FINANCE),
+    ("Petty Cash Book", "petty-cash-book", ICON_DOC),
+]
+
+# Employee Petty Cashbook page-only links
+EMPLOYEE_PETTY_CASHBOOK_PAGE_LINKS = [
+    ("Register Expense", "register-petty-cash-expense", ICON_DOC),
+]
+
 # Client Accounts page-only links
 CLIENT_ACCOUNTS_PAGE_LINKS = [
     ("Generate Invoice", "generate-invoice", ICON_DOC),
 ]
 
+# Shown on a selected client account detail page
+CLIENT_ACCOUNT_DETAIL_LINKS = [
+    ("Generate Invoice", "generate-invoice", ICON_DOC),
+    ("Record Payment", "topup-client-account", ICON_FINANCE),
+]
+
 # General Accounts page-only links
 GENERAL_ACCOUNTS_PAGE_LINKS = [
-    ("Payments", "payments", ICON_FINANCE),
-    ("Purchasing", "purchasing", ICON_BRIEF),
-    ("Inventory", "inventory", ICON_TOOLS),
-    ("Sales", "sales", ICON_FINANCE),
-    ("Customers", "customers", ICON_USERS),
-    ("Suppliers", "suppliers", ICON_USERS),
-    ("Banking", "banking", ICON_FINANCE),
     ("Accounting", "accounting", ICON_SCALE),
-    ("Reporting", "reporting", ICON_LEARN),
 ]
+
+# Accounting page — books of account (sidebar on Accounting and its children)
+ACCOUNTING_PAGE_LINKS = [
+    ("Cash Book", "cash-book", ICON_FINANCE),
+    ("Petty Cash Book", "petty-cash-book", ICON_DOC),
+    ("Bank Book", "bank-book", ICON_FINANCE),
+    ("Sales Day Book", "sales-day-book", ICON_BRIEF),
+    ("Purchases Day Book", "purchases-day-book", ICON_BRIEF),
+    ("Journal Proper", "journal-proper", ICON_DOC),
+    ("Sales Ledger", "sales-ledger", ICON_USERS),
+    ("Purchases Ledger", "purchases-ledger", ICON_USERS),
+    ("General Ledger", "general-ledger", ICON_SCALE),
+    ("Trial Balance", "trial-balance", ICON_LEARN),
+]
+
+# Former General Accounts children kept reachable by deep link / roles UI.
+LEGACY_GENERAL_ACCOUNTS_SLUGS = {
+    "payments",
+    "purchasing",
+    "inventory",
+    "sales",
+    "customers",
+    "suppliers",
+    "banking",
+    "reporting",
+}
 
 # Invoicing page-only links
 INVOICING_PAGE_LINKS = [
@@ -517,6 +575,11 @@ INVOICING_PAGE_LINKS = [
 # Payroll page-only links
 PAYROLL_PAGE_LINKS = [
     ("Register Payroll", "register-payroll", ICON_DOC),
+]
+
+# Employee Advances page-only links
+EMPLOYEE_ADVANCES_PAGE_LINKS = [
+    ("Register Advance", "register-advance", ICON_DOC),
 ]
 
 # Employee Communications page-only links
@@ -536,12 +599,14 @@ PAGE_LOCAL_LINKS_NO_INHERIT = {
     "general-accounts",
     "client-accounts",
     "employee-accounts",
+    "company-accounts",
     "user-management",
     "employee-management",
 }
 
 SYSTEM_SETTINGS_PAGE_LINKS = [
     ("Website Template", "website-template", ICON_DOC),
+    ("Company Theme", "company-theme", ICON_SETTINGS),
     ("Company Information", "company-information", ICON_BRIEF),
     ("Document Settings", "document-settings", ICON_SETTINGS),
     ("Finance Settings", "finance-settings", ICON_FINANCE),
@@ -575,10 +640,14 @@ PAGE_LOCAL_LINKS = {
     "non-litigation-matters": NON_LITIGATION_MATTERS_PAGE_LINKS,
     "finance-billing": FINANCE_BILLING_PAGE_LINKS,
     "general-accounts": GENERAL_ACCOUNTS_PAGE_LINKS,
+    "accounting": ACCOUNTING_PAGE_LINKS,
     "client-accounts": CLIENT_ACCOUNTS_PAGE_LINKS,
     "employee-accounts": EMPLOYEE_ACCOUNTS_PAGE_LINKS,
+    "company-accounts": COMPANY_ACCOUNTS_PAGE_LINKS,
+    "employee-petty-cashbook": EMPLOYEE_PETTY_CASHBOOK_PAGE_LINKS,
     "invoicing": INVOICING_PAGE_LINKS,
     "payroll": PAYROLL_PAGE_LINKS,
+    "employee-advances": EMPLOYEE_ADVANCES_PAGE_LINKS,
     "employee-communications": EMPLOYEE_COMMUNICATIONS_PAGE_LINKS,
     "research-blogs": RESEARCH_BLOGS_PAGE_LINKS,
     "settings": [
@@ -592,7 +661,7 @@ PAGE_LOCAL_LINKS = {
     "document-settings": DOCUMENT_SETTINGS_PAGE_LINKS,
 }
 
-# Personal My profile sidebar group (theme is per-account, not firm-wide)
+# Personal My profile sidebar group (theme overrides company default per account)
 SETTINGS_AREA_SLUGS = {
     "settings",
     "about-me",
@@ -634,7 +703,8 @@ EXTRA_PAGE_SLUGS = {
     "practice-areas-new",
     "company-faqs-new",
     "company-gallery-new",
-}
+    "topup-client-account",
+} | LEGACY_GENERAL_ACCOUNTS_SLUGS
 
 
 # Litigation case detail sidebar actions
@@ -886,6 +956,7 @@ WORKSPACE_EDIT_POST_PAGES = frozenset(
         "company-gallery-new",
         "company-terms",
         "website-template",
+        "company-theme",
         "finance-settings",
         "communication-settings",
         "letterhead",
@@ -972,20 +1043,27 @@ def infer_activity_permission_actions(
         return ("view", "edit", "audit")
     if activity_slug == "reporting":
         return ("view", "generate")
-    if activity_slug in FINANCE_LEDGER_ACTIONS and activity_slug in {
-        slug for _label, slug, _icon in GENERAL_ACCOUNTS_PAGE_LINKS
-    }:
+    if activity_slug in LEGACY_GENERAL_ACCOUNTS_SLUGS - {"payments", "banking", "reporting"}:
+        return FINANCE_LEDGER_ACTIONS
+    if activity_slug in {
+        slug for _label, slug, _icon in ACCOUNTING_PAGE_LINKS
+    } - {"petty-cash-book"}:
         return FINANCE_LEDGER_ACTIONS
     if activity_slug in {
         "payroll",
         "employee-advances",
         "employee-petty-cashbook",
+        "register-petty-cash-expense",
     }:
         return FINANCE_LEDGER_ACTIONS
     if activity_slug == "employee-accounts":
         return ("view", "register", "edit", "delete", "pay")
     if activity_slug == "client-accounts":
         return ("view", "register", "edit", "delete", "pay")
+    if activity_slug == "company-accounts":
+        return ("view", "register", "edit", "delete")
+    if activity_slug == "petty-cash-book":
+        return ("view", "approve", "edit", "pay")
     if activity_slug == "roles-permissions":
         return ("view", "edit")
     if activity_slug == "employee-training":
@@ -1124,6 +1202,33 @@ def resolve_workspace_post_action(activity_slug: str, request) -> str:
             return action
     if activity_slug == "latest-news":
         return "register"
+    if activity_slug == "client-accounts":
+        post_action = (request.POST.get("action") or "").strip()
+        if post_action == "topup-client-account":
+            return "register"
+        return "edit"
+    if activity_slug == "company-accounts":
+        post_action = (request.POST.get("action") or "").strip()
+        if post_action in {
+            "register-company-account",
+            "topup-company-account",
+            "pay-company-expense",
+        }:
+            return "register"
+        return "edit"
+    if activity_slug == "employee-petty-cashbook":
+        post_action = (request.POST.get("action") or "").strip()
+        if post_action == "register-petty-cash-expense":
+            return "register"
+        return "edit"
+    if activity_slug == "petty-cash-book":
+        post_action = (request.POST.get("action") or "").strip()
+        if post_action in {
+            "approve-petty-cash-expense",
+            "reject-petty-cash-expense",
+        }:
+            return "approve"
+        return "edit"
     if (
         activity_slug.endswith("-new")
         and activity_slug not in {"theme-settings", "notification-settings"}
@@ -1265,12 +1370,19 @@ def client_account_page_nav_items(
     active_slug: str = "client-accounts",
 ):
     """Sidebar links for client account pages, optionally scoped to one client."""
-    base_trail = [part for part in trail if part and part != "generate-invoice"]
+    base_trail = [
+        part
+        for part in trail
+        if part and part not in {"generate-invoice", "topup-client-account"}
+    ]
     items = []
-    for label, slug, icon in CLIENT_ACCOUNTS_PAGE_LINKS:
-        url = user.workspace_url(*extend_page_trail(base_trail, slug))
-        if client_pk and slug == "generate-invoice":
-            url = f"{url}?client={client_pk}"
+    for label, slug, icon in CLIENT_ACCOUNT_DETAIL_LINKS:
+        if slug == "topup-client-account" and client_pk:
+            url = "#topup-client-account"
+        else:
+            url = user.workspace_url(*extend_page_trail(base_trail, slug))
+            if client_pk and slug == "generate-invoice":
+                url = f"{url}?client={client_pk}"
         items.append(
             {
                 "label": label,
@@ -1301,6 +1413,7 @@ PAGE_TITLES = {
     "notification-settings": "Notifications",
     "system-settings": "System Settings",
     "website-template": "Website Template",
+    "company-theme": "Company Theme",
     "company-information": "Company Information",
     "company-profile": "Company Profile",
     "company-contacts": "Company Contacts",
@@ -1362,15 +1475,31 @@ PAGE_TITLES = {
     "suppliers": "Suppliers",
     "banking": "Banking",
     "accounting": "Accounting",
+    "cash-book": "Cash Book",
+    "bank-book": "Bank Book",
+    "sales-day-book": "Sales Day Book",
+    "purchases-day-book": "Purchases Day Book",
+    "journal-proper": "Journal Proper",
+    "sales-ledger": "Sales Ledger",
+    "purchases-ledger": "Purchases Ledger",
+    "general-ledger": "General Ledger",
+    "trial-balance": "Trial Balance",
     "reporting": "Reporting",
     "client-accounts": "Client Accounts",
+    "topup-client-account": "Record Payment",
     "employee-accounts": "Employee Accounts",
     "payroll": "Payroll",
     "register-payroll": "Register Payroll",
     "payroll-receipt": "Payroll Receipt",
     "employee-advances": "Employee Advances",
+    "register-advance": "Register Advance",
     "employee-petty-cashbook": "Employee Petty Cashbook",
+    "register-petty-cash-expense": "Register Expense",
     "company-accounts": "Company Accounts",
+    "register-account": "Register Account",
+    "topup-account": "Topup Account",
+    "pay-expense": "Pay Expense",
+    "petty-cash-book": "Petty Cash Book",
     "people": "People",
     "firm-settings": "Firm settings",
     "matters": "Matters",
@@ -1455,6 +1584,8 @@ def resolve_workspace_page(role, pages: str):
         "is_company_information": leaf == "company-information",
         "is_company_profile": leaf == "company-profile",
         "is_website_template": leaf == "website-template",
+        "is_company_theme": leaf == "company-theme",
+        "is_letterhead": leaf == "letterhead",
         "is_practice_areas": leaf == "practice-areas",
         "is_practice_areas_new": leaf == "practice-areas-new",
         "is_company_faqs": leaf == "company-faqs",
@@ -1887,13 +2018,18 @@ def workspace_context(
         "page_title": page_title,
         "role_label": user.get_role_display(),
         "role_slug": role_slug,
-        "theme": user.workspace_theme,
+        "theme": resolve_user_workspace_theme(
+            user, request=request, page_role_slug=role_slug
+        ),
         "ui_font": user.workspace_font,
         "ui_density": user.workspace_density,
+        "has_personal_theme_override": user.has_personal_theme_override(),
         "nav_items": nav_items,
         "module_items": module_items,
         "utility_items": utility_items,
         "page_nav_items": page_nav_items,
+        "section_hub_nav": bool(page_nav_items)
+        and not any(item.get("active") for item in page_nav_items),
         "page_trail": trail,
         "access_denied_modal": access_denied_modal,
         "active_page": active,
@@ -2004,9 +2140,10 @@ def employee_preactive_context(request, user, *, page_title, active="onboarding"
         "page_title": page_title,
         "role_label": user.get_role_display(),
         "role_slug": role_slug,
-        "theme": user.workspace_theme,
+        "theme": resolve_user_workspace_theme(user, page_role_slug=role_slug),
         "ui_font": user.workspace_font,
         "ui_density": user.workspace_density,
+        "has_personal_theme_override": user.has_personal_theme_override(),
         "nav_items": [],
         "module_items": module_items,
         "utility_items": utility_items,

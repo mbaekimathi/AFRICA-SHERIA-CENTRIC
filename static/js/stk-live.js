@@ -30,6 +30,17 @@
     var status = (data && data.status) || "pending";
     monitor.className = "pay-stk-status pay-stk-status--" + status;
 
+    if (data && (data.amount_paid || data.balance_due)) {
+      var paidEl = document.querySelector(".js-pay-amount-paid");
+      var dueEl = document.querySelector(".js-pay-balance-due");
+      if (paidEl && data.amount_paid) {
+        paidEl.textContent = "KES " + data.amount_paid;
+      }
+      if (dueEl && data.balance_due) {
+        dueEl.innerHTML = "<strong>KES " + data.balance_due + "</strong>";
+      }
+    }
+
     if (status === "success") {
       hideAllBanners();
       if (successBanner) {

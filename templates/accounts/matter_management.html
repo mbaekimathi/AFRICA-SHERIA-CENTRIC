@@ -1,0 +1,198 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page matter-hub" data-reveal-root id="matter-analytics-page">
+  <header class="matter-hub__head" data-reveal>
+    <div class="matter-hub__intro">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="matter-hub__lead">
+        Openings, status, and workload for litigation and non-litigation matters.
+      </p>
+    </div>
+    <dl class="matter-hub__totals" data-matter-summary>
+      <div>
+        <dt>Opened</dt>
+        <dd data-summary-total>{{ analytics.totals.all }}</dd>
+      </div>
+      <div>
+        <dt>Active</dt>
+        <dd data-summary-active>{{ analytics.totals.active }}</dd>
+      </div>
+      <div>
+        <dt>Pending</dt>
+        <dd data-summary-pending>{{ analytics.totals.pending }}</dd>
+      </div>
+      <div>
+        <dt>Closed</dt>
+        <dd data-summary-closed>{{ analytics.totals.closed }}</dd>
+      </div>
+    </dl>
+  </header>
+
+  <div class="matter-hub__toolbar" data-reveal>
+    <form
+      class="matter-hub__filter"
+      method="get"
+      id="matter-analytics-filter"
+      aria-label="Date range"
+    >
+      <div class="matter-hub__modes" role="group" aria-label="Filter by">
+        {% for option in analytics.filter.modes %}
+        <label class="matter-hub__mode{% if analytics.filter.mode == option.value %} is-active{% endif %}">
+          <input
+            type="radio"
+            name="mode"
+            value="{{ option.value }}"
+            {% if analytics.filter.mode == option.value %}checked{% endif %}
+          >
+          <span>{{ option.label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="matter-hub__controls">
+        <div
+          class="matter-hub__control"
+          data-mode-field="day"
+          {% if analytics.filter.mode != "day" %}hidden{% endif %}
+        >
+          <label class="visually-hidden" for="matter-filter-date">Date</label>
+          <input
+            id="matter-filter-date"
+            type="date"
+            name="date"
+            value="{{ analytics.filter.values.date }}"
+            max="{{ analytics.filter.max_date }}"
+          >
+        </div>
+
+        <div
+          class="matter-hub__control matter-hub__control--period"
+          data-mode-field="period"
+          {% if analytics.filter.mode != "period" %}hidden{% endif %}
+        >
+          <label class="visually-hidden" for="matter-filter-start">From</label>
+          <input
+            id="matter-filter-start"
+            type="date"
+            name="start"
+            value="{{ analytics.filter.values.start }}"
+            max="{{ analytics.filter.max_date }}"
+          >
+          <span class="matter-hub__sep" aria-hidden="true">to</span>
+          <label class="visually-hidden" for="matter-filter-end">To</label>
+          <input
+            id="matter-filter-end"
+            type="date"
+            name="end"
+            value="{{ analytics.filter.values.end }}"
+            max="{{ analytics.filter.max_date }}"
+          >
+        </div>
+
+        <div
+          class="matter-hub__control matter-hub__control--month"
+          data-mode-field="month"
+          {% if analytics.filter.mode != "month" %}hidden{% endif %}
+        >
+          <button
+            type="button"
+            class="matter-hub__step"
+            data-month-step="-1"
+            aria-label="Previous month"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+              <path d="m14.5 6-5 6 5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <label class="visually-hidden" for="matter-filter-month">Month</label>
+          <input
+            id="matter-filter-month"
+            type="month"
+            name="month"
+            value="{{ analytics.filter.values.month }}"
+            max="{{ analytics.filter.max_month }}"
+            data-prev-month="{{ analytics.filter.month_nav.prev }}"
+            data-next-month="{{ analytics.filter.month_nav.next }}"
+            data-can-next="{% if analytics.filter.month_nav.can_next %}1{% else %}0{% endif %}"
+          >
+          <button
+            type="button"
+            class="matter-hub__step"
+            data-month-step="1"
+            aria-label="Next month"
+            {% if not analytics.filter.month_nav.can_next %}disabled{% endif %}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+              <path d="m9.5 6 5 6-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <div
+          class="matter-hub__control"
+          data-mode-field="year"
+          {% if analytics.filter.mode != "year" %}hidden{% endif %}
+        >
+          <label class="visually-hidden" for="matter-filter-year">Year</label>
+          <input
+            id="matter-filter-year"
+            type="number"
+            name="year"
+            inputmode="numeric"
+            min="{{ analytics.filter.year_options|last }}"
+            max="{{ analytics.filter.year_options|first }}"
+            step="1"
+            value="{{ analytics.filter.values.year }}"
+            list="matter-filter-year-options"
+          >
+          <datalist id="matter-filter-year-options">
+            {% for year in analytics.filter.year_options %}
+            <option value="{{ year }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+
+        <p class="matter-hub__range" data-matter-filter-status aria-live="polite">
+          Showing {{ analytics.filter.label }}
+        </p>
+      </div>
+    </form>
+
+    {% if page_nav_items %}
+    <nav class="matter-hub__links" aria-label="Matter lists">
+      {% for item in page_nav_items %}
+      <a
+        href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
+        class="matter-hub__link{% if item.disabled %} is-disabled{% endif %}"
+        {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} pending"{% endif %}
+        {% if item.disabled %}aria-disabled="true"{% endif %}
+      >
+        <span>{{ item.label }}</span>
+        <span
+          class="nav-badge"
+          data-page-badge="{{ item.slug }}"
+          {% if not item.badge_count %}hidden{% endif %}
+        >{{ item.badge_count|default:0 }}</span>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+          <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+  </div>
+
+  <div id="matter-analytics-live" class="matter-hub__live">
+    {% include "accounts/partials/matter_analytics_results.html" %}
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/matter-analytics.js' %}?v=matter-hub-2" defer></script>
+{% endblock %}

@@ -7,14 +7,17 @@
 <section class="page page--docs page--docs-activity">
   {% csrf_token %}
 
-  <header class="docs-hero docs-activity-hero">
-    <div class="docs-hero__copy">
-      <p class="page-kicker">Document activity</p>
-      <h2>{{ document.title }}</h2>
-      <p class="page-lead">
-        Time spent viewing, creating, and editing this file
-        {% if entity_label %} on {{ entity_label }}{% endif %}.
-      </p>
+  <header class="docs-hero docs-activity-hero" data-reveal>
+    <div class="docs-hero__main">
+      {% include "accounts/partials/icon_3d.html" with icon="search-doc" tone=7 size="lg" float=True extra_class="docs-hero__icon" %}
+      <div class="docs-hero__copy">
+        <p class="page-kicker">Document activity</p>
+        <h2>{{ document.title }}</h2>
+        <p class="page-lead">
+          Time spent viewing, creating, and editing this file
+          {% if entity_label %} on {{ entity_label }}{% endif %}.
+        </p>
+      </div>
     </div>
     <div class="docs-activity-hero__actions">
       <a href="{{ library_url }}" class="btn btn--quiet">Back to library</a>

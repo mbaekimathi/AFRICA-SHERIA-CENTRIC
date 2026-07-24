@@ -121,6 +121,17 @@
       <div class="form-actions form-actions--start">
         <a href="{{ list_url }}" class="btn btn--quiet">Cancel</a>
         <a href="{{ edit_url }}" class="btn btn--quiet btn--inline">Edit</a>
+        <form
+          method="post"
+          action="{{ decline_url }}"
+          class="row-action-form"
+          onsubmit="return confirm('Decline this matter? It will be marked as rejected and removed from the approval queue.');"
+        >
+          {% csrf_token %}
+          <button type="submit" class="btn btn--danger btn--inline">
+            Decline
+          </button>
+        </form>
         <button
           type="button"
           class="btn btn--primary btn--inline"

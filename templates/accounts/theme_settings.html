@@ -8,7 +8,7 @@
   class="page settings-page theme-settings-page"
   id="settings-page"
   data-role-theme="{{ user.role }}"
-  data-saved-theme="{% if appearance_form.ui_theme.value == 'product' %}default{% else %}{{ appearance_form.ui_theme.value|default:'default' }}{% endif %}"
+  data-saved-theme="{{ appearance_form.ui_theme.value|default:'default' }}"
   data-saved-font="{{ appearance_form.ui_font.value|default:'plex' }}"
   data-saved-density="{{ appearance_form.ui_density.value|default:'comfortable' }}"
 >
@@ -17,8 +17,9 @@
       <p class="page-kicker">My profile</p>
       <h2>Theme settings</h2>
       <p class="page-lead">
-        Personal to your account — other users keep their own themes. Sidebar, top bar,
-        accents, type, and density update for you only. Preview live, then save when it feels right.
+        Overrides the company theme for your {{ role_label }} workspace only.
+        Other roles and other accounts keep their own look. Choose Company default
+        to follow System settings again.
       </p>
     </div>
   </header>
@@ -34,8 +35,10 @@
   </div>
 
   <p class="theme-studio__scope" role="note">
-    Changes apply only to <strong>{{ user.get_full_name|default:user.login_code }}</strong>
-    ({{ role_label }}). Firm System settings and other accounts are not affected.
+    Applies to <strong>{{ user.get_full_name|default:user.login_code }}</strong>
+    on <strong>{{ role_label }}</strong> pages only.
+    Company default is <strong>{{ company_theme_label|default:"Black & White" }}</strong>.
+    {% if has_personal_theme_override %}You are overriding it for this account.{% endif %}
   </p>
 
   <div class="theme-studio__hero">
@@ -70,12 +73,12 @@
             <p class="theme-group__label">{{ group.label }}</p>
             <div class="theme-grid" role="radiogroup" aria-label="{{ group.label }}">
               {% for option in group.options %}
-              <label class="theme-card theme-card--{{ option.preview }}{% if option.featured %} theme-card--featured{% endif %}{% if option.is_current %} theme-card--current{% endif %}{% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %} is-selected{% endif %}">
+              <label class="theme-card theme-card--{{ option.preview }}{% if option.featured %} theme-card--featured{% endif %}{% if option.is_current %} theme-card--current{% endif %}{% if appearance_form.ui_theme.value == option.value %} is-selected{% endif %}">
                 <input
                   type="radio"
                   name="{{ appearance_form.ui_theme.name }}"
                   value="{{ option.value }}"
-                  {% if appearance_form.ui_theme.value == option.value or appearance_form.ui_theme.value == 'product' and option.value == 'default' %}checked{% endif %}
+                  {% if appearance_form.ui_theme.value == option.value %}checked{% endif %}
                   data-theme-preview="{{ option.preview }}"
                   data-theme-label="{{ option.label }}"
                 >

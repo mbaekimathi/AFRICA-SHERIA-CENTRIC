@@ -1,9 +1,11 @@
 import re
+from decimal import Decimal
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.validators import RegexValidator
-from django.db import models
+from django.db import models, transaction
+from django.db.models import F
 from django.utils import timezone
 
 
@@ -342,7 +344,7 @@ class Employee(AbstractUser):
         choices=UiTheme.choices,
         default=UiTheme.DEFAULT,
         blank=True,
-        help_text="Color theme for this user's workspace only.",
+        help_text="Color theme for this user's workspace. 'default' follows the company theme.",
     )
     ui_font = models.CharField(
         max_length=32,
@@ -458,17 +460,16 @@ class Employee(AbstractUser):
 
     @property
     def workspace_theme(self) -> str:
-        """CSS theme key for workspace pages (product chrome or user override)."""
-        chosen = (self.ui_theme or self.UiTheme.DEFAULT).strip()
-        # Recommended default + legacy "default" → product chrome shell
-        if not chosen or chosen in {self.UiTheme.DEFAULT, self.UiTheme.PRODUCT}:
-            return self.UiTheme.PRODUCT
-        valid = {
-            key
-            for key, _label in self.UiTheme.choices
-            if key not in {self.UiTheme.DEFAULT, self.UiTheme.PRODUCT}
-        }
-        return chosen if chosen in valid else self.UiTheme.PRODUCT
+        """CSS theme key for this employee's role workspace (personal or company)."""
+        from .appearance import resolve_user_workspace_theme
+
+        return resolve_user_workspace_theme(self)
+
+    def has_personal_theme_override(self) -> bool:
+        """True when this account overrides the firm company theme."""
+        from .appearance import follows_company_theme
+
+        return not follows_company_theme(self.ui_theme)
 
     @property
     def workspace_font(self) -> str:
@@ -996,6 +997,13 @@ class Client(models.Model):
         choices=Status.choices,
         default=Status.PENDING_ONBOARDING,
     )
+    credit_balance = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name="Account credit balance",
+        help_text="Prepaid credit available on this client account.",
+    )
     date_joined = models.DateTimeField(default=timezone.now)
     last_login = models.DateTimeField(blank=True, null=True)
 
@@ -1028,6 +1036,168 @@ class Client(models.Model):
     @property
     def is_anonymous(self):
         return False
+
+    def apply_inbound_payment(
+        self,
+        amount,
+        *,
+        mpesa_receipt: str = "",
+        note: str = "",
+        created_by=None,
+        method: str = "",
+        phone: str = "",
+        stk_request=None,
+    ):
+        """
+        Apply client money to open invoices first (oldest due date), then surplus
+        to credit_balance. The full payment (invoice slices and surplus) credits
+        Main Client Accounts.
+
+        Returns a dict: total, applied_to_invoices, credit_added, invoices_updated,
+        credit_balance.
+        """
+        from django.db import transaction
+        from django.db.models import F
+
+        pay = Decimal(amount).quantize(Decimal("0.01"))
+        empty = {
+            "total": Decimal("0.00"),
+            "applied_to_invoices": Decimal("0.00"),
+            "credit_added": Decimal("0.00"),
+            "invoices_updated": 0,
+            "credit_balance": self.credit_balance or Decimal("0.00"),
+        }
+        if pay <= 0:
+            return empty
+
+        receipt = (mpesa_receipt or "")[:64]
+        note_text = (note or "").strip()
+        method_key = method or ClientAccountTopup.Method.MANUAL
+
+        with transaction.atomic():
+            remaining = pay
+            invoices_updated = 0
+            open_invoices = (
+                Invoice.objects.select_for_update()
+                .filter(
+                    client_id=self.pk,
+                    status__in=[
+                        Invoice.Status.ISSUED,
+                        Invoice.Status.GENERATED,
+                        Invoice.Status.PARTIALLY_PAID,
+                    ],
+                )
+                .order_by("due_date", "issue_date", "id")
+            )
+            for invoice in open_invoices:
+                if remaining <= 0:
+                    break
+                due = invoice.balance_due
+                if due <= 0:
+                    continue
+                chunk = remaining if remaining <= due else due
+                applied, _status = invoice.apply_payment(
+                    chunk,
+                    mpesa_receipt=receipt,
+                )
+                if applied > 0:
+                    remaining -= applied
+                    invoices_updated += 1
+
+            credit_added = remaining.quantize(Decimal("0.01"))
+            if credit_added > 0:
+                type(self).objects.filter(pk=self.pk).update(
+                    credit_balance=F("credit_balance") + credit_added
+                )
+                CompanyExpenseAccount.credit_main_client_accounts(
+                    amount=credit_added,
+                    source_client=self,
+                    source_note=(
+                        note_text
+                        or "Client payment surplus after invoices"
+                    ),
+                    created_by=created_by,
+                )
+            self.refresh_from_db(fields=["credit_balance"])
+
+            topup = None
+            if stk_request is not None:
+                topup = ClientAccountTopup.objects.filter(
+                    stk_request=stk_request
+                ).first()
+
+            if credit_added > 0:
+                credit_note = note_text
+                if invoices_updated:
+                    split_note = (
+                        f"KES {pay - credit_added:,.2f} applied to invoices; "
+                        f"KES {credit_added:,.2f} credit."
+                    )
+                    credit_note = (
+                        f"{note_text} ({split_note})".strip()
+                        if note_text
+                        else split_note
+                    )
+                if topup is None:
+                    ClientAccountTopup.objects.create(
+                        client=self,
+                        amount=credit_added,
+                        method=method_key,
+                        status=ClientAccountTopup.Status.COMPLETED,
+                        note=credit_note,
+                        phone=(phone or "")[:20],
+                        mpesa_receipt=receipt,
+                        balance_after=self.credit_balance,
+                        stk_request=stk_request,
+                        created_by=created_by,
+                    )
+                else:
+                    topup.amount = credit_added
+                    topup.status = ClientAccountTopup.Status.COMPLETED
+                    topup.note = credit_note or topup.note
+                    topup.mpesa_receipt = receipt or topup.mpesa_receipt
+                    topup.balance_after = self.credit_balance
+                    topup.save(
+                        update_fields=[
+                            "amount",
+                            "status",
+                            "note",
+                            "mpesa_receipt",
+                            "balance_after",
+                            "updated_at",
+                        ]
+                    )
+            elif topup is not None:
+                topup.status = ClientAccountTopup.Status.COMPLETED
+                topup.amount = Decimal("0.00")
+                topup.mpesa_receipt = receipt or topup.mpesa_receipt
+                topup.balance_after = self.credit_balance
+                applied_note = (
+                    f"KES {pay:,.2f} applied to {invoices_updated} invoice(s)."
+                )
+                topup.note = (
+                    f"{note_text} ({applied_note})".strip()
+                    if note_text
+                    else applied_note
+                )
+                topup.save(
+                    update_fields=[
+                        "status",
+                        "amount",
+                        "mpesa_receipt",
+                        "balance_after",
+                        "note",
+                        "updated_at",
+                    ]
+                )
+
+        return {
+            "total": pay,
+            "applied_to_invoices": (pay - credit_added).quantize(Decimal("0.01")),
+            "credit_added": credit_added,
+            "invoices_updated": invoices_updated,
+            "credit_balance": self.credit_balance or Decimal("0.00"),
+        }
 
 
 class LitigationCase(models.Model):
@@ -2399,6 +2569,126 @@ class WebsiteTemplateSetting(models.Model):
         return self.active_template == self.TemplateChoice.COMPANY
 
 
+class CompanyThemeSetting(models.Model):
+    """
+    Firm-wide default workspace theme (singleton, pk=1).
+
+    Applied on workspace pages when an employee still uses the recommended
+    default / legacy product alias — personal Theme settings override this.
+    """
+
+    default_ui_theme = models.CharField(
+        max_length=32,
+        choices=Employee.UiTheme.choices,
+        default=Employee.UiTheme.DEFAULT,
+        help_text="Default color theme for workspace pages when a user has not chosen a personal theme.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_theme_updates",
+    )
+
+    class Meta:
+        verbose_name = "Company theme setting"
+        verbose_name_plural = "Company theme setting"
+
+    def __str__(self):
+        return self.get_default_ui_theme_display()
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def resolved_theme(self) -> str:
+        """CSS theme key for firm default (default/product → product shell)."""
+        from .appearance import resolve_theme_css_key
+
+        return resolve_theme_css_key(self.default_ui_theme)
+
+
+class CompanyLetterheadSetting(models.Model):
+    """
+    Firm letterhead layout for invoices, receipts, and printable docs (singleton).
+
+    Edited under System Settings → Document Settings → Letterhead.
+    Company profile / contacts supply the live firm details shown in previews.
+    """
+
+    class Template(models.TextChoices):
+        CLASSIC = "classic", "Classic split"
+        CENTERED = "centered", "Centered seal"
+        BANNER = "banner", "Accent banner"
+        RULED = "ruled", "Ruled header"
+        SPLIT = "split", "Modern split"
+        MINIMAL = "minimal", "Minimal stack"
+
+    class Accent(models.TextChoices):
+        FOREST = "forest", "Forest"
+        NAVY = "navy", "Navy"
+        CHARCOAL = "charcoal", "Charcoal"
+        BURGUNDY = "burgundy", "Burgundy"
+        TEAL = "teal", "Teal"
+        GOLD = "gold", "Gold"
+
+    template = models.CharField(
+        max_length=32,
+        choices=Template.choices,
+        default=Template.CLASSIC,
+        help_text="Letterhead layout sample used on invoices and receipts.",
+    )
+    accent = models.CharField(
+        max_length=32,
+        choices=Accent.choices,
+        default=Accent.FOREST,
+        help_text="Accent colour applied to rules, marks, and banners.",
+    )
+    show_logo = models.BooleanField(
+        default=True,
+        help_text="Show the company profile image (or initials mark) when available.",
+    )
+    show_tagline = models.BooleanField(
+        default=True,
+        help_text="Show the company tagline under the firm name when set.",
+    )
+    show_address = models.BooleanField(
+        default=False,
+        help_text="Include physical or postal address lines.",
+    )
+    show_contacts = models.BooleanField(
+        default=True,
+        help_text="Show phone, email, and website contact lines.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_letterhead_updates",
+    )
+
+    class Meta:
+        verbose_name = "Company letterhead setting"
+        verbose_name_plural = "Company letterhead setting"
+
+    def __str__(self):
+        return self.get_template_display()
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @property
+    def css_modifier(self) -> str:
+        return f"doc-letterhead--{self.template} doc-letterhead--accent-{self.accent}"
+
+
 class GoogleDriveConnection(models.Model):
     """
     Firm-wide Google Drive OAuth connection (singleton row, pk=1).
@@ -3068,37 +3358,78 @@ class Invoice(models.Model):
     def apply_payment(self, amount, *, mpesa_receipt: str = ""):
         """
         Record a payment and set status to partially_paid or paid.
-        Returns (applied_amount, new_status).
+        Credits Main Client Accounts for the invoice slice and any overpayment.
+        Overpayment also increases the client's credit_balance.
+        Returns (applied_to_invoice, new_status).
         """
         from decimal import Decimal
+
+        from django.db import transaction
+        from django.db.models import F
 
         pay = Decimal(amount).quantize(Decimal("0.01"))
         if pay <= 0:
             return Decimal("0.00"), self.status
 
-        current = (self.amount_paid or Decimal("0")).quantize(Decimal("0.01"))
-        total = Decimal(self.total_amount).quantize(Decimal("0.01"))
-        remaining = total - current
-        if remaining <= 0:
-            self.status = self.Status.PAID
-            self.save(update_fields=["status", "updated_at"])
-            return Decimal("0.00"), self.status
+        with transaction.atomic():
+            current = (self.amount_paid or Decimal("0")).quantize(Decimal("0.01"))
+            total = Decimal(self.total_amount).quantize(Decimal("0.01"))
+            remaining = total - current
+            if remaining <= 0:
+                self.status = self.Status.PAID
+                self.save(update_fields=["status", "updated_at"])
+                # Entire amount is surplus against an already-paid invoice.
+                if pay > 0 and self.client_id:
+                    CompanyExpenseAccount.credit_main_client_accounts(
+                        amount=pay,
+                        source_client=self.client,
+                        source_note=(
+                            f"Invoice {self.invoice_number} overpayment."
+                        ),
+                    )
+                    Client.objects.filter(pk=self.client_id).update(
+                        credit_balance=F("credit_balance") + pay
+                    )
+                return Decimal("0.00"), self.status
 
-        applied = pay if pay <= remaining else remaining
-        self.amount_paid = current + applied
-        if mpesa_receipt:
-            self.last_mpesa_receipt = (mpesa_receipt or "")[:64]
-        if self.amount_paid >= total:
-            self.amount_paid = total
-            self.status = self.Status.PAID
-        else:
-            self.status = self.Status.PARTIALLY_PAID
+            applied = pay if pay <= remaining else remaining
+            excess = (pay - applied).quantize(Decimal("0.01"))
+            self.amount_paid = current + applied
+            if mpesa_receipt:
+                self.last_mpesa_receipt = (mpesa_receipt or "")[:64]
+            if self.amount_paid >= total:
+                self.amount_paid = total
+                self.status = self.Status.PAID
+            else:
+                self.status = self.Status.PARTIALLY_PAID
 
-        fields = ["amount_paid", "status", "updated_at"]
-        if mpesa_receipt:
-            fields.append("last_mpesa_receipt")
-        self.save(update_fields=fields)
-        return applied, self.status
+            fields = ["amount_paid", "status", "updated_at"]
+            if mpesa_receipt:
+                fields.append("last_mpesa_receipt")
+            self.save(update_fields=fields)
+
+            receipt_note = f" Receipt {mpesa_receipt}." if mpesa_receipt else ""
+            if applied > 0:
+                CompanyExpenseAccount.credit_main_client_accounts(
+                    amount=applied,
+                    source_client=self.client,
+                    source_note=(
+                        f"Invoice {self.invoice_number} payment.{receipt_note}"
+                    ).strip(),
+                )
+            if excess > 0:
+                CompanyExpenseAccount.credit_main_client_accounts(
+                    amount=excess,
+                    source_client=self.client,
+                    source_note=(
+                        f"Invoice {self.invoice_number} overpayment.{receipt_note}"
+                    ).strip(),
+                )
+                if self.client_id:
+                    Client.objects.filter(pk=self.client_id).update(
+                        credit_balance=F("credit_balance") + excess
+                    )
+            return applied, self.status
 
     @classmethod
     def next_invoice_number(cls):
@@ -3335,6 +3666,67 @@ class PayrollRun(models.Model):
         if save:
             self.save()
 
+    def outstanding_advance_total(self):
+        from decimal import Decimal
+
+        total = self.salary_advances.filter(
+            status=EmployeeAdvance.Status.OUTSTANDING
+        ).aggregate(total=models.Sum("amount"))["total"]
+        return total or Decimal("0.00")
+
+    def amount_payable(self, *, deduct_advances=True):
+        from decimal import Decimal
+
+        net = self.net_pay or Decimal("0.00")
+        if not deduct_advances:
+            return net if net > 0 else Decimal("0.00")
+        payable = net - self.outstanding_advance_total()
+        return payable if payable > 0 else Decimal("0.00")
+
+    def advance_salary_basis(self):
+        """Salary used to judge advance eligibility (monthly, else payroll earnings)."""
+        from decimal import Decimal
+
+        employee_salary = self.employee.monthly_salary
+        if employee_salary is not None and employee_salary > 0:
+            return employee_salary
+        if self.basic_salary and self.basic_salary > 0:
+            return self.basic_salary
+        if self.gross_salary and self.gross_salary > 0:
+            return self.gross_salary
+        return self.net_pay or Decimal("0.00")
+
+    def half_salary_cap(self):
+        from decimal import Decimal
+
+        return (self.advance_salary_basis() / Decimal("2")).quantize(Decimal("0.01"))
+
+    def max_advance_amount(self):
+        from decimal import Decimal
+
+        payable = self.amount_payable()
+        half_salary = self.half_salary_cap()
+        capped = min(payable, half_salary)
+        return capped if capped > 0 else Decimal("0.00")
+
+    def is_advance_eligible(self):
+        """
+        Eligible when salary is above half the remaining payroll amount
+        and there is still advance headroom (max advance > 0).
+        """
+        from decimal import Decimal
+
+        if self.status != self.Status.REGISTERED:
+            return False
+        salary = self.advance_salary_basis()
+        payable = self.amount_payable()
+        if salary <= 0 or payable <= 0:
+            return False
+        # salary must be above half of the remaining payroll total
+        if salary <= (payable / Decimal("2")):
+            return False
+        return self.max_advance_amount() > 0
+
     def sync_deduction_lines(self):
         """Persist statutory amounts as deduction line items."""
         mapping = [
@@ -3408,6 +3800,67 @@ class PayrollPayment(models.Model):
         return f"{prefix}{seq:04d}"
 
 
+class EmployeeAdvance(models.Model):
+    """Salary advance recovered from a registered payroll run."""
+
+    class Status(models.TextChoices):
+        OUTSTANDING = "outstanding", "Outstanding"
+        RECOVERED = "recovered", "Recovered"
+
+    class Reason(models.TextChoices):
+        MEDICAL = "medical", "Medical emergency"
+        SCHOOL_FEES = "school_fees", "School fees"
+        RENT = "rent", "Rent / housing"
+        FAMILY = "family", "Family emergency"
+        TRAVEL = "travel", "Travel"
+        UTILITIES = "utilities", "Utilities / bills"
+        OTHER = "other", "Other"
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.PROTECT,
+        related_name="salary_advances",
+    )
+    payroll_run = models.ForeignKey(
+        PayrollRun,
+        on_delete=models.PROTECT,
+        related_name="salary_advances",
+        help_text="Registered payroll run this advance will be recovered from.",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    reason = models.CharField(
+        max_length=32,
+        choices=Reason.choices,
+        default=Reason.OTHER,
+    )
+    notes = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.OUTSTANDING,
+    )
+    recorded_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="salary_advances_recorded",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    recovered_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Employee advance"
+        verbose_name_plural = "Employee advances"
+
+    def __str__(self):
+        return (
+            f"{self.employee} · KES {self.amount:,.2f} "
+            f"({self.get_status_display()})"
+        )
+
+
 class PayrollDeduction(models.Model):
     """A deduction line on a payroll run."""
 
@@ -3448,17 +3901,35 @@ class PayrollDeduction(models.Model):
 
 
 class MpesaStkRequest(models.Model):
-    """Tracks an STK push against an invoice until success or failure."""
+    """Tracks an STK push for an invoice payment or client account top-up."""
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         SUCCESS = "success", "Success"
         FAILED = "failed", "Failed"
 
+    class Purpose(models.TextChoices):
+        INVOICE_PAYMENT = "invoice_payment", "Invoice payment"
+        CLIENT_TOPUP = "client_topup", "Client account top-up"
+
     invoice = models.ForeignKey(
         Invoice,
         on_delete=models.CASCADE,
         related_name="stk_requests",
+        null=True,
+        blank=True,
+    )
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.CASCADE,
+        related_name="stk_requests",
+        null=True,
+        blank=True,
+    )
+    purpose = models.CharField(
+        max_length=32,
+        choices=Purpose.choices,
+        default=Purpose.INVOICE_PAYMENT,
     )
     checkout_request_id = models.CharField(max_length=128, unique=True)
     merchant_request_id = models.CharField(max_length=128, blank=True, default="")
@@ -3484,6 +3955,69 @@ class MpesaStkRequest(models.Model):
 
     def __str__(self):
         return f"{self.checkout_request_id} ({self.status})"
+
+    @property
+    def is_client_topup(self) -> bool:
+        return self.purpose == self.Purpose.CLIENT_TOPUP
+
+
+class ClientAccountTopup(models.Model):
+    """Record of a client paying up (manual or M-Pesa) on their account."""
+
+    class Method(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        MPESA = "mpesa", "M-Pesa"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.CASCADE,
+        related_name="account_topups",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    method = models.CharField(max_length=16, choices=Method.choices)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.COMPLETED,
+    )
+    note = models.TextField(blank=True, default="")
+    phone = models.CharField(max_length=20, blank=True, default="")
+    mpesa_receipt = models.CharField(max_length=64, blank=True, default="")
+    balance_after = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    stk_request = models.OneToOneField(
+        MpesaStkRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="client_topup",
+    )
+    created_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="client_account_topups_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Client account top-up"
+        verbose_name_plural = "Client account top-ups"
+
+    def __str__(self):
+        return f"{self.client}: +{self.amount} ({self.method})"
 
 
 class NewsSearchJob(models.Model):
@@ -3803,6 +4337,389 @@ class FinanceSettings(models.Model):
             and self.mpesa_passkey.strip()
             and self.stk_business_shortcode
         )
+
+
+class CompanyExpenseAccount(models.Model):
+    """
+    Firm expense / company account registered under Finance → Company Accounts.
+    Includes system default ledgers seeded by `ensure_default_accounts`.
+    """
+
+    SYSTEM_MAIN_CLIENT_ACCOUNTS = "main_client_accounts"
+    SYSTEM_PETTY_CASH_BOOK = "petty_cash_book"
+
+    class PaymentMethod(models.TextChoices):
+        MPESA = "mpesa", "M-Pesa"
+        BANK_TRANSFER = "bank_transfer", "Bank transfer"
+        CASH = "cash", "Cash"
+        CHEQUE = "cheque", "Cheque"
+
+    name = models.CharField(
+        max_length=255,
+        verbose_name="Account name",
+    )
+    bank_name = models.CharField(
+        max_length=255,
+        verbose_name="Bank name",
+        help_text="Bank holding the money for this expense account.",
+    )
+    bank_account_number = models.CharField(
+        max_length=64,
+        verbose_name="Bank account number",
+    )
+    description = models.TextField(blank=True, default="")
+    system_key = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True,
+        unique=True,
+        db_index=True,
+        help_text="Stable key for system default accounts. Null for user-created accounts.",
+    )
+    payment_methods = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of payment method keys used for this expense account.",
+    )
+    balance = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name="Current balance",
+    )
+    created_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_expense_accounts_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        verbose_name = "Company expense account"
+        verbose_name_plural = "Company expense accounts"
+
+    def __str__(self):
+        return f"{self.name} ({self.bank_name})"
+
+    @property
+    def is_system_default(self) -> bool:
+        return bool(self.system_key)
+
+    @property
+    def payment_method_labels(self) -> list[str]:
+        labels = dict(self.PaymentMethod.choices)
+        return [
+            labels.get(key, key)
+            for key in (self.payment_methods or [])
+            if key in labels
+        ]
+
+    @classmethod
+    def ensure_default_accounts(cls):
+        """Create built-in company ledgers if they are missing."""
+        defaults = [
+            {
+                "system_key": cls.SYSTEM_MAIN_CLIENT_ACCOUNTS,
+                "name": "Main Client Accounts",
+                "bank_name": "System ledger",
+                "bank_account_number": "MAIN-CLIENT",
+                "description": "Money from invoices and clients",
+                "payment_methods": [choice.value for choice in cls.PaymentMethod],
+            },
+            {
+                "system_key": cls.SYSTEM_PETTY_CASH_BOOK,
+                "name": "Petty Cash Book",
+                "bank_name": "System ledger",
+                "bank_account_number": "PETTY-CASH",
+                "description": "Daily unplanned expenses",
+                "payment_methods": [
+                    cls.PaymentMethod.CASH,
+                    cls.PaymentMethod.MPESA,
+                ],
+            },
+        ]
+        created = []
+        for spec in defaults:
+            account, was_created = cls.objects.get_or_create(
+                system_key=spec["system_key"],
+                defaults={
+                    "name": spec["name"],
+                    "bank_name": spec["bank_name"],
+                    "bank_account_number": spec["bank_account_number"],
+                    "description": spec["description"],
+                    "payment_methods": spec["payment_methods"],
+                    "balance": Decimal("0.00"),
+                },
+            )
+            if was_created:
+                created.append(account)
+            elif not (account.description or "").strip():
+                account.description = spec["description"]
+                account.save(update_fields=["description", "updated_at"])
+        return created
+
+    @classmethod
+    def get_main_client_accounts(cls):
+        cls.ensure_default_accounts()
+        return cls.objects.get(system_key=cls.SYSTEM_MAIN_CLIENT_ACCOUNTS)
+
+    @classmethod
+    def get_petty_cash_book(cls):
+        cls.ensure_default_accounts()
+        return cls.objects.get(system_key=cls.SYSTEM_PETTY_CASH_BOOK)
+
+    @classmethod
+    def credit_main_client_accounts(
+        cls,
+        *,
+        amount,
+        source_client=None,
+        source_note="",
+        created_by=None,
+    ):
+        """
+        Top up the Main Client Accounts ledger (invoice / client money in).
+        Returns the CompanyAccountTopup row, or None when amount is zero.
+        """
+        pay = Decimal(amount).quantize(Decimal("0.01"))
+        if pay <= 0:
+            return None
+
+        with transaction.atomic():
+            cls.ensure_default_accounts()
+            locked = cls.objects.select_for_update().get(
+                system_key=cls.SYSTEM_MAIN_CLIENT_ACCOUNTS
+            )
+            cls.objects.filter(pk=locked.pk).update(balance=F("balance") + pay)
+            locked.refresh_from_db(fields=["balance"])
+            return CompanyAccountTopup.objects.create(
+                account=locked,
+                amount=pay,
+                source_type=CompanyAccountTopup.SourceType.CLIENT,
+                source_client=source_client,
+                source_note=(source_note or "").strip(),
+                balance_after=locked.balance,
+                created_by=created_by,
+            )
+
+
+class CompanyAccountTopup(models.Model):
+    """Income added to a company expense account."""
+
+    class SourceType(models.TextChoices):
+        CLIENT = "client", "Client"
+        COMPANY_ACCOUNT = "company_account", "Company account"
+        OTHER = "other", "Others"
+
+    account = models.ForeignKey(
+        CompanyExpenseAccount,
+        on_delete=models.CASCADE,
+        related_name="topups",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    source_type = models.CharField(
+        max_length=32,
+        choices=SourceType.choices,
+        default=SourceType.OTHER,
+    )
+    source_client = models.ForeignKey(
+        "Client",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_account_topups",
+    )
+    source_company_account = models.ForeignKey(
+        CompanyExpenseAccount,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="topups_as_source",
+    )
+    source_note = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Source note",
+        help_text="Free-text source when Others is selected.",
+    )
+    balance_after = models.DecimalField(max_digits=14, decimal_places=2)
+    created_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_account_topups_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Company account top-up"
+        verbose_name_plural = "Company account top-ups"
+
+    def __str__(self):
+        return f"{self.account.name}: +{self.amount}"
+
+    @property
+    def source_display(self) -> str:
+        if self.source_type == self.SourceType.CLIENT and self.source_client_id:
+            return f"Client — {self.source_client}"
+        if (
+            self.source_type == self.SourceType.COMPANY_ACCOUNT
+            and self.source_company_account_id
+        ):
+            return f"Company account — {self.source_company_account.name}"
+        note = (self.source_note or "").strip()
+        if note:
+            return f"Others — {note}"
+        return self.get_source_type_display()
+
+
+class CompanyExpensePayment(models.Model):
+    """Money paid out from a company account for an expense."""
+
+    class ExpenseType(models.TextChoices):
+        OFFICE_SUPPLIES = "office_supplies", "Office supplies"
+        TRANSPORT = "transport", "Transport / travel"
+        UTILITIES = "utilities", "Utilities"
+        COMMUNICATION = "communication", "Communication"
+        COURT_FEES = "court_fees", "Court fees"
+        FILING_FEES = "filing_fees", "Filing fees"
+        PROFESSIONAL_FEES = "professional_fees", "Professional fees"
+        PAYROLL = "payroll", "Payroll"
+        STAFF_WELFARE = "staff_welfare", "Staff welfare"
+        MAINTENANCE = "maintenance", "Maintenance / repairs"
+        BANK_CHARGES = "bank_charges", "Bank charges"
+        RENT = "rent", "Rent"
+        OTHER = "other", "Other"
+
+    account = models.ForeignKey(
+        CompanyExpenseAccount,
+        on_delete=models.CASCADE,
+        related_name="expense_payments",
+    )
+    expense_type = models.CharField(
+        max_length=32,
+        choices=ExpenseType.choices,
+        default=ExpenseType.OTHER,
+    )
+    description = models.TextField(
+        help_text="What this expense payment covers.",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    balance_after = models.DecimalField(max_digits=14, decimal_places=2)
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_expense_payments",
+        help_text="Set when expense type is Payroll.",
+    )
+    payroll_payment = models.ForeignKey(
+        "PayrollPayment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="expense_payments",
+    )
+    created_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="company_expense_payments_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Company expense payment"
+        verbose_name_plural = "Company expense payments"
+
+    def __str__(self):
+        return f"{self.account.name}: -{self.amount} ({self.get_expense_type_display()})"
+
+
+class PettyCashExpenseRequest(models.Model):
+    """
+    Employee petty-cash expense claim.
+
+    Submitted from Employee Petty Cashbook as pending; approved from the
+    company Petty Cash Book page (debits the system Petty Cash Book ledger).
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending approval"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.PROTECT,
+        related_name="petty_cash_expense_requests",
+        help_text="Employee the expense is claimed for.",
+    )
+    expense_type = models.CharField(
+        max_length=32,
+        choices=CompanyExpensePayment.ExpenseType.choices,
+        default=CompanyExpensePayment.ExpenseType.OTHER,
+    )
+    description = models.TextField(
+        help_text="What this petty cash expense covers.",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    submitted_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="petty_cash_expense_requests_submitted",
+    )
+    reviewed_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="petty_cash_expense_requests_reviewed",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default="")
+    expense_payment = models.OneToOneField(
+        CompanyExpensePayment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="petty_cash_request",
+        help_text="Ledger payment created when this request is approved.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Petty cash expense request"
+        verbose_name_plural = "Petty cash expense requests"
+
+    def __str__(self):
+        return (
+            f"{self.employee} · KES {self.amount:,.2f} "
+            f"({self.get_status_display()})"
+        )
+
+    @classmethod
+    def pending_count(cls) -> int:
+        return cls.objects.filter(status=cls.Status.PENDING).count()
 
 
 class CommunicationSettings(models.Model):

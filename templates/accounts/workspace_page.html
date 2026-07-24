@@ -3,17 +3,62 @@
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
 {% block content %}
-<section class="page">
+<section class="page" data-reveal-root>
   <header class="page-intro">
     <div class="page-intro__copy">
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
+        {% if section_hub_nav %}
+        Open a section below, or use the sidebar links under this page.
+        {% else %}
         This section is ready in the navigation trail. Module content will appear here as it is commissioned.
+        {% endif %}
       </p>
     </div>
   </header>
 
+  {% if section_hub_nav %}
+  <section class="dash-section" data-reveal>
+    <div class="dash-section__head">
+      <div>
+        <p class="dash-section__eyebrow">Navigate</p>
+        <h3>In this section</h3>
+        <p>Jump into the pages allocated under {{ page_title }}.</p>
+      </div>
+    </div>
+    <div class="module-grid module-grid--dash">
+      {% for item in page_nav_items %}
+      <a
+        href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
+        class="module-card module-card--pro{% if item.disabled %} is-disabled{% endif %}{% if item.badge_count %} has-unread{% endif %}"
+        style="--stagger: {{ forloop.counter0 }}"
+        data-magnetic
+        {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} pending"{% endif %}
+        {% if item.disabled %}aria-disabled="true"{% endif %}
+      >
+        <span class="icon-orb icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
+          <span class="icon-orb__shine"></span>
+          <span class="icon-orb__core">{{ item.icon|safe }}</span>
+          <span
+            class="nav-badge module-card__badge"
+            data-page-badge="{{ item.slug }}"
+            {% if not item.badge_count %}hidden{% endif %}
+          >{{ item.badge_count|default:0 }}</span>
+        </span>
+        <span class="module-card__body">
+          <span class="module-card__label">{{ item.label }}</span>
+          <span class="module-card__hint">Open page</span>
+        </span>
+        <span class="module-card__cta" aria-hidden="true">
+          <span>Open</span>
+          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
   <section class="panel">
     <div class="panel__head">
       <h3>{{ page_title }}</h3>
@@ -30,5 +75,6 @@
       </div>
     </div>
   </section>
+  {% endif %}
 </section>
 {% endblock %}

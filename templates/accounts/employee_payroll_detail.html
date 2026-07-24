@@ -4,17 +4,39 @@
 {% block title %}{{ selected_employee.get_full_name }} — Payroll account{% endblock %}
 
 {% block content %}
-<section class="page page--form-wide" id="employee-payroll-detail-page">
-  <header class="page-intro">
+<section
+  class="page page--form-wide"
+  id="employee-payroll-detail-page"
+  {% if open_update_salary_modal %}data-open-update-salary="1"{% endif %}
+>  <header class="page-intro">
     <div class="page-intro__copy">
-      <p class="page-kicker"><a href="{{ back_url }}">Payroll register</a></p>
+      <p class="page-kicker">
+        <a href="{{ back_url }}">← Payroll register</a>
+      </p>
       <h2>{{ selected_employee.get_full_name|default:selected_employee.login_code }}</h2>
       <p class="page-lead">
-        Payroll account — salary details, registered runs, deductions, and payment transactions.
+        Payroll account — compensation details, registered runs with statutory breakdowns, and payment history.
       </p>
     </div>
     <div class="page-intro__actions">
-      <a href="{{ register_payroll_url }}" class="btn btn--primary btn--inline">Register payroll</a>
+      <button type="button" class="btn btn--quiet btn--inline js-open-update-salary">
+        Update salary
+      </button>
+      {% if payable_row %}
+      {% with run=payable_row.run %}
+      <button
+        type="button"
+        class="btn btn--primary btn--inline js-open-pay-modal"
+        data-run-id="{{ run.pk }}"
+        data-employee-name="{{ selected_employee.get_full_name|default:selected_employee.login_code }}"
+        data-frequency="{{ run.get_pay_frequency_display }}"
+        data-period="{{ run.pay_period_start|date:"j M Y" }} – {{ run.pay_period_end|date:"j M Y" }}"
+        data-net-pay="{{ payable_row.net_pay|floatformat:2 }}"
+        data-advance-total="{{ payable_row.advance_total|floatformat:2 }}"
+        data-amount-payable="{{ payable_row.amount_payable|floatformat:2 }}"
+      >Pay payroll</button>
+      {% endwith %}
+      {% endif %}
     </div>
   </header>
 
@@ -24,48 +46,123 @@
       <p class="metric__value">{{ selected_employee.payroll_salary_display }}</p>
     </div>
     <div class="metric metric--glass">
-      <p class="metric__label">Payment method</p>
-      <p class="metric__value metric__value--text">
-        {% if selected_employee.payment_method %}
-        {{ selected_employee.get_payment_method_display }}
-        {% else %}—{% endif %}
-      </p>
+      <p class="metric__label">Payroll runs</p>
+      <p class="metric__value">{{ payroll_runs|length }}</p>
     </div>
     <div class="metric metric--glass">
-      <p class="metric__label">Payout details</p>
-      <p class="metric__value metric__value--text">{{ selected_employee.payroll_payout_destination }}</p>
+      <p class="metric__label">Total paid</p>
+      <p class="metric__value">KES {{ total_paid|floatformat:2 }}</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Awaiting payment</p>
+      <p class="metric__value">KES {{ outstanding_net|floatformat:2 }}</p>
     </div>
   </div>
 
   <section class="panel">
     <div class="panel__head">
+      <h3>Account details</h3>
+      <p class="panel__hint">
+        <span class="status-pill status-pill--{{ selected_employee.status }}">
+          {{ selected_employee.get_status_display }}
+        </span>
+      </p>
+    </div>
+    <div class="panel__body">
+      <dl class="settings-grid review-grid">
+        <div>
+          <dt>Employee</dt>
+          <dd>{{ selected_employee.get_full_name|default:selected_employee.login_code }}</dd>
+        </div>
+        <div>
+          <dt>Role</dt>
+          <dd>{{ selected_employee.get_role_display }}</dd>
+        </div>
+        <div>
+          <dt>Email</dt>
+          <dd>{{ selected_employee.personal_email|default:"—" }}</dd>
+        </div>
+        <div>
+          <dt>Login code</dt>
+          <dd class="mono">{{ selected_employee.login_code }}</dd>
+        </div>
+        <div>
+          <dt>ID number</dt>
+          <dd class="mono">{{ selected_employee.identification_number|default:"—" }}</dd>
+        </div>
+        <div>
+          <dt>Payment method</dt>
+          <dd>
+            {% if selected_employee.payment_method %}
+            {{ selected_employee.get_payment_method_display }}
+            {% else %}—{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>Payout destination</dt>
+          <dd>{{ selected_employee.payroll_payout_destination }}</dd>
+        </div>
+        <div>
+          <dt>Monthly salary</dt>
+          <dd class="mono">{{ selected_employee.payroll_salary_display }}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
       <h3>Payroll runs</h3>
-      <p class="panel__hint">{{ payroll_runs|length }} run(s)</p>
+      <p class="panel__hint">
+        {{ payroll_runs|length }} run(s)
+        {% if awaiting_run_count %} · {{ awaiting_run_count }} awaiting payment{% endif %}
+        {% if paid_run_count %} · {{ paid_run_count }} paid{% endif %}
+      </p>
     </div>
     <div class="panel__body panel__body--table">
-      {% if payroll_runs %}
+      {% if payroll_run_rows %}
       <div class="data-table-wrap">
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Frequency</th>
               <th scope="col">Pay period</th>
               <th scope="col">Gross</th>
               <th scope="col">Deductions</th>
-              <th scope="col">Net pay</th>
+              <th scope="col">Net / amount due</th>
               <th scope="col">Employer cost</th>
               <th scope="col">Status</th>
               <th scope="col">Action</th>
             </tr>
           </thead>
           <tbody>
-            {% for run in payroll_runs %}
-            <tr>
-              <td>{{ run.get_pay_frequency_display }}</td>
-              <td>{{ run.pay_period_start|date:"j M Y" }} – {{ run.pay_period_end|date:"j M Y" }}</td>
+            {% for row in payroll_run_rows %}
+            {% with run=row.run %}
+            <tr {% if payable_row and payable_row.run.pk == run.pk %}class="is-current-payroll-session"{% endif %}>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ run.get_pay_frequency_display }}</strong>
+                  {% if payable_row and payable_row.run.pk == run.pk %}
+                  <span class="status-pill status-pill--registered">Current</span>
+                  {% endif %}
+                  <span class="person-cell__meta">
+                    {{ run.pay_period_start|date:"j M Y" }} – {{ run.pay_period_end|date:"j M Y" }}
+                  </span>
+                </div>
+              </td>
               <td class="mono">KES {{ run.gross_salary|floatformat:2 }}</td>
               <td class="mono">KES {{ run.total_deductions|floatformat:2 }}</td>
-              <td class="mono">KES {{ run.net_pay|floatformat:2 }}</td>
+              <td class="mono">
+                <div class="person-cell__text">
+                  <strong>KES {{ row.amount_payable|floatformat:2 }}</strong>
+                  {% if row.advance_total %}
+                  <span class="person-cell__meta">
+                    Net {{ run.net_pay|floatformat:2 }} − advance {{ row.advance_total|floatformat:2 }}
+                  </span>
+                  {% else %}
+                  <span class="person-cell__meta">Net {{ run.net_pay|floatformat:2 }}</span>
+                  {% endif %}
+                </div>
+              </td>
               <td class="mono">KES {{ run.total_employer_cost|floatformat:2 }}</td>
               <td>
                 <span class="status-pill status-pill--{{ run.status }}">
@@ -73,27 +170,19 @@
                 </span>
               </td>
               <td>
-                {% if run.status == "registered" %}
-                <button
-                  type="button"
-                  class="btn btn--primary btn--inline js-open-pay-modal"
-                  data-run-id="{{ run.pk }}"
-                  data-employee-name="{{ run.employee.get_full_name }}"
-                  data-frequency="{{ run.get_pay_frequency_display }}"
-                  data-period="{{ run.pay_period_start|date:"j M Y" }} – {{ run.pay_period_end|date:"j M Y" }}"
-                  data-net-pay="{{ run.net_pay|floatformat:2 }}"
-                >Pay</button>
-                {% elif run.status == "paid" %}
-                {% with latest_payment=run.payments.first %}
-                {% if latest_payment %}
-                <a href="{{ payroll_receipt_base_url }}?payment={{ latest_payment.pk }}" class="btn btn--quiet btn--inline">View receipt</a>
+                {% if run.status == "paid" and row.latest_payment %}
+                <a
+                  href="{{ payroll_receipt_base_url }}?payment={{ row.latest_payment.pk }}"
+                  class="btn btn--quiet btn--inline"
+                >View receipt</a>
+                {% elif payable_row and payable_row.run.pk == run.pk %}
+                <span class="muted">Use Pay payroll</span>
                 {% else %}
-                <span class="status-pill status-pill--paid">Paid</span>
-                {% endif %}
-                {% endwith %}
+                <span class="muted">—</span>
                 {% endif %}
               </td>
             </tr>
+            {% endwith %}
             {% endfor %}
           </tbody>
         </table>
@@ -103,9 +192,9 @@
         <div class="empty-state__rule" aria-hidden="true"></div>
         <p class="empty-state__title">No payroll runs yet</p>
         <p class="empty-state__text">
-          Register payroll to record earnings and deductions for this employee.
+          Update this employee’s salary to create their first payroll run for payment.
         </p>
-        <a href="{{ register_payroll_url }}" class="btn btn--primary btn--inline">Register payroll</a>
+        <button type="button" class="btn btn--primary btn--inline js-open-update-salary">Update salary</button>
       </div>
       {% endif %}
     </div>
@@ -124,10 +213,8 @@
             <tr>
               <th scope="col">Date</th>
               <th scope="col">Receipt</th>
-              <th scope="col">Pay period</th>
               <th scope="col">Amount</th>
               <th scope="col">Reference</th>
-              <th scope="col">Recorded by</th>
               <th scope="col">Action</th>
             </tr>
           </thead>
@@ -135,15 +222,25 @@
             {% for payment in payments %}
             <tr>
               <td>{{ payment.paid_at|date:"j M Y, g:i A" }}</td>
-              <td class="mono">{{ payment.receipt_number }}</td>
               <td>
-                {{ payment.payroll_run.pay_period_start|date:"j M Y" }}
-                –
-                {{ payment.payroll_run.pay_period_end|date:"j M Y" }}
+                <div class="person-cell__text">
+                  <strong class="mono">{{ payment.receipt_number }}</strong>
+                  <span class="person-cell__meta">
+                    {{ payment.payroll_run.pay_period_start|date:"j M Y" }}
+                    –
+                    {{ payment.payroll_run.pay_period_end|date:"j M Y" }}
+                  </span>
+                </div>
               </td>
               <td class="mono">KES {{ payment.amount_paid|floatformat:2 }}</td>
-              <td>{{ payment.reference_code }}</td>
-              <td>{{ payment.recorded_by.get_full_name|default:"—" }}</td>
+              <td>
+                <div class="person-cell__text">
+                  <strong>{{ payment.reference_code }}</strong>
+                  <span class="person-cell__meta">
+                    {{ payment.recorded_by.get_full_name|default:"—" }}
+                  </span>
+                </div>
+              </td>
               <td>
                 <a href="{{ payroll_receipt_base_url }}?payment={{ payment.pk }}" class="btn btn--quiet btn--inline">View receipt</a>
               </td>
@@ -164,13 +261,14 @@
     </div>
   </section>
 
+  {% if payable_row %}
   <dialog class="workspace-modal" id="payroll-pay-modal">
     <div class="workspace-modal__card">
       <header class="workspace-modal__head">
         <h2>Record payroll payment</h2>
         <p id="pay-modal-subtitle"></p>
       </header>
-      <form method="post" class="workspace-form" id="payroll-pay-form">
+      <form method="post" action="{{ payroll_url }}" class="workspace-form" id="payroll-pay-form">
         {% csrf_token %}
         <input type="hidden" name="action" value="pay-payroll">
         <input type="hidden" name="payroll_run_id" id="pay-modal-run-id">
@@ -193,7 +291,31 @@
               <dt>Net pay</dt>
               <dd id="pay-modal-net-pay">—</dd>
             </div>
+            <div id="pay-modal-advance-row" hidden>
+              <dt>Outstanding advance</dt>
+              <dd id="pay-modal-advance-total">—</dd>
+            </div>
+            <div>
+              <dt>Amount due</dt>
+              <dd id="pay-modal-amount-due">—</dd>
+            </div>
           </dl>
+          <div class="form-field" id="pay-modal-deduct-wrap" hidden>
+            <label for="pay-modal-deduct-advances">
+              <input
+                type="checkbox"
+                class="form-checkbox"
+                name="deduct_advances"
+                id="pay-modal-deduct-advances"
+                value="1"
+                checked
+              >
+              Deduct outstanding advance from this payment
+            </label>
+            <p class="field-hint" id="pay-modal-deduct-hint">
+              When enabled, advances reduce the amount due and are marked recovered. When disabled, the full net pay is due.
+            </p>
+          </div>
           <div class="form-field">
             <label for="pay-modal-amount">Amount paid (KES) <span aria-hidden="true">*</span></label>
             <input
@@ -227,6 +349,62 @@
       </form>
     </div>
   </dialog>
+  {% endif %}
+
+  <dialog class="workspace-modal" id="update-salary-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Update salary</h2>
+        <p>
+          Set the monthly salary and register a new payroll run. The latest unpaid run becomes the current payment session.
+        </p>
+      </header>
+      <form method="post" action="{{ payroll_url }}" class="workspace-form" id="update-salary-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update-salary">
+        <input type="hidden" name="return_employee_id" value="{{ selected_employee.pk }}">
+        <div class="workspace-modal__body">
+          {% if salary_form.non_field_errors %}
+          <div class="form-alert" role="alert">
+            {% for error in salary_form.non_field_errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+          <div class="form-field">
+            <label for="{{ salary_form.monthly_salary.id_for_label }}">
+              Monthly salary (KES) <span aria-hidden="true">*</span>
+            </label>
+            {{ salary_form.monthly_salary }}
+            {% if salary_form.monthly_salary.errors %}
+            <span class="field-error">{{ salary_form.monthly_salary.errors.0 }}</span>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ salary_form.pay_frequency.id_for_label }}">
+              Pay frequency <span aria-hidden="true">*</span>
+            </label>
+            {{ salary_form.pay_frequency }}
+            {% if salary_form.pay_frequency.errors %}
+            <span class="field-error">{{ salary_form.pay_frequency.errors.0 }}</span>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ salary_form.pay_period_start.id_for_label }}">
+              Pay period start <span aria-hidden="true">*</span>
+            </label>
+            {{ salary_form.pay_period_start }}
+            <p class="field-hint">Defaults to the next period without an existing payroll run.</p>
+            {% if salary_form.pay_period_start.errors %}
+            <span class="field-error">{{ salary_form.pay_period_start.errors.0 }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="workspace-modal__actions">
+          <button type="button" class="btn btn--quiet" id="update-salary-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary">Save &amp; create payroll run</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
 </section>
 {% endblock %}
 
@@ -234,6 +412,42 @@
 <script>
 (function () {
   "use strict";
+
+  var page = document.getElementById("employee-payroll-detail-page");
+  var salaryModal = document.getElementById("update-salary-modal");
+  var salaryCancel = document.getElementById("update-salary-cancel");
+
+  function openSalaryModal() {
+    if (salaryModal && typeof salaryModal.showModal === "function") {
+      salaryModal.showModal();
+    }
+  }
+
+  function closeSalaryModal() {
+    if (salaryModal && typeof salaryModal.close === "function") {
+      salaryModal.close();
+    }
+  }
+
+  document.querySelectorAll(".js-open-update-salary").forEach(function (btn) {
+    btn.addEventListener("click", function (event) {
+      event.preventDefault();
+      openSalaryModal();
+    });
+  });
+
+  if (salaryCancel) {
+    salaryCancel.addEventListener("click", closeSalaryModal);
+  }
+  if (salaryModal) {
+    salaryModal.addEventListener("click", function (event) {
+      if (event.target === salaryModal) closeSalaryModal();
+    });
+  }
+  if (page && page.getAttribute("data-open-update-salary") === "1") {
+    openSalaryModal();
+  }
+
   var modal = document.getElementById("payroll-pay-modal");
   if (!modal) return;
 
@@ -243,23 +457,70 @@
   var elFrequency = document.getElementById("pay-modal-frequency");
   var elPeriod = document.getElementById("pay-modal-period");
   var elNetPay = document.getElementById("pay-modal-net-pay");
+  var elAdvanceRow = document.getElementById("pay-modal-advance-row");
+  var elAdvanceTotal = document.getElementById("pay-modal-advance-total");
+  var elAmountDue = document.getElementById("pay-modal-amount-due");
+  var deductWrap = document.getElementById("pay-modal-deduct-wrap");
+  var deductInput = document.getElementById("pay-modal-deduct-advances");
   var amountInput = document.getElementById("pay-modal-amount");
   var refInput = document.getElementById("pay-modal-ref");
+
+  var state = {
+    netPay: 0,
+    advanceTotal: 0,
+    amountPayable: 0,
+  };
+
+  function parseMoney(value) {
+    var amount = Number.parseFloat(String(value || "").replace(/,/g, ""));
+    return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
+  }
+
+  function formatMoney(value) {
+    return "KES " + parseMoney(value).toLocaleString("en-KE", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function syncAmountDue() {
+    var hasAdvance = state.advanceTotal > 0;
+    var deduct = hasAdvance && deductInput && deductInput.checked;
+    var due = deduct ? state.amountPayable : state.netPay;
+    if (elAmountDue) elAmountDue.textContent = formatMoney(due);
+    if (amountInput) amountInput.value = due.toFixed(2);
+  }
 
   document.querySelectorAll(".js-open-pay-modal").forEach(function (btn) {
     btn.addEventListener("click", function (event) {
       event.stopPropagation();
+      state.netPay = parseMoney(btn.dataset.netPay);
+      state.advanceTotal = parseMoney(btn.dataset.advanceTotal);
+      state.amountPayable = parseMoney(btn.dataset.amountPayable);
       runIdInput.value = btn.dataset.runId;
       elEmployee.textContent = btn.dataset.employeeName;
       elFrequency.textContent = btn.dataset.frequency;
       elPeriod.textContent = btn.dataset.period;
-      elNetPay.textContent = "KES " + btn.dataset.netPay;
+      elNetPay.textContent = formatMoney(state.netPay);
       subtitle.textContent = "Pay " + btn.dataset.employeeName;
-      amountInput.value = btn.dataset.netPay;
+
+      var hasAdvance = state.advanceTotal > 0;
+      if (elAdvanceRow) elAdvanceRow.hidden = !hasAdvance;
+      if (deductWrap) deductWrap.hidden = !hasAdvance;
+      if (elAdvanceTotal) elAdvanceTotal.textContent = formatMoney(state.advanceTotal);
+      if (deductInput) {
+        deductInput.checked = hasAdvance;
+        deductInput.disabled = !hasAdvance;
+      }
+      syncAmountDue();
       refInput.value = "";
       if (typeof modal.showModal === "function") modal.showModal();
     });
   });
+
+  if (deductInput) {
+    deductInput.addEventListener("change", syncAmountDue);
+  }
 
   document.getElementById("pay-modal-cancel").addEventListener("click", function () {
     if (typeof modal.close === "function") modal.close();

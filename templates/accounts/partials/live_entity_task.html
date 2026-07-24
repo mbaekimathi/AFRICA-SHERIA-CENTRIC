@@ -1,58 +1,15 @@
 {% if live_tasks %}
-<aside class="live-task-launch" aria-label="Your assigned task">
-  <button
-    type="button"
-    class="live-task-launch__btn open-live-task-modal"
-    aria-haspopup="dialog"
-    aria-controls="live-task-modal"
-  >
-    <span class="live-task-launch__icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path
-          d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </span>
-    <span class="live-task-launch__copy">
-      <span class="live-task-launch__title">
-        {% if live_task_count == 1 %}
-          {% with item=live_tasks.0 %}
-            {% if item.task.title %}{{ item.task.title }}{% else %}Your live task{% endif %}
-          {% endwith %}
-        {% else %}
-          {{ live_task_count }} live tasks
-        {% endif %}
-      </span>
-      <span class="live-task-launch__hint">Tap to open brief &amp; mark complete</span>
-    </span>
-    <span class="live-task-launch__chevron" aria-hidden="true">
-      <svg viewBox="0 0 20 20" fill="none">
-        <path
-          d="M7.5 4.5l5 5.5-5 5.5"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </span>
-  </button>
-</aside>
-
 <button
   type="button"
   class="live-task-fab open-live-task-modal"
   id="open-live-task-modal"
   aria-haspopup="dialog"
   aria-controls="live-task-modal"
-  aria-label="Open live task{{ live_task_count|pluralize }}"
-  title="Open task to mark complete"
+  aria-label="Open live task{{ live_task_count|pluralize }} ({{ live_task_count }})"
+  title="Drag to move · tap to open task"
 >
   <span class="live-task-fab__pulse" aria-hidden="true"></span>
+  <span class="live-task-fab__pulse live-task-fab__pulse--delayed" aria-hidden="true"></span>
   <span class="live-task-fab__icon" aria-hidden="true">
     <svg viewBox="0 0 24 24" fill="none">
       <path
@@ -64,10 +21,7 @@
       />
     </svg>
   </span>
-  <span class="live-task-fab__label">Task</span>
-  {% if live_task_count > 1 %}
   <span class="live-task-fab__count">{{ live_task_count }}</span>
-  {% endif %}
 </button>
 
 <dialog

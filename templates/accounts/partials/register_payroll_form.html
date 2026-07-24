@@ -1,0 +1,302 @@
+<form
+  method="post"
+  action="{{ register_payroll_url }}"
+  class="workspace-form payroll-register-form"
+  id="register-payroll-form"
+  data-employee-choices="{{ employee_choices_json }}"
+  data-registered-payroll-map="{{ registered_payroll_map_json }}"
+  data-rate-defaults="{{ payroll_rate_defaults_json }}"
+  {% if selected_register_employee_id %}data-selected-employee="{{ selected_register_employee_id }}"{% endif %}
+  novalidate
+>
+  {% csrf_token %}
+
+  {% if form.non_field_errors %}
+  <div class="form-alert" role="alert">
+    {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+  </div>
+  {% endif %}
+
+  <fieldset class="form-fieldset">
+    <legend>Pay period &amp; employee</legend>
+    <div class="form-field">
+      <label for="{{ form.pay_frequency.id_for_label }}">Pay frequency <span aria-hidden="true">*</span></label>
+      {{ form.pay_frequency }}
+      {% if form.pay_frequency.errors %}<span class="field-error">{{ form.pay_frequency.errors.0 }}</span>{% endif %}
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label for="{{ form.pay_period_start.id_for_label }}">Start date <span aria-hidden="true">*</span></label>
+        {{ form.pay_period_start }}
+        {% if form.pay_period_start.errors %}<span class="field-error">{{ form.pay_period_start.errors.0 }}</span>{% endif %}
+      </div>
+      <div class="form-field">
+        <label>Period end (auto)</label>
+        <p class="payroll-period-end-display" id="payroll-period-end-display">—</p>
+        <p class="field-hint">Calculated from frequency and start date.</p>
+      </div>
+    </div>
+    <div class="form-field">
+      <label for="{{ form.employee.id_for_label }}">Employee <span aria-hidden="true">*</span></label>
+      <p class="field-hint">Only employees without payroll for the selected period are listed.</p>
+      {{ form.employee }}
+      <p class="field-hint" id="payroll-no-employees-hint" hidden>All eligible employees already have payroll for this period.</p>
+      {% if form.employee.errors %}<span class="field-error">{{ form.employee.errors.0 }}</span>{% endif %}
+    </div>
+  </fieldset>
+
+  <fieldset class="form-fieldset">
+    <legend>Add-ons (earnings)</legend>
+    <div class="form-row">
+      <div class="form-field">
+        <label for="{{ form.basic_salary.id_for_label }}">Basic salary (KES) <span aria-hidden="true">*</span></label>
+        {{ form.basic_salary }}
+        {% if form.basic_salary.errors %}<span class="field-error">{{ form.basic_salary.errors.0 }}</span>{% endif %}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.house_allowance.id_for_label }}">House allowance</label>
+        {{ form.house_allowance }}
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label for="{{ form.transport_allowance.id_for_label }}">Transport allowance</label>
+        {{ form.transport_allowance }}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.medical_allowance.id_for_label }}">Medical allowance</label>
+        {{ form.medical_allowance }}
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label for="{{ form.other_allowances.id_for_label }}">Other allowances</label>
+        {{ form.other_allowances }}
+      </div>
+      <div class="form-field">
+        <label for="{{ form.bonuses_overtime_commissions.id_for_label }}">Bonuses / overtime / commissions</label>
+        {{ form.bonuses_overtime_commissions }}
+      </div>
+    </div>
+    <div class="payroll-calc-row">
+      <span>Gross earnings</span>
+      <strong id="payroll-gross-earnings">KES 0.00</strong>
+    </div>
+  </fieldset>
+
+  <fieldset class="form-fieldset">
+    <legend>Employee deductions (statutory)</legend>
+    <p class="field-hint">Rates and caps are editable. Amounts update automatically from gross earnings.</p>
+    <div class="data-table-wrap payroll-deduction-list-wrap">
+      <table class="data-table payroll-deduction-list">
+        <thead>
+          <tr>
+            <th scope="col">Deduction</th>
+            <th scope="col">Rate / settings</th>
+            <th scope="col" class="payroll-deduction-list__amount-col">Amount (KES)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" class="payroll-deduction-list__name">NSSF</th>
+            <td>
+              <div class="payroll-deduction-list__fields">
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.nssf_employee_rate.id_for_label }}">Employee %</label>
+                  {{ form.nssf_employee_rate }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.nssf_tier1_limit.id_for_label }}">Tier 1 cap</label>
+                  {{ form.nssf_tier1_limit }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.nssf_pensionable_cap.id_for_label }}">Pensionable cap</label>
+                  {{ form.nssf_pensionable_cap }}
+                </div>
+              </div>
+            </td>
+            <td class="mono payroll-deduction-list__amount" id="calc-nssf-employee">0.00</td>
+          </tr>
+          <tr>
+            <th scope="row" class="payroll-deduction-list__name">SHIF</th>
+            <td>
+              <div class="payroll-deduction-list__fields">
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.shif_rate.id_for_label }}">Rate %</label>
+                  {{ form.shif_rate }}
+                </div>
+              </div>
+            </td>
+            <td class="mono payroll-deduction-list__amount" id="calc-shif">0.00</td>
+          </tr>
+          <tr>
+            <th scope="row" class="payroll-deduction-list__name">Housing Levy</th>
+            <td>
+              <div class="payroll-deduction-list__fields">
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.housing_levy_employee_rate.id_for_label }}">Employee %</label>
+                  {{ form.housing_levy_employee_rate }}
+                </div>
+              </div>
+            </td>
+            <td class="mono payroll-deduction-list__amount" id="calc-housing-employee">0.00</td>
+          </tr>
+          <tr class="payroll-deduction-list__row--paye">
+            <th scope="row" class="payroll-deduction-list__name">PAYE</th>
+            <td>
+              <p class="field-hint payroll-deduction-list__paye-hint">Progressive bands (monthly taxable income)</p>
+              <div class="payroll-deduction-list__fields payroll-deduction-list__fields--bands">
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.paye_band_1_max.id_for_label }}">Band 1 max</label>
+                  {{ form.paye_band_1_max }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.paye_band_1_rate.id_for_label }}">Band 1 %</label>
+                  {{ form.paye_band_1_rate }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.paye_band_2_max.id_for_label }}">Band 2 max</label>
+                  {{ form.paye_band_2_max }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.paye_band_2_rate.id_for_label }}">Band 2 %</label>
+                  {{ form.paye_band_2_rate }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.paye_band_3_max.id_for_label }}">Band 3 max</label>
+                  {{ form.paye_band_3_max }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.paye_band_3_rate.id_for_label }}">Band 3 %</label>
+                  {{ form.paye_band_3_rate }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.paye_band_4_rate.id_for_label }}">Band 4 %</label>
+                  {{ form.paye_band_4_rate }}
+                </div>
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.paye_personal_relief.id_for_label }}">Personal relief</label>
+                  {{ form.paye_personal_relief }}
+                </div>
+              </div>
+              <p class="payroll-deduction-list__meta">
+                <span>Taxable income</span>
+                <strong class="mono" id="calc-taxable-income">0.00</strong>
+              </p>
+            </td>
+            <td class="mono payroll-deduction-list__amount" id="calc-paye">0.00</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr class="payroll-deduction-list__total-row">
+            <th scope="row" colspan="2">Total statutory deductions</th>
+            <td class="mono payroll-deduction-list__amount" id="payroll-total-deductions-inline">0.00</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </fieldset>
+
+  <fieldset class="form-fieldset">
+    <legend>Employer-only costs</legend>
+    <p class="field-hint">Employer contributions and levies. Amounts update automatically from gross earnings and rates.</p>
+    <div class="data-table-wrap payroll-deduction-list-wrap">
+      <table class="data-table payroll-deduction-list">
+        <thead>
+          <tr>
+            <th scope="col">Cost</th>
+            <th scope="col">Rate / settings</th>
+            <th scope="col" class="payroll-deduction-list__amount-col">Amount (KES)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row" class="payroll-deduction-list__name">NSSF</th>
+            <td>
+              <div class="payroll-deduction-list__fields">
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.nssf_employer_rate.id_for_label }}">Matching %</label>
+                  {{ form.nssf_employer_rate }}
+                </div>
+              </div>
+            </td>
+            <td class="mono payroll-deduction-list__amount" id="calc-nssf-employer">0.00</td>
+          </tr>
+          <tr>
+            <th scope="row" class="payroll-deduction-list__name">Housing Levy</th>
+            <td>
+              <div class="payroll-deduction-list__fields">
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.housing_levy_employer_rate.id_for_label }}">Matching %</label>
+                  {{ form.housing_levy_employer_rate }}
+                </div>
+              </div>
+            </td>
+            <td class="mono payroll-deduction-list__amount" id="calc-housing-employer">0.00</td>
+          </tr>
+          <tr>
+            <th scope="row" class="payroll-deduction-list__name">NITA levy</th>
+            <td>
+              <div class="payroll-deduction-list__fields">
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.nita_levy_amount.id_for_label }}">Amount / month</label>
+                  {{ form.nita_levy_amount }}
+                </div>
+              </div>
+            </td>
+            <td class="mono payroll-deduction-list__amount" id="calc-nita">0.00</td>
+          </tr>
+          <tr>
+            <th scope="row" class="payroll-deduction-list__name">WIBA insurance</th>
+            <td>
+              <div class="payroll-deduction-list__fields">
+                <div class="form-field form-field--compact">
+                  <label for="{{ form.wiba_insurance_amount.id_for_label }}">Amount</label>
+                  {{ form.wiba_insurance_amount }}
+                </div>
+              </div>
+            </td>
+            <td class="mono payroll-deduction-list__amount" id="calc-wiba">0.00</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr class="payroll-deduction-list__total-row">
+            <th scope="row" colspan="2">Total employer cost</th>
+            <td class="mono payroll-deduction-list__amount" id="payroll-employer-cost-inline">0.00</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </fieldset>
+
+  <div class="payroll-totals payroll-totals--summary" id="payroll-totals" aria-live="polite">
+    <div class="payroll-totals__row">
+      <span>Total employee deductions</span>
+      <strong id="payroll-total-deductions">KES 0.00</strong>
+    </div>
+    <div class="payroll-totals__row payroll-totals__row--net">
+      <span>Net pay</span>
+      <strong id="payroll-net-pay">KES 0.00</strong>
+    </div>
+    <div class="payroll-totals__row">
+      <span>Total employer cost</span>
+      <strong id="payroll-employer-cost">KES 0.00</strong>
+    </div>
+  </div>
+
+  <div class="form-field">
+    <label for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+    {{ form.notes }}
+  </div>
+
+  <div class="form-actions form-actions--start">
+    {% if register_form_in_modal %}
+    <button type="button" class="btn btn--quiet" id="register-payroll-modal-cancel">Cancel</button>
+    {% else %}
+    <a href="{{ payroll_url }}" class="btn btn--quiet">Cancel</a>
+    {% endif %}
+    <button type="submit" class="btn btn--primary btn--inline" id="register-payroll-submit" {% if no_eligible_employees %}disabled{% endif %}>
+      Register payroll
+    </button>
+  </div>
+</form>

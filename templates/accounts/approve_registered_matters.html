@@ -15,8 +15,8 @@
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
         Non-litigation matters awaiting allocation and approval.
-        Approve a matter by assigning an employee and creating their task —
-        only that employee is notified and can accept or reject it.
+        Approve a matter by assigning an employee and creating their task,
+        or decline it to remove it from the queue.
       </p>
     </div>
   </header>
@@ -81,6 +81,28 @@
                     </span>
                     <span class="row-action__label">Approve</span>
                   </a>
+                  <form
+                    method="post"
+                    action="{% url 'accounts:decline_non_litigation_matter' role=role_slug matter_id=matter.pk %}"
+                    class="row-action-form"
+                    onsubmit="return confirm('Decline {{ matter.matter_title|escapejs }}? It will be marked as rejected and removed from this queue.');"
+                  >
+                    {% csrf_token %}
+                    <button
+                      type="submit"
+                      class="row-action row-action--reject"
+                      title="Decline pending matter"
+                      aria-label="Decline matter {{ matter.pk }}"
+                    >
+                      <span class="row-action__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                          <circle cx="12" cy="12" r="8.25" stroke="currentColor" stroke-width="1.7"/>
+                          <path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                        </svg>
+                      </span>
+                      <span class="row-action__label">Decline</span>
+                    </button>
+                  </form>
                 </div>
               </td>
             </tr>

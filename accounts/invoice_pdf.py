@@ -26,6 +26,18 @@ SOFT = colors.HexColor("#f4f6f8")
 ACCENT = colors.HexColor("#0f6e56")
 
 
+def _letterhead_options(firm):
+    """Resolve saved letterhead layout + accent for PDF rendering."""
+    from .letterhead import accent_hex, firm_address_lines, firm_contact_lines
+    from .models import CompanyLetterheadSetting
+
+    setting = CompanyLetterheadSetting.get_solo()
+    accent = colors.HexColor(accent_hex(setting.accent))
+    contact_lines = firm_contact_lines(firm) if setting.show_contacts else []
+    address_lines = firm_address_lines(firm) if setting.show_address else []
+    return setting, accent, contact_lines, address_lines
+
+
 def _money(value) -> str:
     try:
         return f"KES {float(value):,.2f}"
@@ -168,38 +180,103 @@ def build_invoice_pdf(invoice, firm) -> bytes:
     )
 
     client = invoice.client
-    header_lines = _firm_header_lines(firm)
+    setting, accent_color, contact_lines, address_lines = _letterhead_options(firm)
+    label.textColor = accent_color
+
+    header_lines = list(contact_lines)
     left_blocks = [_p(firm.display_name, firm_name)]
+    tagline_text = (getattr(firm, "tagline", "") or "").strip()
+    if setting.show_tagline and tagline_text:
+        left_blocks.append(_p(tagline_text, tagline))
     city = (getattr(firm, "city", "") or "").strip()
     country = (getattr(firm, "country", "") or "").strip()
     place = ", ".join(part for part in (city, country) if part)
     if place:
         left_blocks.append(_p(place, legal))
+    if setting.show_address:
+        for line in address_lines:
+            if line and line != place:
+                left_blocks.append(_p(line, legal))
+
+    align_right = setting.template not in {"centered", "minimal"}
+    meta_style = meta if align_right else ParagraphStyle(
+        "MetaCenter",
+        parent=meta,
+        alignment=TA_CENTER if setting.template == "centered" else TA_LEFT,
+    )
+    if setting.template == "centered":
+        firm_name.alignment = TA_CENTER
+        legal.alignment = TA_CENTER
+        tagline.alignment = TA_CENTER
+
+    detail_blocks = [_p(line, meta_style) for line in header_lines] or [""]
+    if setting.template in {"centered", "minimal", "banner"}:
+        letterhead_data = [[left_blocks + ([Spacer(1, 1.5 * mm)] if header_lines else []) + detail_blocks]]
+        col_widths = [175 * mm]
+    else:
+        letterhead_data = [[left_blocks, detail_blocks]]
+        col_widths = [110 * mm, 65 * mm]
+
+    bg = accent_color if setting.template == "banner" else SOFT
+    if setting.template == "banner":
+        banner_name = ParagraphStyle(
+            "BannerFirm",
+            parent=firm_name,
+            textColor=colors.white,
+        )
+        banner_legal = ParagraphStyle(
+            "BannerLegal",
+            parent=legal,
+            textColor=colors.white,
+        )
+        banner_meta = ParagraphStyle(
+            "BannerMeta",
+            parent=meta_style,
+            textColor=colors.white,
+        )
+        left_blocks = [_p(firm.display_name, banner_name)]
+        if setting.show_tagline and tagline_text:
+            left_blocks.append(_p(tagline_text, banner_legal))
+        if place:
+            left_blocks.append(_p(place, banner_legal))
+        detail_blocks = [_p(line, banner_meta) for line in header_lines] or [""]
+        letterhead_data = [[left_blocks, detail_blocks]]
+        col_widths = [110 * mm, 65 * mm]
 
     letterhead = Table(
-        [
-            [
-                left_blocks,
-                [_p(line, meta) for line in header_lines] or [""],
-            ]
-        ],
-        colWidths=[110 * mm, 65 * mm],
+        letterhead_data,
+        colWidths=col_widths,
     )
-    letterhead.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                ("BACKGROUND", (0, 0), (-1, -1), SOFT),
-                ("BOX", (0, 0), (-1, -1), 0, SOFT),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("LEFTPADDING", (0, 0), (0, 0), 8),
-                ("RIGHTPADDING", (1, 0), (1, 0), 8),
-            ]
-        )
-    )
+    style_cmds = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BACKGROUND", (0, 0), (-1, -1), bg),
+    ]
+    if setting.template == "ruled":
+        style_cmds = [
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("LINEBELOW", (0, 0), (-1, -1), 2, accent_color),
+        ]
+    elif setting.template == "minimal":
+        style_cmds = [
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("LINEABOVE", (0, 0), (-1, -1), 2, accent_color),
+        ]
+    elif setting.template == "split":
+        style_cmds.append(("LINEAFTER", (0, 0), (0, 0), 2, accent_color))
+
+    letterhead.setStyle(TableStyle(style_cmds))
 
     inv_meta = Table(
         [

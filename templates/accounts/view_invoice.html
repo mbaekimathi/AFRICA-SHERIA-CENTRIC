@@ -33,33 +33,7 @@
   </header>
 
   <article class="invoice-sheet" aria-label="Invoice {{ invoice.invoice_number }}">
-    <header class="invoice-letterhead">
-      <div class="invoice-letterhead__brand">
-        {% if firm.main_image %}
-        <img
-          class="invoice-letterhead__logo"
-          src="{{ firm.main_image.image.url }}"
-          alt=""
-          width="56"
-          height="56"
-        >
-        {% else %}
-        <div class="invoice-letterhead__mark" aria-hidden="true">
-          {{ firm.display_name|slice:":1"|upper }}
-        </div>
-        {% endif %}
-        <div class="invoice-letterhead__identity">
-          <p class="invoice-letterhead__name">{{ firm.display_name }}</p>
-          {% if firm.city %}
-          <p class="invoice-letterhead__place">{{ firm.city }}{% if firm.country %}, {{ firm.country }}{% endif %}</p>
-          {% endif %}
-        </div>
-      </div>
-      <div class="invoice-letterhead__details">
-        {% if firm.phone %}<p>{{ firm.phone }}</p>{% endif %}
-        {% if firm.email %}<p>{{ firm.email }}</p>{% endif %}
-      </div>
-    </header>
+    {% include "accounts/partials/company_letterhead.html" %}
 
     <div class="invoice-sheet__top">
       <div class="invoice-sheet__title-block">
@@ -120,9 +94,17 @@
           <dt>Tax</dt>
           <dd>KES {{ invoice.tax_amount|floatformat:2 }}</dd>
         </div>
-        <div class="invoice-totals__grand">
-          <dt>Total due</dt>
+        <div>
+          <dt>Total</dt>
           <dd>KES {{ invoice.total_amount|floatformat:2 }}</dd>
+        </div>
+        <div>
+          <dt>Amount paid</dt>
+          <dd>KES {{ invoice.amount_paid|floatformat:2 }}</dd>
+        </div>
+        <div class="invoice-totals__grand">
+          <dt>Balance due</dt>
+          <dd>KES {{ invoice.balance_due|floatformat:2 }}</dd>
         </div>
       </dl>
     </section>

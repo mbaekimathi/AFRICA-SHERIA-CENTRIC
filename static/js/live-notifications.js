@@ -233,12 +233,47 @@
       onPayload,
     });
 
+    async function markAllNotificationsRead() {
+      if (!markAllUrl) return false;
+      try {
+        const response = await fetch(markAllUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            Accept: "application/json",
+            "X-CSRFToken": csrfToken(),
+          },
+        });
+        if (!response.ok) return false;
+        const data = await response.json();
+        if (!data || typeof data !== "object") return false;
+        lastUnreadCount = Number(data.unread_count || 0);
+        applyUnreadState(trigger, badge, markAllBtn, lastUnreadCount);
+        applyUtilityBadges(data.badges || {});
+        listEl.querySelectorAll(".notif-item.is-unread").forEach((el) => {
+          el.classList.remove("is-unread");
+        });
+        listEl.querySelectorAll(".notif-group__count").forEach((el) => el.remove());
+        lastRevision = "";
+        window.SheriaLivePoll.refreshAll?.();
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    }
+
     // Pause / resume ring when the dropdown opens or closes.
+    // Opening the panel marks notifications as read (same as viewing Tasks/Messages).
+    let wasOpen = menu.classList.contains("is-open");
     const menuObserver = new MutationObserver(() => {
+      const open = menu.classList.contains("is-open");
       const unread = Number.parseInt(badge.textContent || "0", 10) || 0;
       const hasUnread = !badge.hidden && unread > 0;
-      const open = menu.classList.contains("is-open");
       trigger.classList.toggle("is-ringing", hasUnread && !open);
+      if (open && !wasOpen) {
+        markAllNotificationsRead();
+      }
+      wasOpen = open;
     });
     menuObserver.observe(menu, { attributes: true, attributeFilter: ["class"] });
 
@@ -250,32 +285,7 @@
     markAllBtn?.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!markAllUrl) return;
-
-      try {
-        const response = await fetch(markAllUrl, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            Accept: "application/json",
-            "X-CSRFToken": csrfToken(),
-          },
-        });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (!data || typeof data !== "object") return;
-        lastUnreadCount = Number(data.unread_count || 0);
-        applyUnreadState(trigger, badge, markAllBtn, lastUnreadCount);
-        applyUtilityBadges(data.badges || {});
-        listEl.querySelectorAll(".notif-item.is-unread").forEach((el) => {
-          el.classList.remove("is-unread");
-        });
-        listEl.querySelectorAll(".notif-group__count").forEach((el) => el.remove());
-        lastRevision = "";
-        window.SheriaLivePoll.refreshAll?.();
-      } catch (_error) {
-        // Keep current UI on transient errors.
-      }
+      await markAllNotificationsRead();
     });
   });
 })();
