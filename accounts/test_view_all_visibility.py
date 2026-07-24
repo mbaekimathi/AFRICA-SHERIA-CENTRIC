@@ -11,6 +11,7 @@ from accounts.workspace import (
     cases_visible_to,
     employee_can_access_case,
     employee_can_view_all,
+    pending_litigation_cases_count,
     set_employee_activity_permission,
 )
 
@@ -62,6 +63,26 @@ class ViewAllVisibilityTests(TestCase):
             status=LitigationCase.Status.ACTIVE,
             assigned_to=self.viewer,
         )
+        self.own_pending = LitigationCase.objects.create(
+            filing_date=today,
+            client=self.client_person,
+            court_rank="high_court",
+            case_category="civil",
+            case_type="suit",
+            station="nairobi",
+            status=LitigationCase.Status.PENDING_APPROVAL,
+            registered_by=self.assignee,
+        )
+        self.other_pending = LitigationCase.objects.create(
+            filing_date=today,
+            client=self.client_person,
+            court_rank="high_court",
+            case_category="civil",
+            case_type="suit",
+            station="nairobi",
+            status=LitigationCase.Status.PENDING_APPROVAL,
+            registered_by=self.viewer,
+        )
 
     def test_default_view_all_shows_every_active_case(self):
         self.assertTrue(employee_can_view_all(self.assignee, "litigation-matters"))
@@ -90,6 +111,34 @@ class ViewAllVisibilityTests(TestCase):
         self.assertEqual(visible, [self.own_case.pk])
         self.assertTrue(employee_can_access_case(self.assignee, self.own_case))
         self.assertFalse(employee_can_access_case(self.assignee, self.other_case))
+
+    def test_default_view_all_shows_every_pending_case(self):
+        visible = set(
+            cases_visible_to(
+                self.assignee, status=LitigationCase.Status.PENDING_APPROVAL
+            ).values_list("pk", flat=True)
+        )
+        self.assertEqual(visible, {self.own_pending.pk, self.other_pending.pk})
+        self.assertEqual(pending_litigation_cases_count(self.assignee), 2)
+
+    def test_locking_view_all_limits_pending_to_registered(self):
+        set_employee_activity_permission(
+            employee_id=self.assignee.pk,
+            module_slug="matter-management",
+            activity_slug="litigation-matters",
+            action="view_all",
+            is_allowed=False,
+            updated_by=None,
+        )
+        visible = list(
+            cases_visible_to(
+                self.assignee, status=LitigationCase.Status.PENDING_APPROVAL
+            ).values_list("pk", flat=True)
+        )
+        self.assertEqual(visible, [self.own_pending.pk])
+        self.assertEqual(pending_litigation_cases_count(self.assignee), 1)
+        self.assertTrue(employee_can_access_case(self.assignee, self.own_pending))
+        self.assertFalse(employee_can_access_case(self.assignee, self.other_pending))
 
     def test_permission_row_round_trip(self):
         set_employee_activity_permission(

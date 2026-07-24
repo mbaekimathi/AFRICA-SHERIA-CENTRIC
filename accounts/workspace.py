@@ -1,6 +1,6 @@
 """Workspace navigation helpers for role dashboards."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 from functools import lru_cache
 
 from django.db.models import Q
@@ -9,8 +9,10 @@ from django.utils import timezone
 
 from .models import (
     CaseTask,
+    CourtAttendance,
     Employee,
     LitigationCase,
+    MatterAttendance,
     MatterTask,
     NonLitigationMatter,
     get_firm_display_name,
@@ -83,21 +85,29 @@ def pending_employees_count() -> int:
     ).count()
 
 
-def pending_litigation_cases_count() -> int:
-    """Litigation cases awaiting firm approval."""
+def pending_litigation_cases_count(employee=None) -> int:
+    """Litigation cases awaiting firm approval (optionally visibility-scoped)."""
     from .models import LitigationCase
 
-    return LitigationCase.objects.filter(
-        status=LitigationCase.Status.PENDING_APPROVAL
+    if employee is None:
+        return LitigationCase.objects.filter(
+            status=LitigationCase.Status.PENDING_APPROVAL
+        ).count()
+    return cases_visible_to(
+        employee, status=LitigationCase.Status.PENDING_APPROVAL
     ).count()
 
 
-def pending_non_litigation_matters_count() -> int:
-    """Non-litigation matters awaiting firm approval."""
+def pending_non_litigation_matters_count(employee=None) -> int:
+    """Non-litigation matters awaiting firm approval (optionally visibility-scoped)."""
     from .models import NonLitigationMatter
 
-    return NonLitigationMatter.objects.filter(
-        status=NonLitigationMatter.Status.PENDING_APPROVAL
+    if employee is None:
+        return NonLitigationMatter.objects.filter(
+            status=NonLitigationMatter.Status.PENDING_APPROVAL
+        ).count()
+    return matters_visible_to(
+        employee, status=NonLitigationMatter.Status.PENDING_APPROVAL
     ).count()
 
 
@@ -108,7 +118,7 @@ def pending_petty_cash_expenses_count() -> int:
     return PettyCashExpenseRequest.pending_count()
 
 
-def _attach_page_nav_badges(page_nav_items: list[dict]) -> None:
+def _attach_page_nav_badges(page_nav_items: list[dict], employee=None) -> None:
     """Attach count badges to section nav / dashboard items that need them."""
     if not page_nav_items:
         return
@@ -135,17 +145,17 @@ def _attach_page_nav_badges(page_nav_items: list[dict]) -> None:
             item["badge_count"] = pending_employees
         elif slug == "matter-management":
             if pending_cases is None:
-                pending_cases = pending_litigation_cases_count()
+                pending_cases = pending_litigation_cases_count(employee)
             if pending_matters is None:
-                pending_matters = pending_non_litigation_matters_count()
+                pending_matters = pending_non_litigation_matters_count(employee)
             item["badge_count"] = pending_cases + pending_matters
         elif slug in {"litigation-matters", "approve-registered-cases"}:
             if pending_cases is None:
-                pending_cases = pending_litigation_cases_count()
+                pending_cases = pending_litigation_cases_count(employee)
             item["badge_count"] = pending_cases
         elif slug in {"non-litigation-matters", "approve-registered-matters"}:
             if pending_matters is None:
-                pending_matters = pending_non_litigation_matters_count()
+                pending_matters = pending_non_litigation_matters_count(employee)
             item["badge_count"] = pending_matters
         elif slug == "petty-cash-book":
             if pending_petty_cash is None:
@@ -380,34 +390,34 @@ ROLE_WELCOME = {
         "stats": [
             ("My matters", "—"),
             ("Upcoming hearings", "—"),
-            ("Documents", "—"),
+            ("Tasks and progress", "—"),
         ],
     },
     Employee.Role.INTERN: {
         "headline": "Training desk",
         "copy": "Complete assigned research, drafts, and supervised learning tasks.",
         "stats": [
-            ("Open assignments", "—"),
-            ("Due this week", "—"),
-            ("Completed", "—"),
+            ("My matters", "—"),
+            ("Upcoming hearings", "—"),
+            ("Tasks and progress", "—"),
         ],
     },
     Employee.Role.IT_SUPPORT: {
         "headline": "Systems operations",
         "copy": "Support accounts, resolve access issues, and safeguard platform uptime.",
         "stats": [
-            ("Open tickets", "—"),
-            ("Managed accounts", "—"),
-            ("Service status", "—"),
+            ("My matters", "—"),
+            ("Upcoming hearings", "—"),
+            ("Tasks and progress", "—"),
         ],
     },
     Employee.Role.EMPLOYEE: {
         "headline": "Staff workspace",
         "copy": "Access assigned tasks, internal notices, and shared firm documents.",
         "stats": [
-            ("My tasks", "—"),
-            ("Notices", "—"),
-            ("Shared files", "—"),
+            ("My matters", "—"),
+            ("Upcoming hearings", "—"),
+            ("Tasks and progress", "—"),
         ],
     },
 }
@@ -1903,21 +1913,29 @@ def _open_matter_task_statuses():
 
 
 def allocated_cases_q(employee):
-    """Cases assigned to the employee or carrying their open tasks."""
+    """Cases linked to the employee: assignee, registrant, or open tasks."""
     open_task_case_ids = CaseTask.objects.filter(
         assignee=employee,
         status__in=_open_case_task_statuses(),
     ).values_list("case_id", flat=True)
-    return Q(assigned_to=employee) | Q(pk__in=open_task_case_ids)
+    return (
+        Q(assigned_to=employee)
+        | Q(registered_by=employee)
+        | Q(pk__in=open_task_case_ids)
+    )
 
 
 def allocated_matters_q(employee):
-    """Matters assigned to the employee or carrying their open tasks."""
+    """Matters linked to the employee: assignee, registrant, or open tasks."""
     open_task_matter_ids = MatterTask.objects.filter(
         assignee=employee,
         status__in=_open_matter_task_statuses(),
     ).values_list("matter_id", flat=True)
-    return Q(assigned_to=employee) | Q(pk__in=open_task_matter_ids)
+    return (
+        Q(assigned_to=employee)
+        | Q(registered_by=employee)
+        | Q(pk__in=open_task_matter_ids)
+    )
 
 
 def cases_visible_to(employee, *, status=None):
@@ -1945,6 +1963,8 @@ def employee_can_access_case(employee, case) -> bool:
         return True
     if getattr(case, "assigned_to_id", None) == employee.pk:
         return True
+    if getattr(case, "registered_by_id", None) == employee.pk:
+        return True
     return CaseTask.objects.filter(
         case_id=case.pk,
         assignee=employee,
@@ -1956,6 +1976,8 @@ def employee_can_access_matter(employee, matter) -> bool:
     if employee_can_view_all(employee, "non-litigation-matters"):
         return True
     if getattr(matter, "assigned_to_id", None) == employee.pk:
+        return True
+    if getattr(matter, "registered_by_id", None) == employee.pk:
         return True
     return MatterTask.objects.filter(
         matter_id=matter.pk,
@@ -2287,6 +2309,340 @@ def _user_linked_active_matters(user):
     )
 
 
+def _visible_active_cases(user):
+    """Active litigation cases visible under the user's View all / allocated rules."""
+    return (
+        cases_visible_to(user, status=LitigationCase.Status.ACTIVE)
+        .select_related("client", "assigned_to")
+        .order_by("-updated_at", "-pk")
+    )
+
+
+def _visible_active_matters(user):
+    """Active non-litigation matters visible under View all / allocated rules."""
+    return (
+        matters_visible_to(user, status=NonLitigationMatter.Status.ACTIVE)
+        .select_related("client", "assigned_to")
+        .order_by("-updated_at", "-pk")
+    )
+
+
+def _upcoming_hearings(user, *, case_ids=None, matter_ids=None, limit=None):
+    """Upcoming court / matter attendances on cases and matters the user may see."""
+    today = timezone.localdate()
+    if case_ids is None:
+        case_ids = list(_visible_active_cases(user).values_list("pk", flat=True))
+    if matter_ids is None:
+        matter_ids = list(_visible_active_matters(user).values_list("pk", flat=True))
+
+    court = []
+    if case_ids:
+        court = list(
+            CourtAttendance.objects.filter(
+                case_id__in=case_ids,
+                next_court_date__gte=today,
+            )
+            .select_related("case", "case__client")
+            .order_by("next_court_date", "pk")
+        )
+    matter = []
+    if matter_ids:
+        matter = list(
+            MatterAttendance.objects.filter(
+                matter_id__in=matter_ids,
+                next_attendance_date__gte=today,
+            )
+            .select_related("matter", "matter__client")
+            .order_by("next_attendance_date", "pk")
+        )
+
+    combined = [("court", row) for row in court] + [("matter", row) for row in matter]
+    combined.sort(
+        key=lambda pair: (
+            (
+                pair[1].next_court_date
+                if pair[0] == "court"
+                else pair[1].next_attendance_date
+            )
+            or date.max,
+            pair[1].pk,
+        )
+    )
+    if limit is not None:
+        combined = combined[:limit]
+    return combined
+
+
+def _upcoming_hearing_count(user, *, case_ids=None, matter_ids=None) -> int:
+    return len(_upcoming_hearings(user, case_ids=case_ids, matter_ids=matter_ids))
+
+
+def _serialize_upcoming_hearings(user, hearing_rows, *, limit=10):
+    role = user.role_slug
+    items = []
+    for kind, attendance in hearing_rows[:limit]:
+        if kind == "court":
+            activity = (
+                attendance.next_activity_type
+                or attendance.activity_type
+                or "Court appearance"
+            )
+            due = attendance.next_court_date
+            case = attendance.case
+            ref = (case.court_case_number or "").strip() or f"Case #{case.pk}"
+            items.append(
+                _metric_matter_item(
+                    kind="court",
+                    title=f"{activity} — {ref}",
+                    meta=(
+                        f"{due.strftime('%d %b %Y')} · {case.client.get_full_name()}"
+                        if due
+                        else case.client.get_full_name()
+                    ),
+                    url=reverse(
+                        "accounts:view_litigation_case",
+                        kwargs={"role": role, "case_id": case.pk},
+                    ),
+                    badge="Hearing",
+                    status=due.strftime("%d %b %Y") if due else "",
+                    status_key="active",
+                )
+            )
+        else:
+            activity = (
+                attendance.next_activity_type
+                or attendance.activity_type
+                or "Matter attendance"
+            )
+            due = attendance.next_attendance_date
+            matter = attendance.matter
+            title = matter.matter_title or matter.reference_code
+            items.append(
+                _metric_matter_item(
+                    kind="matter_attendance",
+                    title=f"{activity} — {title}",
+                    meta=(
+                        f"{due.strftime('%d %b %Y')} · {matter.client.get_full_name()}"
+                        if due
+                        else matter.client.get_full_name()
+                    ),
+                    url=reverse(
+                        "accounts:view_non_litigation_matter",
+                        kwargs={"role": role, "matter_id": matter.pk},
+                    ),
+                    badge="Attendance",
+                    status=due.strftime("%d %b %Y") if due else "",
+                    status_key="active",
+                )
+            )
+    return items
+
+
+def _open_tasks_in_progress(user):
+    """Open (pending/accepted) case and matter tasks visible to the employee."""
+    open_case = _open_case_task_statuses()
+    open_matter = _open_matter_task_statuses()
+    case_tasks = list(
+        case_tasks_visible_to(user)
+        .filter(status__in=open_case)
+        .select_related("case", "case__client")
+        .order_by("-updated_at", "-pk")
+    )
+    matter_tasks = list(
+        matter_tasks_visible_to(user)
+        .filter(status__in=open_matter)
+        .select_related("matter", "matter__client")
+        .order_by("-updated_at", "-pk")
+    )
+    return case_tasks, matter_tasks
+
+
+def matter_desk_welcome_stats(user):
+    """
+    Live dashboard metrics for counsel / staff desks.
+
+    Matters and hearings respect View all vs allocated-only on matter lists.
+    Tasks respect the tasks View all permission.
+    """
+    role = user.role_slug
+    cases = list(_visible_active_cases(user))
+    matters = list(_visible_active_matters(user))
+    case_ids = [case.pk for case in cases]
+    matter_ids = [matter.pk for matter in matters]
+
+    matter_items = (
+        _serialize_linked_cases(user, cases) + _serialize_linked_matters(user, matters)
+    )[:10]
+    hearing_rows = _upcoming_hearings(
+        user, case_ids=case_ids, matter_ids=matter_ids
+    )
+    hearing_items = _serialize_upcoming_hearings(user, hearing_rows)
+    case_tasks, matter_tasks = _open_tasks_in_progress(user)
+    task_items = _serialize_linked_tasks(user, case_tasks, matter_tasks)
+
+    matter_hub_url = workspace_reverse(role, "dashboard", "matter-management")
+    calendar_url = workspace_reverse(role, "dashboard", "calendar")
+    tasks_url = workspace_reverse(role, "dashboard", "tasks")
+    view_all = employee_can_view_all(
+        user, "litigation-matters"
+    ) or employee_can_view_all(user, "non-litigation-matters")
+    empty_matters = (
+        "No active matters on the firm list."
+        if view_all
+        else "No active matters linked or allocated to you."
+    )
+    tasks_view_all = employee_can_view_all(user, "tasks")
+    empty_tasks = (
+        "No open tasks on the firm list."
+        if tasks_view_all
+        else "No open tasks assigned to you."
+    )
+
+    return [
+        {
+            "key": "my-matters",
+            "label": "My matters",
+            "value": len(cases) + len(matters),
+            "interactive": True,
+            "items": matter_items,
+            "empty_copy": empty_matters,
+            "view_all_url": matter_hub_url,
+            "view_all_label": "Open matter management",
+        },
+        {
+            "key": "upcoming-hearings",
+            "label": "Upcoming hearings",
+            "value": len(hearing_rows),
+            "interactive": True,
+            "items": hearing_items,
+            "empty_copy": "No upcoming hearings on your visible matters.",
+            "view_all_url": calendar_url,
+            "view_all_label": "Open calendar",
+        },
+        {
+            "key": "tasks-and-progress",
+            "label": "Tasks and progress",
+            "value": len(case_tasks) + len(matter_tasks),
+            "interactive": True,
+            "items": task_items,
+            "empty_copy": empty_tasks,
+            "view_all_url": tasks_url,
+            "view_all_label": "Open tasks",
+        },
+    ]
+
+
+def firm_admin_welcome_stats(user):
+    """Live metrics for the firm administrator dashboard."""
+    from .models import Client
+
+    role = user.role_slug
+    pending_clients = list(
+        Client.objects.filter(
+            status__in=[
+                Client.Status.PENDING_ONBOARDING,
+                Client.Status.PENDING_APPROVAL,
+            ]
+        ).order_by("created_at", "pk")[:10]
+    )
+    pending_employees = list(
+        Employee.objects.filter(
+            status__in=[
+                Employee.Status.PENDING_ONBOARDING,
+                Employee.Status.PENDING_APPROVAL,
+            ]
+        ).order_by("created_at", "pk")[:10]
+    )
+    active_personnel = list(
+        Employee.objects.filter(status=Employee.Status.ACTIVE)
+        .order_by("last_name", "first_name", "pk")[:10]
+    )
+    cases = list(_visible_active_cases(user))
+    matters = list(_visible_active_matters(user))
+    matter_items = (
+        _serialize_linked_cases(user, cases) + _serialize_linked_matters(user, matters)
+    )[:10]
+
+    pending_items = []
+    for client in pending_clients:
+        pending_items.append(
+            _metric_matter_item(
+                kind="client",
+                title=client.get_full_name(),
+                meta=client.get_status_display(),
+                url=workspace_reverse(
+                    role, "dashboard", "user-management", "client-management"
+                ),
+                badge="Client",
+                status=client.get_status_display(),
+                status_key=client.status,
+            )
+        )
+    for employee in pending_employees:
+        pending_items.append(
+            _metric_matter_item(
+                kind="employee",
+                title=employee.get_full_name(),
+                meta=employee.get_status_display(),
+                url=workspace_reverse(
+                    role, "dashboard", "user-management", "employee-management"
+                ),
+                badge="Employee",
+                status=employee.get_status_display(),
+                status_key=employee.status,
+            )
+        )
+    personnel_items = [
+        _metric_matter_item(
+            kind="employee",
+            title=employee.get_full_name(),
+            meta=employee.get_role_display(),
+            url=workspace_reverse(
+                role, "dashboard", "user-management", "employee-management"
+            ),
+            badge="Staff",
+        )
+        for employee in active_personnel
+    ]
+
+    return [
+        {
+            "key": "pending-approvals",
+            "label": "Pending approvals",
+            "value": pending_clients_count() + pending_employees_count(),
+            "interactive": True,
+            "items": pending_items[:10],
+            "empty_copy": "No clients or employees awaiting approval.",
+            "view_all_url": workspace_reverse(role, "dashboard", "user-management"),
+            "view_all_label": "Open user management",
+        },
+        {
+            "key": "active-personnel",
+            "label": "Active personnel",
+            "value": Employee.objects.filter(status=Employee.Status.ACTIVE).count(),
+            "interactive": True,
+            "items": personnel_items,
+            "empty_copy": "No active personnel on the firm roster.",
+            "view_all_url": workspace_reverse(
+                role, "dashboard", "user-management", "employee-management"
+            ),
+            "view_all_label": "Open employee management",
+        },
+        {
+            "key": "open-matters",
+            "label": "Open matters",
+            "value": len(cases) + len(matters),
+            "interactive": True,
+            "items": matter_items,
+            "empty_copy": "No open matters visible under your permissions.",
+            "view_all_url": workspace_reverse(
+                role, "dashboard", "matter-management"
+            ),
+            "view_all_label": "Open matter management",
+        },
+    ]
+
+
 def _serialize_linked_cases(user, cases, *, limit=10):
     role = user.role_slug
     items = []
@@ -2371,13 +2727,13 @@ def managing_partner_welcome_stats(user):
     """
     Live dashboard metrics for the managing partner home page.
 
-    Counts and dropdown rows are scoped to matters/tasks linked to the
-    signed-in user (assigned counsel or open task assignee).
+    Matter counts respect View all vs allocated-only permissions (same rules
+    as matter list pages). Tasks in progress stay personal (accepted by you).
     """
     week_start = _calendar_week_start()
     role = user.role_slug
-    cases = list(_user_linked_active_cases(user))
-    matters = list(_user_linked_active_matters(user))
+    cases = list(_visible_active_cases(user))
+    matters = list(_visible_active_matters(user))
 
     cases_this_week = [
         case
@@ -2428,6 +2784,19 @@ def managing_partner_welcome_stats(user):
 
     matter_hub_url = workspace_reverse(role, "dashboard", "matter-management")
     tasks_url = workspace_reverse(role, "dashboard", "tasks")
+    view_all = employee_can_view_all(
+        user, "litigation-matters"
+    ) or employee_can_view_all(user, "non-litigation-matters")
+    empty_active = (
+        "No active matters on the firm list."
+        if view_all
+        else "No active matters linked or allocated to you."
+    )
+    empty_week = (
+        "No matters opened or approved this week."
+        if view_all
+        else "No linked matters opened or approved this week."
+    )
 
     return [
         {
@@ -2436,7 +2805,7 @@ def managing_partner_welcome_stats(user):
             "value": len(cases) + len(matters),
             "interactive": True,
             "items": active_items,
-            "empty_copy": "No active matters linked to your account.",
+            "empty_copy": empty_active,
             "view_all_url": matter_hub_url,
             "view_all_label": "Open matter management",
         },
@@ -2446,7 +2815,7 @@ def managing_partner_welcome_stats(user):
             "value": len(cases_this_week) + len(matters_this_week),
             "interactive": True,
             "items": week_items,
-            "empty_copy": "No linked matters opened or approved this week.",
+            "empty_copy": empty_week,
             "view_all_url": matter_hub_url,
             "view_all_label": "Open matter management",
         },
@@ -2505,8 +2874,14 @@ def workspace_context(
     ]
 
     welcome = ROLE_WELCOME.get(role, ROLE_WELCOME[Employee.Role.EMPLOYEE])
-    if role == Employee.Role.MANAGING_PARTNER and is_dashboard:
-        welcome_stats = managing_partner_welcome_stats(user)
+    if is_dashboard:
+        if role == Employee.Role.MANAGING_PARTNER:
+            welcome_stats = managing_partner_welcome_stats(user)
+        elif role == Employee.Role.FIRM_ADMIN:
+            welcome_stats = firm_admin_welcome_stats(user)
+        else:
+            # Advocate, intern, IT support, employee — and any other staff role.
+            welcome_stats = matter_desk_welcome_stats(user)
     else:
         welcome_stats = [
             {
@@ -2628,7 +3003,7 @@ def workspace_context(
             else:
                 page_nav_items = []
 
-    _attach_page_nav_badges(page_nav_items)
+    _attach_page_nav_badges(page_nav_items, employee=user)
 
     return {
         "page_title": page_title,

@@ -3,6 +3,12 @@
 from django.urls import reverse
 from django.utils import timezone
 
+from .appearance import (
+    resolve_client_portal_density,
+    resolve_client_portal_font,
+    resolve_client_portal_theme,
+    sync_session_client_appearance,
+)
 from .client_auth import is_staff_impersonating
 from .models import Client, ClientNotification, get_firm_display_name
 from .workspace import (
@@ -15,7 +21,6 @@ from .workspace import (
     ICON_LOGOUT,
     ICON_MESSAGE,
     ICON_SETTINGS,
-    ICON_TASK,
     ICON_USERS,
     mark_session_start,
 )
@@ -34,6 +39,13 @@ def client_home_url(client: Client) -> str:
 def client_portal_context(request, client, *, page_title="My profile", active="profile"):
     home_url = client_home_url(client)
     billing_url = reverse("accounts:client_billing")
+    matters_url = reverse("accounts:client_matters")
+    documents_url = reverse("accounts:client_documents")
+    messages_url = reverse("accounts:client_messages")
+    reminders_url = reverse("accounts:client_reminders")
+    calendar_url = reverse("accounts:client_calendar")
+    settings_url = reverse("accounts:client_settings")
+    theme_url = reverse("accounts:client_theme_settings")
 
     hour = timezone.localtime().hour
     if hour < 12:
@@ -48,26 +60,27 @@ def client_portal_context(request, client, *, page_title="My profile", active="p
     if not request.session.get("session_started_at"):
         mark_session_start(request)
 
+    # Keep appearance session snapshot current for live theme application.
+    sync_session_client_appearance(request, client)
+
     page_nav_items = [
         {
             "label": "My profile",
             "url": home_url,
             "icon": ICON_USERS,
-            "active": active == "profile",
+            "active": active in {"profile", "dashboard"},
         },
         {
             "label": "My matters",
-            "url": home_url,
+            "url": matters_url,
             "icon": ICON_BRIEF,
             "active": active == "matters",
-            "disabled": True,
         },
         {
             "label": "Documents",
-            "url": home_url,
+            "url": documents_url,
             "icon": ICON_DOC,
             "active": active == "documents",
-            "disabled": True,
         },
         {
             "label": "Finance & Billing",
@@ -80,31 +93,21 @@ def client_portal_context(request, client, *, page_title="My profile", active="p
     utility_items = [
         {
             "label": "Messages",
-            "url": home_url,
+            "url": messages_url,
             "icon": ICON_MESSAGE,
             "active": active == "messages",
-            "disabled": True,
-        },
-        {
-            "label": "Tasks",
-            "url": home_url,
-            "icon": ICON_TASK,
-            "active": active == "tasks",
-            "disabled": True,
         },
         {
             "label": "Reminders",
-            "url": home_url,
+            "url": reminders_url,
             "icon": ICON_BELL,
             "active": active == "reminders",
-            "disabled": True,
         },
         {
             "label": "Calendar",
-            "url": home_url,
+            "url": calendar_url,
             "icon": ICON_CALENDAR,
             "active": active == "calendar",
-            "disabled": True,
         },
     ]
 
@@ -118,23 +121,37 @@ def client_portal_context(request, client, *, page_title="My profile", active="p
     ]
 
     staff_impersonating = is_staff_impersonating(request)
+    theme = resolve_client_portal_theme(client, request)
+    ui_font = resolve_client_portal_font(client, request)
+    ui_density = resolve_client_portal_density(client, request)
 
     return {
         "client": client,
-        "theme": "client",
+        "theme": theme,
+        "ui_font": ui_font,
+        "ui_density": ui_density,
         "page_title": page_title,
         "role_label": "Client",
         "session_greeting": greeting,
         "welcome_headline": "Client portal",
-        "welcome_copy": "Follow your matters and stay connected with the firm representing you.",
+        "welcome_copy": (
+            "Everything here is limited to your account — your matters, "
+            "documents, billing, and schedule with the firm."
+        ),
         "dashboard_url": home_url,
         "dashboard_active": active == "dashboard",
-        "settings_url": home_url,
+        "settings_url": settings_url,
         "settings_active": active == "settings",
+        "theme_settings_url": theme_url,
+        "theme_settings_active": active == "theme-settings",
         "billing_url": billing_url,
         "page_nav_items": page_nav_items,
         "utility_items": utility_items,
         "icon_home": ICON_HOME,
+        "icon_bell": ICON_BELL,
+        "icon_brief": ICON_BRIEF,
+        "icon_doc": ICON_DOC,
+        "icon_finance": ICON_FINANCE,
         "icon_settings": ICON_SETTINGS,
         "icon_logout": ICON_LOGOUT,
         "session_started_at": request.session.get("session_started_at"),

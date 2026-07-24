@@ -1,0 +1,36 @@
+{% extends "layouts/client_portal.html" %}
+
+{% block title %}{{ document_title }} — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker"><a href="{{ list_url }}">Documents</a> · View only</p>
+      <h2>{{ document_title }}</h2>
+      <p class="page-lead">
+        {{ document_type }} — previewed securely in your portal. Editing is not available.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Preview</h3>
+      <p class="panel__hint"><a href="{{ list_url }}">Back to documents</a></p>
+    </div>
+    <div class="panel__body">
+      <div class="client-doc-viewer">
+        <iframe
+          class="client-doc-viewer__frame"
+          title="Document preview"
+          src="{{ file_url }}"
+        ></iframe>
+      </div>
+      <p class="panel__hint" style="margin-top: 0.75rem">
+        If the preview does not load, <a href="{{ file_url }}" target="_blank" rel="noopener">open the file in a new tab</a>.
+      </p>
+    </div>
+  </section>
+</section>
+{% endblock %}

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import client_views, views
 
 app_name = "accounts"
 
@@ -228,6 +228,76 @@ urlpatterns = [
         "client/dashboard/",
         views.ClientDashboardView.as_view(),
         name="client_dashboard",
+    ),
+    path(
+        "client/matters/",
+        client_views.ClientMattersView.as_view(),
+        name="client_matters",
+    ),
+    path(
+        "client/matters/case/<int:case_id>/",
+        client_views.ClientMatterCaseView.as_view(),
+        name="client_matter_case",
+    ),
+    path(
+        "client/matters/matter/<int:matter_id>/",
+        client_views.ClientMatterDetailView.as_view(),
+        name="client_matter_detail",
+    ),
+    path(
+        "client/documents/",
+        client_views.ClientDocumentsView.as_view(),
+        name="client_documents",
+    ),
+    path(
+        "client/documents/<int:document_id>/view/",
+        client_views.ClientDocumentView.as_view(),
+        name="client_document_view",
+    ),
+    path(
+        "client/documents/<int:document_id>/file/",
+        client_views.ClientDocumentFileView.as_view(),
+        name="client_document_file",
+    ),
+    path(
+        "client/documents/drive/<str:drive_file_id>/view/",
+        client_views.ClientDriveDocumentView.as_view(),
+        name="client_drive_document_view",
+    ),
+    path(
+        "client/documents/drive/<str:drive_file_id>/file/",
+        client_views.ClientDriveDocumentFileView.as_view(),
+        name="client_drive_document_file",
+    ),
+    path(
+        "client/documents/<int:document_id>/download/",
+        client_views.ClientDocumentDownloadView.as_view(),
+        name="client_document_download",
+    ),
+    path(
+        "client/messages/",
+        client_views.ClientMessagesView.as_view(),
+        name="client_messages",
+    ),
+    path(
+        "client/reminders/",
+        client_views.ClientRemindersView.as_view(),
+        name="client_reminders",
+    ),
+    path(
+        "client/calendar/",
+        client_views.ClientCalendarView.as_view(),
+        name="client_calendar",
+    ),
+    path(
+        "client/settings/",
+        client_views.ClientSettingsView.as_view(),
+        name="client_settings",
+    ),
+    path(
+        "client/theme-settings/",
+        client_views.ClientThemeSettingsView.as_view(),
+        name="client_theme_settings",
     ),
     path(
         "client/finance-billing/",

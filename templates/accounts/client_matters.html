@@ -1,0 +1,142 @@
+{% extends "layouts/client_portal.html" %}
+
+{% block title %}My matters — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>My matters</h2>
+      <p class="page-lead">
+        Litigation cases and non-litigation matters registered for your account only.
+      </p>
+    </div>
+  </header>
+
+  <div class="metrics metrics--dash">
+    <div class="metric metric--glass" style="--stagger: 0">
+      <span class="icon-orb icon-orb--sm icon-orb--tone-1" aria-hidden="true">
+        <span class="icon-orb__core">{{ icon_brief|safe }}</span>
+      </span>
+      <div>
+        <p class="metric__label">Litigation</p>
+        <p class="metric__value">{{ case_count }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass" style="--stagger: 1">
+      <span class="icon-orb icon-orb--sm icon-orb--tone-2" aria-hidden="true">
+        <span class="icon-orb__core">{{ icon_doc|safe }}</span>
+      </span>
+      <div>
+        <p class="metric__label">Non-litigation</p>
+        <p class="metric__value">{{ matter_count }}</p>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Litigation</h3>
+      <p class="panel__hint">
+        {% if case_count %}{{ case_count }} case{{ case_count|pluralize }}{% else %}None yet{% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if cases %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Reference</th>
+              <th scope="col">Court</th>
+              <th scope="col">Filed</th>
+              <th scope="col">Counsel</th>
+              <th scope="col">Status</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for case in cases %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{% url 'accounts:client_matter_case' case.pk %}">
+                    {% if case.court_case_number %}{{ case.court_case_number }}{% else %}Case #{{ case.pk }}{% endif %}
+                  </a>
+                  <span class="person-cell__meta">{{ case.get_case_category_display }} · {{ case.get_case_type_display }}</span>
+                </div>
+              </td>
+              <td>{{ case.get_court_rank_display }} · {{ case.get_station_display }}</td>
+              <td>{{ case.filing_date|date:"d M Y" }}</td>
+              <td>{% if case.assigned_to %}{{ case.assigned_to.get_full_name }}{% else %}—{% endif %}</td>
+              <td><span class="status-pill status-pill--{{ case.status }}">{{ case.get_status_display }}</span></td>
+              <td class="data-table__actions">
+                <a href="{% url 'accounts:client_matter_case' case.pk %}" class="btn btn--quiet btn--inline">View</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No litigation matters yet</p>
+        <p class="empty-state__copy">When {{ firm_name }} opens a case for you, it will appear here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Non-litigation</h3>
+      <p class="panel__hint">
+        {% if matter_count %}{{ matter_count }} matter{{ matter_count|pluralize }}{% else %}None yet{% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if matters %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Matter</th>
+              <th scope="col">Category</th>
+              <th scope="col">Opened</th>
+              <th scope="col">Counsel</th>
+              <th scope="col">Status</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for matter in matters %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{% url 'accounts:client_matter_detail' matter.pk %}">{{ matter.matter_title }}</a>
+                  <span class="person-cell__meta">{{ matter.reference_code }}</span>
+                </div>
+              </td>
+              <td>{{ matter.get_matter_category_display }}</td>
+              <td>{{ matter.date_opened|date:"d M Y" }}</td>
+              <td>{% if matter.assigned_to %}{{ matter.assigned_to.get_full_name }}{% else %}—{% endif %}</td>
+              <td><span class="status-pill status-pill--{{ matter.status }}">{{ matter.get_status_display }}</span></td>
+              <td class="data-table__actions">
+                <a href="{% url 'accounts:client_matter_detail' matter.pk %}" class="btn btn--quiet btn--inline">View</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No non-litigation matters yet</p>
+        <p class="empty-state__copy">Advisory and transactional files opened for you will show here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

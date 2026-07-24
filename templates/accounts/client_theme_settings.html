@@ -1,0 +1,285 @@
+{% extends "layouts/client_portal.html" %}
+{% load static %}
+
+{% block title %}Theme settings — Sheria Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page settings-page theme-settings-page theme-admin-page"
+  id="settings-page"
+  data-role-theme="client"
+  data-saved-theme="{{ appearance_form.ui_theme.value|default:'default' }}"
+  data-saved-font="{{ appearance_form.ui_font.value|default:'plex' }}"
+  data-saved-density="{{ appearance_form.ui_density.value|default:'comfortable' }}"
+>
+  <form method="post" class="theme-admin" id="appearance-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="settings_action" value="appearance">
+
+    <header class="theme-admin__toolbar">
+      <div class="theme-admin__toolbar-copy">
+        <h2 class="theme-admin__title">Theme settings</h2>
+        <p class="theme-admin__subtitle">
+          <span class="theme-admin__domain">{{ role_label }}</span>
+          <span class="theme-admin__subtitle-sep" aria-hidden="true">·</span>
+          <span id="chip-theme">{{ current_theme_label }}</span>
+        </p>
+      </div>
+      <div class="theme-admin__toolbar-actions">
+        <button type="submit" class="btn btn--primary btn--inline theme-admin__btn theme-admin__btn--save">
+          Save
+        </button>
+      </div>
+    </header>
+
+    <div class="theme-admin__banner" role="note">
+      <span class="theme-admin__banner-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 17l6-6-6-6M12 19h8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <p>
+        Applies to <strong>{{ client.get_full_name }}</strong>
+        on your <strong>client portal</strong> only.
+        Company default is <strong>{{ company_theme_label|default:"Black & White" }}</strong>.
+        {% if has_personal_theme_override %}You are overriding it for this account.{% else %}Choose Company default to follow the firm theme.{% endif %}
+      </p>
+    </div>
+
+    <div class="theme-admin__layout">
+      <div class="theme-admin__main">
+        <section class="theme-admin__panel">
+          <div class="theme-admin__panel-head">
+            <h3>Appearance</h3>
+            <div class="theme-admin__panel-actions">
+              <button type="button" class="btn btn--primary btn--inline theme-admin__btn theme-admin__btn--sm is-active" data-tab="themes" id="tab-themes-action">Themes</button>
+              <button type="button" class="btn btn--quiet btn--inline theme-admin__btn theme-admin__btn--sm" data-tab="fonts" id="tab-fonts-action">Typography</button>
+              <button type="button" class="btn btn--quiet btn--inline theme-admin__btn theme-admin__btn--sm" data-tab="density" id="tab-density-action">Density</button>
+            </div>
+          </div>
+
+          <div class="theme-admin__row">
+            <div class="theme-admin__label">
+              <strong>Your current theme</strong>
+              <span>Active look for your client portal.</span>
+            </div>
+            <div class="theme-admin__control theme-admin__control--meta">
+              <p class="theme-admin__value">
+                <span id="chip-theme-meta">{{ current_theme_label }}</span>
+              </p>
+              <p class="theme-admin__hint-inline">
+                Type <strong id="chip-font">{{ current_font_label }}</strong>
+                · Density <strong id="chip-density">{{ current_density_label }}</strong>
+                · {{ theme_count }} themes · {{ font_count }} typefaces
+              </p>
+            </div>
+          </div>
+
+          <div class="settings-tabs theme-admin__tabs visually-hidden" role="tablist" aria-label="Appearance controls">
+            <button type="button" class="settings-tab is-active" role="tab" aria-selected="true" data-tab="themes" id="tab-themes">Themes</button>
+            <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="fonts" id="tab-fonts">Typography</button>
+            <button type="button" class="settings-tab" role="tab" aria-selected="false" data-tab="density" id="tab-density">Density</button>
+          </div>
+
+          <div class="settings-panels theme-admin__panels">
+            <div class="settings-panel" id="panel-themes" role="tabpanel" aria-labelledby="tab-themes">
+              <div class="theme-admin__row theme-admin__row--stack">
+                <div class="theme-admin__label">
+                  <strong>Color theme</strong>
+                  <span>Palettes balance shell, accent, and page canvas.</span>
+                </div>
+                <div class="theme-admin__control">
+                  {% for group in theme_groups %}
+                  <div class="theme-group">
+                    <p class="theme-group__label">{{ group.label }}</p>
+                    <div class="theme-grid" role="radiogroup" aria-label="{{ group.label }}">
+                      {% for option in group.options %}
+                      <label class="theme-card theme-card--{{ option.preview }}{% if option.featured %} theme-card--featured{% endif %}{% if option.is_current %} theme-card--current{% endif %}{% if appearance_form.ui_theme.value == option.value %} is-selected{% endif %}">
+                        <input
+                          type="radio"
+                          name="{{ appearance_form.ui_theme.name }}"
+                          value="{{ option.value }}"
+                          {% if appearance_form.ui_theme.value == option.value %}checked{% endif %}
+                          data-theme-preview="{{ option.preview }}"
+                          data-theme-label="{{ option.label }}"
+                        >
+                        {% if option.is_current %}
+                        <span class="theme-card__badge">Active</span>
+                        {% endif %}
+                        <span class="theme-card__stage" aria-hidden="true">
+                          <span class="theme-card__rail"></span>
+                          <span class="theme-card__canvas">
+                            <span class="theme-card__line"></span>
+                            <span class="theme-card__line theme-card__line--short"></span>
+                            <span class="theme-card__block"></span>
+                          </span>
+                        </span>
+                        <span class="theme-card__meta">
+                          <span class="theme-card__name">{{ option.label }}</span>
+                          <span class="theme-card__blurb">{{ option.blurb }}</span>
+                        </span>
+                      </label>
+                      {% endfor %}
+                    </div>
+                  </div>
+                  {% endfor %}
+                  {% if appearance_form.ui_theme.errors %}
+                  <p class="field-error">{{ appearance_form.ui_theme.errors.0 }}</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="panel-fonts" role="tabpanel" aria-labelledby="tab-fonts" hidden>
+              <div class="theme-admin__row theme-admin__row--stack">
+                <div class="theme-admin__label">
+                  <strong>Typography</strong>
+                  <span>{{ font_count }} pairings for body, headings, and UI labels.</span>
+                </div>
+                <div class="theme-admin__control">
+                  <div class="font-grid theme-admin__font-grid" role="radiogroup" aria-label="Portal fonts">
+                    {% for font in font_catalog %}
+                    <label class="font-card font-card--{{ font.value }}{% if appearance_form.ui_font.value == font.value %} is-selected{% endif %}">
+                      <input
+                        type="radio"
+                        name="{{ appearance_form.ui_font.name }}"
+                        value="{{ font.value }}"
+                        {% if appearance_form.ui_font.value == font.value %}checked{% endif %}
+                        data-font-preview="{{ font.value }}"
+                        data-font-label="{{ font.label }}"
+                      >
+                      <span class="font-card__preview">
+                        <span class="font-card__specimen" aria-hidden="true">Sheria</span>
+                        <span class="font-card__body">Counsel that reads with clarity and presence.</span>
+                      </span>
+                      <span class="font-card__meta">
+                        <span class="font-card__name">{{ font.label }}</span>
+                        <span class="font-card__mood">{{ font.mood }}</span>
+                        <span class="font-card__pair">
+                          <span class="font-card__tag">{{ font.sans }}</span>
+                          <span class="font-card__tag">{{ font.serif }}</span>
+                        </span>
+                      </span>
+                    </label>
+                    {% endfor %}
+                  </div>
+                  {% if appearance_form.ui_font.errors %}
+                  <p class="field-error">{{ appearance_form.ui_font.errors.0 }}</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="panel-density" role="tabpanel" aria-labelledby="tab-density" hidden>
+              <div class="theme-admin__row theme-admin__row--stack">
+                <div class="theme-admin__label">
+                  <strong>Spacing density</strong>
+                  <span>Table row height, nav padding, panel spacing, and type scale.</span>
+                </div>
+                <div class="theme-admin__control">
+                  <div class="density-grid theme-admin__density-grid" role="radiogroup" aria-label="Portal density">
+                    {% for option in density_catalog %}
+                    <label class="density-card density-card--{{ option.value }}{% if appearance_form.ui_density.value == option.value %} is-selected{% endif %}">
+                      <input
+                        type="radio"
+                        name="{{ appearance_form.ui_density.name }}"
+                        value="{{ option.value }}"
+                        {% if appearance_form.ui_density.value == option.value %}checked{% endif %}
+                        data-density-preview="{{ option.value }}"
+                        data-density-label="{{ option.label }}"
+                      >
+                      <span class="density-card__bars" aria-hidden="true">
+                        <span></span><span></span><span></span>
+                      </span>
+                      <p class="density-card__name">{{ option.label }}</p>
+                      <p class="density-card__blurb">{{ option.blurb }}</p>
+                    </label>
+                    {% endfor %}
+                  </div>
+                  {% if appearance_form.ui_density.errors %}
+                  <p class="field-error">{{ appearance_form.ui_density.errors.0 }}</p>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="settings-savebar theme-admin__savebar" id="appearance-savebar" aria-live="polite">
+          <p class="settings-savebar__copy">
+            <strong>Unsaved appearance</strong> — previewing on this page until you save.
+          </p>
+          <button type="submit" class="btn btn--primary btn--inline theme-admin__btn theme-admin__btn--save">Save</button>
+        </div>
+      </div>
+
+      <aside class="theme-admin__aside" aria-label="Live appearance preview">
+        <div class="theme-admin__preview">
+          <div class="theme-admin__preview-head">
+            <h3>Live preview</h3>
+            <span class="theme-admin__chip theme-admin__chip--live">Realtime</span>
+          </div>
+          <div class="settings-preview__stage">
+            <div class="settings-preview__shell">
+              <div class="settings-preview__nav" aria-hidden="true">
+                <span></span><span></span><span></span><span></span>
+                <span class="settings-preview__nav-item">
+                  <i></i>
+                  <em class="settings-preview__dot"></em>
+                </span>
+              </div>
+              <div class="settings-preview__main">
+                <div class="settings-preview__topbar" aria-hidden="true">
+                  <span class="settings-preview__crumb"></span>
+                  <span class="settings-preview__bell">
+                    <i></i>
+                    <em class="settings-preview__dot">1</em>
+                  </span>
+                </div>
+                <div class="settings-preview__content">
+                  <p class="settings-preview__title" id="preview-title">Client portal</p>
+                  <p class="settings-preview__text" id="preview-text">
+                    Sidebar, surfaces, type, and notification badges update as you explore.
+                  </p>
+                  <div class="settings-preview__card">
+                    <strong>Your matters</strong>
+                    <span class="settings-preview__text">Documents, billing, and schedule stay scoped to your account.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-preview__meta theme-admin__preview-meta">
+            <p><span>Theme</span> <strong id="preview-theme">{{ current_theme_label }}</strong></p>
+            <p><span>Typography</span> <strong id="preview-font">{{ current_font_label }}</strong></p>
+            <p><span>Density</span> <strong id="preview-density">{{ current_density_label }}</strong></p>
+          </div>
+        </div>
+
+        <div class="theme-balance theme-admin__balance">
+          <h3>Balance check</h3>
+          <p>Active tokens for shell, accent, page, surface, and notification badges.</p>
+          <div class="theme-balance__swatches" aria-hidden="true">
+            <span class="theme-balance__swatch theme-balance__swatch--sidebar"></span>
+            <span class="theme-balance__swatch theme-balance__swatch--accent"></span>
+            <span class="theme-balance__swatch theme-balance__swatch--page"></span>
+            <span class="theme-balance__swatch theme-balance__swatch--surface"></span>
+            <span class="theme-balance__swatch theme-balance__swatch--badge"></span>
+          </div>
+          <ul class="theme-balance__legend">
+            <li><span class="theme-balance__swatch--sidebar" style="background:var(--sidebar-bg)"></span>Shell</li>
+            <li><span class="theme-balance__swatch--accent" style="background:var(--accent)"></span>Accent</li>
+            <li><span class="theme-balance__swatch--page" style="background:var(--page-bg)"></span>Page</li>
+            <li><span class="theme-balance__swatch--surface" style="background:var(--surface)"></span>Surface</li>
+            <li><span class="theme-balance__swatch--badge" style="background:var(--notif-badge)"></span>Badge</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/settings.js' %}" defer></script>
+{% endblock %}

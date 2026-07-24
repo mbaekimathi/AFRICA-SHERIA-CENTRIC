@@ -1,0 +1,153 @@
+{% extends "layouts/client_portal.html" %}
+
+{% block title %}{{ case }} — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>View case</h2>
+      <p class="page-lead">
+        Case details for this litigation matter on your account.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Case details</h3>
+      <p class="panel__hint"><a href="{{ list_url }}">Back to my matters</a></p>
+    </div>
+    <div class="panel__body">
+      <div class="review-identity">
+        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+          {{ case.get_case_category_display|slice:":1"|upper }}
+        </div>
+        <div>
+          <p class="identity-name">
+            {% if case.court_case_number %}{{ case.court_case_number }}{% else %}Case #{{ case.pk }}{% endif %}
+          </p>
+          <p class="identity-meta">
+            {{ case.get_court_rank_display }}
+            · <span class="status-pill status-pill--{{ case.status }}">{{ case.get_status_display }}</span>
+          </p>
+        </div>
+      </div>
+
+      <dl class="settings-grid review-grid">
+        <div><dt>Filing date</dt><dd>{{ case.filing_date|date:"d M Y" }}</dd></div>
+        <div><dt>Court rank</dt><dd>{{ case.get_court_rank_display }}</dd></div>
+        <div><dt>Case category</dt><dd>{{ case.get_case_category_display }}</dd></div>
+        <div><dt>Case type</dt><dd>{{ case.get_case_type_display }}</dd></div>
+        <div><dt>Station</dt><dd>{{ case.get_station_display }}</dd></div>
+        <div><dt>Court case number</dt><dd>{{ case.court_case_number|default:"—" }}</dd></div>
+        <div>
+          <dt>Counsel</dt>
+          <dd>{% if case.assigned_to %}{{ case.assigned_to.get_full_name }}{% else %}To be assigned{% endif %}</dd>
+        </div>
+        <div class="review-grid__full">
+          <dt>Summary</dt>
+          <dd>{{ case.description|default:"—"|linebreaksbr }}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Recent court attendances</h3>
+      <p class="panel__hint">{{ attendances|length }} recorded</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if attendances %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Activity</th>
+              <th scope="col">Next date</th>
+              <th scope="col">Your attendance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in attendances %}
+            <tr>
+              <td>{{ item.attendance_date|date:"d M Y" }}</td>
+              <td>
+                <div class="person-cell__text">
+                  <span class="person-cell__name">{{ item.activity_type }}</span>
+                  {% if item.next_activity_type %}
+                  <span class="person-cell__meta">Next: {{ item.next_activity_type }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>{% if item.next_court_date %}{{ item.next_court_date|date:"d M Y" }}{% else %}—{% endif %}</td>
+              <td>
+                {% if item.next_client_attendance %}
+                <span class="status-pill">{{ item.get_next_client_attendance_display }}</span>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No attendances recorded yet</p>
+        <p class="empty-state__copy">Court dates recorded by the firm will appear here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Documents on this case</h3>
+      <p class="panel__hint"><a href="{% url 'accounts:client_documents' %}">All documents</a></p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if documents %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Document</th>
+              <th scope="col">Type</th>
+              <th scope="col">Updated</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for doc in documents %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{{ doc.client_view_url }}">{{ doc.title }}</a>
+                  {% if doc.description %}
+                  <span class="person-cell__meta">{{ doc.description|truncatechars:100 }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>{{ doc.type_label }}</td>
+              <td>{{ doc.updated_at|date:"d M Y" }}</td>
+              <td class="data-table__actions">
+                <a href="{{ doc.client_view_url }}" class="btn btn--primary btn--inline">View</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No documents yet</p>
+        <p class="empty-state__copy">Files linked to this case will appear here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

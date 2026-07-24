@@ -9,36 +9,71 @@
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>Finance &amp; Billing</h2>
       <p class="page-lead">
-        View invoices issued to you by {{ firm_name }} and pay outstanding balances.
+        Your account with {{ firm_name }} — invoices and payments for
+        <strong>{{ client.get_full_name }}</strong> only.
       </p>
     </div>
   </header>
 
-  {% if outstanding_count %}
-  <section class="panel client-billing-summary">
-    <div class="panel__body">
-      <dl class="settings-grid review-grid">
-        <div>
-          <dt>Outstanding invoices</dt>
-          <dd>{{ outstanding_count }}</dd>
-        </div>
-        <div>
-          <dt>Amount due</dt>
-          <dd><strong>KES {{ outstanding_total|floatformat:2 }}</strong></dd>
-        </div>
-      </dl>
+  <div class="metrics metrics--dash">
+    <div class="metric metric--glass" style="--stagger: 0">
+      <span class="icon-orb icon-orb--sm icon-orb--tone-1" aria-hidden="true">
+        <span class="icon-orb__core">{{ icon_finance|safe }}</span>
+      </span>
+      <div>
+        <p class="metric__label">Invoices</p>
+        <p class="metric__value">{{ invoice_count }}</p>
+      </div>
     </div>
-  </section>
-  {% endif %}
+    <div class="metric metric--glass" style="--stagger: 1">
+      <span class="icon-orb icon-orb--sm icon-orb--tone-2" aria-hidden="true">
+        <span class="icon-orb__core">{{ icon_finance|safe }}</span>
+      </span>
+      <div>
+        <p class="metric__label">Total invoiced</p>
+        <p class="metric__value">KES {{ total_invoiced|floatformat:0 }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass" style="--stagger: 2">
+      <span class="icon-orb icon-orb--sm icon-orb--tone-3" aria-hidden="true">
+        <span class="icon-orb__core">{{ icon_finance|safe }}</span>
+      </span>
+      <div>
+        <p class="metric__label">Total paid</p>
+        <p class="metric__value">KES {{ total_paid|floatformat:0 }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass" style="--stagger: 3">
+      <span class="icon-orb icon-orb--sm icon-orb--tone-4" aria-hidden="true">
+        <span class="icon-orb__core">{{ icon_finance|safe }}</span>
+      </span>
+      <div>
+        <p class="metric__label">Balance due</p>
+        <p class="metric__value">KES {{ balance_due|floatformat:0 }}</p>
+      </div>
+    </div>
+    <div class="metric metric--glass" style="--stagger: 4">
+      <span class="icon-orb icon-orb--sm icon-orb--tone-5" aria-hidden="true">
+        <span class="icon-orb__core">{{ icon_finance|safe }}</span>
+      </span>
+      <div>
+        <p class="metric__label">Account credit</p>
+        <p class="metric__value">KES {{ credit_balance|floatformat:0 }}</p>
+      </div>
+    </div>
+  </div>
 
   <section class="panel">
     <div class="panel__head">
       <h3>Your invoices</h3>
-      <p class="panel__hint">Issued invoices appear here when the firm sends them to your portal.</p>
+      <p class="panel__hint">
+        {{ invoice_count }} invoice{{ invoice_count|pluralize }}
+        {% if open_count %} · {{ open_count }} open{% endif %}
+      </p>
     </div>
-    <div class="panel__body">
+    <div class="panel__body panel__body--table">
       {% if invoices %}
-      <div class="table-wrap">
+      <div class="data-table-wrap">
         <table class="data-table">
           <thead>
             <tr>
@@ -46,6 +81,8 @@
               <th scope="col">Issued</th>
               <th scope="col">Due</th>
               <th scope="col">Amount</th>
+              <th scope="col">Paid</th>
+              <th scope="col">Balance</th>
               <th scope="col">Status</th>
               <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr>
@@ -54,11 +91,18 @@
             {% for invoice in invoices %}
             <tr>
               <td>
-                <a href="{% url 'accounts:client_invoice' invoice.pk %}">{{ invoice.invoice_number }}</a>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{% url 'accounts:client_invoice' invoice.pk %}">{{ invoice.invoice_number }}</a>
+                  {% if invoice.description %}
+                  <span class="person-cell__meta">{{ invoice.description|truncatechars:72 }}</span>
+                  {% endif %}
+                </div>
               </td>
               <td>{{ invoice.issue_date|date:"d M Y" }}</td>
               <td>{% if invoice.due_date %}{{ invoice.due_date|date:"d M Y" }}{% else %}—{% endif %}</td>
               <td>KES {{ invoice.total_amount|floatformat:2 }}</td>
+              <td>KES {{ invoice.amount_paid|floatformat:2 }}</td>
+              <td>KES {{ invoice.balance_due|floatformat:2 }}</td>
               <td>
                 <span class="invoice-status invoice-status--{{ invoice.status }}">
                   {{ invoice.get_status_display }}
@@ -66,7 +110,7 @@
               </td>
               <td class="data-table__actions">
                 <a href="{% url 'accounts:client_invoice' invoice.pk %}" class="btn btn--quiet btn--inline">View</a>
-                {% if invoice.status == "issued" %}
+                {% if invoice.is_payable %}
                 <a href="{% url 'accounts:client_pay_invoice' invoice.pk %}" class="btn btn--primary btn--inline">Pay</a>
                 {% endif %}
               </td>
@@ -79,11 +123,56 @@
       <div class="empty-state">
         <p class="empty-state__title">No invoices yet</p>
         <p class="empty-state__copy">
-          When {{ firm_name }} issues an invoice to you, it will show up here and you will get a portal notification.
+          When {{ firm_name }} generates or issues an invoice to your account, it will appear here.
         </p>
       </div>
       {% endif %}
     </div>
   </section>
+
+  {% if recent_topups %}
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Recent payments</h3>
+      <p class="panel__hint">Payments recorded on your account</p>
+    </div>
+    <div class="panel__body panel__body--table">
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Method</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Status</th>
+              <th scope="col">Receipt / note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for topup in recent_topups %}
+            <tr>
+              <td>{{ topup.created_at|date:"d M Y, H:i" }}</td>
+              <td>{{ topup.get_method_display }}</td>
+              <td>KES {{ topup.amount|floatformat:2 }}</td>
+              <td>
+                <span class="status-pill status-pill--{{ topup.status }}">{{ topup.get_status_display }}</span>
+              </td>
+              <td>
+                {% if topup.mpesa_receipt %}
+                <span class="mono">{{ topup.mpesa_receipt }}</span>
+                {% elif topup.note %}
+                {{ topup.note|truncatechars:60 }}
+                {% else %}
+                —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% endif %}
 </section>
 {% endblock %}

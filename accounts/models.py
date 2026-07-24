@@ -1018,6 +1018,27 @@ class Client(models.Model):
         verbose_name="Account credit balance",
         help_text="Prepaid credit available on this client account.",
     )
+    ui_theme = models.CharField(
+        max_length=32,
+        choices=Employee.UiTheme.choices,
+        default=Employee.UiTheme.DEFAULT,
+        blank=True,
+        help_text="Color theme for this client's portal. 'default' follows the company theme.",
+    )
+    ui_font = models.CharField(
+        max_length=32,
+        choices=Employee.UiFont.choices,
+        default=Employee.UiFont.PLEX,
+        blank=True,
+        help_text="Font pairing for this client's portal only.",
+    )
+    ui_density = models.CharField(
+        max_length=16,
+        choices=Employee.UiDensity.choices,
+        default=Employee.UiDensity.COMFORTABLE,
+        blank=True,
+        help_text="Spacing density for this client's portal only.",
+    )
     date_joined = models.DateTimeField(default=timezone.now)
     last_login = models.DateTimeField(blank=True, null=True)
 
@@ -1042,6 +1063,20 @@ class Client(models.Model):
         if not self.password or not raw_password:
             return False
         return check_password(raw_password, self.password)
+
+    @property
+    def portal_font(self) -> str:
+        chosen = (self.ui_font or Employee.UiFont.PLEX).strip()
+        valid = {key for key, _label in Employee.UiFont.choices}
+        return chosen if chosen in valid else Employee.UiFont.PLEX
+
+    @property
+    def portal_density(self) -> str:
+        chosen = (self.ui_density or Employee.UiDensity.COMFORTABLE).strip()
+        valid = {key for key, _label in Employee.UiDensity.choices}
+        return (
+            chosen if chosen in valid else Employee.UiDensity.COMFORTABLE
+        )
 
     @property
     def is_authenticated(self):

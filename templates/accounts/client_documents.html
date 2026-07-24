@@ -1,0 +1,84 @@
+{% extends "layouts/client_portal.html" %}
+
+{% block title %}Documents — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Documents</h2>
+      <p class="page-lead">
+        Files on your matters — view only. Open a document to preview it in the portal.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Your documents</h3>
+      <p class="panel__hint">
+        {% if document_count %}{{ document_count }} document{{ document_count|pluralize }}{% else %}None yet{% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if documents %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Document</th>
+              <th scope="col">Matter</th>
+              <th scope="col">Type</th>
+              <th scope="col">Updated</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for doc in documents %}
+            <tr>
+              <td>
+                <div class="person-cell__text">
+                  {% if doc.can_view %}
+                  <a class="person-cell__name" href="{{ doc.view_url }}">{{ doc.title }}</a>
+                  {% else %}
+                  <span class="person-cell__name">{{ doc.title }}</span>
+                  {% endif %}
+                  {% if doc.description %}
+                  <span class="person-cell__meta">{{ doc.description|truncatechars:100 }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                {% if doc.matter_url %}
+                <a class="person-cell__name" href="{{ doc.matter_url }}">{{ doc.matter_label }}</a>
+                {% else %}
+                {{ doc.matter_label|default:"—" }}
+                {% endif %}
+              </td>
+              <td>{{ doc.type_label }}</td>
+              <td>{% if doc.updated_at %}{{ doc.updated_at|date:"d M Y" }}{% else %}—{% endif %}</td>
+              <td class="data-table__actions">
+                {% if doc.can_view %}
+                <a href="{{ doc.view_url }}" class="btn btn--primary btn--inline">View</a>
+                {% else %}
+                <span class="person-cell__meta">Unavailable</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No documents yet</p>
+        <p class="empty-state__copy">
+          When the firm adds documents to your cases or matters, they will appear here for viewing.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

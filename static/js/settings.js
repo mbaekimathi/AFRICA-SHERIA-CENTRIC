@@ -208,50 +208,103 @@ document.addEventListener("DOMContentLoaded", () => {
   const enableBrowserBtn = document.getElementById("enable-browser-notifications");
   const testBrowserBtn = document.getElementById("test-browser-notification");
 
+  function browserSupported() {
+    return typeof window.Notification === "function";
+  }
+
+  function browserPermission() {
+    if (!browserSupported()) return "unsupported";
+    return window.Notification.permission || "default";
+  }
+
+  async function requestBrowserPermission() {
+    if (!browserSupported()) return "unsupported";
+    if (browserPermission() !== "default") return browserPermission();
+    try {
+      const result = await window.Notification.requestPermission();
+      return result || browserPermission();
+    } catch (_error) {
+      return browserPermission();
+    }
+  }
+
+  function showBrowserTestNotification() {
+    if (!browserSupported() || browserPermission() !== "granted") return false;
+    const firm =
+      document.getElementById("notif-menu")?.dataset.firmName || "Sheria Centric";
+    try {
+      const note = new window.Notification(`${firm} · Test browser alert`, {
+        body: "Browser notifications are working for Sheria Centric.",
+        tag: `sheria-test-${Date.now()}`,
+      });
+      note.onclick = () => {
+        try {
+          window.focus();
+        } catch (_error) {
+          // Ignore.
+        }
+        note.close();
+      };
+      window.setTimeout(() => {
+        try {
+          note.close();
+        } catch (_error) {
+          // Ignore.
+        }
+      }, 8000);
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function setEnableBrowserVisible(visible) {
+    if (!enableBrowserBtn) return;
+    enableBrowserBtn.hidden = !visible;
+    enableBrowserBtn.style.display = visible ? "" : "none";
+    if (visible) enableBrowserBtn.removeAttribute("hidden");
+    else enableBrowserBtn.setAttribute("hidden", "");
+  }
+
   function syncBrowserPermissionUi() {
-    const api = window.SheriaBrowserNotifications;
     if (!browserStatus) return;
 
     browserStatus.classList.remove("is-granted", "is-denied");
-    if (!api || !api.supported()) {
+    if (!browserSupported()) {
       browserStatus.textContent =
         "This browser does not support desktop notifications.";
-      if (enableBrowserBtn) {
-        enableBrowserBtn.hidden = true;
-      }
+      setEnableBrowserVisible(false);
       return;
     }
 
-    const perm = api.permission();
+    const perm = browserPermission();
     if (perm === "granted") {
       browserStatus.textContent = "Browser alerts are allowed on this device.";
       browserStatus.classList.add("is-granted");
-      if (enableBrowserBtn) enableBrowserBtn.hidden = true;
+      setEnableBrowserVisible(false);
       return;
     }
     if (perm === "denied") {
       browserStatus.textContent =
-        "Browser alerts are blocked. Allow notifications for this site in your browser settings.";
+        "Browser alerts are blocked. Allow notifications for this site in your browser settings, then reload.";
       browserStatus.classList.add("is-denied");
-      if (enableBrowserBtn) enableBrowserBtn.hidden = true;
+      setEnableBrowserVisible(false);
       return;
     }
 
     browserStatus.textContent =
       "Browser permission is not granted yet. Click Allow browser alerts to enable them.";
-    if (enableBrowserBtn) {
-      enableBrowserBtn.hidden = false;
-      enableBrowserBtn.removeAttribute("hidden");
-    }
+    setEnableBrowserVisible(true);
   }
 
   enableBrowserBtn?.addEventListener("click", async () => {
-    const api = window.SheriaBrowserNotifications;
-    if (!api) return;
-    await api.requestPermission();
+    const perm = await requestBrowserPermission();
     syncBrowserPermissionUi();
-    if (api.permission() === "granted" && browserToggle && !browserToggle.checked) {
-      browserToggle.checked = true;
+    if (perm === "granted") {
+      if (browserToggle && !browserToggle.checked) browserToggle.checked = true;
+      const menu = document.getElementById("notif-menu");
+      if (menu) menu.dataset.browserEnabled = "true";
+      showBrowserTestNotification();
     }
   });
 
@@ -260,38 +313,72 @@ document.addEventListener("DOMContentLoaded", () => {
     if (menu) {
       menu.dataset.browserEnabled = browserToggle.checked ? "true" : "false";
     }
-    if (browserToggle.checked) {
-      const api = window.SheriaBrowserNotifications;
-      if (api && api.permission() === "default") {
-        await api.requestPermission();
-      }
+    if (browserToggle.checked && browserPermission() === "default") {
+      await requestBrowserPermission();
     }
     syncBrowserPermissionUi();
   });
 
   testBrowserBtn?.addEventListener("click", async () => {
-    const api = window.SheriaBrowserNotifications;
-    if (!api) return;
-    if (api.permission() === "default") {
-      await api.requestPermission();
-      syncBrowserPermissionUi();
+    if (browserPermission() === "default") {
+      await requestBrowserPermission();
     }
-    if (api.permission() !== "granted") {
-      syncBrowserPermissionUi();
-      return;
+    syncBrowserPermissionUi();
+    if (browserPermission() !== "granted") return;
+    if (!showBrowserTestNotification() && window.SheriaBrowserNotifications) {
+      window.SheriaBrowserNotifications.show(
+        {
+          id: `test-${Date.now()}`,
+          title: "Test browser alert",
+          body: "Browser notifications are working for Sheria Centric.",
+          url: window.location.href,
+        },
+        { force: true }
+      );
     }
-    api.show(
-      {
-        id: `test-${Date.now()}`,
-        title: "Test browser alert",
-        body: "Browser notifications are working for Sheria Centric.",
-        url: window.location.href,
-      },
-      { force: true }
-    );
   });
 
   syncBrowserPermissionUi();
+  window.addEventListener("sheria:notifications-ready", syncBrowserPermissionUi);
+
+  function playFallbackChime(volumePct) {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return false;
+      if (volumePct <= 0) return false;
+      const volumeScale = volumePct / 100;
+      const ctx = new AudioContext();
+      const playTone = (frequency, startAt, duration, gainValue) => {
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(
+          Math.max(0.0001, gainValue),
+          startAt + 0.02
+        );
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + duration + 0.02);
+      };
+      const start = () => {
+        const t = ctx.currentTime;
+        playTone(880, t, 0.14, 0.12 * volumeScale);
+        playTone(1174.7, t + 0.12, 0.18, 0.09 * volumeScale);
+      };
+      if (ctx.state === "suspended") {
+        ctx.resume().then(start).catch(() => {});
+      } else {
+        start();
+      }
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
 
   const testSoundBtn = document.getElementById("test-notification-sound");
   testSoundBtn?.addEventListener("click", () => {
@@ -302,31 +389,6 @@ document.addEventListener("DOMContentLoaded", () => {
       sound.play(true);
       return;
     }
-    // Fallback if notifications script did not load (should not happen on settings)
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      if (volumePct <= 0) return;
-      const volumeScale = volumePct / 100;
-      const ctx = new AudioContext();
-      const playTone = (frequency, startAt, duration, gainValue) => {
-        const oscillator = ctx.createOscillator();
-        const gain = ctx.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.value = frequency;
-        gain.gain.setValueAtTime(0.0001, startAt);
-        gain.gain.exponentialRampToValueAtTime(gainValue, startAt + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
-        oscillator.connect(gain);
-        gain.connect(ctx.destination);
-        oscillator.start(startAt);
-        oscillator.stop(startAt + duration + 0.02);
-      };
-      const t = ctx.currentTime;
-      playTone(880, t, 0.14, 0.045 * volumeScale);
-      playTone(1174.7, t + 0.12, 0.18, 0.035 * volumeScale);
-    } catch (_error) {
-      // Ignore audio failures in restricted environments.
-    }
+    playFallbackChime(volumePct);
   });
 });

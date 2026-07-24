@@ -390,3 +390,78 @@ def appearance_catalog(
         "theme_count": sum(len(g["options"]) for g in groups),
         "font_count": len(FONT_CATALOG),
     }
+
+
+SESSION_CLIENT_APPEARANCE_KEY = "client_portal_appearance"
+
+
+def sync_session_client_appearance(request, client) -> None:
+    """Keep this login session's theme in sync with the signed-in client."""
+    if request is None or not getattr(request, "session", None) or client is None:
+        return
+    request.session[SESSION_CLIENT_APPEARANCE_KEY] = {
+        "client_id": client.pk,
+        "ui_theme": (client.ui_theme or Employee.UiTheme.DEFAULT).strip()
+        or Employee.UiTheme.DEFAULT,
+        "ui_font": (client.ui_font or Employee.UiFont.PLEX).strip()
+        or Employee.UiFont.PLEX,
+        "ui_density": (client.ui_density or Employee.UiDensity.COMFORTABLE).strip()
+        or Employee.UiDensity.COMFORTABLE,
+    }
+    request.session.modified = True
+
+
+def clear_session_client_appearance(request) -> None:
+    if request is None or not getattr(request, "session", None):
+        return
+    if SESSION_CLIENT_APPEARANCE_KEY in request.session:
+        del request.session[SESSION_CLIENT_APPEARANCE_KEY]
+        request.session.modified = True
+
+
+def _session_client_appearance_for(client, request) -> dict | None:
+    if request is None or not getattr(request, "session", None) or client is None:
+        return None
+    snap = request.session.get(SESSION_CLIENT_APPEARANCE_KEY)
+    if not isinstance(snap, dict):
+        return None
+    if snap.get("client_id") != client.pk:
+        return None
+    return snap
+
+
+def resolve_client_portal_theme(client, request=None) -> str:
+    """CSS theme key for client portal pages (session client only)."""
+    from .models import CompanyThemeSetting
+
+    chosen = (getattr(client, "ui_theme", None) or Employee.UiTheme.DEFAULT).strip()
+    snap = _session_client_appearance_for(client, request)
+    if snap:
+        session_theme = (snap.get("ui_theme") or "").strip()
+        if session_theme:
+            chosen = session_theme
+
+    if not follows_company_theme(chosen):
+        if chosen == Employee.UiTheme.PRODUCT:
+            return Employee.UiTheme.PRODUCT
+        return resolve_theme_css_key(chosen)
+
+    return CompanyThemeSetting.get_solo().resolved_theme()
+
+
+def resolve_client_portal_font(client, request=None) -> str:
+    snap = _session_client_appearance_for(client, request)
+    if snap:
+        font = (snap.get("ui_font") or "").strip()
+        if font:
+            return font
+    return getattr(client, "portal_font", Employee.UiFont.PLEX)
+
+
+def resolve_client_portal_density(client, request=None) -> str:
+    snap = _session_client_appearance_for(client, request)
+    if snap:
+        density = (snap.get("ui_density") or "").strip()
+        if density:
+            return density
+    return getattr(client, "portal_density", Employee.UiDensity.COMFORTABLE)

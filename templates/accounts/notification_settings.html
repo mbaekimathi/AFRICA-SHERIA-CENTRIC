@@ -105,7 +105,7 @@
 
         <div class="settings-browser-perm" id="notification-browser-permission">
           <p class="settings-browser-perm__status" id="notification-browser-status" aria-live="polite">
-            Checking browser permission…
+            Loading browser permission status…
           </p>
           <button
             type="button"
@@ -171,5 +171,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/settings.js' %}" defer></script>
+<script src="{% static 'js/settings.js' %}?v=notify-browser-3" defer></script>
 {% endblock %}

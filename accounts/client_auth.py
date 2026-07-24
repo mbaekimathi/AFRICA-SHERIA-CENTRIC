@@ -15,10 +15,16 @@ def login_client(request, client: Client, *, update_last_login: bool = True) -> 
     if update_last_login:
         Client.objects.filter(pk=client.pk).update(last_login=timezone.now())
         client.last_login = timezone.now()
+    from .appearance import sync_session_client_appearance
+
+    sync_session_client_appearance(request, client)
 
 
 def logout_client(request) -> None:
+    from .appearance import clear_session_client_appearance
+
     request.session.pop(SESSION_KEY, None)
+    clear_session_client_appearance(request)
     clear_staff_impersonation(request)
 
 

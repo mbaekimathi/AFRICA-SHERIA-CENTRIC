@@ -1,4 +1,5 @@
 {% extends "layouts/client_portal.html" %}
+{% load static %}
 
 {% block title %}{{ page_title }} — Sheria Centric{% endblock %}
 
@@ -25,11 +26,27 @@
       <h2>{{ welcome_headline|default:page_title }}</h2>
       <p class="dash-hero__lede">{{ welcome_copy|default:"Follow your matters and stay connected with your counsel." }}</p>
       <div class="dash-hero__chips">
-        <span class="dash-chip"><span class="dash-chip__dot dash-chip__dot--violet"></span>Client portal</span>
-        <span class="dash-chip"><span class="dash-chip__dot dash-chip__dot--teal"></span>Secure access</span>
+        <span class="dash-chip"><span class="dash-chip__dot dash-chip__dot--violet"></span>{{ role_label }}</span>
+        <span class="dash-chip"><span class="dash-chip__dot dash-chip__dot--teal"></span>Portal live</span>
       </div>
     </div>
   </header>
+
+  {% if welcome_stats %}
+  <div class="metrics metrics--dash" data-reveal>
+    {% for card in welcome_stats %}
+    <a href="{{ card.url }}" class="metric metric--glass" style="--stagger: {{ forloop.counter0 }}">
+      <span class="icon-orb icon-orb--sm icon-orb--tone-{{ forloop.counter }}" aria-hidden="true">
+        <span class="icon-orb__core">{{ card.icon|safe }}</span>
+      </span>
+      <div>
+        <p class="metric__label">{{ card.label }}</p>
+        <p class="metric__value">{{ card.value }}</p>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% if page_nav_items %}
   <section class="dash-section" data-reveal>
@@ -37,7 +54,7 @@
       <div>
         <p class="dash-section__eyebrow">Portal</p>
         <h3>Your workspace</h3>
-        <p>Access the areas available on your account.</p>
+        <p>Modules available on your account.</p>
       </div>
     </div>
     <div class="module-grid module-grid--dash">
@@ -73,7 +90,7 @@
       <div>
         <p class="dash-section__eyebrow">Utilities</p>
         <h3>Stay in the loop</h3>
-        <p>Messages, tasks, and reminders as they come online.</p>
+        <p>Messages, reminders, and your personal calendar.</p>
       </div>
     </div>
     <div class="module-grid module-grid--dash">

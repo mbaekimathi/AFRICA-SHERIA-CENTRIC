@@ -1,0 +1,129 @@
+{% extends "layouts/client_portal.html" %}
+
+{% block title %}Reminders — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>Reminders</h2>
+      <p class="page-lead">
+        Upcoming dates where your attendance is required, optional, or virtual — drawn only from your matters.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Due now</h3>
+      <p class="panel__hint">
+        {% if due_reminder_count %}
+        {{ due_reminder_count }} reminder{{ due_reminder_count|pluralize }}
+        {% else %}
+        None due
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if due_reminders %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Event</th>
+              <th scope="col">Type</th>
+              <th scope="col">Your role</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in due_reminders %}
+            <tr class="reminder-row reminder-row--due">
+              <td>
+                <span class="reminder-when">{{ item.due_date|date:"d M Y" }}</span>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{{ item.url }}">{{ item.subject }}</a>
+                  {% if item.virtual_link %}
+                  <a class="person-cell__meta" href="{{ item.virtual_link }}" target="_blank" rel="noopener">Join virtual link</a>
+                  {% endif %}
+                </div>
+              </td>
+              <td>{% if item.kind == "court" %}Litigation{% else %}Non-litigation{% endif %}</td>
+              <td>
+                <span class="status-pill status-pill--pending">{{ item.subject_meta }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No reminders due</p>
+        <p class="empty-state__copy">Dates that need your attention will show here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Upcoming</h3>
+      <p class="panel__hint">
+        {% if upcoming_reminder_count %}
+        {{ upcoming_reminder_count }} scheduled
+        {% else %}
+        None scheduled
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if upcoming_reminders %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Event</th>
+              <th scope="col">Type</th>
+              <th scope="col">Your role</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in upcoming_reminders %}
+            <tr class="reminder-row">
+              <td>
+                <span class="reminder-when">{{ item.due_date|date:"d M Y" }}</span>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{{ item.url }}">{{ item.subject }}</a>
+                  {% if item.virtual_link %}
+                  <a class="person-cell__meta" href="{{ item.virtual_link }}" target="_blank" rel="noopener">Join virtual link</a>
+                  {% endif %}
+                </div>
+              </td>
+              <td>{% if item.kind == "court" %}Litigation{% else %}Non-litigation{% endif %}</td>
+              <td>
+                <span class="status-pill">{{ item.subject_meta }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No upcoming reminders</p>
+        <p class="empty-state__copy">
+          When the firm schedules a date that involves you, it will appear here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

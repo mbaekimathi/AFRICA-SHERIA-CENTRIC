@@ -252,10 +252,10 @@ def _iter_buckets(start: date, end: date, grain: str) -> list[date]:
     return buckets
 
 
-def _period_counts(model, date_field: str, start: date, end: date, grain: str) -> Counter:
+def _period_counts(queryset, date_field: str, start: date, end: date, grain: str) -> Counter:
     trunc = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}[grain]
     rows = (
-        _in_range(model.objects.all(), date_field, start, end)
+        _in_range(queryset, date_field, start, end)
         .annotate(bucket=trunc(date_field))
         .values("bucket")
         .annotate(count=Count("id"))
@@ -268,10 +268,19 @@ def _period_counts(model, date_field: str, start: date, end: date, grain: str) -
     return counts
 
 
-def _build_trend(start: date, end: date, grain: str) -> list[dict]:
+def _build_trend(
+    start: date,
+    end: date,
+    grain: str,
+    *,
+    lit_qs=None,
+    mat_qs=None,
+) -> list[dict]:
     buckets = _iter_buckets(start, end, grain)
-    lit_counts = _period_counts(LitigationCase, "filing_date", start, end, grain)
-    mat_counts = _period_counts(NonLitigationMatter, "date_opened", start, end, grain)
+    lit_source = lit_qs if lit_qs is not None else LitigationCase.objects.all()
+    mat_source = mat_qs if mat_qs is not None else NonLitigationMatter.objects.all()
+    lit_counts = _period_counts(lit_source, "filing_date", start, end, grain)
+    mat_counts = _period_counts(mat_source, "date_opened", start, end, grain)
     return [
         {
             "key": bucket.isoformat(),
@@ -398,15 +407,24 @@ def _glance_for(*, opened, active, pending, closed, unassigned):
     ]
 
 
-def build_matter_management_analytics(params=None) -> dict:
+def build_matter_management_analytics(params=None, *, employee=None) -> dict:
     """Aggregate litigation and non-litigation matter stats for dashboard charts."""
+    from .workspace import cases_visible_to, matters_visible_to
+
     filter_state = resolve_matter_date_filter(params)
     start = filter_state["start"]
     end = filter_state["end"]
     focus = _resolve_focus(params)
 
-    lit_qs = _in_range(LitigationCase.objects.all(), "filing_date", start, end)
-    mat_qs = _in_range(NonLitigationMatter.objects.all(), "date_opened", start, end)
+    if employee is not None:
+        lit_base = cases_visible_to(employee)
+        mat_base = matters_visible_to(employee)
+    else:
+        lit_base = LitigationCase.objects.all()
+        mat_base = NonLitigationMatter.objects.all()
+
+    lit_qs = _in_range(lit_base, "filing_date", start, end)
+    mat_qs = _in_range(mat_base, "date_opened", start, end)
 
     lit_active = lit_qs.filter(status=LitigationCase.Status.ACTIVE)
     mat_active = mat_qs.filter(status=NonLitigationMatter.Status.ACTIVE)
@@ -432,7 +450,9 @@ def build_matter_management_analytics(params=None) -> dict:
     closed_total = lit_closed + mat_closed
     unassigned_total = lit_unassigned + mat_unassigned
 
-    trend = _build_trend(start, end, filter_state["grain"])
+    trend = _build_trend(
+        start, end, filter_state["grain"], lit_qs=lit_base, mat_qs=mat_base
+    )
     lit_status = _status_bars(lit_qs, LitigationCase.Status)
     mat_status = _status_bars(mat_qs, NonLitigationMatter.Status)
     lit_workload = _workload_rows(lit_active)

@@ -599,6 +599,143 @@ class SignUpForm(UserCreationForm):
             pass
 
 
+class ClientAccountSettingsForm(forms.Form):
+    """Active client portal profile edits (session client only)."""
+
+    phone = forms.CharField(
+        max_length=20,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input phone-local-input",
+                "placeholder": "712 345 678",
+                "autocomplete": "tel-national",
+                "inputmode": "tel",
+                "id": "id_settings_phone",
+            }
+        ),
+    )
+    country_code = forms.ChoiceField(
+        choices=country_choices(),
+        widget=forms.HiddenInput(attrs={"id": "id_settings_country_code"}),
+    )
+    physical_address = forms.CharField(
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-input",
+                "rows": 3,
+                "placeholder": "Street, city, county / country",
+                "id": "id_settings_address",
+            }
+        ),
+    )
+    profile_photo = forms.ImageField(
+        required=False,
+        widget=forms.ClearableFileInput(
+            attrs={"class": "form-input", "id": "id_settings_photo", "accept": "image/*"}
+        ),
+    )
+    current_password = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "autocomplete": "current-password",
+                "id": "id_settings_current_password",
+            }
+        ),
+    )
+    new_password = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "autocomplete": "new-password",
+                "id": "id_settings_new_password",
+            }
+        ),
+    )
+    confirm_password = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "autocomplete": "new-password",
+                "id": "id_settings_confirm_password",
+            }
+        ),
+    )
+
+    def __init__(self, *args, client=None, **kwargs):
+        self.client = client
+        super().__init__(*args, **kwargs)
+        if client is not None and not self.is_bound:
+            country_value, local = _split_phone(client.phone)
+            self.fields["country_code"].initial = country_value
+            self.fields["phone"].initial = local
+            self.fields["physical_address"].initial = client.physical_address
+
+    def clean_phone(self):
+        raw = (self.cleaned_data.get("phone") or "").strip().upper()
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if digits.startswith("0"):
+            digits = digits[1:]
+        if len(digits) < 6 or len(digits) > 15:
+            raise ValidationError("Enter a valid phone number.")
+        return digits
+
+    def clean_physical_address(self):
+        address = (self.cleaned_data.get("physical_address") or "").strip()
+        if len(address) < 5:
+            raise ValidationError("Enter a physical address.")
+        return address
+
+    def clean(self):
+        cleaned = super().clean()
+        country_value = cleaned.get("country_code")
+        local_phone = cleaned.get("phone")
+        if country_value and local_phone and "phone" not in self.errors:
+            _iso, dial = parse_country_value(country_value)
+            cleaned["full_phone"] = f"{dial}{local_phone}"
+
+        new_password = (cleaned.get("new_password") or "").strip()
+        confirm = (cleaned.get("confirm_password") or "").strip()
+        current = cleaned.get("current_password") or ""
+
+        if new_password or confirm or current:
+            if not self.client:
+                raise ValidationError("Account not found.")
+            if self.client.password:
+                if not self.client.check_password(current):
+                    self.add_error("current_password", "Current password is incorrect.")
+            if not new_password:
+                self.add_error("new_password", "Enter a new password.")
+            elif new_password != confirm:
+                self.add_error("confirm_password", "Passwords do not match.")
+            else:
+                try:
+                    validate_password(new_password)
+                except ValidationError as exc:
+                    self.add_error("new_password", exc)
+            cleaned["password_change"] = bool(new_password) and not self.errors
+        else:
+            cleaned["password_change"] = False
+        return cleaned
+
+    def save(self, commit=True):
+        client = self.client
+        client.phone = self.cleaned_data.get(
+            "full_phone", self.cleaned_data.get("phone", "")
+        )
+        client.physical_address = self.cleaned_data["physical_address"]
+        if self.cleaned_data.get("profile_photo"):
+            client.profile_photo = self.cleaned_data["profile_photo"]
+        if self.cleaned_data.get("password_change"):
+            client.set_password(self.cleaned_data["new_password"])
+        if commit:
+            client.save()
+        return client
+
+
 class ClientLoginForm(forms.Form):
     email = forms.EmailField(
         widget=forms.EmailInput(
@@ -3507,6 +3644,34 @@ class ProfileSettingsForm(forms.ModelForm):
         if commit and (self.cleaned_data.get("new_password") or ""):
             update_session_auth_hash(request, user)
         return user
+
+
+class ClientAppearanceSettingsForm(forms.ModelForm):
+    """Theme / typography / density for the signed-in client portal account."""
+
+    class Meta:
+        model = Client
+        fields = ["ui_theme", "ui_font", "ui_density"]
+        widgets = {
+            "ui_theme": forms.RadioSelect(attrs={"class": "theme-choice-group"}),
+            "ui_font": forms.RadioSelect(attrs={"class": "font-choice-group"}),
+            "ui_density": forms.RadioSelect(attrs={"class": "density-choice-group"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["ui_theme"].choices = list(Employee.UiTheme.choices)
+        self.fields["ui_font"].choices = list(Employee.UiFont.choices)
+        self.fields["ui_density"].choices = list(Employee.UiDensity.choices)
+
+    def clean_ui_theme(self):
+        return self.cleaned_data.get("ui_theme") or Employee.UiTheme.DEFAULT
+
+    def save(self, commit=True):
+        client = super().save(commit=False)
+        if commit:
+            client.save(update_fields=["ui_theme", "ui_font", "ui_density"])
+        return client
 
 
 class AppearanceSettingsForm(forms.ModelForm):

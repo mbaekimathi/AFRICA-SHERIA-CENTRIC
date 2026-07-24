@@ -301,23 +301,24 @@ svg {
 }
 
 .theme-client {
-  --ink: #16142a;
-  --ink-muted: #6c6884;
-  --line: #e5e3ef;
-  --accent: #6b63e8;
-  --accent-strong: #524bc2;
-  --accent-soft: #f1f0ff;
+  /* Match employee workspace look so portal pages share the same chrome. */
+  --ink: #1c161a;
+  --ink-muted: #73656f;
+  --line: #e8e2e6;
+  --accent: #8b5e78;
+  --accent-strong: #6d465c;
+  --accent-soft: #f7eef3;
   --surface: #ffffff;
-  --surface-tint: #f7f6fc;
-  --sidebar-bg: #141228;
-  --sidebar-ink: #f4f3fb;
-  --sidebar-muted: #a29cbc;
+  --surface-tint: #f8f4f6;
+  --sidebar-bg: #1a1418;
+  --sidebar-ink: #f7f2f5;
+  --sidebar-muted: #b3a4ad;
   --sidebar-line: rgba(255, 255, 255, 0.09);
   --sidebar-hover: rgba(255, 255, 255, 0.055);
-  --sidebar-active: rgba(107, 99, 232, 0.2);
+  --sidebar-active: rgba(139, 94, 120, 0.22);
   --sidebar-active-ink: #ffffff;
-  --page-bg: #f4f3f9;
-  --dot: #6b63e8;
+  --page-bg: #f5f3f4;
+  --dot: #8b5e78;
 }
 
 /* Studio ? refined dark shells, cool canvases */
@@ -980,7 +981,7 @@ svg {
 .theme-intern { --notif-badge: #60a5fa; }
 .theme-it_support { --notif-badge: #7dd3fc; }
 .theme-employee { --notif-badge: #f472b6; }
-.theme-client { --notif-badge: #38bdf8; }
+.theme-client { --notif-badge: #f472b6; }
 .theme-midnight { --notif-badge: #38bdf8; }
 .theme-graphite { --notif-badge: #fb923c; }
 .theme-cedar { --notif-badge: #fbbf24; }
@@ -3741,6 +3742,10 @@ button.row-action {
 
 .settings-browser-perm__status.is-denied {
   color: color-mix(in srgb, #b91c1c 80%, var(--text, #1c1917));
+}
+
+#enable-browser-notifications[hidden] {
+  display: none !important;
 }
 
 @media (max-width: 560px) {
@@ -21560,4 +21565,21 @@ button.invoice-share-option:hover {
   .ledger-table {
     font-size: 0.78rem;
   }
+}
+
+/* Client portal document viewer (view-only) */
+.client-doc-viewer {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--surface-tint, #f8f4f6);
+  overflow: hidden;
+  min-height: 70vh;
+}
+.client-doc-viewer__frame {
+  display: block;
+  width: 100%;
+  min-height: 70vh;
+  height: 75vh;
+  border: 0;
+  background: #fff;
 }

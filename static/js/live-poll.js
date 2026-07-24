@@ -1,6 +1,7 @@
 /**
  * Lightweight adaptive polling for Sheria-Centric.
- * Pauses when the tab is hidden; backs off while nothing changes.
+ * Pauses when the tab is hidden (unless runInBackground);
+ * backs off while nothing changes.
  * Resumes immediately on focus / bfcache restore.
  */
 
@@ -13,6 +14,7 @@
     const minMs = options.minMs ?? 4000;
     const maxMs = options.maxMs ?? 30000;
     const factor = options.factor ?? 1.6;
+    const runInBackground = Boolean(options.runInBackground);
     let delay = minMs;
     let timer = null;
     let inFlight = false;
@@ -29,13 +31,14 @@
       timer = window.setTimeout(tick, ms);
     };
     const wake = () => {
-      if (stopped || document.hidden) return;
+      if (stopped) return;
+      if (document.hidden && !runInBackground) return;
       delay = minMs;
       schedule(0);
     };
     const tick = async () => {
       if (stopped) return;
-      if (document.hidden) {
+      if (document.hidden && !runInBackground) {
         // Wait for visibilitychange / focus — do not spin while hidden.
         return;
       }
@@ -61,7 +64,8 @@
       } finally {
         inFlight = false;
       }
-      if (stopped || document.hidden) return;
+      if (stopped) return;
+      if (document.hidden && !runInBackground) return;
       if (changed) {
         delay = minMs;
       } else {
@@ -70,7 +74,7 @@
       schedule(delay);
     };
     const onVisibility = () => {
-      if (!document.hidden) wake();
+      if (!document.hidden || runInBackground) wake();
     };
     const onPageShow = (event) => {
       // Back/forward cache can restore a stale badge DOM — refresh immediately.

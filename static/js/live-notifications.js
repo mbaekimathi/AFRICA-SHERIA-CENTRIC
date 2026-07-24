@@ -85,8 +85,8 @@
         if (!force && now - lastPlayedAt < 1500) return;
         lastPlayedAt = now;
         const t = ctx.currentTime;
-        playTone(ctx, 880, t, 0.14, 0.045 * volumeScale);
-        playTone(ctx, 1174.7, t + 0.12, 0.18, 0.035 * volumeScale);
+        playTone(ctx, 880, t, 0.14, 0.12 * volumeScale);
+        playTone(ctx, 1174.7, t + 0.12, 0.18, 0.09 * volumeScale);
       };
 
       if (ctx.state === "suspended") {
@@ -312,10 +312,6 @@
     const markAllBtn = document.getElementById("notif-mark-all");
     if (!menu || !trigger || !badge || !listEl) return;
 
-    const url = menu.dataset.notificationsUrl;
-    const markAllUrl = menu.dataset.markAllUrl;
-    if (!url || !window.SheriaLivePoll) return;
-
     const sound = createNotificationSound(() => {
       const raw = Number(menu.dataset.soundVolume);
       return Number.isFinite(raw) ? raw : 70;
@@ -323,6 +319,12 @@
     window.SheriaNotificationSound = sound;
     const browserAlerts = createBrowserNotifications(menu);
     window.SheriaBrowserNotifications = browserAlerts;
+    window.dispatchEvent(new CustomEvent("sheria:notifications-ready"));
+
+    const url = menu.dataset.notificationsUrl;
+    const markAllUrl = menu.dataset.markAllUrl;
+    if (!url || !window.SheriaLivePoll) return;
+
     let lastRevision = "";
     let lastUnreadCount = null;
     const soundEnabled = () =>
@@ -348,11 +350,13 @@
       return changed;
     };
 
+    // Keep polling in background tabs so browser desktop alerts can fire.
     window.SheriaLivePoll.start({
       url,
       minMs: 8000,
       maxMs: 45000,
       factor: 1.7,
+      runInBackground: true,
       onPayload,
     });
 

@@ -590,6 +590,60 @@ def download_drive_file(
     return content, filename, content_type
 
 
+def preview_drive_file(
+    file_id: str,
+    *,
+    mime_type: str = "",
+    title: str = "",
+    original_filename: str = "",
+) -> tuple[bytes, str, str]:
+    """
+    Fetch a Drive file for in-browser viewing (prefer PDF for Workspace docs).
+
+    Returns (content, filename, content_type).
+    """
+    if not file_id:
+        raise GoogleDriveAPIError("Missing Drive file id.")
+
+    mime = (mime_type or "").strip()
+    base_name = sanitize_drive_name(title or original_filename or "document")
+    stem = re.sub(r"\.[A-Za-z0-9]{1,8}$", "", base_name).strip() or "document"
+    token = get_valid_access_token()
+
+    # Prefer PDF for Docs/Slides so the portal can embed a read-only preview.
+    if mime == GOOGLE_DOC_MIME:
+        url = (
+            DRIVE_EXPORT_URL.format(file_id=urllib.parse.quote(file_id))
+            + "?"
+            + urllib.parse.urlencode({"mimeType": "application/pdf"})
+        )
+        content = _request_bytes("GET", url, access_token=token, timeout=120)
+        return content, f"{stem}.pdf", "application/pdf"
+    if mime == GOOGLE_SLIDE_MIME:
+        url = (
+            DRIVE_EXPORT_URL.format(file_id=urllib.parse.quote(file_id))
+            + "?"
+            + urllib.parse.urlencode({"mimeType": "application/pdf"})
+        )
+        content = _request_bytes("GET", url, access_token=token, timeout=120)
+        return content, f"{stem}.pdf", "application/pdf"
+    if mime == GOOGLE_SHEET_MIME:
+        # Sheets preview as CSV text in the viewer.
+        url = (
+            DRIVE_EXPORT_URL.format(file_id=urllib.parse.quote(file_id))
+            + "?"
+            + urllib.parse.urlencode({"mimeType": "text/csv"})
+        )
+        content = _request_bytes("GET", url, access_token=token, timeout=120)
+        return content, f"{stem}.csv", "text/csv; charset=utf-8"
+
+    return download_drive_file(
+        file_id,
+        mime_type=mime,
+        title=title,
+        original_filename=original_filename,
+    )
+
 def parse_drive_datetime(value: str | None):
     """Parse Drive RFC3339 timestamps into aware datetimes."""
     if not value:

@@ -1702,9 +1702,49 @@ class ClientDashboardView(View):
         display_name = client.get_full_name() or client.email
         context["welcome_headline"] = f"Welcome, {display_name}"
         context["welcome_copy"] = (
-            "Your client account is active. Use Finance & Billing to view and pay "
-            "invoices issued to you, and follow other portal areas as they open."
+            "Your client account is active. Everything in this portal is limited "
+            "to your matters, documents, billing, messages, reminders, and "
+            "calendar with the firm."
         )
+        from .client_access import client_cases, client_documents, client_matters
+
+        case_count = client_cases(client).count()
+        matter_count = client_matters(client).count()
+        doc_count = client_documents(client).count()
+        outstanding = Invoice.objects.filter(
+            client=client,
+            status__in=(
+                Invoice.Status.GENERATED,
+                Invoice.Status.ISSUED,
+                Invoice.Status.PARTIALLY_PAID,
+            ),
+        ).count()
+        context["welcome_stats"] = [
+            {
+                "label": "Matters",
+                "value": case_count + matter_count,
+                "url": reverse("accounts:client_matters"),
+                "icon": context["icon_brief"],
+            },
+            {
+                "label": "Documents",
+                "value": doc_count,
+                "url": reverse("accounts:client_documents"),
+                "icon": context["icon_doc"],
+            },
+            {
+                "label": "Outstanding invoices",
+                "value": outstanding,
+                "url": reverse("accounts:client_billing"),
+                "icon": context["icon_finance"],
+            },
+            {
+                "label": "Unread alerts",
+                "value": context["notification_unread_count"],
+                "url": reverse("accounts:client_messages"),
+                "icon": context["icon_bell"],
+            },
+        ]
         return render(request, self.template_name, context)
 
 
@@ -1776,6 +1816,7 @@ class ClientLogoutView(View):
 
 
 CLIENT_INVOICE_STATUSES = (
+    Invoice.Status.GENERATED,
     Invoice.Status.ISSUED,
     Invoice.Status.PARTIALLY_PAID,
     Invoice.Status.PAID,
@@ -1797,14 +1838,67 @@ def _require_active_client(request):
 
 
 def _client_invoice_queryset(client):
-    return Invoice.objects.filter(
-        client=client,
-        status__in=CLIENT_INVOICE_STATUSES,
-    ).select_related("approved_by", "created_by")
+    """Invoices for the session client only (never draft / other clients)."""
+    return (
+        Invoice.objects.filter(
+            client=client,
+            status__in=CLIENT_INVOICE_STATUSES,
+        )
+        .select_related("approved_by", "created_by", "client")
+        .order_by("-issue_date", "-created_at")
+    )
+
+
+def _client_billing_summary(client):
+    """Finance overview for the logged-in client account only."""
+    from decimal import Decimal
+
+    invoices = list(_client_invoice_queryset(client))
+    active_invoices = [
+        inv for inv in invoices if inv.status != Invoice.Status.CANCELLED
+    ]
+    outstanding = [
+        inv
+        for inv in active_invoices
+        if inv.status
+        in {
+            Invoice.Status.GENERATED,
+            Invoice.Status.ISSUED,
+            Invoice.Status.PARTIALLY_PAID,
+        }
+        and inv.balance_due > 0
+    ]
+    total_invoiced = sum(
+        (inv.total_amount for inv in active_invoices),
+        start=Decimal("0.00"),
+    )
+    total_paid = sum(
+        (inv.amount_paid or Decimal("0.00") for inv in active_invoices),
+        start=Decimal("0.00"),
+    )
+    balance_due = sum(
+        (inv.balance_due for inv in active_invoices),
+        start=Decimal("0.00"),
+    )
+    recent_topups = list(
+        client.account_topups.select_related("created_by").order_by("-created_at")[:20]
+    )
+    return {
+        "invoices": invoices,
+        "invoice_count": len(invoices),
+        "open_count": len(outstanding),
+        "outstanding_count": len(outstanding),
+        "outstanding_total": balance_due,
+        "total_invoiced": total_invoiced,
+        "total_paid": total_paid,
+        "balance_due": balance_due,
+        "credit_balance": client.credit_balance or Decimal("0.00"),
+        "recent_topups": recent_topups,
+    }
 
 
 class ClientBillingView(View):
-    """Client Finance & Billing hub — issued invoices awaiting payment."""
+    """Client Finance & Billing hub — session client's invoices only."""
 
     template_name = "accounts/client_billing.html"
 
@@ -1813,31 +1907,14 @@ class ClientBillingView(View):
         if denied:
             return denied
 
-        invoices = list(_client_invoice_queryset(client))
-        outstanding = [
-            inv for inv in invoices if inv.status in {
-                Invoice.Status.ISSUED,
-                Invoice.Status.PARTIALLY_PAID,
-            }
-        ]
-        from decimal import Decimal
-
+        summary = _client_billing_summary(client)
         context = client_portal_context(
             request,
             client,
             page_title="Finance & Billing",
             active="billing",
         )
-        context.update(
-            {
-                "invoices": invoices,
-                "outstanding_count": len(outstanding),
-                "outstanding_total": sum(
-                    (inv.total_amount for inv in outstanding),
-                    start=Decimal("0"),
-                ),
-            }
-        )
+        context.update(summary)
         return render(request, self.template_name, context)
 
 
@@ -2237,14 +2314,14 @@ WORKSPACE_LIST_SPECS = {
             Employee.Status.PENDING_APPROVAL,
         ]
     ).order_by("pk").values_list("pk", "status"),
-    "pending-cases": lambda _user: LitigationCase.objects.filter(
-        status=LitigationCase.Status.PENDING_APPROVAL
+    "pending-cases": lambda user: cases_visible_to(
+        user, status=LitigationCase.Status.PENDING_APPROVAL
     ).order_by("pk").values_list("pk", "status"),
     "active-cases": lambda user: cases_visible_to(
         user, status=LitigationCase.Status.ACTIVE
     ).order_by("pk").values_list("pk", "status"),
-    "pending-matters": lambda _user: NonLitigationMatter.objects.filter(
-        status=NonLitigationMatter.Status.PENDING_APPROVAL
+    "pending-matters": lambda user: matters_visible_to(
+        user, status=NonLitigationMatter.Status.PENDING_APPROVAL
     ).order_by("pk").values_list("pk", "status"),
     "active-matters": lambda user: matters_visible_to(
         user, status=NonLitigationMatter.Status.ACTIVE
@@ -3693,7 +3770,9 @@ class RoleWorkspaceView(View):
         elif resolved["leaf"] == "matter-management":
             from .matter_analytics import build_matter_management_analytics
 
-            context["analytics"] = build_matter_management_analytics(request.GET)
+            context["analytics"] = build_matter_management_analytics(
+                request.GET, employee=user
+            )
             if request.headers.get("X-Matter-Analytics") == "live":
                 response = render(
                     request,
@@ -3748,14 +3827,17 @@ class RoleWorkspaceView(View):
             response = render(request, self.register_case_template, context)
         elif resolved["leaf"] == "approve-registered-cases":
             context["cases"] = (
-                LitigationCase.objects.filter(
-                    status=LitigationCase.Status.PENDING_APPROVAL
+                cases_visible_to(
+                    user, status=LitigationCase.Status.PENDING_APPROVAL
                 )
                 .select_related("client", "registered_by")
                 .prefetch_related("parties")
                 .order_by("created_at", "filing_date")
             )
             context["case_count"] = context["cases"].count()
+            context["visibility_view_all"] = employee_can_view_all(
+                user, "litigation-matters"
+            )
             response = render(
                 request, self.approve_registered_cases_template, context
             )
@@ -3792,14 +3874,17 @@ class RoleWorkspaceView(View):
             response = render(request, self.register_matter_template, context)
         elif resolved["leaf"] == "approve-registered-matters":
             context["matters"] = (
-                NonLitigationMatter.objects.filter(
-                    status=NonLitigationMatter.Status.PENDING_APPROVAL
+                matters_visible_to(
+                    user, status=NonLitigationMatter.Status.PENDING_APPROVAL
                 )
                 .select_related("client", "registered_by")
                 .prefetch_related("parties")
                 .order_by("created_at", "date_opened")
             )
             context["matter_count"] = context["matters"].count()
+            context["visibility_view_all"] = employee_can_view_all(
+                user, "non-litigation-matters"
+            )
             response = render(
                 request, self.approve_registered_matters_template, context
             )
@@ -10732,6 +10817,11 @@ class ApproveLitigationCaseView(View):
             return denied
 
         case = self.get_case(case_id)
+        denied = _deny_if_case_not_visible(
+            request, user, case, redirect_to=_pending_cases_list_url(user)
+        )
+        if denied:
+            return denied
         if case.status != LitigationCase.Status.PENDING_APPROVAL:
             messages.info(request, "This case is not awaiting approval.")
             return redirect(_pending_cases_list_url(user))
@@ -10746,6 +10836,11 @@ class ApproveLitigationCaseView(View):
             return denied
 
         case = self.get_case(case_id)
+        denied = _deny_if_case_not_visible(
+            request, user, case, redirect_to=_pending_cases_list_url(user)
+        )
+        if denied:
+            return denied
         if case.status != LitigationCase.Status.PENDING_APPROVAL:
             messages.info(request, "This case is not awaiting approval.")
             return redirect(_pending_cases_list_url(user))
@@ -10836,6 +10931,11 @@ class DeclineLitigationCaseView(View):
             return denied
 
         case = get_object_or_404(LitigationCase, pk=case_id)
+        denied = _deny_if_case_not_visible(
+            request, user, case, redirect_to=_pending_cases_list_url(user)
+        )
+        if denied:
+            return denied
         if case.status != LitigationCase.Status.PENDING_APPROVAL:
             messages.info(request, "This case is not awaiting approval.")
             return redirect(_pending_cases_list_url(user))
@@ -10871,6 +10971,11 @@ class EditLitigationCaseView(View):
             return denied
 
         case = self.get_case(case_id)
+        denied = _deny_if_case_not_visible(
+            request, user, case, redirect_to=_pending_cases_list_url(user)
+        )
+        if denied:
+            return denied
         if case.status != LitigationCase.Status.PENDING_APPROVAL:
             messages.info(request, "This case is not awaiting approval.")
             return redirect(_pending_cases_list_url(user))
@@ -10890,6 +10995,11 @@ class EditLitigationCaseView(View):
             return denied
 
         case = self.get_case(case_id)
+        denied = _deny_if_case_not_visible(
+            request, user, case, redirect_to=_pending_cases_list_url(user)
+        )
+        if denied:
+            return denied
         if case.status != LitigationCase.Status.PENDING_APPROVAL:
             messages.info(request, "This case is not awaiting approval.")
             return redirect(_pending_cases_list_url(user))
@@ -11143,6 +11253,11 @@ class ApproveNonLitigationMatterView(View):
             return denied
 
         matter = self.get_matter(matter_id)
+        denied = _deny_if_matter_not_visible(
+            request, user, matter, redirect_to=_pending_matters_list_url(user)
+        )
+        if denied:
+            return denied
         if matter.status != NonLitigationMatter.Status.PENDING_APPROVAL:
             messages.info(request, "This matter is not awaiting approval.")
             return redirect(_pending_matters_list_url(user))
@@ -11157,6 +11272,11 @@ class ApproveNonLitigationMatterView(View):
             return denied
 
         matter = self.get_matter(matter_id)
+        denied = _deny_if_matter_not_visible(
+            request, user, matter, redirect_to=_pending_matters_list_url(user)
+        )
+        if denied:
+            return denied
         if matter.status != NonLitigationMatter.Status.PENDING_APPROVAL:
             messages.info(request, "This matter is not awaiting approval.")
             return redirect(_pending_matters_list_url(user))
@@ -11247,6 +11367,11 @@ class DeclineNonLitigationMatterView(View):
             return denied
 
         matter = get_object_or_404(NonLitigationMatter, pk=matter_id)
+        denied = _deny_if_matter_not_visible(
+            request, user, matter, redirect_to=_pending_matters_list_url(user)
+        )
+        if denied:
+            return denied
         if matter.status != NonLitigationMatter.Status.PENDING_APPROVAL:
             messages.info(request, "This matter is not awaiting approval.")
             return redirect(_pending_matters_list_url(user))
@@ -11282,6 +11407,11 @@ class EditNonLitigationMatterView(View):
             return denied
 
         matter = self.get_matter(matter_id)
+        denied = _deny_if_matter_not_visible(
+            request, user, matter, redirect_to=_pending_matters_list_url(user)
+        )
+        if denied:
+            return denied
         if matter.status != NonLitigationMatter.Status.PENDING_APPROVAL:
             messages.info(request, "This matter is not awaiting approval.")
             return redirect(_pending_matters_list_url(user))
@@ -11301,6 +11431,11 @@ class EditNonLitigationMatterView(View):
             return denied
 
         matter = self.get_matter(matter_id)
+        denied = _deny_if_matter_not_visible(
+            request, user, matter, redirect_to=_pending_matters_list_url(user)
+        )
+        if denied:
+            return denied
         if matter.status != NonLitigationMatter.Status.PENDING_APPROVAL:
             messages.info(request, "This matter is not awaiting approval.")
             return redirect(_pending_matters_list_url(user))

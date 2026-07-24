@@ -1,0 +1,184 @@
+{% extends "layouts/client_portal.html" %}
+{% load static %}
+
+{% block title %}Account settings — Sheria Centric{% endblock %}
+
+{% block content %}
+<section class="page settings-page settings-page--profile" id="settings-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>My profile</h2>
+      <p class="page-lead">
+        Your account details for this portal. Contact information and password
+        can be updated below; identity documents are managed with the firm.
+      </p>
+    </div>
+  </header>
+
+  <section class="settings-hero">
+    <div class="settings-hero__glow" aria-hidden="true"></div>
+    <div class="settings-hero__body">
+      <div class="settings-hero__identity">
+        {% if client.profile_photo %}
+        <img class="avatar avatar--xl" src="{{ client.profile_photo.url }}" alt="Profile photo of {{ client.get_full_name }}">
+        {% else %}
+        <div class="avatar avatar--xl avatar--placeholder" aria-hidden="true">
+          {% if client.first_name or client.last_name %}
+          {{ client.first_name|slice:":1"|upper }}{{ client.last_name|slice:":1"|upper }}
+          {% else %}
+          {{ client.get_full_name|slice:":2"|upper }}
+          {% endif %}
+        </div>
+        {% endif %}
+        <div>
+          <p class="settings-hero__name">{{ client.get_full_name }}</p>
+          <p class="settings-hero__meta">
+            <span>{{ role_label }}</span>
+            <span class="status-pill status-pill--{{ client.status }}">{{ client.get_status_display }}</span>
+          </p>
+          <p class="settings-hero__email">{{ client.email }}</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Appearance</h3>
+      <p class="panel__hint">Color theme, typography, and spacing for your portal</p>
+    </div>
+    <div class="panel__body panel__body--actions">
+      <p class="page-lead" style="margin:0 0 0.75rem">
+        Choose how the client portal looks for your account only.
+      </p>
+      <a href="{% url 'accounts:client_theme_settings' %}" class="btn btn--primary btn--inline">
+        Theme settings
+      </a>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Account overview</h3>
+      <p class="panel__hint">Read-only details for your portal login</p>
+    </div>
+    <div class="panel__body">
+      <dl class="settings-grid review-grid">
+        <div><dt>Email</dt><dd>{{ client.email }}</dd></div>
+        <div><dt>Client type</dt><dd>{{ client.get_client_type_display }}</dd></div>
+        {% if client.client_type == "corporate" and client.corporate_kind %}
+        <div><dt>Entity</dt><dd>{{ client.get_corporate_kind_display }}</dd></div>
+        {% endif %}
+        <div><dt>Sign-in</dt><dd>{{ sign_in_method }}</dd></div>
+        <div><dt>Phone</dt><dd>{{ client.phone|default:"—" }}</dd></div>
+        <div><dt>Credit balance</dt><dd>KES {{ client.credit_balance|floatformat:2 }}</dd></div>
+        <div class="review-grid__full">
+          <dt>Physical address</dt>
+          <dd>{{ client.physical_address|default:"—"|linebreaksbr }}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <details class="settings-edit-drop" id="edit-profile-drop" {% if form.errors %}open{% endif %}>
+    <summary class="settings-edit-drop__summary">
+      <span class="settings-edit-drop__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18">
+          <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="settings-edit-drop__copy">
+        <span class="settings-edit-drop__label">Edit profile</span>
+        <span class="settings-edit-drop__hint">Phone, address, photo, and password</span>
+      </span>
+      <svg class="settings-edit-drop__chevron" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </summary>
+
+    <form
+      method="post"
+      enctype="multipart/form-data"
+      class="settings-edit-drop__panel workspace-form"
+      novalidate
+    >
+      {% csrf_token %}
+      {{ form.country_code }}
+
+      {% if form.non_field_errors %}
+      <div class="form-errors" role="alert">
+        {% for error in form.non_field_errors %}
+        <p>{{ error }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>Contact</h3>
+          <p>How the firm reaches you</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="form-field">
+            <label for="{{ form.phone.id_for_label }}">Phone</label>
+            {{ form.phone }}
+            {% if form.phone.errors %}<p class="field-error">{{ form.phone.errors.0 }}</p>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.physical_address.id_for_label }}">Physical address</label>
+            {{ form.physical_address }}
+            {% if form.physical_address.errors %}<p class="field-error">{{ form.physical_address.errors.0 }}</p>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>Profile photo</h3>
+          <p>Shown in the portal sidebar and top bar</p>
+        </header>
+        <div class="edit-block__body">
+          <div class="form-field">
+            <label for="{{ form.profile_photo.id_for_label }}">Photo</label>
+            {{ form.profile_photo }}
+            {% if form.profile_photo.errors %}<p class="field-error">{{ form.profile_photo.errors.0 }}</p>{% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="edit-block">
+        <header class="edit-block__head">
+          <h3>{% if has_password %}Change password{% else %}Set a password{% endif %}</h3>
+          <p>Optional — leave blank to keep your current sign-in</p>
+        </header>
+        <div class="edit-block__body">
+          {% if has_password %}
+          <div class="form-field">
+            <label for="{{ form.current_password.id_for_label }}">Current password</label>
+            {{ form.current_password }}
+            {% if form.current_password.errors %}<p class="field-error">{{ form.current_password.errors.0 }}</p>{% endif %}
+          </div>
+          {% endif %}
+          <div class="form-row">
+            <div class="form-field">
+              <label for="{{ form.new_password.id_for_label }}">New password</label>
+              {{ form.new_password }}
+              {% if form.new_password.errors %}<p class="field-error">{{ form.new_password.errors.0 }}</p>{% endif %}
+            </div>
+            <div class="form-field">
+              <label for="{{ form.confirm_password.id_for_label }}">Confirm password</label>
+              {{ form.confirm_password }}
+              {% if form.confirm_password.errors %}<p class="field-error">{{ form.confirm_password.errors.0 }}</p>{% endif %}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn--primary">Save changes</button>
+      </div>
+    </form>
+  </details>
+</section>
+{% endblock %}
