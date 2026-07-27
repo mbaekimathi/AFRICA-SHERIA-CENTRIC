@@ -1,5 +1,5 @@
 {% extends "layouts/workspace.html" %}
-{% load static %}
+{% load static document_extras %}
 
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
@@ -7,7 +7,7 @@
 {# FAB must stay outside .page — page animation transform breaks position:fixed #}
 {% include "accounts/partials/live_entity_task.html" %}
 
-<section class="page">
+<section class="page page--form-wide page--case-detail">
   <header class="page-intro">
     <div class="page-intro__copy">
       <p class="page-kicker">{{ session_greeting }}</p>
@@ -26,68 +26,129 @@
       </p>
     </div>
     <div class="panel__body">
-      <div class="review-identity">
-        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
-          {{ case.get_case_category_display|slice:":1"|upper }}
+      <div class="case-detail-profiles">
+        <div class="case-detail-profile case-detail-profile--case">
+          <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+            {{ case.get_case_category_display|slice:":1"|upper }}
+          </div>
+          <div class="case-detail-profile__text">
+            <p class="case-detail-profile__label">Case</p>
+            <p class="identity-name">
+              {% if case.court_case_number %}
+              {{ case.court_case_number }}
+              {% else %}
+              Case #{{ case.pk }}
+              {% endif %}
+            </p>
+            <p class="identity-meta">
+              {{ case.get_case_category_display }}
+              · <span class="status-pill status-pill--{{ case.status }}">{{ case.get_status_display }}</span>
+            </p>
+          </div>
         </div>
-        <div>
-          <p class="identity-name">
-            {% if case.court_case_number %}
-            {{ case.court_case_number }}
+
+        <div class="case-detail-profile case-detail-profile--client">
+          {% if case.client.profile_photo %}
+          <img
+            class="avatar avatar--lg"
+            src="{{ case.client.profile_photo.url }}"
+            alt=""
+          >
+          {% else %}
+          <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+            {% if case.client.client_type == "corporate" %}
+            {{ case.client.company_name|default:case.client.email|slice:":1"|upper }}
             {% else %}
-            Case #{{ case.pk }}
+            {{ case.client.first_name|slice:":1"|upper }}{{ case.client.last_name|slice:":1"|upper }}
             {% endif %}
-          </p>
-          <p class="identity-meta">
-            {{ case.client.get_full_name }}
-            · <span class="status-pill status-pill--{{ case.status }}">{{ case.get_status_display }}</span>
-          </p>
+          </div>
+          {% endif %}
+          <div class="case-detail-profile__text">
+            <p class="case-detail-profile__label">Client</p>
+            <p class="identity-name">{{ case.client.get_full_name }}</p>
+            <p class="identity-meta">
+              {{ case.client.get_client_type_display }}
+              {% if case.client.email %}
+              · {{ case.client.email }}
+              {% endif %}
+            </p>
+          </div>
         </div>
       </div>
 
-      <dl class="settings-grid review-grid">
-        <div><dt>Filing date</dt><dd>{{ case.filing_date|date:"d M Y" }}</dd></div>
-        <div><dt>Client</dt><dd>{{ case.client.get_full_name }}</dd></div>
-        <div><dt>Court rank</dt><dd>{{ case.get_court_rank_display }}</dd></div>
-        <div><dt>Case category</dt><dd>{{ case.get_case_category_display }}</dd></div>
-        <div><dt>Case type</dt><dd>{{ case.get_case_type_display }}</dd></div>
-        <div><dt>Station</dt><dd>{{ case.get_station_display }}</dd></div>
-        <div><dt>Court case number</dt><dd>{{ case.court_case_number|default:"—" }}</dd></div>
-        <div>
-          <dt>Assigned to</dt>
-          <dd>
-            {% if case.assigned_to %}
-            {{ case.assigned_to.get_full_name }}
-            {% else %}
-            —
-            {% endif %}
-          </dd>
-        </div>
-        <div>
-          <dt>Registered by</dt>
-          <dd>
-            {% if case.registered_by %}
-            {{ case.registered_by.get_full_name }}
-            {% else %}
-            —
-            {% endif %}
-          </dd>
-        </div>
-        <div>
-          <dt>Approved by</dt>
-          <dd>
-            {% if case.approved_by %}
-            {{ case.approved_by.get_full_name }}
-            {% else %}
-            —
-            {% endif %}
-          </dd>
-        </div>
-        <div class="review-grid__full">
-          <dt>Description</dt>
-          <dd>{{ case.description|default:"—"|linebreaksbr }}</dd>
-        </div>
-      </dl>
+      <div class="case-fact-groups">
+        <section class="case-fact-group">
+          <h4 class="case-fact-group__title">Court</h4>
+          <dl class="case-fact-group__grid">
+            <div>
+              <dt>Court rank</dt>
+              <dd>{{ case.get_court_rank_display }}</dd>
+            </div>
+            <div>
+              <dt>Station</dt>
+              <dd>{{ case.get_station_display }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="case-fact-group case-fact-group--wide">
+          <h4 class="case-fact-group__title">Case</h4>
+          <dl class="case-fact-group__grid case-fact-group__grid--case">
+            <div>
+              <dt>Case type</dt>
+              <dd>{{ case.get_case_type_display }}</dd>
+            </div>
+            <div>
+              <dt>Filing date</dt>
+              <dd>{{ case.filing_date|date:"d M Y" }}</dd>
+            </div>
+            <div class="case-fact-group__full">
+              <dt>Description</dt>
+              <dd>{{ case.description|default:"—"|linebreaksbr }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <details class="case-fact-group case-fact-group--wide case-fact-group--collapsible">
+          <summary class="case-fact-group__summary">
+            <span class="case-fact-group__title">Registration &amp; allocation</span>
+            <span class="case-fact-group__hint">Registered, approved, allocated</span>
+            <span class="case-fact-group__chevron" aria-hidden="true"></span>
+          </summary>
+          <dl class="case-fact-group__grid case-fact-group__grid--people">
+            <div>
+              <dt>Registered by</dt>
+              <dd>
+                {% if case.registered_by %}
+                {{ case.registered_by.get_full_name }}
+                {% else %}
+                —
+                {% endif %}
+              </dd>
+            </div>
+            <div>
+              <dt>Approved by</dt>
+              <dd>
+                {% if case.approved_by %}
+                {{ case.approved_by.get_full_name }}
+                {% else %}
+                —
+                {% endif %}
+              </dd>
+            </div>
+            <div>
+              <dt>Allocated to</dt>
+              <dd>
+                {% if case.assigned_to %}
+                {{ case.assigned_to.get_full_name }}
+                {% else %}
+                —
+                {% endif %}
+              </dd>
+            </div>
+          </dl>
+        </details>
+      </div>
     </div>
   </section>
 
@@ -96,42 +157,139 @@
       <h3>Parties</h3>
       <p class="panel__hint">{{ parties|length }} registered</p>
     </div>
-    <div class="panel__body panel__body--table">
+    <div class="panel__body panel__body--parties">
       {% if parties %}
-      <div class="data-table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th scope="col">Party name</th>
-              <th scope="col">Type</th>
-              <th scope="col">Category</th>
-              <th scope="col">Firm/Agent</th>
-              <th scope="col">Phone</th>
-              <th scope="col">Email</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for party in parties %}
-            <tr>
-              <td>
-                {{ party.party_name }}
-                {% if party.is_client_party %}
-                <span class="status-pill status-pill--active">Client</span>
+      <div class="party-profile-rail">
+        <div class="party-profile-list" role="list">
+          {% for party in parties %}
+          <details class="party-profile{% if party.is_client_party %} party-profile--client{% endif %}" role="listitem">
+            <summary class="party-profile__summary">
+              <span class="party-profile__avatar">
+                {% if party.is_client_party and case.client.profile_photo %}
+                <img
+                  class="avatar avatar--xl"
+                  src="{{ case.client.profile_photo.url }}"
+                  alt=""
+                >
+                {% else %}
+                <span class="avatar avatar--xl avatar--placeholder" aria-hidden="true">
+                  {{ party.party_name|slice:":1"|upper }}
+                </span>
                 {% endif %}
-              </td>
-              <td>{{ party.get_party_type_display }}</td>
-              <td>{{ party.get_category_display|default:"—" }}</td>
-              <td>{{ party.firm_agent|default:"—" }}</td>
-              <td>{{ party.phone|default:"—" }}</td>
-              <td>{{ party.email|default:"—" }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+              </span>
+              <span class="party-profile__copy">
+                {% if party.is_client_party %}
+                <span class="party-profile__badge">Client side</span>
+                {% endif %}
+                <span class="party-profile__name">{{ party.party_name }}</span>
+                <span class="party-profile__role">{{ party.get_party_type_display }}</span>
+              </span>
+              <span class="party-profile__toggle">
+                <span class="party-profile__toggle-label">Details</span>
+                <span class="party-profile__chevron" aria-hidden="true"></span>
+              </span>
+            </summary>
+            <div class="party-profile__body">
+              <dl class="party-profile__facts">
+                <div>
+                  <dt>Category</dt>
+                  <dd>{{ party.get_category_display|default:"—" }}</dd>
+                </div>
+                <div>
+                  <dt>Firm / Agent</dt>
+                  <dd>{{ party.firm_agent|default:"—" }}</dd>
+                </div>
+                <div>
+                  <dt>Phone</dt>
+                  <dd>
+                    {% if party.phone %}
+                    <span class="phone-with-wa">
+                      <a href="tel:{{ party.phone }}">{{ party.phone }}</a>
+                      {% whatsapp_chat_button party.phone label="WhatsApp" compact=True %}
+                    </span>
+                    {% else %}
+                    —
+                    {% endif %}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd>
+                    {% if party.email %}
+                    <a href="mailto:{{ party.email }}">{{ party.email }}</a>
+                    {% else %}
+                    —
+                    {% endif %}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </details>
+          {% endfor %}
+        </div>
       </div>
       {% else %}
       <div class="empty-state">
         <p class="empty-state__title">No parties listed</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Documents</h3>
+      <p class="panel__hint">
+        {% if documents %}{{ documents|length }} linked{% else %}None linked{% endif %}
+        · <a href="{{ documents_url }}">Open library</a>
+        · <a href="{{ upload_documents_url }}">Upload</a>
+      </p>
+    </div>
+    <div class="panel__body panel__body--case-docs">
+      {% if documents %}
+      <ul class="case-doc-list">
+        {% for document in documents %}
+        <li class="case-doc case-doc--{{ document.source }}">
+          {% include "accounts/partials/drive_file_icon.html" with kind=document|drive_kind %}
+          <div class="case-doc__main">
+            <div class="case-doc__topline">
+              <span class="case-doc__title">{{ document.title }}</span>
+              <span class="case-doc__type">{{ document.type_label }}</span>
+            </div>
+            {% if document.description %}
+            <p class="case-doc__desc">{{ document.description|truncatechars:110 }}</p>
+            {% endif %}
+            <p class="case-doc__meta">
+              Updated {{ document.updated_at|date:"d M Y" }}
+              {% if document.uploaded_by %}
+              · {{ document.uploaded_by.get_full_name }}
+              {% endif %}
+              {% if document.party_type_label %}
+              · {{ document.party_type_label }}
+              {% endif %}
+            </p>
+          </div>
+          <div class="case-doc__actions">
+            {% if document.can_open %}
+            <a
+              class="btn btn--primary btn--inline"
+              href="{{ document.tracked_open_url|default:document.open_url }}"
+              {% if document.open_url and not document.local_file %}target="_blank" rel="noopener"{% endif %}
+            >View</a>
+            {% else %}
+            <span class="case-doc__unavailable">Unavailable</span>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No documents linked</p>
+        <p class="empty-state__copy">
+          Upload or create files for this case from the documents library.
+        </p>
+        <a href="{{ upload_documents_url }}" class="btn btn--primary btn--inline">Upload documents</a>
       </div>
       {% endif %}
     </div>

@@ -10,7 +10,7 @@
       {% include "accounts/partials/icon_3d.html" with icon="document" tone=5 size="lg" float=True extra_class="docs-hero__icon" %}
       <div class="docs-hero__copy">
         <p class="page-kicker">{{ session_greeting }}</p>
-        <h2>Documents</h2>
+        <h2>{% if entity_kind == "case" %}Case documents{% else %}Matter documents{% endif %}</h2>
         <p class="page-lead">
           Create, upload, rename, and open files linked to this
           {% if entity_kind == "case" %}case{% else %}matter{% endif %}.

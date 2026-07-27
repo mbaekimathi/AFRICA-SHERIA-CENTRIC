@@ -5405,6 +5405,7 @@ class CommunicationSettingsForm(forms.ModelForm):
             "whatsapp_api_token",
             "whatsapp_phone_number_id",
             "whatsapp_webhook_url",
+            "whatsapp_webhook_verify_token",
         ]
         labels = {
             "email_enabled": "Enable email",
@@ -5428,6 +5429,7 @@ class CommunicationSettingsForm(forms.ModelForm):
             "whatsapp_api_token": "API access token (Twilio: AccountSID:AuthToken)",
             "whatsapp_phone_number_id": "Phone number ID / sender",
             "whatsapp_webhook_url": "Webhook URL",
+            "whatsapp_webhook_verify_token": "Webhook verify token",
         }
         help_texts = {
             "email_port": "465 uses SSL automatically; 587 uses TLS automatically.",
@@ -5440,7 +5442,8 @@ class CommunicationSettingsForm(forms.ModelForm):
             "whatsapp_api_enabled": "Turn on when you are ready to send WhatsApp messages via API.",
             "whatsapp_api_token": "Meta token, or Twilio as AccountSID:AuthToken.",
             "whatsapp_phone_number_id": "Meta Phone Number ID, or Twilio WhatsApp sender (whatsapp:+254…).",
-            "whatsapp_webhook_url": "HTTPS URL for delivery / inbound webhooks.",
+            "whatsapp_webhook_url": "HTTPS URL Meta will call for inbound messages and delivery status.",
+            "whatsapp_webhook_verify_token": "Any secret string you also enter in Meta when subscribing the webhook.",
         }
         widgets = {
             "email_enabled": forms.CheckboxInput(),
@@ -5556,6 +5559,13 @@ class CommunicationSettingsForm(forms.ModelForm):
                 attrs={
                     "class": "form-input",
                     "placeholder": "https://yourdomain.com/integrations/whatsapp/webhook/",
+                    "autocomplete": "off",
+                }
+            ),
+            "whatsapp_webhook_verify_token": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. sheria-wa-verify",
                     "autocomplete": "off",
                 }
             ),

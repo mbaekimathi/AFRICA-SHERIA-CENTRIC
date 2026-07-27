@@ -73,6 +73,11 @@ urlpatterns = [
         name="communication_settings_verify",
     ),
     path(
+        "api/workspace/whatsapp-inbox/",
+        views.whatsapp_inbox_poll,
+        name="whatsapp_inbox_poll",
+    ),
+    path(
         "<slug:role>/dashboard/research/latest-news/jobs/start/",
         views.latest_news_job_start,
         name="latest_news_job_start",
@@ -217,6 +222,11 @@ urlpatterns = [
         "integrations/mpesa/callback/",
         views.mpesa_stk_callback,
         name="mpesa_stk_callback",
+    ),
+    path(
+        "integrations/whatsapp/webhook/",
+        views.whatsapp_webhook,
+        name="whatsapp_webhook",
     ),
     path(
         "client/onboarding/",
@@ -472,6 +482,12 @@ urlpatterns = [
     ),
     path(
         "<slug:role>/dashboard/matter-management/litigation-matters/"
+        "case/<int:case_id>/documents/",
+        views.ViewCaseDocumentsView.as_view(),
+        name="view_case_documents",
+    ),
+    path(
+        "<slug:role>/dashboard/matter-management/litigation-matters/"
         "case/<int:case_id>/upload-documents/",
         views.UploadCaseDocumentsView.as_view(),
         name="upload_case_documents",
@@ -563,6 +579,12 @@ urlpatterns = [
         "<int:attendance_id>/edit/",
         views.EditMatterAttendanceView.as_view(),
         name="edit_matter_attendance",
+    ),
+    path(
+        "<slug:role>/dashboard/matter-management/non-litigation-matters/"
+        "matter/<int:matter_id>/documents/",
+        views.ViewMatterDocumentsView.as_view(),
+        name="view_matter_documents",
     ),
     path(
         "<slug:role>/dashboard/matter-management/non-litigation-matters/"

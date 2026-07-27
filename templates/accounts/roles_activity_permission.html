@@ -8,20 +8,30 @@
     <div class="page-intro__copy">
       <nav class="roles-crumb" aria-label="Breadcrumb">
         <a href="{{ roles_permissions_url }}">Roles &amp; Permissions</a>
+        {% if is_module_hub_permission %}
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{{ activity.label }}</span>
+        {% else %}
         <span aria-hidden="true">/</span>
         <a href="{{ module_url }}">{{ module.label }}</a>
         <span aria-hidden="true">/</span>
         <span aria-current="page">{{ activity.label }}</span>
+        {% endif %}
       </nav>
-      <p class="page-kicker">{{ module.label }}</p>
+      <p class="page-kicker">{% if is_module_hub_permission %}Roles &amp; Permissions{% else %}{{ module.label }}{% endif %}</p>
       <h2>{{ activity.label }}</h2>
       <p class="page-lead">{{ activity.path }}</p>
+      {% if hub_intro %}
+      <p class="page-lead">{{ hub_intro }}</p>
+      {% endif %}
       {% if has_view_all_action %}
       <p class="page-lead">
         <strong>View all</strong> lets this employee see every record
-        (allocated and unallocated). Turn it off to limit them to items
-        allocated or assigned to them — including related calendar entries,
-        tasks, reminders, and notifications where configured.
+        (allocated and unallocated). Turn it off to limit them to matters
+        allocated to them (and open tasks on those matters). Pending
+        registrations they filed remain visible until approved. Related
+        documents, calendar entries, tasks, reminders, and notifications
+        follow the same scope where configured.
       </p>
       {% endif %}
       <p class="roles-access-summary">
@@ -32,7 +42,7 @@
     <div class="page-intro__actions">
       <a href="{{ module_url }}" class="btn btn--quiet btn--inline">Back</a>
       {% if activity_open_url %}
-      <a href="{{ activity_open_url }}" class="btn btn--primary btn--inline">Open activity</a>
+      <a href="{{ activity_open_url }}" class="btn btn--primary btn--inline">{% if is_module_hub_permission %}Open module{% else %}Open activity{% endif %}</a>
       {% endif %}
     </div>
   </header>
@@ -140,5 +150,34 @@
       {% endfor %}
     </ul>
   </div>
+
+  {% if visibility_activities %}
+  <section class="panel roles-permissions-panel" style="margin-top: 1.5rem;">
+    <div class="panel__head">
+      <h3>Workspace visibility</h3>
+      <p class="panel__hint">Documents, tasks, calendar, reminders, and notifications</p>
+    </div>
+    <div class="panel__body roles-permissions-panel__body">
+      <ul class="roles-module-list roles-activity-list">
+        {% for item in visibility_activities %}
+        <li>
+          <a class="roles-module-row roles-module-row--depth-0" href="{{ item.url }}">
+            <span class="roles-module-row__icon" aria-hidden="true">{{ item.icon|safe }}</span>
+            <span class="roles-module-row__copy">
+              <span class="roles-module-row__label">{{ item.label }}</span>
+              <span class="roles-module-row__hint">{{ item.path|default:item.label }}</span>
+            </span>
+            <span class="roles-module-row__go" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+  {% endif %}
 </section>
 {% endblock %}

@@ -6,8 +6,50 @@ from accounts.google_drive import (
     GOOGLE_SHEET_MIME,
     GOOGLE_SLIDE_MIME,
 )
+from accounts.utils import whatsapp_chat_url
 
 register = template.Library()
+
+
+@register.inclusion_tag("accounts/partials/whatsapp_chat_button.html")
+def whatsapp_chat_button(
+    phone,
+    message="",
+    label="Chat on WhatsApp",
+    compact=False,
+    icon_only=False,
+    stop_propagation=False,
+    use_default_message=True,
+):
+    """Render a wa.me chat link when a phone number is present."""
+    text = (message or "").strip()
+    if isinstance(use_default_message, str):
+        use_default_message = use_default_message.lower() not in {
+            "0",
+            "false",
+            "no",
+            "",
+        }
+    if not text and use_default_message:
+        try:
+            from accounts.models import CommunicationSettings
+
+            text = (
+                CommunicationSettings.get_solo().whatsapp_default_message or ""
+            ).strip()
+        except Exception:
+            text = ""
+    url = whatsapp_chat_url(phone or "", text)
+    compact = str(compact).lower() in {"1", "true", "yes"}
+    icon_only = str(icon_only).lower() in {"1", "true", "yes"}
+    stop_propagation = str(stop_propagation).lower() in {"1", "true", "yes"}
+    return {
+        "whatsapp_url": url,
+        "label": label,
+        "compact": compact,
+        "icon_only": icon_only,
+        "stop_propagation": stop_propagation,
+    }
 
 
 @register.filter(name="duration")

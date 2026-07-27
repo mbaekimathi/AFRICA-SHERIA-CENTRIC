@@ -107,15 +107,14 @@ class MatterDeskWelcomeStatsTests(TestCase):
         self.assertEqual(stats["tasks-and-progress"], 1)
 
     def test_locking_view_all_limits_dashboard_counts(self):
-        for slug in ("litigation-matters", "non-litigation-matters"):
-            set_employee_activity_permission(
-                employee_id=self.viewer.pk,
-                module_slug="matter-management",
-                activity_slug=slug,
-                action="view_all",
-                is_allowed=False,
-                updated_by=None,
-            )
+        set_employee_activity_permission(
+            employee_id=self.viewer.pk,
+            module_slug="matter-management",
+            activity_slug="matter-management",
+            action="view_all",
+            is_allowed=False,
+            updated_by=None,
+        )
         stats = self._stat_map(self.viewer)
         self.assertEqual(stats["my-matters"], 1)
         self.assertEqual(stats["upcoming-hearings"], 1)

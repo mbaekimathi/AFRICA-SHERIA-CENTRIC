@@ -123,7 +123,7 @@ def _open_url(item: dict, *, is_folder: bool) -> str:
 def _folder_workspace_links(
     folder_ids: list[str], *, role_slug: str
 ) -> dict[str, dict]:
-    """Map Drive folder ids to in-app upload-documents URLs when known."""
+    """Map Drive folder ids to in-app documents library URLs when known."""
     ids = [fid for fid in folder_ids if fid]
     if not ids or not role_slug:
         return {}

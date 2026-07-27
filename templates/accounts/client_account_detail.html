@@ -1,5 +1,5 @@
 {% extends "layouts/workspace.html" %}
-{% load static %}
+{% load static document_extras %}
 
 {% block title %}{{ selected_client.get_full_name }} — {{ page_title }}{% endblock %}
 
@@ -56,12 +56,13 @@
             {{ selected_client.email }}
           </span>
           {% if selected_client.phone %}
-          <span>
+          <span class="phone-with-wa">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
               <path d="M8.25 5.5h7.5v13h-7.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
               <path d="M11 17.25h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
             </svg>
             {{ selected_client.phone }}
+            {% whatsapp_chat_button selected_client.phone compact=True %}
           </span>
           {% endif %}
         </div>

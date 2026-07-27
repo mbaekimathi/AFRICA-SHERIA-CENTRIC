@@ -4,7 +4,7 @@
 {% block title %}{{ page_title }} — Sheria Centric{% endblock %}
 
 {% block content %}
-<section class="page page--dashboard" data-reveal-root>
+<section class="page page--dashboard" data-reveal-root id="live-list-page" data-revision-url="{% url 'accounts:workspace_list_revision' %}?list=matter-hub">
   <header class="dash-hero" data-reveal>
     <div class="dash-hero__glow" aria-hidden="true"></div>
     <div class="dash-hero__orb dash-hero__orb--a" aria-hidden="true"></div>

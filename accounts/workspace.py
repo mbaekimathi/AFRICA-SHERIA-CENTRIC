@@ -127,6 +127,7 @@ def _attach_page_nav_badges(page_nav_items: list[dict], employee=None) -> None:
     pending_cases = None
     pending_matters = None
     pending_petty_cash = None
+    wa_unread = None
     for item in page_nav_items:
         slug = item.get("slug")
         if slug == "user-management":
@@ -139,6 +140,21 @@ def _attach_page_nav_badges(page_nav_items: list[dict], employee=None) -> None:
             if pending_clients is None:
                 pending_clients = pending_clients_count()
             item["badge_count"] = pending_clients
+        elif slug == "whatsapp-inbox":
+            if wa_unread is None:
+                try:
+                    from .models import WhatsAppConversation
+                    from django.db.models import Sum
+
+                    wa_unread = (
+                        WhatsAppConversation.objects.aggregate(
+                            total=Sum("unread_count")
+                        ).get("total")
+                        or 0
+                    )
+                except Exception:
+                    wa_unread = 0
+            item["badge_count"] = wa_unread
         elif slug in {"employee-management", "onboarding-approvals"}:
             if pending_employees is None:
                 pending_employees = pending_employees_count()
@@ -489,6 +505,7 @@ CLIENT_MANAGEMENT_PAGE_LINKS = [
     ("Client Portal", "client-profile", ICON_USERS),
     ("Register Client", "register-client", ICON_DOC),
     ("Approve pending clients", "approve-pending-clients", ICON_USERS),
+    ("WhatsApp Inbox", "whatsapp-inbox", ICON_MESSAGE),
 ]
 
 # Employee Management page-only links
@@ -785,7 +802,7 @@ LITIGATION_CASE_DETAIL_LINKS = [
     ("Case calendar", "case-calendar", ICON_CALENDAR),
     ("Update court attendance", "update-court-attendance", ICON_CALENDAR),
     ("Create task", "create-task", ICON_TASK),
-    ("Upload documents", "upload-documents", ICON_DOC),
+    ("Case documents", "upload-documents", ICON_DOC),
     ("Edit case details", "edit-case-details", ICON_DOC),
     ("Change status", "change-status", ICON_SCALE),
     ("Change allocation", "change-allocation", ICON_USERS),
@@ -798,7 +815,7 @@ NON_LITIGATION_MATTER_DETAIL_LINKS = [
     ("Matter calendar", "matter-calendar", ICON_CALENDAR),
     ("Update matter attendance", "update-matter-attendance", ICON_CALENDAR),
     ("Create task", "create-task", ICON_TASK),
-    ("Upload documents", "upload-documents", ICON_DOC),
+    ("Matter documents", "upload-documents", ICON_DOC),
     ("Edit matter details", "edit-matter-details", ICON_DOC),
     ("Change status", "change-status", ICON_SCALE),
     ("Change allocation", "change-allocation", ICON_USERS),
@@ -817,6 +834,7 @@ _SHARED_CASE_MATTER_ACTION_SLUGS = (
 # Workspace utilities whose visibility (all vs allocated) is managed under
 # Matter Management → Roles & Permissions.
 WORKSPACE_VISIBILITY_ACTIVITIES = [
+    ("Documents", "matter-documents", ICON_DOC),
     ("Tasks", "tasks", ICON_TASK),
     ("Calendar", "calendar", ICON_CALENDAR),
     ("Reminders", "reminders", ICON_BELL),
@@ -826,19 +844,8 @@ WORKSPACE_VISIBILITY_SLUGS = {slug for _, slug, _ in WORKSPACE_VISIBILITY_ACTIVI
 
 
 def _matter_management_extra_activities() -> list[tuple[str, str, str]]:
-    """Case/matter detail actions + workspace visibility utilities for Roles UI."""
-    extras: list[tuple[str, str, str]] = []
-    for label, slug, icon in LITIGATION_CASE_DETAIL_LINKS:
-        if slug in _SHARED_CASE_MATTER_ACTION_SLUGS:
-            extras.append((f"Case / Matter: {label}", slug, icon))
-        else:
-            extras.append((f"Case: {label}", slug, icon))
-    for label, slug, icon in NON_LITIGATION_MATTER_DETAIL_LINKS:
-        if slug in _SHARED_CASE_MATTER_ACTION_SLUGS:
-            continue
-        extras.append((f"Matter: {label}", slug, icon))
-    extras.extend(WORKSPACE_VISIBILITY_ACTIVITIES)
-    return extras
+    """Workspace visibility utilities listed under Matter Management Roles."""
+    return list(WORKSPACE_VISIBILITY_ACTIVITIES)
 
 
 # Extra activities that belong to a system module but are not in PAGE_LOCAL_LINKS.
@@ -860,7 +867,9 @@ MODULE_EXTRA_ACTIVITIES = {
 }
 
 
-def collect_module_activities(module_slug: str) -> list[dict]:
+def collect_module_activities(
+    module_slug: str, *, for_roles_ui: bool = False
+) -> list[dict]:
     """
     Flatten every navigable activity under a system module.
 
@@ -868,6 +877,9 @@ def collect_module_activities(module_slug: str) -> list[dict]:
     Skips expanding roles-permissions into other system modules.
     Dedupes by activity slug — permissions are stored per slug, so the same
     activity reachable via two parents (e.g. petty-cash-book) appears once.
+
+    When for_roles_ui is True for a module hub (Matter / Finance), nested
+    activities are omitted — the hub matrix on the module page covers them.
     """
     activities: list[dict] = []
     seen: set[str] = set()
@@ -906,7 +918,8 @@ def collect_module_activities(module_slug: str) -> list[dict]:
             )
             walk(child_slug, next_labels, next_slugs)
 
-    walk(module_slug, [], [])
+    if not (for_roles_ui and module_slug in MODULE_HUB_PERMISSION_SLUGS):
+        walk(module_slug, [], [])
 
     for label, slug, icon in MODULE_EXTRA_ACTIVITIES.get(module_slug) or []:
         # Case/matter actions are per-record; list them without a module URL.
@@ -936,8 +949,9 @@ def collect_module_activities(module_slug: str) -> list[dict]:
             linkable = True
         elif module_slug == "matter-management" and slug in WORKSPACE_VISIBILITY_SLUGS:
             path_slugs = [slug]
-            # Notifications live in the topbar bell — no dedicated workspace page.
-            linkable = slug != "notifications"
+            # Notifications live in the topbar bell; documents are opened from
+            # case/matter pages — no dedicated workspace hub page.
+            linkable = slug not in {"notifications", "matter-documents"}
         else:
             path_slugs = [slug]
         add_activity(
@@ -989,6 +1003,28 @@ DEFAULT_ACTIVITY_ACTIONS = ("view", "register", "edit", "delete")
 # "View all" = firm-wide records; when locked, only allocated/assigned items.
 VIEW_ALL_ACTION = "view_all"
 
+# Unified Roles & Permissions hub for litigation + non-litigation matters.
+# Stored as activity_slug == module slug so one matrix covers both matter types.
+MATTER_HUB_PERMISSION_SLUG = "matter-management"
+MATTER_HUB_LEGACY_ACTIVITY_SLUGS = frozenset(
+    {
+        "litigation-matters",
+        "non-litigation-matters",
+    }
+)
+# Nested Roles URLs that fold into the unified matter-management matrix.
+MATTER_HUB_ROLES_REDIRECT_SLUGS = frozenset(
+    {
+        *MATTER_HUB_LEGACY_ACTIVITY_SLUGS,
+        "register-case",
+        "approve-registered-cases",
+        "register-new-matter",
+        "approve-registered-matters",
+        *LITIGATION_CASE_ACTION_SLUGS,
+        *NON_LITIGATION_MATTER_ACTION_SLUGS,
+    }
+)
+
 MATTER_HUB_ACTIONS = (
     "view",
     "view_all",
@@ -1004,11 +1040,111 @@ MATTER_HUB_ACTIONS = (
     "status",
 )
 
+# Unified Roles & Permissions hub for Finance & Billing.
+FINANCE_HUB_PERMISSION_SLUG = "finance-billing"
+FINANCE_HUB_ACTIONS = (
+    "view",
+    "register",
+    "edit",
+    "delete",
+    "pay",
+    "approve",
+    "generate",
+    "audit",
+)
+FINANCE_HUB_ROLES_REDIRECT_SLUGS = frozenset(
+    {
+        "general-accounts",
+        "accounting",
+        "client-accounts",
+        "employee-accounts",
+        "company-accounts",
+        "invoicing",
+        "generate-invoice",
+        "payroll",
+        "register-payroll",
+        "employee-advances",
+        "register-advance",
+        "employee-petty-cashbook",
+        "register-petty-cash-expense",
+        "register-account",
+        "topup-account",
+        "pay-expense",
+        "topup-client-account",
+        "petty-cash-book",
+        *{slug for _label, slug, _icon in ACCOUNTING_PAGE_LINKS},
+        *LEGACY_GENERAL_ACCOUNTS_SLUGS,
+    }
+)
+
+# Module-level Roles hubs: one matrix on .../roles-permissions/<module>/
+MODULE_HUB_PERMISSIONS: dict[str, dict] = {
+    MATTER_HUB_PERMISSION_SLUG: {
+        "label": "Matter Management",
+        "path": "Litigation and non-litigation matters",
+        "actions": MATTER_HUB_ACTIONS,
+        "redirect_slugs": MATTER_HUB_ROLES_REDIRECT_SLUGS,
+        # Permission remapping stays narrow so shared slugs like
+        # upload-documents are not stolen from document-management.
+        "permission_slugs": frozenset(
+            {
+                *MATTER_HUB_LEGACY_ACTIVITY_SLUGS,
+                "register-case",
+                "approve-registered-cases",
+                "register-new-matter",
+                "approve-registered-matters",
+            }
+        ),
+        "legacy_slugs": MATTER_HUB_LEGACY_ACTIVITY_SLUGS,
+        "secondary_activities": True,
+        "intro": (
+            "One matrix for litigation and non-litigation matters — register, "
+            "approve, allocate, attend, and related actions. Separate toggles "
+            "below cover Documents, Tasks, Calendar, Reminders, and Notifications."
+        ),
+    },
+    FINANCE_HUB_PERMISSION_SLUG: {
+        "label": "Finance & Billing",
+        "path": "Accounts, invoicing, payroll, and books",
+        "actions": FINANCE_HUB_ACTIONS,
+        "redirect_slugs": FINANCE_HUB_ROLES_REDIRECT_SLUGS,
+        "permission_slugs": FINANCE_HUB_ROLES_REDIRECT_SLUGS,
+        "legacy_slugs": frozenset(),
+        "secondary_activities": False,
+        "intro": (
+            "One matrix for Finance & Billing — general accounts, client and "
+            "employee accounts, company accounts, invoicing, payroll, and "
+            "related pay / approve / generate actions."
+        ),
+    },
+}
+
+MODULE_HUB_PERMISSION_SLUGS = frozenset(MODULE_HUB_PERMISSIONS)
+
+
+def module_hub_for_activity(activity_slug: str) -> str | None:
+    """Return the module hub slug that owns this activity for permission storage."""
+    if activity_slug in MODULE_HUB_PERMISSIONS:
+        return activity_slug
+    for hub_slug, meta in MODULE_HUB_PERMISSIONS.items():
+        if activity_slug in meta["permission_slugs"]:
+            return hub_slug
+    return None
+
+
+def module_hub_redirects_activity(module_slug: str, activity_slug: str) -> bool:
+    """True when a nested Roles URL should redirect to the module hub page."""
+    meta = MODULE_HUB_PERMISSIONS.get(module_slug)
+    if not meta:
+        return False
+    return activity_slug in meta["redirect_slugs"]
+
+
 # Activities that support all-vs-allocated visibility under Matter Management.
 VISIBILITY_SCOPED_ACTIVITIES = frozenset(
     {
-        "litigation-matters",
-        "non-litigation-matters",
+        MATTER_HUB_PERMISSION_SLUG,
+        *MATTER_HUB_LEGACY_ACTIVITY_SLUGS,
         *WORKSPACE_VISIBILITY_SLUGS,
     }
 )
@@ -1025,10 +1161,12 @@ ACTIVITY_PERMISSION_OVERRIDES: dict[str, tuple[str, ...]] = {
     # Shared by document hub and case/matter upload actions.
     "upload-documents": ("view", "upload", "delete"),
     # Workspace utilities: open page + firm-wide vs allocated-only scope.
+    "matter-documents": ("view", "view_all"),
     "tasks": ("view", "view_all"),
     "calendar": ("view", "view_all"),
     "reminders": ("view", "view_all"),
     "notifications": ("view", "view_all"),
+    "whatsapp-inbox": ("view", "edit"),
 }
 
 _DETAIL_SLUG_PERMISSION_ACTIONS = {
@@ -1037,6 +1175,7 @@ _DETAIL_SLUG_PERMISSION_ACTIONS = {
     "update-court-attendance": "attend",
     "update-matter-attendance": "attend",
     "create-task": "task",
+    "documents": "view",
     "upload-documents": "upload",
     "edit-case-details": "edit",
     "edit-matter-details": "edit",
@@ -1162,16 +1301,20 @@ def infer_activity_permission_actions(
     if activity_slug.startswith("generate-"):
         return ("view", "generate")
 
-    if activity_slug in {"litigation-matters", "non-litigation-matters"}:
+    if activity_slug in {
+        "litigation-matters",
+        "non-litigation-matters",
+        MATTER_HUB_PERMISSION_SLUG,
+    }:
         return MATTER_HUB_ACTIONS
+    if activity_slug == FINANCE_HUB_PERMISSION_SLUG:
+        return FINANCE_HUB_ACTIONS
     if activity_slug == "client-management":
         return ("view", "register", "edit", "delete", "approve")
     if activity_slug == "client-profile":
         return ("view", "edit", "delete")
     if activity_slug == "employee-management":
         return ("view", "register", "edit", "delete", "approve", "allocate")
-    if activity_slug == "finance-billing":
-        return ("view", "register", "edit", "delete", "pay")
     if activity_slug == "general-accounts":
         return ("view", "register", "edit", "delete", "pay")
     if activity_slug == "invoicing":
@@ -1281,6 +1424,8 @@ def build_activity_permission_registry() -> dict[str, tuple[str, ...]]:
         registry.setdefault(slug, infer_activity_permission_actions(slug))
 
     registry.update(ACTIVITY_PERMISSION_OVERRIDES)
+    for hub_slug, hub_meta in MODULE_HUB_PERMISSIONS.items():
+        registry[hub_slug] = hub_meta["actions"]
     return registry
 
 
@@ -1342,6 +1487,26 @@ def post_requests_delete(request) -> bool:
     )
 
 
+def resolve_workspace_open_action(activity_slug: str) -> str:
+    """
+    Action required to open a workspace page (GET), not just view the shell.
+
+    Register / approve / generate form pages must not render when the matching
+    action is locked — even if the employee may still view the parent list.
+    """
+    for prefix, action in WORKSPACE_PAGE_POST_PREFIX_ACTIONS:
+        if activity_slug.startswith(prefix):
+            return action
+    if (
+        activity_slug.endswith("-new")
+        and activity_slug not in {"theme-settings", "notification-settings"}
+    ):
+        return "register"
+    if activity_slug in WORKSPACE_APPROVE_ACTIVITIES:
+        return "approve"
+    return "view"
+
+
 def resolve_workspace_post_action(activity_slug: str, request) -> str:
     for prefix, action in WORKSPACE_PAGE_POST_PREFIX_ACTIONS:
         if activity_slug.startswith(prefix):
@@ -1391,9 +1556,9 @@ def resolve_workspace_post_action(activity_slug: str, request) -> str:
 
 def activity_permission_actions(activity_slug: str) -> list[dict]:
     """Return labelled actions available for an activity permission page."""
-    slugs = ACTIVITY_PERMISSION_ACTIONS.get(
-        activity_slug, DEFAULT_ACTIVITY_ACTIONS
-    )
+    slugs = ACTIVITY_PERMISSION_ACTIONS.get(activity_slug)
+    if slugs is None:
+        slugs = infer_activity_permission_actions(activity_slug)
     return [
         {
             "slug": slug,
@@ -1432,48 +1597,74 @@ def module_activity_url(user, module_slug: str, activity: dict) -> str | None:
     return user.workspace_url("dashboard", module_slug, *path_slugs)
 
 
-def litigation_case_nav_items(role_slug: str, case_id: int, active_slug: str | None = None):
+def litigation_case_nav_items(
+    role_slug: str,
+    case_id: int,
+    active_slug: str | None = None,
+    *,
+    employee=None,
+):
     """Sidebar actions for a litigation case detail page."""
-    return [
-        {
-            "label": label,
-            "slug": slug,
-            "url": reverse(
-                "accounts:litigation_case_action",
-                kwargs={
-                    "role": role_slug,
-                    "case_id": case_id,
-                    "action": slug,
-                },
-            ),
-            "icon": icon,
-            "active": slug == active_slug,
-        }
-        for label, slug, icon in LITIGATION_CASE_DETAIL_LINKS
-    ]
+    items = []
+    for label, slug, icon in LITIGATION_CASE_DETAIL_LINKS:
+        if employee is not None:
+            action = WORKSPACE_DETAIL_ACTION_MAP.get(slug, "view")
+            if not workspace_activity_action_permitted(
+                employee, "matter-management", "litigation-matters", action
+            ):
+                continue
+        items.append(
+            {
+                "label": label,
+                "slug": slug,
+                "url": reverse(
+                    "accounts:litigation_case_action",
+                    kwargs={
+                        "role": role_slug,
+                        "case_id": case_id,
+                        "action": slug,
+                    },
+                ),
+                "icon": icon,
+                "active": slug == active_slug,
+            }
+        )
+    return items
 
 
 def non_litigation_matter_nav_items(
-    role_slug: str, matter_id: int, active_slug: str | None = None
+    role_slug: str,
+    matter_id: int,
+    active_slug: str | None = None,
+    *,
+    employee=None,
 ):
     """Sidebar actions for a non-litigation matter detail page."""
-    return [
-        {
-            "label": label,
-            "slug": slug,
-            "url": reverse(
-                "accounts:non_litigation_matter_action",
-                kwargs={
-                    "role": role_slug,
-                    "matter_id": matter_id,
-                    "action": slug,
-                },
-            ),
-            "icon": icon,
-            "active": slug == active_slug,
-        }
-        for label, slug, icon in NON_LITIGATION_MATTER_DETAIL_LINKS
-    ]
+    items = []
+    for label, slug, icon in NON_LITIGATION_MATTER_DETAIL_LINKS:
+        if employee is not None:
+            action = WORKSPACE_DETAIL_ACTION_MAP.get(slug, "view")
+            if not workspace_activity_action_permitted(
+                employee, "matter-management", "non-litigation-matters", action
+            ):
+                continue
+        items.append(
+            {
+                "label": label,
+                "slug": slug,
+                "url": reverse(
+                    "accounts:non_litigation_matter_action",
+                    kwargs={
+                        "role": role_slug,
+                        "matter_id": matter_id,
+                        "action": slug,
+                    },
+                ),
+                "icon": icon,
+                "active": slug == active_slug,
+            }
+        )
+    return items
 
 
 def page_local_links_for(active: str, trail: list[str] | None = None):
@@ -1603,6 +1794,7 @@ PAGE_TITLES = {
     "client-management": "Client Management",
     "register-client": "Register Client",
     "approve-pending-clients": "Approve pending clients",
+    "whatsapp-inbox": "WhatsApp Inbox",
     "client-profile": "Client Portal",
     "employee-management": "Employee Management",
     "register-employee": "Register Employee",
@@ -1674,6 +1866,7 @@ PAGE_TITLES = {
     "matter-calendar": "Matter calendar",
     "update-court-attendance": "Update court attendance",
     "create-task": "Create task",
+    "matter-documents": "Documents",
     "upload-documents": "Upload documents",
     "edit-case-details": "Edit case details",
     "edit-matter-details": "Edit matter details",
@@ -1797,10 +1990,17 @@ def _is_roles_activity_permission_trail(trail: list[str]) -> bool:
     )
 
 
+def permission_activity_slug(activity_slug: str) -> str:
+    """Map nested module activities onto their unified Roles hub permission."""
+    hub = module_hub_for_activity(activity_slug)
+    return hub or activity_slug
+
+
 def role_activity_is_allowed(role: str, module_slug: str, activity_slug: str) -> bool:
     """Return whether a role may access an activity (default allow)."""
     from .models import RoleActivityPermission
 
+    activity_slug = permission_activity_slug(activity_slug)
     row = (
         RoleActivityPermission.objects.filter(
             role=role,
@@ -1810,6 +2010,17 @@ def role_activity_is_allowed(role: str, module_slug: str, activity_slug: str) ->
         .only("is_allowed")
         .first()
     )
+    hub_meta = MODULE_HUB_PERMISSIONS.get(activity_slug)
+    if row is None and hub_meta and hub_meta["legacy_slugs"]:
+        legacy = list(
+            RoleActivityPermission.objects.filter(
+                role=role,
+                module_slug=module_slug,
+                activity_slug__in=hub_meta["legacy_slugs"],
+            ).only("is_allowed")
+        )
+        if legacy:
+            return all(bool(item.is_allowed) for item in legacy)
     if row is None:
         return True
     return bool(row.is_allowed)
@@ -1825,6 +2036,7 @@ def set_role_activity_permission(
 ):
     from .models import RoleActivityPermission
 
+    activity_slug = permission_activity_slug(activity_slug)
     obj, _created = RoleActivityPermission.objects.update_or_create(
         role=role,
         module_slug=module_slug,
@@ -1844,6 +2056,7 @@ def employee_activity_action_allowed(
     action: str,
 ) -> bool:
     """Return whether an employee may perform an action (default allow)."""
+    activity_slug = permission_activity_slug(activity_slug)
     if not role_activity_is_allowed(employee.role, module_slug, activity_slug):
         return False
     from .models import EmployeeActivityPermission
@@ -1858,6 +2071,20 @@ def employee_activity_action_allowed(
         .only("is_allowed")
         .first()
     )
+    if row is None and activity_slug in MODULE_HUB_PERMISSIONS:
+        hub_meta = MODULE_HUB_PERMISSIONS[activity_slug]
+        legacy_slugs = hub_meta["legacy_slugs"]
+        if legacy_slugs:
+            legacy = list(
+                EmployeeActivityPermission.objects.filter(
+                    employee_id=employee.pk,
+                    module_slug=module_slug,
+                    activity_slug__in=legacy_slugs,
+                    action=action,
+                ).only("is_allowed")
+            )
+            if legacy:
+                return all(bool(item.is_allowed) for item in legacy)
     if row is None:
         return employee_action_default_allowed(employee, activity_slug, action)
     return bool(row.is_allowed)
@@ -1867,11 +2094,17 @@ def default_view_all_allowed(employee, activity_slug: str) -> bool:
     """
     Default for View all when no employee override row exists.
 
-    Matters stay firm-wide (current list behaviour). Tasks / reminders /
-    notifications stay assignee-scoped. Calendar is firm-wide for managing
-    partners only (matches the former role-based calendar).
+    Matters stay firm-wide (current list behaviour). Case/matter documents
+    follow the same default. Tasks / reminders / notifications stay
+    assignee-scoped. Calendar is firm-wide for managing partners only
+    (matches the former role-based calendar).
     """
-    if activity_slug in {"litigation-matters", "non-litigation-matters"}:
+    canonical = permission_activity_slug(activity_slug)
+    if canonical == MATTER_HUB_PERMISSION_SLUG or activity_slug in {
+        "litigation-matters",
+        "non-litigation-matters",
+        "matter-documents",
+    }:
         return True
     if activity_slug == "calendar":
         return getattr(employee, "role", None) == Employee.Role.MANAGING_PARTNER
@@ -1913,28 +2146,44 @@ def _open_matter_task_statuses():
 
 
 def allocated_cases_q(employee):
-    """Cases linked to the employee: assignee, registrant, or open tasks."""
+    """
+    Cases linked to the employee when View all is locked.
+
+    Active/closed: allocated assignee or open case tasks only.
+    Pending approval: also the registrant (not yet allocated).
+    """
     open_task_case_ids = CaseTask.objects.filter(
         assignee=employee,
         status__in=_open_case_task_statuses(),
     ).values_list("case_id", flat=True)
     return (
         Q(assigned_to=employee)
-        | Q(registered_by=employee)
         | Q(pk__in=open_task_case_ids)
+        | Q(
+            registered_by=employee,
+            status=LitigationCase.Status.PENDING_APPROVAL,
+        )
     )
 
 
 def allocated_matters_q(employee):
-    """Matters linked to the employee: assignee, registrant, or open tasks."""
+    """
+    Matters linked to the employee when View all is locked.
+
+    Active/closed: allocated assignee or open matter tasks only.
+    Pending approval: also the registrant (not yet allocated).
+    """
     open_task_matter_ids = MatterTask.objects.filter(
         assignee=employee,
         status__in=_open_matter_task_statuses(),
     ).values_list("matter_id", flat=True)
     return (
         Q(assigned_to=employee)
-        | Q(registered_by=employee)
         | Q(pk__in=open_task_matter_ids)
+        | Q(
+            registered_by=employee,
+            status=NonLitigationMatter.Status.PENDING_APPROVAL,
+        )
     )
 
 
@@ -1958,12 +2207,58 @@ def matters_visible_to(employee, *, status=None):
     return qs.filter(allocated_matters_q(employee)).distinct()
 
 
+def matter_visibility_revision(employee) -> str:
+    """
+    Compact fingerprint of matter visibility for live page refresh.
+
+    Changes when View all toggles or the visible matter/case set grows or
+    shrinks. Assignment label changes on list pages are handled separately by
+    list-revision polling (so firm-wide viewers are not force-reloaded on every
+    reallocation elsewhere).
+    """
+    import hashlib
+
+    lit_all = employee_can_view_all(employee, "litigation-matters")
+    mat_all = employee_can_view_all(employee, "non-litigation-matters")
+    tasks_all = employee_can_view_all(employee, "tasks")
+    cal_all = employee_can_view_all(employee, "calendar")
+    rem_all = employee_can_view_all(employee, "reminders")
+
+    case_ids = ",".join(
+        str(pk)
+        for pk in cases_visible_to(
+            employee, status=LitigationCase.Status.ACTIVE
+        )
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    matter_ids = ",".join(
+        str(pk)
+        for pk in matters_visible_to(
+            employee, status=NonLitigationMatter.Status.ACTIVE
+        )
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    pending_cases = pending_litigation_cases_count(employee)
+    pending_matters = pending_non_litigation_matters_count(employee)
+
+    raw = (
+        f"va:{int(lit_all)}{int(mat_all)}{int(tasks_all)}{int(cal_all)}{int(rem_all)}"
+        f"|c:{case_ids}|m:{matter_ids}|pc:{pending_cases}|pm:{pending_matters}"
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:40]
+
+
 def employee_can_access_case(employee, case) -> bool:
     if employee_can_view_all(employee, "litigation-matters"):
         return True
     if getattr(case, "assigned_to_id", None) == employee.pk:
         return True
-    if getattr(case, "registered_by_id", None) == employee.pk:
+    if (
+        getattr(case, "registered_by_id", None) == employee.pk
+        and getattr(case, "status", None) == LitigationCase.Status.PENDING_APPROVAL
+    ):
         return True
     return CaseTask.objects.filter(
         case_id=case.pk,
@@ -1977,13 +2272,85 @@ def employee_can_access_matter(employee, matter) -> bool:
         return True
     if getattr(matter, "assigned_to_id", None) == employee.pk:
         return True
-    if getattr(matter, "registered_by_id", None) == employee.pk:
+    if (
+        getattr(matter, "registered_by_id", None) == employee.pk
+        and getattr(matter, "status", None)
+        == NonLitigationMatter.Status.PENDING_APPROVAL
+    ):
         return True
     return MatterTask.objects.filter(
         matter_id=matter.pk,
         assignee=employee,
         status__in=_open_matter_task_statuses(),
     ).exists()
+
+
+def _case_is_allocated_to(employee, case) -> bool:
+    """True when the case matches allocated-only (View all locked) rules."""
+    if getattr(case, "assigned_to_id", None) == employee.pk:
+        return True
+    if (
+        getattr(case, "registered_by_id", None) == employee.pk
+        and getattr(case, "status", None) == LitigationCase.Status.PENDING_APPROVAL
+    ):
+        return True
+    return CaseTask.objects.filter(
+        case_id=case.pk,
+        assignee=employee,
+        status__in=_open_case_task_statuses(),
+    ).exists()
+
+
+def _matter_is_allocated_to(employee, matter) -> bool:
+    """True when the matter matches allocated-only (View all locked) rules."""
+    if getattr(matter, "assigned_to_id", None) == employee.pk:
+        return True
+    if (
+        getattr(matter, "registered_by_id", None) == employee.pk
+        and getattr(matter, "status", None)
+        == NonLitigationMatter.Status.PENDING_APPROVAL
+    ):
+        return True
+    return MatterTask.objects.filter(
+        matter_id=matter.pk,
+        assignee=employee,
+        status__in=_open_matter_task_statuses(),
+    ).exists()
+
+
+def employee_can_access_document(employee, document) -> bool:
+    """
+    Whether the employee may open documents for this case/matter.
+
+    Matter Management → Documents → View all controls firm-wide vs allocated
+    document access. Parent case/matter visibility still applies when View all
+    is enabled.
+    """
+    if document.case_id:
+        case = document.case
+        if not employee_can_view_all(employee, "matter-documents"):
+            return _case_is_allocated_to(employee, case)
+        return employee_can_access_case(employee, case)
+    if document.matter_id:
+        matter = document.matter
+        if not employee_can_view_all(employee, "matter-documents"):
+            return _matter_is_allocated_to(employee, matter)
+        return employee_can_access_matter(employee, matter)
+    return False
+
+
+def employee_can_access_case_documents(employee, case) -> bool:
+    """Whether the employee may open the documents library for a case."""
+    if not employee_can_view_all(employee, "matter-documents"):
+        return _case_is_allocated_to(employee, case)
+    return employee_can_access_case(employee, case)
+
+
+def employee_can_access_matter_documents(employee, matter) -> bool:
+    """Whether the employee may open the documents library for a matter."""
+    if not employee_can_view_all(employee, "matter-documents"):
+        return _matter_is_allocated_to(employee, matter)
+    return employee_can_access_matter(employee, matter)
 
 
 def case_tasks_visible_to(employee):
@@ -2028,6 +2395,40 @@ def pop_workspace_access_denied_modal(request):
     if request is None:
         return None
     return request.session.pop(ACCESS_DENIED_MODAL_SESSION_KEY, None)
+
+
+def workspace_access_denied_redirect_url(
+    request, user, *, redirect_to=None, fallback=None
+) -> str:
+    """
+    Prefer staying on the page the user came from when an action is denied.
+
+    Order: explicit redirect_to → same-origin Referer → fallback → dashboard.
+    """
+    from urllib.parse import urlparse
+
+    if redirect_to:
+        return redirect_to
+
+    referer = (request.META.get("HTTP_REFERER") or "").strip()
+    if referer:
+        parsed = urlparse(referer)
+        host = request.get_host()
+        referer_host = parsed.netloc or host
+        if referer_host == host and parsed.path:
+            path = parsed.path
+            # Avoid looping when refreshing a locked page itself.
+            if path != request.path and "/login" not in path and "/logout" not in path:
+                return referer
+
+    if fallback:
+        return fallback
+
+    # Denied POST from a form: re-show the same page with the modal.
+    if getattr(request, "method", "").upper() == "POST" and request.path:
+        return request.path
+
+    return user.dashboard_url
 
 
 def workspace_activity_action_permitted(
@@ -2095,6 +2496,7 @@ def redirect_if_workspace_action_denied(
     activity_slug: str,
     action: str,
     redirect_to=None,
+    fallback=None,
 ):
     from django.shortcuts import redirect
 
@@ -2112,7 +2514,14 @@ def redirect_if_workspace_action_denied(
         title=title,
         message=message,
     )
-    return redirect(redirect_to or user.dashboard_url)
+    return redirect(
+        workspace_access_denied_redirect_url(
+            request,
+            user,
+            redirect_to=redirect_to,
+            fallback=fallback,
+        )
+    )
 
 
 def set_employee_activity_permission(
@@ -2126,6 +2535,7 @@ def set_employee_activity_permission(
 ):
     from .models import EmployeeActivityPermission
 
+    activity_slug = permission_activity_slug(activity_slug)
     obj, _created = EmployeeActivityPermission.objects.update_or_create(
         employee_id=employee_id,
         module_slug=module_slug,
@@ -2136,6 +2546,12 @@ def set_employee_activity_permission(
             "updated_by": updated_by,
         },
     )
+    try:
+        from .notifications import invalidate_notification_payload_cache
+
+        invalidate_notification_payload_cache(employee_id)
+    except Exception:
+        pass
     return obj
 
 
@@ -3002,6 +3418,18 @@ def workspace_context(
                     )
             else:
                 page_nav_items = []
+
+    module_for_nav = module_slug_for_trail(trail) if trail else None
+    if page_nav_items and module_for_nav:
+        filtered_nav = []
+        for item in page_nav_items:
+            slug = item.get("slug") or ""
+            open_action = resolve_workspace_open_action(slug)
+            if workspace_activity_action_permitted(
+                user, module_for_nav, slug, open_action
+            ):
+                filtered_nav.append(item)
+        page_nav_items = filtered_nav
 
     _attach_page_nav_badges(page_nav_items, employee=user)
 

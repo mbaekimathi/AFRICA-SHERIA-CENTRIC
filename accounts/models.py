@@ -5183,6 +5183,12 @@ class CommunicationSettings(models.Model):
         help_text="Meta Phone Number ID, or Twilio WhatsApp sender.",
     )
     whatsapp_webhook_url = models.URLField(blank=True, default="")
+    whatsapp_webhook_verify_token = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Verify token Meta sends during webhook subscription.",
+    )
 
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
@@ -5277,16 +5283,117 @@ class CommunicationSettings(models.Model):
         return False
 
     @property
+    def whatsapp_api_ready(self) -> bool:
+        """True when WhatsApp Business API credentials are configured."""
+        return bool(
+            self.whatsapp_enabled
+            and self.whatsapp_api_enabled
+            and self.whatsapp_provider != self.WhatsAppProvider.NONE
+            and self.whatsapp_api_token.strip()
+            and self.whatsapp_phone_number_id.strip()
+        )
+
+    @property
     def whatsapp_ready(self) -> bool:
         if not self.whatsapp_enabled:
             return False
         if self.whatsapp_api_enabled:
-            return bool(
-                self.whatsapp_provider != self.WhatsAppProvider.NONE
-                and self.whatsapp_api_token.strip()
-                and self.whatsapp_phone_number_id.strip()
-            )
+            return self.whatsapp_api_ready
         return bool(self.whatsapp_business_number.strip())
+
+
+class WhatsAppConversation(models.Model):
+    """Firm WhatsApp Business API thread keyed by client MSISDN."""
+
+    msisdn = models.CharField(max_length=32, unique=True, db_index=True)
+    client = models.ForeignKey(
+        Client,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="whatsapp_conversations",
+    )
+    display_name = models.CharField(max_length=180, blank=True, default="")
+    unread_count = models.PositiveIntegerField(default=0)
+    last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_message_preview = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-last_message_at", "-id"]
+        verbose_name = "WhatsApp conversation"
+        verbose_name_plural = "WhatsApp conversations"
+
+    def __str__(self):
+        label = self.display_name or self.msisdn
+        if self.client_id:
+            return f"WhatsApp: {self.client.get_full_name()} ({self.msisdn})"
+        return f"WhatsApp: {label}"
+
+    @property
+    def title(self) -> str:
+        if self.client_id:
+            return self.client.get_full_name()
+        return self.display_name or f"+{self.msisdn}"
+
+
+class WhatsAppMessage(models.Model):
+    """Single inbound or outbound WhatsApp Business API message."""
+
+    class Direction(models.TextChoices):
+        INBOUND = "in", "Inbound"
+        OUTBOUND = "out", "Outbound"
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        SENT = "sent", "Sent"
+        DELIVERED = "delivered", "Delivered"
+        READ = "read", "Read"
+        FAILED = "failed", "Failed"
+        RECEIVED = "received", "Received"
+
+    conversation = models.ForeignKey(
+        WhatsAppConversation,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+    direction = models.CharField(max_length=8, choices=Direction.choices)
+    body = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.QUEUED,
+    )
+    provider_message_id = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Meta wamid or provider message id.",
+    )
+    error_message = models.CharField(max_length=255, blank=True, default="")
+    sent_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="whatsapp_messages_sent",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        verbose_name = "WhatsApp message"
+        verbose_name_plural = "WhatsApp messages"
+        indexes = [
+            models.Index(fields=["conversation", "created_at"]),
+        ]
+
+    def __str__(self):
+        preview = (self.body or "")[:40]
+        return f"{self.get_direction_display()}: {preview}"
 
 
 class RoleActivityPermission(models.Model):

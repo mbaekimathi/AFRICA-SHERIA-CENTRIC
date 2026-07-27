@@ -37,6 +37,7 @@
     "whatsapp_api_token",
     "whatsapp_phone_number_id",
     "whatsapp_webhook_url",
+    "whatsapp_webhook_verify_token",
   ];
 
   var BOOL_KEYS = {

@@ -612,15 +612,18 @@ def mark_all_read(employee) -> int:
 
 def notifications_payload(employee, *, limit: int = 40) -> dict:
     """Build the live-poll payload, grouped by category (latest first)."""
-    from .workspace import employee_can_view_all
+    from .workspace import employee_can_view_all, matter_visibility_revision
 
     view_all = employee_can_view_all(employee, "notifications")
+    matter_scope = matter_visibility_revision(employee)
     cache_key = _notification_payload_cache_key(
         employee.pk, limit, view_all=view_all
     )
     cached = cache.get(cache_key)
     if cached is not None:
-        return cached
+        payload = dict(cached)
+        payload["matter_scope_revision"] = matter_scope
+        return payload
 
     # Side-effectful materialisation is expensive — run at most once per minute.
     materialize_key = f"notif_materialize:{employee.pk}"
@@ -691,4 +694,6 @@ def notifications_payload(employee, *, limit: int = 40) -> dict:
         "groups": ordered_groups,
     }
     cache.set(cache_key, payload, _PAYLOAD_TTL_SECONDS)
-    return payload
+    out = dict(payload)
+    out["matter_scope_revision"] = matter_scope
+    return out

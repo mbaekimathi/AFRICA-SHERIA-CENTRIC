@@ -95,6 +95,7 @@ OVERRIDE_KEYS = (
     "whatsapp_api_token",
     "whatsapp_phone_number_id",
     "whatsapp_webhook_url",
+    "whatsapp_webhook_verify_token",
 )
 
 
@@ -142,6 +143,7 @@ FIELD_LABELS = {
     "whatsapp_api_token": "API access token",
     "whatsapp_phone_number_id": "Phone number ID / sender",
     "whatsapp_webhook_url": "Webhook URL",
+    "whatsapp_webhook_verify_token": "Webhook verify token",
 }
 
 CHANNEL_PANEL_IDS = {

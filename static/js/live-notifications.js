@@ -326,6 +326,7 @@
     if (!url || !window.SheriaLivePoll) return;
 
     let lastRevision = "";
+    let lastMatterScope = null;
     let lastUnreadCount = null;
     const soundEnabled = () =>
       (menu.dataset.soundEnabled || "true").toLowerCase() !== "false";
@@ -335,6 +336,17 @@
       const revision = data.revision || "";
       const changed = revision !== lastRevision;
       lastRevision = revision;
+
+      const matterScope = data.matter_scope_revision || "";
+      if (matterScope) {
+        if (lastMatterScope === null) {
+          lastMatterScope = matterScope;
+        } else if (matterScope !== lastMatterScope) {
+          lastMatterScope = matterScope;
+          window.location.reload();
+          return true;
+        }
+      }
 
       const unreadCount = Number(data.unread_count || 0);
       if (lastUnreadCount !== null && unreadCount > lastUnreadCount) {
@@ -350,12 +362,13 @@
       return changed;
     };
 
-    // Keep polling in background tabs so browser desktop alerts can fire.
+    // Keep polling in background tabs so browser desktop alerts can fire,
+    // and so matter visibility / allocation changes refresh open pages.
     window.SheriaLivePoll.start({
       url,
-      minMs: 8000,
-      maxMs: 45000,
-      factor: 1.7,
+      minMs: 4000,
+      maxMs: 30000,
+      factor: 1.6,
       runInBackground: true,
       onPayload,
     });

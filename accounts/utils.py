@@ -223,12 +223,17 @@ def render_blog_body(text: str) -> tuple[str, list[dict]]:
     return mark_safe("\n".join(html_parts)), toc
 
 
-def whatsapp_chat_url(phone: str, message: str = "") -> str:
-    """Build a wa.me chat URL from a phone number and optional prefilled message."""
+def normalize_whatsapp_msisdn(phone: str) -> str:
+    """Normalize a phone to WhatsApp MSISDN digits (Kenyan 0… → 254…)."""
     digits = re.sub(r"\D+", "", phone or "")
     if digits.startswith("0") and len(digits) >= 9:
-        # Local Kenyan-style numbers → assume +254
         digits = "254" + digits.lstrip("0")
+    return digits
+
+
+def whatsapp_chat_url(phone: str, message: str = "") -> str:
+    """Build a wa.me chat URL from a phone number and optional prefilled message."""
+    digits = normalize_whatsapp_msisdn(phone)
     if not digits:
         return ""
     from urllib.parse import quote

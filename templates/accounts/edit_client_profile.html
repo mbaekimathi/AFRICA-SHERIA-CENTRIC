@@ -1,5 +1,5 @@
 {% extends "layouts/workspace.html" %}
-{% load static %}
+{% load static document_extras %}
 
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
@@ -51,6 +51,9 @@
         </div>
       </div>
       <div class="settings-hero__actions">
+        {% if client.phone %}
+        {% whatsapp_chat_button client.phone %}
+        {% endif %}
         <a href="{{ list_url }}" class="btn btn--quiet btn--inline">Back to clients</a>
       </div>
     </div>
@@ -64,7 +67,19 @@
     <div class="panel__body">
       <dl class="settings-grid review-grid">
         <div><dt>Email</dt><dd>{{ client.email }}</dd></div>
-        <div><dt>Phone</dt><dd>{{ client.phone|default:"—" }}</dd></div>
+        <div>
+          <dt>Phone</dt>
+          <dd>
+            {% if client.phone %}
+            <span class="phone-with-wa">
+              <span>{{ client.phone }}</span>
+              {% whatsapp_chat_button client.phone compact=True %}
+            </span>
+            {% else %}
+            —
+            {% endif %}
+          </dd>
+        </div>
         <div><dt>Physical address</dt><dd>{{ client.physical_address|default:"—" }}</dd></div>
         <div><dt>Joined</dt><dd>{{ client.date_joined|date:"d M Y, H:i" }}</dd></div>
         {% if client.client_type == "individual" %}

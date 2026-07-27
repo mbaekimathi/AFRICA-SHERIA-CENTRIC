@@ -1,0 +1,148 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page"
+  id="whatsapp-inbox-page"
+  data-poll-url="{{ wa_poll_url }}"
+  data-active-id="{% if wa_active %}{{ wa_active.pk }}{% endif %}"
+  data-last-message-id="{{ wa_last_message_id|default:'' }}"
+>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Firm WhatsApp Business chats with clients. Personal staff chats still use
+        the green WhatsApp buttons on client and matter pages.
+      </p>
+    </div>
+  </header>
+
+  {% if not whatsapp_api_ready %}
+  <section class="panel wa-inbox__setup">
+    <div class="panel__head">
+      <h3>Connect WhatsApp Business API</h3>
+      <p class="panel__hint">Required before the inbox can send or receive</p>
+    </div>
+    <div class="panel__body">
+      <p>
+        Personal WhatsApp cannot power this inbox. You need a Meta WhatsApp
+        Business Platform number, then paste credentials in Communication Settings.
+      </p>
+      <ol>
+        <li>Create a Meta Business account and add a WhatsApp Business number.</li>
+        <li>Copy the permanent access token and Phone Number ID.</li>
+        <li>
+          Open
+          <a href="{{ communication_settings_url }}">Communication Settings</a>,
+          enable WhatsApp + API (Meta), paste credentials, and set a verify token.
+        </li>
+        <li>In Meta, point the webhook to your public HTTPS webhook URL and subscribe to <code>messages</code>.</li>
+        <li>Run Verify in Communication Settings, then return here.</li>
+      </ol>
+      <p class="field-hint" style="margin-top:1rem">
+        Until then, use <strong>Chat on WhatsApp</strong> on client profiles to open chats in your personal WhatsApp app.
+      </p>
+      <div class="form-actions form-actions--start" style="margin-top:1rem">
+        <a class="btn btn--primary" href="{{ communication_settings_url }}">Open Communication Settings</a>
+      </div>
+    </div>
+  </section>
+  {% else %}
+  <div class="wa-inbox">
+    <aside class="wa-inbox__list">
+      <div class="wa-inbox__list-head">
+        <h3>Conversations</h3>
+        <p>{{ wa_conversations|length }} thread{{ wa_conversations|length|pluralize }}</p>
+      </div>
+      {% if wa_conversations %}
+      <ul class="wa-inbox__conversations" id="wa-conversation-list">
+        {% for conversation in wa_conversations %}
+        <li>
+          <a
+            class="wa-inbox__conversation{% if wa_active and wa_active.pk == conversation.pk %} is-active{% endif %}"
+            href="{{ wa_inbox_url }}?c={{ conversation.pk }}"
+            data-conversation-id="{{ conversation.pk }}"
+          >
+            <div class="wa-inbox__conversation-top">
+              <span class="wa-inbox__conversation-name">{{ conversation.title }}</span>
+              {% if conversation.last_message_at %}
+              <span class="wa-inbox__conversation-time">{{ conversation.last_message_at|date:"d M H:i" }}</span>
+              {% endif %}
+            </div>
+            <p class="wa-inbox__conversation-preview">
+              {% if conversation.unread_count %}
+              <span class="status-pill status-pill--pending">{{ conversation.unread_count }}</span>
+              {% endif %}
+              {{ conversation.last_message_preview|default:"No messages yet"|truncatechars:72 }}
+            </p>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state" style="padding:1.5rem">
+        <p class="empty-state__title">No conversations yet</p>
+        <p class="empty-state__text">
+          When a client messages your Business number, the thread appears here.
+        </p>
+      </div>
+      {% endif %}
+    </aside>
+
+    <section class="wa-inbox__thread">
+      {% if wa_active %}
+      <div class="wa-inbox__thread-head">
+        <h3>{{ wa_active.title }}</h3>
+        <p>+{{ wa_active.msisdn }}{% if wa_active.client %} · linked client{% endif %}</p>
+      </div>
+      <div class="wa-inbox__messages" id="wa-message-thread">
+        {% for message in wa_messages %}
+        <div class="wa-bubble wa-bubble--{% if message.direction == 'out' %}out{% else %}in{% endif %}" data-message-id="{{ message.id }}">
+          {{ message.body }}
+          <span class="wa-bubble__meta">
+            {{ message.created_at|date:"d M Y, H:i" }}
+            · {{ message.get_status_display }}
+            {% if message.sent_by %} · {{ message.sent_by.get_full_name }}{% endif %}
+          </span>
+        </div>
+        {% empty %}
+        <div class="empty-state">
+          <p class="empty-state__title">No messages in this thread</p>
+        </div>
+        {% endfor %}
+      </div>
+      <form method="post" class="wa-inbox__composer" action="{{ wa_inbox_url }}{% if wa_active %}?c={{ wa_active.pk }}{% endif %}">
+        {% csrf_token %}
+        <input type="hidden" name="conversation_id" value="{{ wa_active.pk }}">
+        <textarea
+          name="body"
+          rows="2"
+          maxlength="4000"
+          placeholder="Type a reply (within the 24-hour customer care window)…"
+          required
+        ></textarea>
+        <button type="submit" class="btn btn--primary">Send</button>
+      </form>
+      {% else %}
+      <div class="empty-state" style="padding:2rem">
+        <p class="empty-state__title">Select a conversation</p>
+        <p class="empty-state__text">Choose a thread on the left to read and reply.</p>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+{% if whatsapp_api_ready %}
+<script src="{% static 'js/whatsapp-inbox.js' %}" defer></script>
+{% endif %}
+{% endblock %}

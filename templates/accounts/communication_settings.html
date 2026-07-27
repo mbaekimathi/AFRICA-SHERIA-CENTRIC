@@ -386,9 +386,22 @@
             <div class="form-field">
               <label for="{{ form.whatsapp_webhook_url.id_for_label }}">{{ form.whatsapp_webhook_url.label }}</label>
               {{ form.whatsapp_webhook_url }}
-              <p class="field-hint">{{ form.whatsapp_webhook_url.help_text }}</p>
+              <p class="field-hint">
+                {{ form.whatsapp_webhook_url.help_text }}
+                Use <code>https://your-public-domain{{ whatsapp_webhook_path }}</code>
+                (for example <code>https://baunilawgroup.com{{ whatsapp_webhook_path }}</code>).
+              </p>
               {% if form.whatsapp_webhook_url.errors %}
               <p class="field-error">{{ form.whatsapp_webhook_url.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-field">
+              <label for="{{ form.whatsapp_webhook_verify_token.id_for_label }}">{{ form.whatsapp_webhook_verify_token.label }}</label>
+              {{ form.whatsapp_webhook_verify_token }}
+              <p class="field-hint">{{ form.whatsapp_webhook_verify_token.help_text }}</p>
+              {% if form.whatsapp_webhook_verify_token.errors %}
+              <p class="field-error">{{ form.whatsapp_webhook_verify_token.errors.0 }}</p>
               {% endif %}
             </div>
           </div>

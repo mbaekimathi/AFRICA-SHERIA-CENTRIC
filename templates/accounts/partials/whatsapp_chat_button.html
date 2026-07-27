@@ -1,0 +1,25 @@
+{% if whatsapp_url %}
+<a
+  class="whatsapp-chat-btn{% if compact %} whatsapp-chat-btn--compact{% endif %}"
+  href="{{ whatsapp_url }}"
+  target="_blank"
+  rel="noopener noreferrer"
+  {% if stop_propagation %}onclick="event.stopPropagation()"{% endif %}
+  aria-label="{{ label|default:'Chat on WhatsApp' }}"
+  title="{{ label|default:'Chat on WhatsApp' }}"
+>
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+    <path
+      d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.38A9.9 9.9 0 1 0 12.04 2Z"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M9.3 8.7c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .5.4l.7 1.7c.1.2 0 .4-.1.6l-.4.5c-.1.1-.1.3 0 .4.3.5.9 1.1 1.5 1.5.1.1.3.1.4 0l.5-.4c.2-.1.4-.2.6-.1l1.7.7c.3.1.4.3.4.5v.5c0 .3 0 .5-.4.7-.4.2-1 .4-1.6.3-1.6-.2-3.3-1.2-4.6-2.5-1.3-1.3-2.2-3-2.4-4.6-.1-.6.1-1.2.3-1.6Z"
+      fill="currentColor"
+    />
+  </svg>
+  {% if not icon_only %}<span>{{ label|default:"Chat on WhatsApp" }}</span>{% endif %}
+</a>
+{% endif %}

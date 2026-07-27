@@ -15,7 +15,7 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 import calendar as calendar_mod
 import json
@@ -215,6 +215,7 @@ from .models import (
     PettyCashExpenseRequest,
     RoleActivityPermission,
     WebsiteTemplateSetting,
+    WhatsAppConversation,
 )
 from .notifications import (
     ensure_due_reminders,
@@ -255,7 +256,10 @@ from .workspace import (
     DASHBOARD_PAGE_LINKS,
     employee_action_default_allowed,
     employee_can_access_case,
+    employee_can_access_case_documents,
+    employee_can_access_document,
     employee_can_access_matter,
+    employee_can_access_matter_documents,
     employee_can_view_all,
     employee_preactive_context,
     extend_page_trail,
@@ -264,17 +268,24 @@ from .workspace import (
     mark_session_start,
     matter_tasks_visible_to,
     matters_visible_to,
+    MODULE_HUB_PERMISSIONS,
+    MODULE_HUB_PERMISSION_SLUGS,
+    module_hub_redirects_activity,
     module_activity_url,
     module_slug_for_trail,
     non_litigation_matter_nav_items,
     NON_LITIGATION_MATTER_ACTION_SLUGS,
     PAGE_LOCAL_LINKS,
     PAGE_TITLES,
+    pending_litigation_cases_count,
+    pending_non_litigation_matters_count,
+    permission_activity_slug,
     redirect_if_workspace_action_denied,
     reminder_case_tasks_visible_to,
     reminder_matter_tasks_visible_to,
     resolve_workspace_page,
     resolve_workspace_post_action,
+    resolve_workspace_open_action,
     rewrite_legacy_research_blogs_trail,
     role_activity_is_allowed,
     role_page_slugs,
@@ -285,6 +296,7 @@ from .workspace import (
     system_module_hint,
     SYSTEM_MODULE_SLUGS,
     VIEW_ALL_ACTION,
+    workspace_access_denied_redirect_url,
     workspace_activity_access_allowed,
     workspace_activity_action_permitted,
     workspace_action_denial_copy,
@@ -1381,6 +1393,39 @@ def mpesa_stk_callback(request):
     return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
 
 
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def whatsapp_webhook(request):
+    """Meta Cloud API webhook — verify challenge (GET) and ingest messages (POST)."""
+    from .whatsapp import process_webhook_payload, verify_webhook_challenge
+
+    if request.method == "GET":
+        challenge = verify_webhook_challenge(request.GET)
+        if challenge is not None:
+            return HttpResponse(challenge, content_type="text/plain")
+        return HttpResponse("Forbidden", status=403)
+
+    raw = request.body.decode("utf-8", errors="replace") if request.body else ""
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+
+    try:
+        outcome = process_webhook_payload(payload)
+    except Exception:
+        logger.exception("WhatsApp webhook processing failed")
+        outcome = None
+
+    if outcome:
+        logger.info(
+            "WhatsApp webhook processed created=%s updated=%s",
+            outcome.get("created"),
+            outcome.get("updated"),
+        )
+    return JsonResponse({"ok": True})
+
+
 def _invoice_payable_statuses():
     return {
         Invoice.Status.ISSUED,
@@ -2301,38 +2346,83 @@ def employee_status(request):
     )
 
 
+def _list_rows_pk_status(qs):
+    return list(qs.order_by("pk").values_list("pk", "status"))
+
+
+def _list_rows_pk_status_assignee(qs):
+    return list(qs.order_by("pk").values_list("pk", "status", "assigned_to_id"))
+
+
 WORKSPACE_LIST_SPECS = {
-    "pending-clients": lambda _user: Client.objects.filter(
-        status__in=[
-            Client.Status.PENDING_ONBOARDING,
-            Client.Status.PENDING_APPROVAL,
-        ]
-    ).order_by("pk").values_list("pk", "status"),
-    "pending-employees": lambda _user: Employee.objects.filter(
-        status__in=[
-            Employee.Status.PENDING_ONBOARDING,
-            Employee.Status.PENDING_APPROVAL,
-        ]
-    ).order_by("pk").values_list("pk", "status"),
-    "pending-cases": lambda user: cases_visible_to(
-        user, status=LitigationCase.Status.PENDING_APPROVAL
-    ).order_by("pk").values_list("pk", "status"),
-    "active-cases": lambda user: cases_visible_to(
-        user, status=LitigationCase.Status.ACTIVE
-    ).order_by("pk").values_list("pk", "status"),
-    "pending-matters": lambda user: matters_visible_to(
-        user, status=NonLitigationMatter.Status.PENDING_APPROVAL
-    ).order_by("pk").values_list("pk", "status"),
-    "active-matters": lambda user: matters_visible_to(
-        user, status=NonLitigationMatter.Status.ACTIVE
-    ).order_by("pk").values_list("pk", "status"),
-    "clients": lambda _user: Client.objects.filter(
-        status__in=[Client.Status.ACTIVE, Client.Status.SUSPENDED]
-    ).order_by("pk").values_list("pk", "status"),
-    "employees": lambda _user: Employee.objects.filter(
-        status__in=[Employee.Status.ACTIVE, Employee.Status.SUSPENDED]
-    ).order_by("pk").values_list("pk", "status"),
+    "pending-clients": lambda _user: _list_rows_pk_status(
+        Client.objects.filter(
+            status__in=[
+                Client.Status.PENDING_ONBOARDING,
+                Client.Status.PENDING_APPROVAL,
+            ]
+        )
+    ),
+    "pending-employees": lambda _user: _list_rows_pk_status(
+        Employee.objects.filter(
+            status__in=[
+                Employee.Status.PENDING_ONBOARDING,
+                Employee.Status.PENDING_APPROVAL,
+            ]
+        )
+    ),
+    "pending-cases": lambda user: _list_rows_pk_status_assignee(
+        cases_visible_to(user, status=LitigationCase.Status.PENDING_APPROVAL)
+    ),
+    "active-cases": lambda user: _list_rows_pk_status_assignee(
+        cases_visible_to(user, status=LitigationCase.Status.ACTIVE)
+    ),
+    "pending-matters": lambda user: _list_rows_pk_status_assignee(
+        matters_visible_to(
+            user, status=NonLitigationMatter.Status.PENDING_APPROVAL
+        )
+    ),
+    "active-matters": lambda user: _list_rows_pk_status_assignee(
+        matters_visible_to(user, status=NonLitigationMatter.Status.ACTIVE)
+    ),
+    "matter-hub": lambda user: (
+        employee_can_view_all(user, "litigation-matters"),
+        employee_can_view_all(user, "non-litigation-matters"),
+        _list_rows_pk_status_assignee(
+            cases_visible_to(user, status=LitigationCase.Status.ACTIVE)
+        ),
+        _list_rows_pk_status_assignee(
+            matters_visible_to(user, status=NonLitigationMatter.Status.ACTIVE)
+        ),
+        pending_litigation_cases_count(user),
+        pending_non_litigation_matters_count(user),
+    ),
+    "clients": lambda _user: _list_rows_pk_status(
+        Client.objects.filter(
+            status__in=[Client.Status.ACTIVE, Client.Status.SUSPENDED]
+        )
+    ),
+    "employees": lambda _user: _list_rows_pk_status(
+        Employee.objects.filter(
+            status__in=[Employee.Status.ACTIVE, Employee.Status.SUSPENDED]
+        )
+    ),
 }
+
+
+def _fingerprint_list_rows(rows) -> tuple[str, int]:
+    """Build revision string + count for workspace list poll payloads."""
+    if not rows:
+        return "", 0
+    sample = rows[0]
+    if isinstance(sample, tuple) and len(sample) >= 3:
+        revision = "|".join(
+            f"{pk}:{status}:{assigned_to_id or 0}"
+            for pk, status, assigned_to_id in rows
+        )
+        return revision, len(rows)
+    revision = "|".join(f"{pk}:{status}" for pk, status in rows)
+    return revision, len(rows)
 
 
 @login_required
@@ -2352,9 +2442,38 @@ def workspace_list_revision(request):
     if builder is None:
         return JsonResponse({"error": "unknown_list"}, status=400)
 
-    rows = list(builder(user))
-    revision = "|".join(f"{pk}:{status}" for pk, status in rows)
-    return JsonResponse({"list": list_key, "count": len(rows), "revision": revision})
+    built = builder(user)
+    if list_key == "matter-hub":
+        lit_all, mat_all, cases, matters, pending_cases, pending_matters = built
+        case_rev, case_count = _fingerprint_list_rows(cases)
+        matter_rev, matter_count = _fingerprint_list_rows(matters)
+        revision = (
+            f"va:{int(lit_all)}{int(mat_all)}"
+            f"|c:{case_rev}|m:{matter_rev}"
+            f"|pc:{pending_cases}|pm:{pending_matters}"
+        )
+        return JsonResponse(
+            {
+                "list": list_key,
+                "count": case_count + matter_count,
+                "revision": revision,
+            }
+        )
+
+    revision, count = _fingerprint_list_rows(built)
+    if list_key in {
+        "pending-cases",
+        "active-cases",
+        "pending-matters",
+        "active-matters",
+    }:
+        activity = (
+            "litigation-matters"
+            if list_key.endswith("cases")
+            else "non-litigation-matters"
+        )
+        revision = f"va:{int(employee_can_view_all(user, activity))}|{revision}"
+    return JsonResponse({"list": list_key, "count": count, "revision": revision})
 
 
 @login_required
@@ -2546,6 +2665,39 @@ def communication_settings_verify(request):
         overrides=overrides or None,
     )
     return JsonResponse({"ok": True, **result})
+
+
+@login_required
+@require_GET
+def whatsapp_inbox_poll(request):
+    """Poll WhatsApp inbox conversations / new thread messages."""
+    user = request.user
+    if user.status != Employee.Status.ACTIVE:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    if "whatsapp-inbox" not in role_page_slugs(user.role):
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    from .whatsapp import conversation_poll_payload, is_whatsapp_api_ready
+
+    if not is_whatsapp_api_ready():
+        return JsonResponse(
+            {
+                "ok": True,
+                "conversations": [],
+                "messages": [],
+                "unread_total": 0,
+            }
+        )
+
+    after_raw = (request.GET.get("after") or "0").strip()
+    after_id = int(after_raw) if after_raw.isdigit() else 0
+    conv_raw = (request.GET.get("c") or "").strip()
+    conversation_id = int(conv_raw) if conv_raw.isdigit() else None
+    payload = conversation_poll_payload(
+        after_id=after_id,
+        conversation_id=conversation_id,
+    )
+    return JsonResponse({"ok": True, **payload})
 
 
 @login_required
@@ -3281,6 +3433,7 @@ class RoleWorkspaceView(View):
     client_management_template = "accounts/client_management.html"
     approve_pending_clients_template = "accounts/approve_pending_clients.html"
     client_profile_template = "accounts/client_profile.html"
+    whatsapp_inbox_template = "accounts/whatsapp_inbox.html"
     register_client_template = "accounts/register_client.html"
     register_employee_template = "accounts/register_employee.html"
     onboarding_approvals_template = "accounts/onboarding_approvals.html"
@@ -3366,8 +3519,12 @@ class RoleWorkspaceView(View):
             return redirect(user.workspace_url(*rewritten))
 
         # Enforce role and employee activity locks (not on permission UI).
+        # Form pages (register / approve / generate) require that action to open.
         denied = self._redirect_if_activity_locked(
-            request, user, resolved, action="view"
+            request,
+            user,
+            resolved,
+            action=resolve_workspace_open_action(resolved["leaf"]),
         )
         if denied is not None:
             return denied
@@ -3381,13 +3538,27 @@ class RoleWorkspaceView(View):
         )
 
         if resolved.get("is_roles_activity_permission"):
+            module_slug = resolved.get("roles_module_slug") or ""
+            if module_hub_redirects_activity(module_slug, resolved["leaf"]):
+                roles_idx = resolved["trail"].index("roles-permissions")
+                return redirect(
+                    user.workspace_url(*resolved["trail"][: roles_idx + 2])
+                )
             context.update(self._roles_activity_permission_context(user, resolved))
             response = render(
                 request, self.roles_activity_permission_template, context
             )
         elif resolved.get("is_roles_module_detail"):
-            context.update(self._roles_module_detail_context(user, resolved))
-            response = render(request, self.roles_module_detail_template, context)
+            if resolved["leaf"] in MODULE_HUB_PERMISSION_SLUGS:
+                context.update(
+                    self._roles_module_hub_permission_context(user, resolved)
+                )
+                response = render(
+                    request, self.roles_activity_permission_template, context
+                )
+            else:
+                context.update(self._roles_module_detail_context(user, resolved))
+                response = render(request, self.roles_module_detail_template, context)
         elif (
             resolved["leaf"] == "system-settings"
             and user.role == Employee.Role.IT_SUPPORT
@@ -3767,6 +3938,9 @@ class RoleWorkspaceView(View):
             ).order_by("status", "company_name", "first_name", "last_name", "email")
             context["client_count"] = context["clients"].count()
             response = render(request, self.client_profile_template, context)
+        elif resolved["leaf"] == "whatsapp-inbox":
+            context.update(self._whatsapp_inbox_context(request, user, resolved))
+            response = render(request, self.whatsapp_inbox_template, context)
         elif resolved["leaf"] == "matter-management":
             from .matter_analytics import build_matter_management_analytics
 
@@ -3894,6 +4068,7 @@ class RoleWorkspaceView(View):
             response = render(request, self.tasks_template, context)
         elif resolved["leaf"] == "messages":
             context.update(self._messages_context(user, request))
+            # Channel links come from _messages_context (not parent matter links).
             apply_notification_badges(context, user)
             response = render(request, self.messages_template, context)
         elif resolved["leaf"] == "calendar":
@@ -3935,7 +4110,16 @@ class RoleWorkspaceView(View):
             title=title,
             message=message,
         )
-        return redirect(user.dashboard_url)
+        # Prefer the page they came from so the denial modal appears in place.
+        parent_trail = list(resolved["trail"][:-1]) or ["dashboard"]
+        fallback = user.workspace_url(*parent_trail)
+        return redirect(
+            workspace_access_denied_redirect_url(
+                request,
+                user,
+                fallback=fallback,
+            )
+        )
 
     def post(self, request, role, pages="dashboard"):
         user = request.user
@@ -3955,7 +4139,19 @@ class RoleWorkspaceView(View):
             return redirect(user.workspace_url(*rewritten))
 
         if resolved.get("is_roles_activity_permission"):
+            module_slug = resolved.get("roles_module_slug") or ""
+            if module_hub_redirects_activity(module_slug, resolved["leaf"]):
+                roles_idx = resolved["trail"].index("roles-permissions")
+                return redirect(
+                    user.workspace_url(*resolved["trail"][: roles_idx + 2])
+                )
             return self._post_roles_activity_permission(request, user, resolved)
+
+        if (
+            resolved.get("is_roles_module_detail")
+            and resolved["leaf"] in MODULE_HUB_PERMISSION_SLUGS
+        ):
+            return self._post_roles_module_hub_permission(request, user, resolved)
 
         denied = self._redirect_if_activity_locked(
             request,
@@ -4004,6 +4200,7 @@ class RoleWorkspaceView(View):
             "company-accounts",
             "petty-cash-book",
             "client-accounts",
+            "whatsapp-inbox",
             "latest-news",
         }:
             return redirect(user.dashboard_url)
@@ -4044,6 +4241,9 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "communication-settings":
             return self._post_communication_settings(request, user, resolved)
+
+        if resolved["leaf"] == "whatsapp-inbox":
+            return self._post_whatsapp_inbox(request, user, resolved)
 
         if resolved["leaf"] == "company-profile":
             return self._post_company_profile(request, user, resolved)
@@ -4334,7 +4534,7 @@ class RoleWorkspaceView(View):
         )
         module_activities = []
         roles_root = trail[: trail.index("roles-permissions") + 1]
-        for activity in collect_module_activities(leaf):
+        for activity in collect_module_activities(leaf, for_roles_ui=True):
             item = dict(activity)
             item["url"] = roles_activity_permission_url(
                 user, roles_root, leaf, activity
@@ -4352,6 +4552,55 @@ class RoleWorkspaceView(View):
             "activity_count": len(module_activities),
             "roles_permissions_url": user.workspace_url(*roles_root),
         }
+
+    @staticmethod
+    def _roles_module_hub_permission_context(user, resolved):
+        """Unified module-level Roles matrix (Matter, Finance, …)."""
+        hub_slug = resolved["leaf"]
+        hub_meta = MODULE_HUB_PERMISSIONS[hub_slug]
+        trail = list(resolved["trail"])
+        roles_idx = trail.index("roles-permissions")
+        roles_root = trail[: roles_idx + 1]
+        synthetic = {
+            **resolved,
+            "leaf": hub_slug,
+            "roles_module_slug": hub_slug,
+        }
+        context = RoleWorkspaceView._roles_activity_permission_context(
+            user, synthetic
+        )
+        context["activity"] = {
+            "label": hub_meta["label"],
+            "slug": hub_slug,
+            "icon": "",
+            "path": hub_meta["path"],
+            "path_slugs": [hub_slug],
+            "linkable": True,
+        }
+        context["page_title"] = f"{hub_meta['label']} — Access"
+        context["activity_open_url"] = user.workspace_url("dashboard", hub_slug)
+        context["module_url"] = user.workspace_url(*roles_root)
+        context["is_module_hub_permission"] = True
+        context["hub_intro"] = hub_meta["intro"]
+        visibility_activities = []
+        if hub_meta.get("secondary_activities"):
+            for activity in collect_module_activities(hub_slug, for_roles_ui=True):
+                item = dict(activity)
+                item["url"] = roles_activity_permission_url(
+                    user, roles_root, hub_slug, activity
+                )
+                visibility_activities.append(item)
+        context["visibility_activities"] = visibility_activities
+        return context
+
+    def _post_roles_module_hub_permission(self, request, user, resolved):
+        hub_slug = resolved["leaf"]
+        synthetic = {
+            **resolved,
+            "leaf": hub_slug,
+            "roles_module_slug": hub_slug,
+        }
+        return self._post_roles_activity_permission(request, user, synthetic)
 
     @staticmethod
     def _roles_activity_permission_context(user, resolved):
@@ -5983,6 +6232,7 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _communication_settings_context(*, form=None):
         from .communication_verification import pending_connection_snapshot
+        from .whatsapp import WHATSAPP_WEBHOOK_PATH
 
         setting = CommunicationSettings.get_solo()
         return {
@@ -5991,6 +6241,8 @@ class RoleWorkspaceView(View):
             "email_ready": setting.email_ready,
             "sms_ready": setting.sms_ready,
             "whatsapp_ready": setting.whatsapp_ready,
+            "whatsapp_api_ready": setting.whatsapp_api_ready,
+            "whatsapp_webhook_path": WHATSAPP_WEBHOOK_PATH,
             "communication_verify_url": reverse(
                 "accounts:communication_settings_verify"
             ),
@@ -6023,6 +6275,97 @@ class RoleWorkspaceView(View):
             request, self.communication_settings_template, context
         )
         return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _whatsapp_inbox_context(request, user, resolved):
+        from .whatsapp import is_whatsapp_api_ready, mark_conversation_read
+
+        setting = CommunicationSettings.get_solo()
+        api_ready = is_whatsapp_api_ready(setting)
+        conversations = []
+        active = None
+        thread_messages = []
+        if api_ready:
+            conversations = list(
+                WhatsAppConversation.objects.select_related("client").order_by(
+                    "-last_message_at", "-id"
+                )[:100]
+            )
+            raw_id = (request.GET.get("c") or "").strip()
+            if raw_id.isdigit():
+                active = next(
+                    (c for c in conversations if c.pk == int(raw_id)), None
+                )
+                if active is None:
+                    active = (
+                        WhatsAppConversation.objects.select_related("client")
+                        .filter(pk=int(raw_id))
+                        .first()
+                    )
+            if active is None and conversations:
+                active = conversations[0]
+            if active is not None:
+                mark_conversation_read(active)
+                thread_messages = list(
+                    active.messages.select_related("sent_by").order_by(
+                        "created_at", "id"
+                    )[:300]
+                )
+
+        last_message_id = thread_messages[-1].id if thread_messages else ""
+
+        return {
+            "whatsapp_api_ready": api_ready,
+            "whatsapp_setting": setting,
+            "wa_conversations": conversations,
+            "wa_active": active,
+            "wa_messages": thread_messages,
+            "wa_last_message_id": last_message_id,
+            "wa_inbox_url": user.workspace_url(*resolved["trail"]),
+            "wa_poll_url": reverse("accounts:whatsapp_inbox_poll"),
+            "communication_settings_url": user.workspace_url(
+                "dashboard",
+                "system-settings",
+                "communication-settings",
+            ),
+        }
+
+    def _post_whatsapp_inbox(self, request, user, resolved):
+        from .whatsapp import WhatsAppError, send_text
+
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        conversation_id = (request.POST.get("conversation_id") or "").strip()
+        body = (request.POST.get("body") or "").strip()
+        redirect_url = user.workspace_url(*resolved["trail"])
+        if conversation_id.isdigit():
+            redirect_url = f"{redirect_url}?c={conversation_id}"
+
+        conversation = None
+        if conversation_id.isdigit():
+            conversation = WhatsAppConversation.objects.filter(
+                pk=int(conversation_id)
+            ).first()
+        if conversation is None:
+            messages.error(request, "Select a conversation before sending.")
+            context.update(self._whatsapp_inbox_context(request, user, resolved))
+            response = render(request, self.whatsapp_inbox_template, context)
+            return attach_greeting_cookie(response, request)
+
+        try:
+            send_text(to=conversation.msisdn, body=body, sent_by=user)
+            messages.success(request, "WhatsApp message sent.")
+            return redirect(redirect_url)
+        except WhatsAppError as exc:
+            messages.error(request, str(exc))
+            context.update(self._whatsapp_inbox_context(request, user, resolved))
+            response = render(request, self.whatsapp_inbox_template, context)
+            return attach_greeting_cookie(response, request)
 
     @staticmethod
     def _google_drive_settings_context(request, resolved):
@@ -8931,7 +9274,11 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _messages_context(user, request):
         """List message notifications for this employee, newest first."""
+        from urllib.parse import quote
+
         from .notifications import ensure_task_outcome_messages
+        from .utils import whatsapp_chat_url
+        from .whatsapp import is_whatsapp_api_ready
 
         ensure_task_outcome_messages(user)
         # Viewing Messages clears the sidebar badge for this category.
@@ -8943,11 +9290,140 @@ class RoleWorkspaceView(View):
             ).order_by("-created_at")
         )
         unread_count = sum(1 for item in message_list if not item.is_read)
+
+        setting = CommunicationSettings.get_solo()
+        firm = FirmCompanyInformation.get_solo()
+        default_wa_message = (setting.whatsapp_default_message or "").strip()
+
+        if is_whatsapp_api_ready(setting):
+            whatsapp_chat = {
+                "available": True,
+                "mode": "business",
+                "label": "Chat on WhatsApp",
+                "hint": "Open the firm WhatsApp Business inbox",
+                "url": user.workspace_url(
+                    "dashboard",
+                    "user-management",
+                    "client-management",
+                    "whatsapp-inbox",
+                ),
+                "external": False,
+            }
+        else:
+            wa_phone = (
+                (setting.whatsapp_business_number or "").strip()
+                or (firm.phone or "").strip()
+            )
+            wa_url = whatsapp_chat_url(wa_phone, default_wa_message)
+            whatsapp_chat = {
+                "available": bool(wa_url),
+                "mode": "personal",
+                "label": "Chat on WhatsApp",
+                "hint": "Opens WhatsApp on your phone or desktop",
+                "url": wa_url,
+                "external": True,
+            }
+
+        email_addr = (
+            (firm.email or "").strip()
+            or (setting.email_from_email or "").strip()
+        )
+        email_chat = {
+            "available": bool(email_addr),
+            "label": "Chat on Email",
+            "hint": email_addr or "Add a firm email in Company Information",
+            "url": f"mailto:{email_addr}" if email_addr else "",
+            "external": True,
+        }
+
+        sms_phone = (firm.phone or "").strip() or (
+            (setting.sms_sender_id or "").strip()
+            if (setting.sms_sender_id or "").strip().lstrip("+").isdigit()
+            else ""
+        )
+        sms_url = ""
+        if sms_phone:
+            digits = "".join(ch for ch in sms_phone if ch.isdigit() or ch == "+")
+            if digits:
+                sms_url = f"sms:{digits}"
+                if default_wa_message:
+                    sms_url = f"{sms_url}?body={quote(default_wa_message)}"
+        sms_chat = {
+            "available": bool(sms_url),
+            "label": "Chat on SMS",
+            "hint": sms_phone or "Add a firm phone in Company Information",
+            "url": sms_url,
+            "external": True,
+        }
+
         return {
             "message_notifications": message_list,
             "message_count": len(message_list),
             "message_unread_count": unread_count,
+            "whatsapp_chat": whatsapp_chat,
+            "email_chat": email_chat,
+            "sms_chat": sms_chat,
+            "page_nav_items": _messages_channel_nav_items(
+                whatsapp_chat, email_chat, sms_chat
+            ),
         }
+
+
+def _messages_channel_nav_items(whatsapp_chat, email_chat, sms_chat):
+    """Sidebar 'In this section' links for Messages chat channels only."""
+    icon_whatsapp = (
+        '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+        '<path d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.38A9.9 9.9 0 1 0 12.04 2Z" '
+        'stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'
+        '<path d="M9.3 8.7c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .5.4l.7 1.7c.1.2 0 .4-.1.6l-.4.5'
+        'c-.1.1-.1.3 0 .4.3.5.9 1.1 1.5 1.5.1.1.3.1.4 0l.5-.4c.2-.1.4-.2.6-.1l1.7.7'
+        'c.3.1.4.3.4.5v.5c0 .3 0 .5-.4.7-.4.2-1 .4-1.6.3-1.6-.2-3.3-1.2-4.6-2.5'
+        '-1.3-1.3-2.2-3-2.4-4.6-.1-.6.1-1.2.3-1.6Z" fill="currentColor"/>'
+        "</svg>"
+    )
+    icon_email = (
+        '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+        '<path d="M4.5 6.75h15v10.5h-15z" stroke="currentColor" stroke-width="1.6" '
+        'stroke-linejoin="round"/>'
+        '<path d="m4.5 7.5 7.5 5.25L19.5 7.5" stroke="currentColor" stroke-width="1.6" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+        "</svg>"
+    )
+    icon_sms = (
+        '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+        '<path d="M8.25 5.5h7.5v13h-7.5z" stroke="currentColor" stroke-width="1.6" '
+        'stroke-linejoin="round"/>'
+        '<path d="M11 17.25h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'
+        '<path d="M9.5 8.5h5M9.5 11h5M9.5 13.5h3.5" stroke="currentColor" stroke-width="1.5" '
+        'stroke-linecap="round"/>'
+        "</svg>"
+    )
+
+    channels = (
+        ("chat-whatsapp", whatsapp_chat, icon_whatsapp),
+        ("chat-email", email_chat, icon_email),
+        ("chat-sms", sms_chat, icon_sms),
+    )
+    items = []
+    for slug, channel, icon in channels:
+        available = bool(channel.get("available") and channel.get("url"))
+        items.append(
+            {
+                "label": channel.get("label") or slug,
+                "slug": slug,
+                "url": channel.get("url") or "#",
+                "icon": icon,
+                "active": False,
+                "disabled": not available,
+                "external": bool(channel.get("external")),
+                "title": (
+                    None
+                    if available
+                    else (channel.get("hint") or "Not configured yet")
+                ),
+            }
+        )
+    return items
 
 
 PENDING_CLIENTS_TRAIL = (
@@ -9554,7 +10030,14 @@ def _redirect_if_record_not_visible(request, user, *, kind, record, redirect_to=
             "Ask an administrator to enable View all in Roles & Permissions."
         ),
     )
-    return redirect(redirect_to or fallback)
+    return redirect(
+        workspace_access_denied_redirect_url(
+            request,
+            user,
+            redirect_to=redirect_to,
+            fallback=fallback,
+        )
+    )
 
 
 def _deny_if_case_not_visible(request, user, case, *, redirect_to=None):
@@ -9566,6 +10049,87 @@ def _deny_if_case_not_visible(request, user, case, *, redirect_to=None):
 def _deny_if_matter_not_visible(request, user, matter, *, redirect_to=None):
     return _redirect_if_record_not_visible(
         request, user, kind="matter", record=matter, redirect_to=redirect_to
+    )
+
+
+def _deny_if_case_documents_not_visible(request, user, case, *, redirect_to=None):
+    """Block document library access outside Documents View all / allocated scope."""
+    if employee_can_access_case_documents(user, case):
+        return None
+    set_workspace_access_denied_modal(
+        request,
+        title="Not permitted",
+        message=(
+            "You can only open documents for matters allocated to you. "
+            "Ask an administrator to enable View all for Documents in "
+            "Roles & Permissions."
+        ),
+    )
+    return redirect(
+        workspace_access_denied_redirect_url(
+            request,
+            user,
+            redirect_to=redirect_to,
+            fallback=user.workspace_url(
+                "dashboard", "matter-management", "litigation-matters"
+            ),
+        )
+    )
+
+
+def _deny_if_matter_documents_not_visible(request, user, matter, *, redirect_to=None):
+    """Block document library access outside Documents View all / allocated scope."""
+    if employee_can_access_matter_documents(user, matter):
+        return None
+    set_workspace_access_denied_modal(
+        request,
+        title="Not permitted",
+        message=(
+            "You can only open documents for matters allocated to you. "
+            "Ask an administrator to enable View all for Documents in "
+            "Roles & Permissions."
+        ),
+    )
+    return redirect(
+        workspace_access_denied_redirect_url(
+            request,
+            user,
+            redirect_to=redirect_to,
+            fallback=user.workspace_url(
+                "dashboard", "matter-management", "non-litigation-matters"
+            ),
+        )
+    )
+
+
+def _deny_if_document_not_visible(request, user, document, *, redirect_to=None):
+    if employee_can_access_document(user, document):
+        return None
+    set_workspace_access_denied_modal(
+        request,
+        title="Not permitted",
+        message=(
+            "You can only open documents for matters allocated to you. "
+            "Ask an administrator to enable View all for Documents in "
+            "Roles & Permissions."
+        ),
+    )
+    fallback = user.workspace_url("dashboard", "matter-management")
+    if document.case_id:
+        fallback = user.workspace_url(
+            "dashboard", "matter-management", "litigation-matters"
+        )
+    elif document.matter_id:
+        fallback = user.workspace_url(
+            "dashboard", "matter-management", "non-litigation-matters"
+        )
+    return redirect(
+        workspace_access_denied_redirect_url(
+            request,
+            user,
+            redirect_to=redirect_to,
+            fallback=fallback,
+        )
     )
 
 
@@ -9583,18 +10147,24 @@ def _case_task_access_denied(request, user, case, permission, *, redirect_to=Non
     if access.get(field, True):
         return None
     label = (permission or "perform this action").strip().lower() or "perform this action"
-    messages.error(
+    set_workspace_access_denied_modal(
         request,
-        f"Your task on this case restricts {label} access.",
+        title="Not permitted",
+        message=f"Your task on this case restricts {label} access.",
     )
     if redirect_to is None:
         if (permission or "").strip().lower() == "view":
-            redirect_to = user.workspace_url("dashboard", "tasks")
+            fallback = user.workspace_url("dashboard", "tasks")
         else:
-            redirect_to = reverse(
+            fallback = reverse(
                 "accounts:view_litigation_case",
                 kwargs={"role": user.role_slug, "case_id": case.pk},
             )
+        redirect_to = workspace_access_denied_redirect_url(
+            request,
+            user,
+            fallback=fallback,
+        )
     return redirect(redirect_to)
 
 
@@ -9612,18 +10182,24 @@ def _matter_task_access_denied(request, user, matter, permission, *, redirect_to
     if access.get(field, True):
         return None
     label = (permission or "perform this action").strip().lower() or "perform this action"
-    messages.error(
+    set_workspace_access_denied_modal(
         request,
-        f"Your task on this matter restricts {label} access.",
+        title="Not permitted",
+        message=f"Your task on this matter restricts {label} access.",
     )
     if redirect_to is None:
         if (permission or "").strip().lower() == "view":
-            redirect_to = user.workspace_url("dashboard", "tasks")
+            fallback = user.workspace_url("dashboard", "tasks")
         else:
-            redirect_to = reverse(
+            fallback = reverse(
                 "accounts:view_non_litigation_matter",
                 kwargs={"role": user.role_slug, "matter_id": matter.pk},
             )
+        redirect_to = workspace_access_denied_redirect_url(
+            request,
+            user,
+            fallback=fallback,
+        )
     return redirect(redirect_to)
 
 
@@ -10966,7 +11542,7 @@ class EditLitigationCaseView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _guard_case_register(request, role, action="view")
+        user, denied = _guard_case_register(request, role, action="register")
         if denied:
             return denied
 
@@ -11098,7 +11674,7 @@ class EditActiveLitigationCaseView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _guard_litigation(request, role, action="view")
+        user, denied = _guard_litigation(request, role, action="edit")
         if denied:
             return denied
 
@@ -11402,7 +11978,7 @@ class EditNonLitigationMatterView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _guard_matter_register(request, role, action="view")
+        user, denied = _guard_matter_register(request, role, action="register")
         if denied:
             return denied
 
@@ -11534,7 +12110,7 @@ class EditActiveNonLitigationMatterView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _guard_non_litigation(request, role, action="view")
+        user, denied = _guard_non_litigation(request, role, action="edit")
         if denied:
             return denied
 
@@ -12413,6 +12989,12 @@ class ViewLitigationCaseView(View):
         live_tasks = _live_case_tasks_for_user(
             case, user, preferred_id=_preferred_task_id(request)
         )
+        documents = _documents_with_activity(
+            case.documents.all(),
+            actor=user,
+            sync_google=False,
+            role=user.role_slug,
+        )
         context = workspace_context(
             user,
             request=request,
@@ -12425,6 +13007,15 @@ class ViewLitigationCaseView(View):
             {
                 "case": case,
                 "parties": case.parties.all(),
+                "documents": documents,
+                "documents_url": reverse(
+                    "accounts:view_case_documents",
+                    kwargs={"role": user.role_slug, "case_id": case.pk},
+                ),
+                "upload_documents_url": reverse(
+                    "accounts:upload_case_documents",
+                    kwargs={"role": user.role_slug, "case_id": case.pk},
+                ),
                 "list_url": _active_cases_list_url(user),
             }
         )
@@ -13806,6 +14397,11 @@ class UploadCaseDocumentsView(View):
     template_name = "accounts/upload_documents.html"
     action_slug = "upload-documents"
     entity_kind = "case"
+    show_compose = True
+    guard_action = "upload"
+    page_title_label = "Case documents"
+    library_url_name = "accounts:upload_case_documents"
+    upload_url_name = "accounts:upload_case_documents"
 
     def get_case(self, case_id):
         return get_object_or_404(
@@ -13816,7 +14412,9 @@ class UploadCaseDocumentsView(View):
         )
 
     def get(self, request, role, case_id):
-        user, denied = _guard_litigation(request, role, action="upload")
+        user, denied = _guard_litigation(
+            request, role, action=self.guard_action
+        )
         if denied:
             return denied
 
@@ -13832,6 +14430,10 @@ class UploadCaseDocumentsView(View):
         if scope_denied:
             return scope_denied
 
+        docs_denied = _deny_if_case_documents_not_visible(request, user, case)
+        if docs_denied:
+            return docs_denied
+
         access_denied = _case_task_access_denied(
             request,
             user,
@@ -13844,6 +14446,20 @@ class UploadCaseDocumentsView(View):
         )
         if access_denied:
             return access_denied
+
+        if self.show_compose:
+            upload_denied = _case_task_access_denied(
+                request,
+                user,
+                case,
+                "upload",
+                redirect_to=reverse(
+                    self.library_url_name,
+                    kwargs={"role": role, "case_id": case.pk},
+                ),
+            )
+            if upload_denied:
+                return upload_denied
 
         party_type_choices = CaseParty.PartyType.choices
         template_library = _templates_library_payload()
@@ -13872,7 +14488,9 @@ class UploadCaseDocumentsView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, case_id):
-        user, denied = _guard_litigation(request, role, action="upload")
+        user, denied = _guard_litigation(
+            request, role, action=self.guard_action
+        )
         if denied:
             return denied
 
@@ -13889,6 +14507,21 @@ class UploadCaseDocumentsView(View):
         if scope_denied:
             return scope_denied
 
+        docs_denied = _deny_if_case_documents_not_visible(request, user, case)
+        if docs_denied:
+            return docs_denied
+
+        if not self.show_compose and action in {
+            "create_google",
+            "upload",
+            "start_from_template",
+        }:
+            messages.error(
+                request,
+                "Use Upload documents to add files to this case.",
+            )
+            return self._library_redirect(role, case.pk)
+
         permission_by_action = {
             "create_google": "upload",
             "upload": "upload",
@@ -13897,8 +14530,12 @@ class UploadCaseDocumentsView(View):
             "delete": "delete",
         }
         needed = permission_by_action.get(action, "upload")
+        if needed != self.guard_action:
+            user, denied = _guard_litigation(request, role, action=needed)
+            if denied:
+                return denied
         library_url = reverse(
-            "accounts:upload_case_documents",
+            self.library_url_name,
             kwargs={"role": role, "case_id": case.pk},
         )
         access_denied = _case_task_access_denied(
@@ -14214,7 +14851,7 @@ class UploadCaseDocumentsView(View):
 
     def _library_redirect(self, role, case_id):
         url = reverse(
-            "accounts:upload_case_documents",
+            self.library_url_name,
             kwargs={"role": role, "case_id": case_id},
         )
         return redirect(f"{url}#docs-library")
@@ -14233,12 +14870,20 @@ class UploadCaseDocumentsView(View):
             "accounts:view_litigation_case",
             kwargs={"role": user.role_slug, "case_id": case.pk},
         )
+        library_url = reverse(
+            self.library_url_name,
+            kwargs={"role": user.role_slug, "case_id": case.pk},
+        )
+        upload_url = reverse(
+            self.upload_url_name,
+            kwargs={"role": user.role_slug, "case_id": case.pk},
+        )
         connection = GoogleDriveConnection.get_solo()
         template_library = template_library or _templates_library_payload()
         context = workspace_context(
             user,
             request=self.request,
-            page_title="Upload documents",
+            page_title=self.page_title_label,
             page_trail=list(ACTIVE_CASES_TRAIL),
             active_page=self.action_slug,
             page_nav_items=litigation_case_nav_items(
@@ -14291,6 +14936,9 @@ class UploadCaseDocumentsView(View):
                 "detail_url": detail_url,
                 "detail_label": "Back to case",
                 "list_url": _active_cases_list_url(user),
+                "docs_library_url": library_url,
+                "docs_upload_url": upload_url,
+                "show_compose": self.show_compose,
                 "google_drive_connected": connection.is_connected,
                 "google_drive_settings_url": user.workspace_url(
                     "dashboard", "google-drive-settings"
@@ -14308,6 +14956,16 @@ class UploadCaseDocumentsView(View):
 
         context.update(letterhead_render_context())
         return context
+
+
+@method_decorator(login_required, name="dispatch")
+class ViewCaseDocumentsView(UploadCaseDocumentsView):
+    """List and open documents linked to a litigation case."""
+
+    action_slug = "documents"
+    show_compose = False
+    guard_action = "view"
+    page_title_label = "Case documents"
 
 
 @method_decorator(login_required, name="dispatch")
@@ -14434,6 +15092,12 @@ class LitigationCaseActionView(View):
                 role=role,
                 case_id=case_id,
             )
+        if action == "documents":
+            return redirect(
+                "accounts:view_case_documents",
+                role=role,
+                case_id=case_id,
+            )
         if action == "case-audit-progress":
             return redirect(
                 "accounts:case_audit_progress",
@@ -14535,6 +15199,12 @@ class ViewNonLitigationMatterView(View):
         live_tasks = _live_matter_tasks_for_user(
             matter, user, preferred_id=_preferred_task_id(request)
         )
+        documents = _documents_with_activity(
+            matter.documents.all(),
+            actor=user,
+            sync_google=False,
+            role=user.role_slug,
+        )
         context = workspace_context(
             user,
             request=request,
@@ -14549,6 +15219,15 @@ class ViewNonLitigationMatterView(View):
             {
                 "matter": matter,
                 "parties": matter.parties.all(),
+                "documents": documents,
+                "documents_url": reverse(
+                    "accounts:view_matter_documents",
+                    kwargs={"role": user.role_slug, "matter_id": matter.pk},
+                ),
+                "upload_documents_url": reverse(
+                    "accounts:upload_matter_documents",
+                    kwargs={"role": user.role_slug, "matter_id": matter.pk},
+                ),
                 "list_url": _active_matters_list_url(user),
             }
         )
@@ -15145,6 +15824,11 @@ class UploadMatterDocumentsView(View):
     template_name = "accounts/upload_documents.html"
     action_slug = "upload-documents"
     entity_kind = "matter"
+    show_compose = True
+    guard_action = "upload"
+    page_title_label = "Matter documents"
+    library_url_name = "accounts:upload_matter_documents"
+    upload_url_name = "accounts:upload_matter_documents"
 
     def get_matter(self, matter_id):
         return get_object_or_404(
@@ -15155,7 +15839,9 @@ class UploadMatterDocumentsView(View):
         )
 
     def get(self, request, role, matter_id):
-        user, denied = _guard_non_litigation(request, role, action="upload")
+        user, denied = _guard_non_litigation(
+            request, role, action=self.guard_action
+        )
         if denied:
             return denied
 
@@ -15171,6 +15857,12 @@ class UploadMatterDocumentsView(View):
         if scope_denied:
             return scope_denied
 
+        docs_denied = _deny_if_matter_documents_not_visible(
+            request, user, matter
+        )
+        if docs_denied:
+            return docs_denied
+
         access_denied = _matter_task_access_denied(
             request,
             user,
@@ -15183,6 +15875,20 @@ class UploadMatterDocumentsView(View):
         )
         if access_denied:
             return access_denied
+
+        if self.show_compose:
+            upload_denied = _matter_task_access_denied(
+                request,
+                user,
+                matter,
+                "upload",
+                redirect_to=reverse(
+                    self.library_url_name,
+                    kwargs={"role": role, "matter_id": matter.pk},
+                ),
+            )
+            if upload_denied:
+                return upload_denied
 
         party_type_choices = MatterParty.PartyType.choices
         template_library = _templates_library_payload()
@@ -15211,7 +15917,9 @@ class UploadMatterDocumentsView(View):
         return attach_greeting_cookie(response, request)
 
     def post(self, request, role, matter_id):
-        user, denied = _guard_non_litigation(request, role, action="upload")
+        user, denied = _guard_non_litigation(
+            request, role, action=self.guard_action
+        )
         if denied:
             return denied
 
@@ -15227,7 +15935,24 @@ class UploadMatterDocumentsView(View):
         if scope_denied:
             return scope_denied
 
+        docs_denied = _deny_if_matter_documents_not_visible(
+            request, user, matter
+        )
+        if docs_denied:
+            return docs_denied
+
         action = (request.POST.get("document_action") or "").strip()
+        if not self.show_compose and action in {
+            "create_google",
+            "upload",
+            "start_from_template",
+        }:
+            messages.error(
+                request,
+                "Use Upload documents to add files to this matter.",
+            )
+            return self._library_redirect(role, matter.pk)
+
         permission_by_action = {
             "create_google": "upload",
             "upload": "upload",
@@ -15236,8 +15961,14 @@ class UploadMatterDocumentsView(View):
             "delete": "delete",
         }
         needed = permission_by_action.get(action, "upload")
+        if needed != self.guard_action:
+            user, denied = _guard_non_litigation(
+                request, role, action=needed
+            )
+            if denied:
+                return denied
         library_url = reverse(
-            "accounts:upload_matter_documents",
+            self.library_url_name,
             kwargs={"role": role, "matter_id": matter.pk},
         )
         access_denied = _matter_task_access_denied(
@@ -15553,7 +16284,7 @@ class UploadMatterDocumentsView(View):
 
     def _library_redirect(self, role, matter_id):
         url = reverse(
-            "accounts:upload_matter_documents",
+            self.library_url_name,
             kwargs={"role": role, "matter_id": matter_id},
         )
         return redirect(f"{url}#docs-library")
@@ -15572,12 +16303,20 @@ class UploadMatterDocumentsView(View):
             "accounts:view_non_litigation_matter",
             kwargs={"role": user.role_slug, "matter_id": matter.pk},
         )
+        library_url = reverse(
+            self.library_url_name,
+            kwargs={"role": user.role_slug, "matter_id": matter.pk},
+        )
+        upload_url = reverse(
+            self.upload_url_name,
+            kwargs={"role": user.role_slug, "matter_id": matter.pk},
+        )
         connection = GoogleDriveConnection.get_solo()
         template_library = template_library or _templates_library_payload()
         context = workspace_context(
             user,
             request=self.request,
-            page_title="Upload documents",
+            page_title=self.page_title_label,
             page_trail=list(ACTIVE_MATTERS_TRAIL),
             active_page=self.action_slug,
             page_nav_items=non_litigation_matter_nav_items(
@@ -15630,6 +16369,9 @@ class UploadMatterDocumentsView(View):
                 "detail_url": detail_url,
                 "detail_label": "Back to matter",
                 "list_url": _active_matters_list_url(user),
+                "docs_library_url": library_url,
+                "docs_upload_url": upload_url,
+                "show_compose": self.show_compose,
                 "google_drive_connected": connection.is_connected,
                 "google_drive_settings_url": user.workspace_url(
                     "dashboard", "google-drive-settings"
@@ -15647,6 +16389,16 @@ class UploadMatterDocumentsView(View):
 
         context.update(letterhead_render_context())
         return context
+
+
+@method_decorator(login_required, name="dispatch")
+class ViewMatterDocumentsView(UploadMatterDocumentsView):
+    """List and open documents linked to a non-litigation matter."""
+
+    action_slug = "documents"
+    show_compose = False
+    guard_action = "view"
+    page_title_label = "Matter documents"
 
 
 def _documents_with_activity(queryset, *, actor=None, sync_google: bool = False, role=""):
@@ -15922,6 +16674,10 @@ class DocumentActivityAnalyticsView(View):
         if denied:
             return denied
 
+        scope_denied = _deny_if_document_not_visible(request, user, document)
+        if scope_denied:
+            return scope_denied
+
         library_url = _document_library_return_url(document, role)
         analytics = document.detailed_analytics()
         page_trail = list(
@@ -15932,7 +16688,7 @@ class DocumentActivityAnalyticsView(View):
             request=request,
             page_title="Document activity",
             page_trail=page_trail,
-            active_page="upload-documents",
+            active_page="documents",
         )
         entity_label = ""
         if document.case_id:
@@ -15971,10 +16727,14 @@ class OpenDocumentView(View):
             pk=document_id,
         )
         user, denied = _guard_entity_document(
-            request, role, document, action="upload"
+            request, role, document, action="view"
         )
         if denied:
             return denied
+
+        scope_denied = _deny_if_document_not_visible(request, user, document)
+        if scope_denied:
+            return scope_denied
 
         if document.case_id:
             access_denied = _case_task_access_denied(
@@ -16038,7 +16798,7 @@ class OpenDocumentView(View):
             page_trail=list(
                 ACTIVE_CASES_TRAIL if document.case_id else ACTIVE_MATTERS_TRAIL
             ),
-            active_page="upload-documents",
+            active_page="documents",
         )
         context.update(
             {
@@ -16064,10 +16824,14 @@ class DownloadDocumentView(View):
             pk=document_id,
         )
         user, denied = _guard_entity_document(
-            request, role, document, action="upload"
+            request, role, document, action="view"
         )
         if denied:
             return denied
+
+        scope_denied = _deny_if_document_not_visible(request, user, document)
+        if scope_denied:
+            return scope_denied
 
         if document.case_id:
             access_denied = _case_task_access_denied(
@@ -16142,7 +16906,7 @@ class DocumentSessionPingView(View):
             actor=request.user,
         )
         user, denied = _guard_entity_document(
-            request, role, session.document, action="upload"
+            request, role, session.document, action="view"
         )
         if denied:
             return JsonResponse({"ok": False, "error": "unauthorized"}, status=403)
@@ -16308,6 +17072,12 @@ class NonLitigationMatterActionView(View):
         if action == "upload-documents":
             return redirect(
                 "accounts:upload_matter_documents",
+                role=role,
+                matter_id=matter_id,
+            )
+        if action == "documents":
+            return redirect(
+                "accounts:view_matter_documents",
                 role=role,
                 matter_id=matter_id,
             )

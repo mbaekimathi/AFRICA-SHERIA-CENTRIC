@@ -1,5 +1,5 @@
 {% extends "layouts/workspace.html" %}
-{% load static %}
+{% load static document_extras %}
 
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
@@ -73,7 +73,16 @@
                 </div>
               </td>
               <td>{{ client.email }}</td>
-              <td>{{ client.phone|default:"—" }}</td>
+              <td>
+                {% if client.phone %}
+                <span class="phone-with-wa">
+                  <span>{{ client.phone }}</span>
+                  {% whatsapp_chat_button client.phone label="WhatsApp" compact=True stop_propagation=True %}
+                </span>
+                {% else %}
+                —
+                {% endif %}
+              </td>
               <td>{{ client.date_joined|date:"d M Y" }}</td>
               <td>
                 <span class="status-pill status-pill--{{ client.status }}">

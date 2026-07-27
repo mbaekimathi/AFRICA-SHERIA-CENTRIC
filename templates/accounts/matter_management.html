@@ -4,7 +4,7 @@
 {% block title %}{{ page_title }} — Sheria Centric{% endblock %}
 
 {% block content %}
-<section class="page matter-hub" data-reveal-root id="matter-analytics-page">
+<section class="page matter-hub" data-reveal-root id="live-list-page" data-revision-url="{% url 'accounts:workspace_list_revision' %}?list=matter-hub">
   <header class="matter-hub__head" data-reveal>
     <div class="matter-hub__intro">
       <p class="page-kicker">{{ session_greeting }}</p>

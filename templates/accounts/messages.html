@@ -10,11 +10,120 @@
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Updates such as task outcomes, invoice generated / issued / paid, and other firm notices.
-        Newest messages appear first.
+        Firm notices appear below. Use the channel links to chat with clients on
+        WhatsApp, email, or SMS.
       </p>
     </div>
   </header>
+
+  <section class="message-channels" aria-label="Chat channels">
+    {% if whatsapp_chat.available %}
+    <a
+      class="message-channel message-channel--whatsapp"
+      href="{{ whatsapp_chat.url }}"
+      {% if whatsapp_chat.external %}target="_blank" rel="noopener noreferrer"{% endif %}
+    >
+      <span class="message-channel__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+          <path
+            d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.38A9.9 9.9 0 1 0 12.04 2Z"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M9.3 8.7c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .5.4l.7 1.7c.1.2 0 .4-.1.6l-.4.5c-.1.1-.1.3 0 .4.3.5.9 1.1 1.5 1.5.1.1.3.1.4 0l.5-.4c.2-.1.4-.2.6-.1l1.7.7c.3.1.4.3.4.5v.5c0 .3 0 .5-.4.7-.4.2-1 .4-1.6.3-1.6-.2-3.3-1.2-4.6-2.5-1.3-1.3-2.2-3-2.4-4.6-.1-.6.1-1.2.3-1.6Z"
+            fill="currentColor"
+          />
+        </svg>
+      </span>
+      <span class="message-channel__copy">
+        <strong>{{ whatsapp_chat.label }}</strong>
+        <span>{{ whatsapp_chat.hint }}</span>
+      </span>
+    </a>
+    {% else %}
+    <span class="message-channel message-channel--whatsapp is-disabled" title="Configure WhatsApp in Communication Settings">
+      <span class="message-channel__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+          <path
+            d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.38A9.9 9.9 0 1 0 12.04 2Z"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </span>
+      <span class="message-channel__copy">
+        <strong>Chat on WhatsApp</strong>
+        <span>Add a WhatsApp number in Communication Settings</span>
+      </span>
+    </span>
+    {% endif %}
+
+    {% if email_chat.available %}
+    <a
+      class="message-channel message-channel--email"
+      href="{{ email_chat.url }}"
+    >
+      <span class="message-channel__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+          <path d="M4.5 6.75h15v10.5h-15z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="m4.5 7.5 7.5 5.25L19.5 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="message-channel__copy">
+        <strong>{{ email_chat.label }}</strong>
+        <span>{{ email_chat.hint }}</span>
+      </span>
+    </a>
+    {% else %}
+    <span class="message-channel message-channel--email is-disabled" title="Add a firm email in Company Information">
+      <span class="message-channel__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+          <path d="M4.5 6.75h15v10.5h-15z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="m4.5 7.5 7.5 5.25L19.5 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="message-channel__copy">
+        <strong>Chat on Email</strong>
+        <span>Add a firm email in Company Information</span>
+      </span>
+    </span>
+    {% endif %}
+
+    {% if sms_chat.available %}
+    <a
+      class="message-channel message-channel--sms"
+      href="{{ sms_chat.url }}"
+    >
+      <span class="message-channel__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+          <path d="M8.25 5.5h7.5v13h-7.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M11 17.25h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M9.5 8.5h5M9.5 11h5M9.5 13.5h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="message-channel__copy">
+        <strong>{{ sms_chat.label }}</strong>
+        <span>{{ sms_chat.hint }}</span>
+      </span>
+    </a>
+    {% else %}
+    <span class="message-channel message-channel--sms is-disabled" title="Add a firm phone in Company Information">
+      <span class="message-channel__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+          <path d="M8.25 5.5h7.5v13h-7.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M11 17.25h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="message-channel__copy">
+        <strong>Chat on SMS</strong>
+        <span>Add a firm phone in Company Information</span>
+      </span>
+    </span>
+    {% endif %}
+  </section>
 
   <section class="panel">
     <div class="panel__head">
