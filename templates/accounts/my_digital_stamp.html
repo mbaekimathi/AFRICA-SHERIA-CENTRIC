@@ -35,7 +35,13 @@
     </p>
   </div>
 
-  <form method="post" class="letterhead-studio stamp-studio" id="stamp-form" novalidate>
+  <form
+    method="post"
+    class="letterhead-studio stamp-studio"
+    id="stamp-form"
+    enctype="multipart/form-data"
+    novalidate
+  >
     {% csrf_token %}
 
     {% if form.non_field_errors %}
@@ -45,6 +51,8 @@
     {% endif %}
 
     <div class="letterhead-studio__main">
+      {% include "accounts/partials/stamp_scan_upload.html" with stamp_setting=digital_stamp_setting stamp_owner_copy="Already have a physical stamp of your own?" %}
+
       <section class="letterhead-studio__samples" aria-labelledby="stamp-samples-title">
         <div class="settings-panel__intro">
           <h3 id="stamp-samples-title">Stamp samples</h3>

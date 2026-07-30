@@ -41,6 +41,7 @@ from .models import (
     FirmGalleryImage,
     FirmPracticeArea,
     Invoice,
+    TaxRate,
     LitigationCase,
     MatterAttendance,
     MatterAttendanceBringUpItem,
@@ -1927,6 +1928,64 @@ class RegisterCaseForm(forms.ModelForm):
             raise ValidationError("Only active clients can be linked to a case.")
         return client
 
+
+class EditActiveLitigationCaseForm(RegisterCaseForm):
+    """Edit case details together with status and allocation."""
+
+    status = forms.ChoiceField(
+        choices=(
+            (LitigationCase.Status.ACTIVE, "Active"),
+            (LitigationCase.Status.CLOSED, "Closed"),
+        ),
+        widget=forms.Select(attrs={"class": "form-input", "id": "id_status"}),
+    )
+    assigned_to = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        empty_label="Select employee",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_assigned_to"}
+        ),
+        error_messages={"required": "Allocate the case to an employee."},
+    )
+
+    class Meta(RegisterCaseForm.Meta):
+        fields = RegisterCaseForm.Meta.fields + ("status", "assigned_to")
+
+    def __init__(
+        self,
+        *args,
+        can_change_status=True,
+        can_change_allocation=True,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if can_change_status:
+            self.fields["status"].help_text = (
+                "Closing the case removes it from the active cases list."
+            )
+        else:
+            self.fields.pop("status")
+
+        if can_change_allocation:
+            self.fields["assigned_to"].queryset = Employee.objects.filter(
+                status=Employee.Status.ACTIVE
+            ).order_by("first_name", "last_name", "login_code")
+            self.fields["assigned_to"].label_from_instance = (
+                lambda employee: (
+                    f"{employee.get_full_name() or employee.login_code} "
+                    f"({employee.get_role_display()})"
+                )
+            )
+        else:
+            self.fields.pop("assigned_to")
+
+    def clean_assigned_to(self):
+        employee = self.cleaned_data.get("assigned_to")
+        if employee and employee.status != Employee.Status.ACTIVE:
+            raise ValidationError("Only active employees can be allocated.")
+        return employee
+
+
 class CasePartyForm(forms.ModelForm):
     """One party row on the register-case form."""
 
@@ -3799,7 +3858,82 @@ class CompanyLetterheadForm(forms.ModelForm):
         self.fields["accent"].required = True
 
 
-class CompanyDigitalStampForm(forms.ModelForm):
+class BaseStampSettingsForm(forms.ModelForm):
+    """
+    Shared upload / clear handling for a photo of a physical stamp.
+
+    The file stays outside Meta.fields so the cutout and clear actions remain
+    explicit, mirroring how the firm logo is applied.
+    """
+
+    MAX_STAMP_IMAGE_BYTES = 5 * 1024 * 1024
+
+    stamp_image = forms.ImageField(
+        required=False,
+        label="Stamp image",
+        help_text="PNG or JPG of your inked stamp, up to 5 MB.",
+        widget=forms.FileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*",
+                "id": "id_stamp_image",
+                "data-stamp-upload": "",
+            }
+        ),
+    )
+    cutout_stamp_background = forms.BooleanField(
+        required=False,
+        initial=True,
+        label="Remove the paper background",
+        help_text="Keeps only the ink so the stamp sits on the document.",
+        widget=forms.CheckboxInput(
+            attrs={"class": "form-check", "id": "id_cutout_stamp_background"}
+        ),
+    )
+    clear_stamp_image = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="Remove uploaded stamp",
+        widget=forms.CheckboxInput(
+            attrs={"class": "form-check", "id": "id_clear_stamp_image"}
+        ),
+    )
+
+    def clean_stamp_image(self):
+        uploaded = self.cleaned_data.get("stamp_image")
+        if uploaded and uploaded.size > self.MAX_STAMP_IMAGE_BYTES:
+            raise forms.ValidationError(
+                "That stamp image is larger than 5 MB. Upload a smaller scan."
+            )
+        return uploaded
+
+    def apply_stamp_image(self, setting):
+        """Apply clear/upload for the stamp scan onto a saved settings row."""
+        uploaded = self.cleaned_data.get("stamp_image")
+        if uploaded:
+            optimized = optimize_logo(
+                uploaded,
+                remove_background=bool(
+                    self.cleaned_data.get("cutout_stamp_background")
+                ),
+                max_size=700,
+            )
+            if setting.stamp_image:
+                setting.stamp_image.delete(save=False)
+            setting.stamp_image = optimized
+            setting.save(update_fields=["stamp_image", "updated_at"])
+            return "uploaded"
+
+        if self.cleaned_data.get("clear_stamp_image") and setting.stamp_image:
+            setting.stamp_image.delete(save=False)
+            setting.stamp_image = None
+            setting.save(update_fields=["stamp_image", "updated_at"])
+            return "cleared"
+
+        return ""
+
+
+class CompanyDigitalStampForm(BaseStampSettingsForm):
     """Firm digital stamp layout (Document settings)."""
 
     class Meta:
@@ -3845,7 +3979,7 @@ class CompanyDigitalStampForm(forms.ModelForm):
         self.fields["accent"].required = True
 
 
-class EmployeeDigitalStampForm(forms.ModelForm):
+class EmployeeDigitalStampForm(BaseStampSettingsForm):
     """Personal digital stamp layout (My tools)."""
 
     class Meta:
@@ -6158,8 +6292,83 @@ class RenameDocumentForm(DocumentPartyTypeMixin, forms.Form):
         return (self.cleaned_data.get("notes") or "").strip()
 
 
+class TaxRateSelect(forms.Select):
+    """Select widget that exposes each tax rate as a data attribute."""
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(
+            name, value, label, selected, index, subindex=subindex, attrs=attrs
+        )
+        if value and hasattr(value, "instance") and value.instance is not None:
+            rate = value.instance
+            option["attrs"]["data-rate"] = format(rate.percentage.normalize(), "f")
+            option["attrs"]["data-name"] = rate.name
+        return option
+
+
 class GenerateInvoiceForm(forms.ModelForm):
     """Create a new invoice with multiple service line items and optional tax."""
+
+    tax_profile = forms.ModelChoiceField(
+        queryset=TaxRate.objects.none(),
+        required=False,
+        label="Tax",
+        empty_label="Select a tax",
+        widget=TaxRateSelect(
+            attrs={
+                "class": "form-input",
+                "id": "id_invoice_tax_profile",
+            }
+        ),
+    )
+    new_tax_name = forms.CharField(
+        required=False,
+        max_length=80,
+        label="New tax name",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_invoice_new_tax_name",
+                "placeholder": "e.g. VAT",
+            }
+        ),
+    )
+    tax_percentage = forms.DecimalField(
+        required=False,
+        min_value=Decimal("0.00"),
+        max_value=Decimal("100.00"),
+        max_digits=6,
+        decimal_places=2,
+        label="Percentage",
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_invoice_tax_percentage",
+                "min": "0",
+                "max": "100",
+                "step": "0.01",
+                "placeholder": "0.00",
+            }
+        ),
+    )
+    new_tax_rate = forms.DecimalField(
+        required=False,
+        min_value=Decimal("0.00"),
+        max_value=Decimal("100.00"),
+        max_digits=6,
+        decimal_places=2,
+        label="Percentage",
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_invoice_new_tax_rate",
+                "min": "0",
+                "max": "100",
+                "step": "0.01",
+                "placeholder": "0.00",
+            }
+        ),
+    )
 
     class Meta:
         model = Invoice
@@ -6230,6 +6439,12 @@ class GenerateInvoiceForm(forms.ModelForm):
         self.fields["due_date"].required = False
         self.fields["tax_amount"].required = False
         self.fields["notes"].required = False
+        self.fields["tax_profile"].queryset = TaxRate.objects.filter(
+            is_active=True
+        ).order_by("name", "percentage")
+        self.fields["tax_profile"].label_from_instance = (
+            lambda tax: f"{tax.name} - {format(tax.percentage.normalize(), 'f')}%"
+        )
         today = timezone.localdate()
         self.fields["issue_date"].initial = today
         self.fields["due_date"].initial = None
@@ -6264,7 +6479,73 @@ class GenerateInvoiceForm(forms.ModelForm):
         due_date = cleaned.get("due_date")
         if issue_date and due_date and due_date < issue_date:
             self.add_error("due_date", "Due date cannot be before the issue date.")
+
+        tax_profile = cleaned.get("tax_profile")
+        tax_percentage = cleaned.get("tax_percentage")
+        new_tax_name = (cleaned.get("new_tax_name") or "").strip()
+        new_tax_rate = cleaned.get("new_tax_rate")
+        registering_new = bool(new_tax_name or new_tax_rate is not None)
+
+        if registering_new:
+            if not new_tax_name:
+                self.add_error("new_tax_name", "Enter the tax name.")
+            if new_tax_rate is None:
+                self.add_error("new_tax_rate", "Enter the tax percentage.")
+            existing = TaxRate.objects.filter(name__iexact=new_tax_name).first()
+            if existing and new_tax_rate is not None:
+                self.add_error(
+                    "new_tax_name",
+                    "A tax with this name already exists. Select it from the list.",
+                )
+            cleaned["resolved_tax_name"] = new_tax_name
+            cleaned["resolved_tax_rate"] = new_tax_rate
+        elif tax_profile:
+            cleaned["resolved_tax_name"] = tax_profile.name
+            cleaned["resolved_tax_rate"] = (
+                tax_percentage
+                if tax_percentage is not None
+                else tax_profile.percentage
+            )
+        else:
+            cleaned["resolved_tax_name"] = ""
+            cleaned["resolved_tax_rate"] = None
+
+        amount = cleaned.get("amount")
+        resolved_rate = cleaned.get("resolved_tax_rate")
+        if amount is not None and resolved_rate is not None:
+            cleaned["tax_amount"] = (
+                amount * resolved_rate / Decimal("100")
+            ).quantize(Decimal("0.01"))
+        elif amount is not None:
+            cleaned["tax_amount"] = Decimal("0.00")
         return cleaned
+
+    def save(self, commit=True):
+        invoice = super().save(commit=False)
+        tax_name = self.cleaned_data.get("resolved_tax_name") or ""
+        tax_rate = self.cleaned_data.get("resolved_tax_rate")
+        invoice.tax_name = tax_name
+        invoice.tax_rate = tax_rate
+
+        new_tax_name = (self.cleaned_data.get("new_tax_name") or "").strip()
+        tax_profile = self.cleaned_data.get("tax_profile")
+        if tax_name and new_tax_name:
+            TaxRate.objects.get_or_create(
+                name=tax_name,
+                defaults={
+                    "percentage": tax_rate,
+                    "is_active": True,
+                },
+            )
+        elif tax_profile and tax_rate is not None and tax_profile.percentage != tax_rate:
+            # Persist the edited percentage so the tax list stays up to date.
+            tax_profile.percentage = tax_rate
+            tax_profile.save(update_fields=["percentage", "updated_at"])
+
+        if commit:
+            invoice.save()
+            self.save_m2m()
+        return invoice
 
 
 class InvoiceStkPaymentForm(forms.Form):
@@ -7639,10 +7920,20 @@ class RegisterPettyCashExpenseForm(forms.ModelForm):
         for choice in CompanyExpensePayment.ExpenseType.choices
         if choice[0] != CompanyExpensePayment.ExpenseType.PAYROLL
     ]
+    PAYMENT_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+    PAYMENT_ATTACHMENT_EXTENSIONS = {
+        ".pdf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".heic",
+    }
 
     class Meta:
         model = PettyCashExpenseRequest
-        fields = ["expense_type", "description", "amount"]
+        fields = ["expense_type", "description", "amount", "payment_attachment"]
         widgets = {
             "expense_type": forms.Select(
                 attrs={"class": "form-input", "id": "id_petty_cash_expense_type"}
@@ -7664,6 +7955,13 @@ class RegisterPettyCashExpenseForm(forms.ModelForm):
                     "placeholder": "0.00",
                 }
             ),
+            "payment_attachment": forms.FileInput(
+                attrs={
+                    "class": "form-input form-input--file",
+                    "id": "id_petty_cash_payment_attachment",
+                    "accept": "image/*,.pdf,application/pdf",
+                }
+            ),
         }
 
     def __init__(self, *args, submitted_by=None, **kwargs):
@@ -7675,6 +7973,11 @@ class RegisterPettyCashExpenseForm(forms.ModelForm):
         self.fields["expense_type"].label = "Expense type"
         self.fields["description"].label = "Description"
         self.fields["amount"].label = "Amount (KES)"
+        self.fields["payment_attachment"].required = False
+        self.fields["payment_attachment"].label = "Payment attachment"
+        self.fields["payment_attachment"].help_text = (
+            "Optional. Upload a receipt, M-Pesa confirmation, or invoice (PDF or image)."
+        )
 
     def clean_expense_type(self):
         expense_type = (self.cleaned_data.get("expense_type") or "").strip()
@@ -7700,6 +8003,19 @@ class RegisterPettyCashExpenseForm(forms.ModelForm):
         if amount <= 0:
             raise ValidationError("Amount must be greater than zero.")
         return amount
+
+    def clean_payment_attachment(self):
+        attachment = self.cleaned_data.get("payment_attachment")
+        if not attachment:
+            return attachment
+        name = (getattr(attachment, "name", "") or "").strip().lower()
+        ext = f".{name.rsplit('.', 1)[-1]}" if "." in name else ""
+        if ext not in self.PAYMENT_ATTACHMENT_EXTENSIONS:
+            raise ValidationError("Upload a PDF or image file (PNG, JPG, GIF, WEBP).")
+        size = getattr(attachment, "size", None)
+        if size is not None and size > self.PAYMENT_ATTACHMENT_MAX_BYTES:
+            raise ValidationError("Attachment must be 10 MB or smaller.")
+        return attachment
 
     def clean(self):
         cleaned = super().clean()

@@ -13,7 +13,7 @@ from .workspace import workspace_reverse
 # Materialise reminders/tasks/news watches at most once per window per employee.
 _MATERIALIZE_TTL_SECONDS = 60
 # Short payload cache so concurrent tabs on the same session share one build.
-_PAYLOAD_TTL_SECONDS = 3
+_PAYLOAD_TTL_SECONDS = 8
 
 
 CATEGORY_LABELS = {

@@ -10,9 +10,11 @@ import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -79,6 +81,18 @@ TEMPLATES_FORMS_CATEGORIES = (
 )
 TEMPLATES_FORMS_CATEGORY_SLUGS = {slug for slug, _label in TEMPLATES_FORMS_CATEGORIES}
 TEMPLATES_FORMS_CATEGORY_LABELS = dict(TEMPLATES_FORMS_CATEGORIES)
+
+# Folder ids are stored on GoogleDriveConnection, but re-checking every one of
+# them over the network on each page render costs dozens of serial round trips.
+# Once a folder is confirmed, trust it for this long before checking again.
+FOLDER_VERIFY_TTL_SECONDS = 900
+# Listings change rarely compared with how often the pages are opened.
+LIBRARY_CACHE_TTL_SECONDS = 60
+# Browser folder listings and breadcrumb meta — short TTL keeps navigation snappy.
+DRIVE_LISTING_CACHE_TTL_SECONDS = 45
+DRIVE_FOLDER_META_CACHE_TTL_SECONDS = 120
+# Independent Drive calls are network-bound, so run them side by side.
+DRIVE_MAX_PARALLEL_REQUESTS = 8
 
 EMPLOYEE_PERSONAL_DETAIL_FIELDS = (
     ("profile_photo", "Profile Photo"),
@@ -392,6 +406,7 @@ def list_drive_children(
     folder_id: str,
     *,
     page_size: int = 200,
+    use_cache: bool = True,
 ) -> list[dict]:
     """
     List non-trashed children of a Drive folder (folders first, then name).
@@ -399,6 +414,12 @@ def list_drive_children(
     folder_id = (folder_id or "").strip()
     if not folder_id:
         raise GoogleDriveAPIError("Missing Drive folder id.")
+
+    cache_key = f"drive_children:{folder_id}:{page_size}"
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     token = get_valid_access_token()
     q = f"'{folder_id}' in parents and trashed = false"
@@ -424,16 +445,33 @@ def list_drive_children(
         page_token = (data.get("nextPageToken") or "").strip()
         if not page_token:
             break
+    if use_cache:
+        cache.set(cache_key, files, DRIVE_LISTING_CACHE_TTL_SECONDS)
     return files
 
 
-def get_drive_folder_meta(folder_id: str) -> dict:
+def invalidate_drive_children_cache(folder_id: str = "") -> None:
+    """Drop a cached Drive children listing after uploads or deletes."""
+    folder_id = (folder_id or "").strip()
+    if not folder_id:
+        return
+    # Common page sizes used by callers.
+    for page_size in (20, 200, 1000):
+        cache.delete(f"drive_children:{folder_id}:{page_size}")
+
+
+def get_drive_folder_meta(folder_id: str, *, use_cache: bool = True) -> dict:
     """Fetch folder metadata including parents for breadcrumb walks."""
     folder_id = (folder_id or "").strip()
     if not folder_id:
         raise GoogleDriveAPIError("Missing Drive folder id.")
+    cache_key = f"drive_folder_meta:{folder_id}"
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
     token = get_valid_access_token()
-    return _request_json(
+    meta = _request_json(
         "GET",
         (
             f"{DRIVE_FILES_URL}/{urllib.parse.quote(folder_id)}"
@@ -442,6 +480,9 @@ def get_drive_folder_meta(folder_id: str) -> dict:
         ),
         access_token=token,
     )
+    if use_cache:
+        cache.set(cache_key, meta, DRIVE_FOLDER_META_CACHE_TTL_SECONDS)
+    return meta
 
 
 def build_drive_folder_breadcrumbs(
@@ -754,22 +795,47 @@ def get_valid_access_token(connection: GoogleDriveConnection | None = None) -> s
     return access_token
 
 
+def _folder_verify_cache_key(
+    folder_id: str, name: str, parent_id: str | None = None
+) -> str:
+    expected_parent = (parent_id or "").strip()
+    return (
+        f"drive_folder_ok:{folder_id}:{sanitize_drive_name(name)}:"
+        f"{expected_parent}"
+    )
+
+
 def folder_exists(access_token: str, folder_id: str) -> bool:
     if not folder_id:
         return False
+    return _fetch_folder_state(access_token, folder_id) is not None
+
+
+def _fetch_folder_state(access_token: str, folder_id: str) -> dict | None:
+    """Return metadata for a live, non-trashed folder, else None."""
     url = (
         f"{DRIVE_FILES_URL}/{urllib.parse.quote(folder_id)}"
-        "?fields=id,mimeType,trashed"
+        "?fields=id,mimeType,trashed,name,parents"
     )
     try:
         meta = _request_json("GET", url, access_token=access_token)
     except GoogleDriveAPIError:
-        return False
-    return (
-        meta.get("mimeType") == FOLDER_MIME
-        and not meta.get("trashed")
-        and bool(meta.get("id"))
-    )
+        return None
+    if (
+        meta.get("mimeType") != FOLDER_MIME
+        or meta.get("trashed")
+        or not meta.get("id")
+    ):
+        return None
+    return {
+        "id": meta["id"],
+        "name": (meta.get("name") or "").strip(),
+        "parents": [
+            str(parent).strip()
+            for parent in (meta.get("parents") or [])
+            if str(parent).strip()
+        ],
+    }
 
 
 def create_folder(
@@ -793,7 +859,7 @@ def create_folder(
     return folder_id
 
 
-def _ensure_folder_name(access_token: str, folder_id: str, name: str) -> None:
+def _rename_drive_folder(access_token: str, folder_id: str, name: str) -> None:
     """Rename an existing Drive folder when its title no longer matches."""
     safe_name = sanitize_drive_name(name)
     if not folder_id or not safe_name:
@@ -802,13 +868,6 @@ def _ensure_folder_name(access_token: str, folder_id: str, name: str) -> None:
         f"{DRIVE_FILES_URL}/{urllib.parse.quote(folder_id)}"
         "?fields=id,name"
     )
-    try:
-        meta = _request_json("GET", url, access_token=access_token)
-    except GoogleDriveAPIError:
-        return
-    current = (meta.get("name") or "").strip()
-    if current == safe_name:
-        return
     try:
         _request_json(
             "PATCH",
@@ -825,6 +884,25 @@ def _ensure_folder_name(access_token: str, folder_id: str, name: str) -> None:
         )
 
 
+def _ensure_folder_name(access_token: str, folder_id: str, name: str) -> None:
+    """Rename an existing Drive folder when its title no longer matches."""
+    safe_name = sanitize_drive_name(name)
+    if not folder_id or not safe_name:
+        return
+    url = (
+        f"{DRIVE_FILES_URL}/{urllib.parse.quote(folder_id)}"
+        "?fields=id,name"
+    )
+    try:
+        meta = _request_json("GET", url, access_token=access_token)
+    except GoogleDriveAPIError:
+        return
+    current = (meta.get("name") or "").strip()
+    if current == safe_name:
+        return
+    _rename_drive_folder(access_token, folder_id, safe_name)
+
+
 def ensure_folder(
     access_token: str,
     *,
@@ -832,14 +910,42 @@ def ensure_folder(
     parent_id: str | None = None,
     existing_id: str = "",
 ) -> str:
-    if existing_id and folder_exists(access_token, existing_id):
-        _ensure_folder_name(access_token, existing_id, name)
-        return existing_id
+    """
+    Return the Drive id of this folder, creating or renaming it when needed.
+
+    A folder that was already confirmed under the same name is trusted for
+    FOLDER_VERIFY_TTL_SECONDS, so repeat page views skip the network entirely.
+    """
+    if existing_id:
+        verify_key = _folder_verify_cache_key(existing_id, name, parent_id)
+        if cache.get(verify_key):
+            return existing_id
+        state = _fetch_folder_state(access_token, existing_id)
+        expected_parent = (parent_id or "").strip()
+        if state is not None and (
+            not expected_parent or expected_parent in state["parents"]
+        ):
+            safe_name = sanitize_drive_name(name)
+            if safe_name and state["name"] != safe_name:
+                _rename_drive_folder(access_token, existing_id, safe_name)
+            cache.set(verify_key, True, FOLDER_VERIFY_TTL_SECONDS)
+            return existing_id
     if parent_id:
         found = find_child_folder_by_name(access_token, parent_id, name)
         if found:
+            cache.set(
+                _folder_verify_cache_key(found, name, parent_id),
+                True,
+                FOLDER_VERIFY_TTL_SECONDS,
+            )
             return found
-    return create_folder(access_token, name, parent_id=parent_id)
+    created = create_folder(access_token, name, parent_id=parent_id)
+    cache.set(
+        _folder_verify_cache_key(created, name, parent_id),
+        True,
+        FOLDER_VERIFY_TTL_SECONDS,
+    )
+    return created
 
 
 def _escape_drive_query_value(value: str) -> str:
@@ -877,15 +983,63 @@ def find_child_folder_by_name(
     return (files[0].get("id") or "").strip()
 
 
+def _all_known_folders_verified(connection: GoogleDriveConnection) -> bool:
+    """True when every stored firm folder id was confirmed recently."""
+    checks = [
+        (connection.root_folder_id, firm_root_folder_name(), ""),
+        (
+            connection.clients_folder_id,
+            CLIENTS_FOLDER_NAME,
+            connection.root_folder_id,
+        ),
+        (
+            connection.work_folder_id,
+            WORK_FOLDER_NAME,
+            connection.root_folder_id,
+        ),
+        (
+            connection.templates_forms_folder_id,
+            TEMPLATES_FORMS_FOLDER_NAME,
+            connection.root_folder_id,
+        ),
+    ]
+    stored = connection.templates_forms_category_folder_ids or {}
+    for slug, label in TEMPLATES_FORMS_CATEGORIES:
+        checks.append(
+            (
+                stored.get(slug) or "",
+                label,
+                connection.templates_forms_folder_id,
+            )
+        )
+    return all(
+        folder_id
+        and cache.get(_folder_verify_cache_key(folder_id, name, parent_id))
+        for folder_id, name, parent_id in checks
+    )
+
+
 def ensure_firm_folder_structure(
     connection: GoogleDriveConnection | None = None,
 ) -> GoogleDriveConnection:
     """
     Ensure Company / Clients / Employees / Templates and Forms folders exist.
+
+    When the connection already stores every folder id and those ids were
+    verified recently, this returns immediately with no Drive network calls.
     """
     connection = connection or GoogleDriveConnection.get_solo()
     if not connection.is_connected:
         raise GoogleDriveAPIError("Google Drive is not connected.")
+
+    if (
+        connection.root_folder_id
+        and connection.clients_folder_id
+        and connection.work_folder_id
+        and connection.templates_forms_folder_id
+        and _all_known_folders_verified(connection)
+    ):
+        return connection
 
     token = get_valid_access_token(connection)
     root_id = ensure_folder(
@@ -893,24 +1047,31 @@ def ensure_firm_folder_structure(
         name=firm_root_folder_name(),
         existing_id=connection.root_folder_id,
     )
-    clients_id = ensure_folder(
-        token,
-        name=CLIENTS_FOLDER_NAME,
-        parent_id=root_id,
-        existing_id=connection.clients_folder_id,
-    )
-    work_id = ensure_folder(
-        token,
-        name=WORK_FOLDER_NAME,
-        parent_id=root_id,
-        existing_id=connection.work_folder_id,
-    )
-    templates_forms_id = ensure_folder(
-        token,
-        name=TEMPLATES_FORMS_FOLDER_NAME,
-        parent_id=root_id,
-        existing_id=connection.templates_forms_folder_id,
-    )
+
+    # Sibling folders under root can be verified / created independently.
+    def _ensure_child(name: str, existing_id: str) -> str:
+        return ensure_folder(
+            token,
+            name=name,
+            parent_id=root_id,
+            existing_id=existing_id,
+        )
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        clients_fut = pool.submit(
+            _ensure_child, CLIENTS_FOLDER_NAME, connection.clients_folder_id
+        )
+        work_fut = pool.submit(
+            _ensure_child, WORK_FOLDER_NAME, connection.work_folder_id
+        )
+        templates_fut = pool.submit(
+            _ensure_child,
+            TEMPLATES_FORMS_FOLDER_NAME,
+            connection.templates_forms_folder_id,
+        )
+        clients_id = clients_fut.result()
+        work_id = work_fut.result()
+        templates_forms_id = templates_fut.result()
 
     connection.root_folder_id = root_id
     connection.clients_folder_id = clients_id
@@ -940,6 +1101,10 @@ def ensure_templates_forms_categories(
 ) -> GoogleDriveConnection:
     """
     Ensure category folders under Templates and Forms and cache their Drive ids.
+
+    Categories are independent siblings, so verification runs in parallel.
+    When every category id is already stored and recently verified, this is a
+    pure in-process check with zero Drive traffic.
     """
     connection = connection or GoogleDriveConnection.get_solo()
     if not connection.is_connected:
@@ -951,17 +1116,39 @@ def ensure_templates_forms_categories(
     if not parent_id:
         raise GoogleDriveAPIError("Templates and Forms folder is not available.")
 
-    token = get_valid_access_token(connection)
     stored = dict(connection.templates_forms_category_folder_ids or {})
-    updated = False
-    for slug, label in TEMPLATES_FORMS_CATEGORIES:
-        existing = (stored.get(slug) or "").strip()
+    all_known = all(
+        (stored.get(slug) or "").strip() for slug, _label in TEMPLATES_FORMS_CATEGORIES
+    )
+    if all_known and all(
+        cache.get(_folder_verify_cache_key(stored[slug], label, parent_id))
+        for slug, label in TEMPLATES_FORMS_CATEGORIES
+    ):
+        return connection
+
+    token = get_valid_access_token(connection)
+
+    def _ensure_category(slug: str, label: str) -> tuple[str, str]:
         folder_id = ensure_folder(
             token,
             name=label,
             parent_id=parent_id,
-            existing_id=existing,
+            existing_id=(stored.get(slug) or "").strip(),
         )
+        return slug, folder_id
+
+    with ThreadPoolExecutor(
+        max_workers=min(DRIVE_MAX_PARALLEL_REQUESTS, len(TEMPLATES_FORMS_CATEGORIES))
+    ) as pool:
+        results = list(
+            pool.map(
+                lambda item: _ensure_category(*item),
+                TEMPLATES_FORMS_CATEGORIES,
+            )
+        )
+
+    updated = False
+    for slug, folder_id in results:
         if stored.get(slug) != folder_id:
             stored[slug] = folder_id
             updated = True
@@ -998,15 +1185,38 @@ def templates_forms_category_folder_id(
     return folder_id
 
 
+def _templates_forms_library_cache_key(connection: GoogleDriveConnection) -> str:
+    folder_id = (connection.templates_forms_folder_id or "").strip()
+    return f"drive_templates_library:{connection.pk}:{folder_id}"
+
+
+def invalidate_templates_forms_library_cache(
+    connection: GoogleDriveConnection | None = None,
+) -> None:
+    """Drop the cached Templates and Forms listing after uploads or deletes."""
+    connection = connection or GoogleDriveConnection.get_solo()
+    cache.delete(_templates_forms_library_cache_key(connection))
+
+
 def list_templates_forms_library(
     connection: GoogleDriveConnection | None = None,
+    *,
+    use_cache: bool = True,
 ) -> list[dict]:
     """
     List each Templates and Forms category with its non-folder Drive files.
+
+    Category listings are fetched in parallel. Results are cached briefly so
+    opening My tools / Templates repeatedly does not re-hit Drive every time.
     """
     connection = ensure_templates_forms_categories(connection)
-    library: list[dict] = []
-    for slug, label in TEMPLATES_FORMS_CATEGORIES:
+    cache_key = _templates_forms_library_cache_key(connection)
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    def _bucket_for(slug: str, label: str) -> dict:
         folder_id = (
             (connection.templates_forms_category_folder_ids or {}).get(slug) or ""
         ).strip()
@@ -1040,17 +1250,29 @@ def list_templates_forms_library(
                         "category_label": label,
                     }
                 )
-        library.append(
-            {
-                "slug": slug,
-                "label": label,
-                "folder_id": folder_id,
-                "folder_url": folder_url,
-                "files": files,
-                "count": len(files),
-            }
+        return {
+            "slug": slug,
+            "label": label,
+            "folder_id": folder_id,
+            "folder_url": folder_url,
+            "files": files,
+            "count": len(files),
+        }
+
+    with ThreadPoolExecutor(
+        max_workers=min(DRIVE_MAX_PARALLEL_REQUESTS, len(TEMPLATES_FORMS_CATEGORIES))
+    ) as pool:
+        library = list(
+            pool.map(
+                lambda item: _bucket_for(*item),
+                TEMPLATES_FORMS_CATEGORIES,
+            )
         )
+
+    if use_cache:
+        cache.set(cache_key, library, LIBRARY_CACHE_TTL_SECONDS)
     return library
+
 
 
 def get_drive_file_meta(file_id: str) -> dict:
@@ -1097,6 +1319,8 @@ def copy_drive_file(
     new_id = (created.get("id") or "").strip()
     if not new_id:
         raise GoogleDriveAPIError(f"Failed to copy “{name}” from the template.")
+    if parent_id:
+        invalidate_drive_children_cache(parent_id)
     return created
 
 
@@ -1450,6 +1674,8 @@ def create_google_workspace_file(
         created["mimeType"] = info["mime"]
     created["_workspace_type"] = info["key"]
     created["_workspace_label"] = info["label"]
+    if parent_id:
+        invalidate_drive_children_cache(parent_id)
     return created
 
 
@@ -1707,6 +1933,8 @@ def upload_drive_file(
     file_id = (created.get("id") or "").strip()
     if not file_id:
         raise GoogleDriveAPIError(f"Failed to upload “{safe_name}”.")
+    if parent_id:
+        invalidate_drive_children_cache(parent_id)
     return created
 
 

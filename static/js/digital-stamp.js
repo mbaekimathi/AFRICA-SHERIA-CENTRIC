@@ -9,8 +9,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const accentEl = document.getElementById("stamp-current-accent");
   if (!stamp) return;
 
-  const templates = ["classic", "square", "oval", "badge", "ribbon", "wax"];
-  const accents = ["forest", "navy", "charcoal", "burgundy", "teal", "gold"];
+  const templates = [
+    "classic",
+    "advocate",
+    "square",
+    "oval",
+    "badge",
+    "ribbon",
+    "wax",
+  ];
+  const accents = [
+    "ink",
+    "forest",
+    "navy",
+    "charcoal",
+    "burgundy",
+    "teal",
+    "gold",
+  ];
 
   const syncCards = () => {
     form.querySelectorAll(".stamp-sample-card").forEach((card) => {
@@ -73,4 +89,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   form.addEventListener("change", applyPreview);
   applyPreview();
+
+  // Uploaded stamp: show the chosen file before it is saved.
+  const upload = form.querySelector("[data-stamp-upload]");
+  const uploadPreview = form.querySelector("[data-stamp-upload-preview]");
+  const uploadName = form.querySelector("[data-stamp-upload-name]");
+  const uploadPlaceholder = form.querySelector(
+    "[data-stamp-upload-placeholder]"
+  );
+  if (!upload || !uploadPreview) return;
+
+  upload.addEventListener("change", () => {
+    const file = upload.files && upload.files[0];
+    if (!file) return;
+    if (uploadName) uploadName.textContent = file.name;
+    if (uploadPlaceholder) uploadPlaceholder.hidden = true;
+    uploadPreview.src = URL.createObjectURL(file);
+    uploadPreview.hidden = false;
+    document.getElementById("stamp-upload")?.classList.add("stamp-upload--active");
+  });
 });

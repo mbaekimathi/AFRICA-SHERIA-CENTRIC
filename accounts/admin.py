@@ -1422,6 +1422,21 @@ class PettyCashExpenseRequestAdmin(admin.ModelAdmin):
         "reviewed_by",
         "expense_payment",
     )
+    fields = (
+        "employee",
+        "expense_type",
+        "description",
+        "amount",
+        "payment_attachment",
+        "status",
+        "submitted_by",
+        "reviewed_by",
+        "reviewed_at",
+        "rejection_reason",
+        "expense_payment",
+        "created_at",
+        "updated_at",
+    )
 
 
 @admin.register(RoleActivityPermission)

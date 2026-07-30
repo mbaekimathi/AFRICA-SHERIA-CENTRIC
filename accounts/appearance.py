@@ -156,6 +156,75 @@ FONT_CATALOG = (
     ("cabin", "Cabin Alegreya", "Cabin", "Alegreya", "Humanist warmth"),
 )
 
+# Google Fonts family query fragments for each workspace pairing.
+# Loading every pairing on every page was a major render-blocking cost.
+_GOOGLE_FONT_FAMILIES = {
+    "plex": ("IBM+Plex+Sans:wght@400;500;600;700",),
+    "source": (
+        "Source+Sans+3:wght@400;500;600;700",
+        "Source+Serif+4:wght@400;600;700",
+    ),
+    "manrope": ("Manrope:wght@400;500;600;700", "Lora:wght@400;600;700"),
+    "figtree": ("Figtree:wght@400;500;600;700", "Instrument+Serif:ital@0;1"),
+    "sora": ("Sora:wght@400;500;600;700", "Bitter:wght@400;600;700"),
+    "outfit": ("Outfit:wght@400;500;600;700", "Literata:wght@400;600;700"),
+    "jakarta": (
+        "Plus+Jakarta+Sans:wght@400;500;600;700",
+        "Crimson+Pro:wght@400;600;700",
+    ),
+    "syne": ("Syne:wght@400;600;700", "Vollkorn:wght@400;600;700"),
+    "epilogue": ("Epilogue:wght@400;500;600;700", "Newsreader:wght@400;600;700"),
+    "public": ("Public+Sans:wght@400;500;600;700", "Newsreader:wght@400;600;700"),
+    "space": ("Space+Grotesk:wght@400;500;600;700", "Fraunces:wght@400;600;700"),
+    "archivo": ("Archivo:wght@400;500;600;700", "Playfair+Display:wght@400;600;700"),
+    "dm": ("DM+Sans:wght@400;500;600;700", "DM+Serif+Display"),
+    "urbanist": (
+        "Urbanist:wght@400;500;600;700",
+        "Cormorant+Garamond:wght@400;600;700",
+    ),
+    "bricolage": (
+        "Bricolage+Grotesque:wght@400;500;600;700",
+        "Fraunces:wght@400;600;700",
+    ),
+    "lexend": ("Lexend:wght@400;500;600;700", "Spectral:wght@400;600;700"),
+    "work": ("Work+Sans:wght@400;500;600;700", "Zilla+Slab:wght@400;600;700"),
+    "albert": ("Albert+Sans:wght@400;500;600;700", "Cardo:wght@400;700"),
+    "redhat": (
+        "Red+Hat+Display:wght@400;500;600;700",
+        "Red+Hat+Text:wght@400;500;600;700",
+    ),
+    "cabin": ("Cabin:wght@400;500;600;700", "Alegreya:wght@400;600;700"),
+}
+
+
+def google_fonts_stylesheet_href(
+    font_key: str | None = None,
+    *,
+    include_all: bool = False,
+) -> str:
+    """
+    Return a Google Fonts CSS URL for the active pairing (or every pairing).
+
+    Workspace pages only need the signed-in user's font. Theme settings pages
+    pass include_all=True so the font picker specimens render correctly.
+    """
+    if include_all:
+        families: list[str] = []
+        seen: set[str] = set()
+        for key, _label, _sans, _serif, _mood in FONT_CATALOG:
+            for family in _GOOGLE_FONT_FAMILIES.get(key, ()):
+                if family not in seen:
+                    seen.add(family)
+                    families.append(family)
+    else:
+        key = (font_key or Employee.UiFont.PLEX).strip() or Employee.UiFont.PLEX
+        families = list(
+            _GOOGLE_FONT_FAMILIES.get(key)
+            or _GOOGLE_FONT_FAMILIES[Employee.UiFont.PLEX]
+        )
+    query = "&".join(f"family={family}" for family in families)
+    return f"https://fonts.googleapis.com/css2?{query}&display=swap"
+
 
 def resolve_theme_css_key(value: str | None) -> str:
     """Map a stored theme choice to the CSS class key (theme-*)."""

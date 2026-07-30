@@ -12,7 +12,15 @@
     <div class="gen-inv__card">
 
       <div class="gen-inv__header">
-        <div>
+        <span class="gen-inv__header-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+            <path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M9 13h7M9 17h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div class="gen-inv__header-copy">
+          <span class="gen-inv__eyebrow">Finance &amp; Billing</span>
           <h2 class="gen-inv__title">New Invoice</h2>
           <p class="gen-inv__sub">
             {% if client_locked and selected_client %}
@@ -23,7 +31,7 @@
           </p>
         </div>
         <a href="{{ cancel_url }}" class="gen-inv__back" title="Go back">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </a>
       </div>
 
@@ -33,108 +41,226 @@
       </div>
       {% endif %}
 
-      <!-- Client & Dates -->
-      <div class="gen-inv__section">
-        {% if client_locked and selected_client %}
-        <div class="gen-inv__client-badge">
-          <span class="gen-inv__client-avatar">{{ selected_client.get_full_name|make_list|first }}</span>
-          <div>
-            <strong>{{ selected_client.get_full_name }}</strong>
-            <span>{{ selected_client.phone|default:selected_client.email }}</span>
-          </div>
-          {{ form.client }}
-        </div>
-        {% else %}
-        <div class="form-field">
-          <label for="{{ form.client.id_for_label }}">Client <span aria-hidden="true">*</span></label>
-          {{ form.client }}
-          {% if form.client.errors %}<span class="field-error">{{ form.client.errors.0 }}</span>{% endif %}
-        </div>
-        {% endif %}
+      <div class="gen-inv__body">
+        <div class="gen-inv__main">
 
-        <div class="gen-inv__dates">
-          <div class="form-field">
-            <label for="{{ form.issue_date.id_for_label }}">Issue date <span aria-hidden="true">*</span></label>
-            {{ form.issue_date }}
-            {% if form.issue_date.errors %}<span class="field-error">{{ form.issue_date.errors.0 }}</span>{% endif %}
-          </div>
-          <div class="form-field">
-            <label for="{{ form.due_date.id_for_label }}">Due date <span class="gen-inv__optional">(optional)</span></label>
-            {{ form.due_date }}
-            {% if form.due_date.errors %}<span class="field-error">{{ form.due_date.errors.0 }}</span>{% endif %}
-          </div>
-        </div>
-      </div>
-
-      <!-- Line Items -->
-      <div class="gen-inv__section">
-        <div class="gen-inv__section-label">Services</div>
-        <div class="invoice-lines" id="invoice-lines">
-          <div class="invoice-line" data-line-index="0">
-            <div class="invoice-line__fields">
-              <div class="form-field invoice-line__desc">
-                <input type="text" class="form-input line-description" placeholder="Service description" required>
-              </div>
-              <div class="form-field invoice-line__amount">
-                <input type="number" class="form-input line-amount" min="0" step="0.01" placeholder="0.00" required>
+          <!-- Client & Dates -->
+          <div class="gen-inv__section">
+            <div class="gen-inv__section-head">
+              <span class="gen-inv__step" aria-hidden="true">1</span>
+              <div>
+                <div class="gen-inv__section-label">Bill to</div>
+                <p class="gen-inv__section-hint">Confirm the client and the invoice dates.</p>
               </div>
             </div>
-            <button type="button" class="invoice-line__remove" title="Remove line" aria-label="Remove line item" hidden>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
-                <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            {% if client_locked and selected_client %}
+            <div class="gen-inv__client-badge">
+              <span class="gen-inv__client-avatar">{{ selected_client.get_full_name|make_list|first }}</span>
+              <div>
+                <strong>{{ selected_client.get_full_name }}</strong>
+                <span>{{ selected_client.phone|default:selected_client.email }}</span>
+              </div>
+              {{ form.client }}
+            </div>
+            {% else %}
+            <div class="form-field">
+              <label for="{{ form.client.id_for_label }}">Client <span aria-hidden="true">*</span></label>
+              {{ form.client }}
+              {% if form.client.errors %}<span class="field-error">{{ form.client.errors.0 }}</span>{% endif %}
+            </div>
+            {% endif %}
+
+            <div class="gen-inv__dates">
+              <div class="form-field">
+                <label for="{{ form.issue_date.id_for_label }}">Issue date <span aria-hidden="true">*</span></label>
+                {{ form.issue_date }}
+                {% if form.issue_date.errors %}<span class="field-error">{{ form.issue_date.errors.0 }}</span>{% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.due_date.id_for_label }}">Due date <span class="gen-inv__optional">(optional)</span></label>
+                {{ form.due_date }}
+                {% if form.due_date.errors %}<span class="field-error">{{ form.due_date.errors.0 }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Line Items -->
+          <div class="gen-inv__section">
+            <div class="gen-inv__section-head">
+              <span class="gen-inv__step" aria-hidden="true">2</span>
+              <div>
+                <div class="gen-inv__section-label">Services</div>
+                <p class="gen-inv__section-hint">Add a service, then list as many details as needed under it.</p>
+              </div>
+            </div>
+
+            <div class="invoice-lines" id="invoice-lines">
+              <div class="invoice-service" data-line-index="0">
+                <div class="invoice-service__top">
+                  <span class="invoice-service__badge">Service 1</span>
+                  <button type="button" class="invoice-service__remove" title="Remove service" aria-label="Remove service" hidden>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                      <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                    Remove
+                  </button>
+                </div>
+
+                <div class="invoice-service__grid">
+                  <div class="form-field invoice-service__title-field">
+                    <label>Service title <span aria-hidden="true">*</span></label>
+                    <input type="text" class="form-input line-title" placeholder="e.g. Legal advisory &amp; drafting" required>
+                  </div>
+                  <div class="form-field invoice-service__amount-field">
+                    <label>Amount (KES)</label>
+                    <div class="gen-inv__money">
+                      <span class="gen-inv__money-prefix">KES</span>
+                      <input type="number" class="form-input line-amount" min="0" step="0.01" placeholder="0.00">
+                    </div>
+                  </div>
+                </div>
+
+                <div class="invoice-service__details">
+                  <div class="invoice-service__details-label">Details <span class="gen-inv__optional">(optional)</span></div>
+                  <div class="invoice-service__detail-list">
+                    <div class="invoice-service__detail">
+                      <span class="invoice-service__bullet" aria-hidden="true">•</span>
+                      <input type="text" class="form-input line-detail" placeholder="e.g. Contract review and amendments">
+                      <button type="button" class="invoice-service__detail-remove" title="Remove detail" aria-label="Remove detail" hidden>
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none">
+                          <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <button type="button" class="invoice-service__add-detail">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+                      <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                    Add detail
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button type="button" class="gen-inv__add-line" id="invoice-add-line">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
               </svg>
+              Add service
             </button>
+
+            <p class="gen-inv__line-error" id="invoice-lines-error" role="alert" hidden>
+              Add at least one service with a title.
+            </p>
+
+            {% if form.description.errors %}<span class="field-error">{{ form.description.errors.0 }}</span>{% endif %}
+            {% if form.amount.errors %}<span class="field-error">{{ form.amount.errors.0 }}</span>{% endif %}
+          </div>
+
+          <!-- Notes -->
+          <div class="gen-inv__section">
+            <div class="gen-inv__section-head">
+              <span class="gen-inv__step" aria-hidden="true">3</span>
+              <div>
+                <div class="gen-inv__section-label">Notes <span class="gen-inv__optional">(optional)</span></div>
+                <p class="gen-inv__section-hint">Payment instructions or anything else the client should see.</p>
+              </div>
+            </div>
+            <div class="form-field">
+              {{ form.notes }}
+              {% if form.notes.errors %}<span class="field-error">{{ form.notes.errors.0 }}</span>{% endif %}
+            </div>
           </div>
         </div>
 
-        <button type="button" class="gen-inv__add-line" id="invoice-add-line">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          Add item
-        </button>
+        <!-- Tax & Totals -->
+        <aside class="gen-inv__aside">
+          <div class="gen-inv__summary">
+            <div class="gen-inv__section-label">Summary</div>
 
-        {% if form.description.errors %}<span class="field-error">{{ form.description.errors.0 }}</span>{% endif %}
-        {% if form.amount.errors %}<span class="field-error">{{ form.amount.errors.0 }}</span>{% endif %}
-      </div>
+            <div class="gen-inv__tax-toggle">
+              <label class="gen-inv__switch">
+                <input type="checkbox" id="invoice-tax-enabled">
+                <span class="gen-inv__switch-track"></span>
+              </label>
+              <label class="gen-inv__tax-label" for="invoice-tax-enabled">Apply tax</label>
+            </div>
 
-      <!-- Tax & Totals -->
-      <div class="gen-inv__section gen-inv__summary">
-        <div class="gen-inv__tax-toggle">
-          <label class="gen-inv__switch">
-            <input type="checkbox" id="invoice-tax-enabled">
-            <span class="gen-inv__switch-track"></span>
-          </label>
-          <span class="gen-inv__tax-label">Apply tax</span>
-          <div class="form-field gen-inv__tax-rate" id="invoice-tax-rate-wrap" hidden>
-            <input type="number" class="form-input" id="invoice-tax-rate" min="0" max="100" step="0.01" value="16.00">
-            <span class="gen-inv__tax-pct">%</span>
-          </div>
-        </div>
+            <div class="gen-inv__tax-config" id="invoice-tax-config" hidden>
+              <div class="gen-inv__tax-pick">
+                <div class="form-field gen-inv__tax-select">
+                  <label for="{{ form.tax_profile.id_for_label }}">Tax</label>
+                  {{ form.tax_profile }}
+                  {% if form.tax_profile.errors %}<span class="field-error">{{ form.tax_profile.errors.0 }}</span>{% endif %}
+                </div>
 
-        <div class="invoice-totals" id="invoice-totals">
-          <div class="invoice-totals__row">
-            <span>Subtotal</span>
-            <strong id="invoice-subtotal">KES 0.00</strong>
-          </div>
-          <div class="invoice-totals__row invoice-totals__row--tax" id="invoice-tax-row" hidden>
-            <span>Tax (<span id="invoice-tax-rate-display">16</span>%)</span>
-            <strong id="invoice-tax-display">KES 0.00</strong>
-          </div>
-          <div class="invoice-totals__row invoice-totals__row--total">
-            <span>Total</span>
-            <strong id="invoice-total">KES 0.00</strong>
-          </div>
-        </div>
-      </div>
+                <div class="form-field gen-inv__tax-percentage">
+                  <label for="{{ form.tax_percentage.id_for_label }}">Percentage</label>
+                  <div class="gen-inv__percentage-input">
+                    {{ form.tax_percentage }}
+                    <span>%</span>
+                  </div>
+                  {% if form.tax_percentage.errors %}<span class="field-error">{{ form.tax_percentage.errors.0 }}</span>{% endif %}
+                </div>
+              </div>
+              <p class="gen-inv__tax-hint">Choose a tax from the list. You can edit the percentage for this invoice.</p>
 
-      <!-- Notes -->
-      <div class="gen-inv__section">
-        <div class="form-field">
-          <label for="{{ form.notes.id_for_label }}">Notes <span class="gen-inv__optional">(optional)</span></label>
-          {{ form.notes }}
-          {% if form.notes.errors %}<span class="field-error">{{ form.notes.errors.0 }}</span>{% endif %}
-        </div>
+              <button type="button" class="gen-inv__register-tax" id="invoice-register-tax">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                Register a new tax
+              </button>
+
+              <div class="gen-inv__new-tax" id="invoice-new-tax" hidden>
+                <div class="form-field">
+                  <label for="{{ form.new_tax_name.id_for_label }}">Tax name</label>
+                  {{ form.new_tax_name }}
+                  {% if form.new_tax_name.errors %}<span class="field-error">{{ form.new_tax_name.errors.0 }}</span>{% endif %}
+                </div>
+                <div class="form-field">
+                  <label for="{{ form.new_tax_rate.id_for_label }}">Percentage</label>
+                  <div class="gen-inv__percentage-input">
+                    {{ form.new_tax_rate }}
+                    <span>%</span>
+                  </div>
+                  {% if form.new_tax_rate.errors %}<span class="field-error">{{ form.new_tax_rate.errors.0 }}</span>{% endif %}
+                </div>
+                <button type="button" class="gen-inv__cancel-new-tax" id="invoice-cancel-new-tax">Use existing tax</button>
+              </div>
+            </div>
+
+            <div class="invoice-totals" id="invoice-totals">
+              <div class="invoice-totals__row">
+                <span>Items</span>
+                <strong id="invoice-item-count">0</strong>
+              </div>
+              <div class="invoice-totals__row">
+                <span>Subtotal</span>
+                <strong id="invoice-subtotal">KES 0.00</strong>
+              </div>
+              <div class="invoice-totals__row invoice-totals__row--tax" id="invoice-tax-row" hidden>
+                <span><span id="invoice-tax-name-display">Tax</span> (<span id="invoice-tax-rate-display">0</span>%)</span>
+                <strong id="invoice-tax-display">KES 0.00</strong>
+              </div>
+            </div>
+
+            <div class="gen-inv__grand">
+              <span class="gen-inv__grand-label">Total due</span>
+              <strong class="gen-inv__grand-value" id="invoice-total">KES 0.00</strong>
+            </div>
+
+            <p class="gen-inv__summary-hint">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/>
+                <path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <circle cx="12" cy="8" r="1" fill="currentColor"/>
+              </svg>
+              The invoice number is assigned automatically once you generate.
+            </p>
+          </div>
+        </aside>
       </div>
 
       {{ form.description }}
@@ -158,5 +284,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/generate-invoice.js' %}" defer></script>
+<script src="{% static 'js/generate-invoice.js' %}?v=tax-dropdown-2" defer></script>
 {% endblock %}

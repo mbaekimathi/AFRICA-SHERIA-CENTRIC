@@ -124,7 +124,7 @@
           <span class="client-account-invoice__main">
             <strong class="mono">{{ invoice.invoice_number }}</strong>
             <span>
-              {% if invoice.description %}{{ invoice.description|truncatechars:56 }} · {% endif %}
+              {% if invoice.summary_label %}{{ invoice.summary_label|truncatechars:56 }} · {% endif %}
               Issued {{ invoice.issue_date|date:"d M Y" }}
               {% if invoice.due_date %}· Due {{ invoice.due_date|date:"d M Y" }}{% endif %}
             </span>

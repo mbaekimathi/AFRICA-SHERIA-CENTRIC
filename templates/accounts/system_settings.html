@@ -5,11 +5,11 @@
 
 {% block content %}
 <section class="page system-analytics" data-reveal-root>
-  <header class="analytics-hero" data-reveal>
-    <div class="analytics-hero__copy">
+  <header class="page-intro page-intro--card analytics-hero" data-reveal>
+    <div class="page-intro__copy analytics-hero__copy">
       <p class="page-kicker">Live system pulse</p>
       <h2>What needs attention now</h2>
-      <p>Simple signals for speed, stability, documents, scraping, and content — so you can decide what to fix first.</p>
+      <p class="page-lead">Simple signals for speed, stability, documents, scraping, and content — so you can decide what to fix first.</p>
       <p class="analytics-updated">Live snapshot · {{ generated_at|date:"M j, Y · H:i" }} · {{ range_label }}</p>
     </div>
     <div class="health-score health-score--{{ health_tone }}">

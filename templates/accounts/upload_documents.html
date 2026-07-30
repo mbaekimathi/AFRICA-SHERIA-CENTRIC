@@ -5,10 +5,10 @@
 
 {% block content %}
 <section class="page page--docs" data-reveal-root>
-  <header class="docs-hero" data-reveal>
+  <header class="page-intro page-intro--card docs-hero" data-reveal>
     <div class="docs-hero__main">
       {% include "accounts/partials/icon_3d.html" with icon="document" tone=5 size="lg" float=True extra_class="docs-hero__icon" %}
-      <div class="docs-hero__copy">
+      <div class="page-intro__copy docs-hero__copy">
         <p class="page-kicker">{{ session_greeting }}</p>
         <h2>{% if entity_kind == "case" %}Case documents{% else %}Matter documents{% endif %}</h2>
         <p class="page-lead">

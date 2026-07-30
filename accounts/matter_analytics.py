@@ -14,6 +14,8 @@ from .models import LitigationCase, NonLitigationMatter
 
 FILTER_MODES = ("day", "period", "month", "year")
 FOCUS_OPTIONS = ("all", "litigation", "non_litigation")
+FILTER_PARAM_KEYS = ("mode", "date", "start", "end", "month", "year", "focus", "tab")
+MATTER_FILTER_SESSION_KEY = "matter_management_filter"
 
 
 def _parse_date(raw: str | None) -> date | None:
@@ -49,6 +51,35 @@ def _parse_year(raw: str | None, *, fallback: int) -> int:
     if year < 1990 or year > today.year + 1:
         return fallback
     return year
+
+
+def resolve_matter_filter_params(request) -> dict:
+    """
+    Use explicit query params when present; otherwise restore the last filter.
+
+    Saves the active filter on the session so revisiting the hub without a
+    query string keeps the previous day/period/month/year selection.
+    """
+    params = {}
+    for key in FILTER_PARAM_KEYS:
+        if key not in request.GET:
+            continue
+        value = (request.GET.get(key) or "").strip()
+        if value:
+            params[key] = value
+
+    if params:
+        request.session[MATTER_FILTER_SESSION_KEY] = params
+        return params
+
+    saved = request.session.get(MATTER_FILTER_SESSION_KEY) or {}
+    if isinstance(saved, dict):
+        return {
+            key: value
+            for key, value in saved.items()
+            if key in FILTER_PARAM_KEYS and value
+        }
+    return {}
 
 
 def resolve_matter_date_filter(params=None) -> dict:

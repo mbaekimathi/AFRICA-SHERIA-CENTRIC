@@ -1,5 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
-  const page = document.getElementById("matter-analytics-page");
+  const page =
+    document.getElementById("matter-analytics-page") ||
+    document
+      .getElementById("matter-analytics-filter")
+      ?.closest("section.page, .matter-hub");
   if (!page) return;
 
   const filterForm = document.getElementById("matter-analytics-filter");
@@ -436,5 +440,8 @@ document.addEventListener("DOMContentLoaded", () => {
   bindFocus();
   readCharts();
   setActiveFocus(activeFocus);
+  if (!window.location.search) {
+    history.replaceState(null, "", `${window.location.pathname}?${queryString()}`);
+  }
   window.addEventListener("resize", drawCombinedTrend);
 });

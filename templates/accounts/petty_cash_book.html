@@ -51,6 +51,7 @@
               <th scope="col">Type</th>
               <th scope="col">Description</th>
               <th scope="col">Amount</th>
+              <th scope="col">Attachment</th>
               <th scope="col">Action</th>
             </tr>
           </thead>
@@ -74,6 +75,15 @@
               <td>{{ row.get_expense_type_display }}</td>
               <td>{{ row.description|truncatechars:90 }}</td>
               <td class="mono"><strong>KES {{ row.amount|floatformat:2 }}</strong></td>
+              <td>
+                {% if row.payment_attachment %}
+                <a href="{{ row.payment_attachment.url }}" target="_blank" rel="noopener noreferrer">
+                  View
+                </a>
+                {% else %}
+                —
+                {% endif %}
+              </td>
               <td class="data-table__action">
                 <form method="post" class="inline-form" style="display:inline;">
                   {% csrf_token %}

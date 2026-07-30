@@ -24,7 +24,11 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 from django.utils.safestring import mark_safe
-from .appearance import appearance_catalog, sync_session_appearance
+from .appearance import (
+    appearance_catalog,
+    google_fonts_stylesheet_href,
+    sync_session_appearance,
+)
 from .client_auth import (
     end_staff_impersonation,
     get_client,
@@ -65,6 +69,7 @@ from .forms import (
     EmployeeBlogForm,
     EmployeeOnboardingForm,
     employees_available_for_payroll,
+    EditActiveLitigationCaseForm,
     FAQForm,
     FinanceSettingsForm,
     CommunicationSettingsForm,
@@ -126,6 +131,7 @@ from .google_drive import (
     is_private_lan_host,
     list_drive_children,
     list_templates_forms_library,
+    invalidate_templates_forms_library_cache,
     pop_oauth_return,
     rename_drive_file,
     templates_forms_category_folder_id,
@@ -3475,6 +3481,7 @@ class RoleWorkspaceView(View):
     company_theme_template = "accounts/company_theme.html"
     letterhead_template = "accounts/letterhead.html"
     digital_stamp_template = "accounts/digital_stamp.html"
+    my_tools_template = "accounts/my_tools.html"
     my_digital_stamp_template = "accounts/my_digital_stamp.html"
     default_signature_template = "accounts/default_signature.html"
     system_settings_template = "accounts/system_settings.html"
@@ -3628,6 +3635,9 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_digital_stamp"):
             context.update(self._digital_stamp_context(user))
             response = render(request, self.digital_stamp_template, context)
+        elif resolved.get("is_my_tools"):
+            context.update(self._my_tools_context(user, context=context))
+            response = render(request, self.my_tools_template, context)
         elif resolved.get("is_my_digital_stamp"):
             context.update(self._my_digital_stamp_context(user))
             response = render(request, self.my_digital_stamp_template, context)
@@ -3942,10 +3952,13 @@ class RoleWorkspaceView(View):
             context.update(self._whatsapp_inbox_context(request, user, resolved))
             response = render(request, self.whatsapp_inbox_template, context)
         elif resolved["leaf"] == "matter-management":
-            from .matter_analytics import build_matter_management_analytics
+            from .matter_analytics import (
+                build_matter_management_analytics,
+                resolve_matter_filter_params,
+            )
 
             context["analytics"] = build_matter_management_analytics(
-                request.GET, employee=user
+                resolve_matter_filter_params(request), employee=user
             )
             if request.headers.get("X-Matter-Analytics") == "live":
                 response = render(
@@ -4890,6 +4903,7 @@ class RoleWorkspaceView(View):
             "font_count": catalog["font_count"],
             "theme_choices": Employee.UiTheme.choices,
             "font_choices": Employee.UiFont.choices,
+            "google_fonts_href": google_fonts_stylesheet_href(include_all=True),
             "open_edit_modal": open_edit,
             "open_view_modal": open_view,
             "current_theme_label": current_theme_label,
@@ -5967,6 +5981,7 @@ class RoleWorkspaceView(View):
         preview_setting = CompanyDigitalStampSetting(
             template=template_value,
             accent=accent_value,
+            stamp_image=setting.stamp_image.name or "",
             show_firm_name=show_firm_name,
             show_status=show_status,
             show_approver=show_approver,
@@ -6000,7 +6015,9 @@ class RoleWorkspaceView(View):
 
     def _post_digital_stamp(self, request, user, resolved):
         setting = CompanyDigitalStampSetting.get_solo()
-        form = CompanyDigitalStampForm(request.POST, instance=setting)
+        form = CompanyDigitalStampForm(
+            request.POST, request.FILES, instance=setting
+        )
         context = workspace_context(
             user,
             request=request,
@@ -6012,16 +6029,103 @@ class RoleWorkspaceView(View):
             choice = form.save(commit=False)
             choice.updated_by = user
             choice.save()
-            messages.success(
-                request,
-                f"Digital stamp saved as {choice.get_template_display()} "
-                f"({choice.get_accent_display()}). It will appear on invoices and receipts.",
-            )
+            scan_action = form.apply_stamp_image(choice)
+            if scan_action == "uploaded":
+                messages.success(
+                    request,
+                    "Your uploaded stamp was saved and will appear on invoices "
+                    "and receipts.",
+                )
+            elif scan_action == "cleared":
+                messages.success(
+                    request,
+                    "Uploaded stamp removed. Documents now use the "
+                    f"{choice.get_template_display()} design.",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Digital stamp saved as {choice.get_template_display()} "
+                    f"({choice.get_accent_display()}). It will appear on invoices and receipts.",
+                )
             return redirect(user.workspace_url(*resolved["trail"]))
 
         context.update(self._digital_stamp_context(user, form=form))
         response = render(request, self.digital_stamp_template, context)
         return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _my_tools_context(user, *, context=None):
+        """
+        My tools hub — each personal tool rendered as it stands, not as links.
+        """
+        from .digital_signature import signature_render_context
+        from .digital_stamp import stamp_render_context
+
+        tool_urls = {
+            item.get("slug"): item.get("url")
+            for item in (context or {}).get("page_nav_items") or []
+        }
+        firm = FirmCompanyInformation.get_solo()
+        signer_name = user.get_full_name() or user.login_code
+        today = timezone.localtime().strftime("%d %b %Y")
+
+        stamp_setting = EmployeeDigitalStampSetting.objects.filter(
+            employee=user
+        ).first()
+        stamp_ctx = stamp_render_context(
+            firm=firm,
+            setting=stamp_setting or EmployeeDigitalStampSetting(employee=user),
+            status="Approved",
+            status_key="issued",
+            label="Approved by",
+            name=signer_name,
+            date_display=today,
+        )
+
+        signature_setting = CompanyDigitalSignatureSetting.objects.filter(
+            pk=1
+        ).first()
+        signature_ctx = signature_render_context(
+            firm=firm,
+            setting=signature_setting or CompanyDigitalSignatureSetting(),
+            name=signer_name,
+            title=user.get_role_display(),
+            date_display=today,
+        )
+
+        connection = GoogleDriveConnection.get_solo()
+        library: list[dict] = []
+        templates_error = ""
+        if connection.is_connected:
+            try:
+                library = list_templates_forms_library(connection)
+            except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+                templates_error = str(exc) or (
+                    "Could not read the Templates and Forms folder."
+                )
+        templates_total = sum(bucket.get("count") or 0 for bucket in library)
+
+        return {
+            **stamp_ctx,
+            **signature_ctx,
+            "signer_name": signer_name,
+            "my_stamp_setting": stamp_setting,
+            "my_stamp_ready": stamp_setting is not None,
+            "my_stamp_is_scan": bool(stamp_setting and stamp_setting.has_scan),
+            "my_stamp_url": tool_urls.get("my-digital-stamp") or "",
+            "my_signature_setting": signature_setting,
+            "my_signature_ready": signature_setting is not None,
+            "my_signature_url": tool_urls.get("my-digital-signature") or "",
+            "templates_forms_url": tool_urls.get("templates-and-forms") or "",
+            "templates_forms_connected": connection.is_connected,
+            "templates_forms_buckets": [
+                bucket for bucket in library if bucket.get("count")
+            ],
+            "templates_forms_total_count": templates_total,
+            "templates_forms_ready": bool(templates_total),
+            "templates_forms_error": templates_error,
+        }
 
     @staticmethod
     def _my_digital_stamp_context(user, *, form=None):
@@ -6053,6 +6157,7 @@ class RoleWorkspaceView(View):
             employee=user,
             template=template_value,
             accent=accent_value,
+            stamp_image=setting.stamp_image.name or "",
             show_firm_name=show_firm_name,
             show_status=show_status,
             show_approver=show_approver,
@@ -6082,7 +6187,9 @@ class RoleWorkspaceView(View):
 
     def _post_my_digital_stamp(self, request, user, resolved):
         setting = EmployeeDigitalStampSetting.for_employee(user)
-        form = EmployeeDigitalStampForm(request.POST, instance=setting)
+        form = EmployeeDigitalStampForm(
+            request.POST, request.FILES, instance=setting
+        )
         context = workspace_context(
             user,
             request=request,
@@ -6092,11 +6199,25 @@ class RoleWorkspaceView(View):
         )
         if form.is_valid():
             choice = form.save()
-            messages.success(
-                request,
-                f"Your digital stamp was saved as {choice.get_template_display()} "
-                f"({choice.get_accent_display()}).",
-            )
+            scan_action = form.apply_stamp_image(choice)
+            if scan_action == "uploaded":
+                messages.success(
+                    request,
+                    "Your stamp image was saved and will be used on documents "
+                    "you approve.",
+                )
+            elif scan_action == "cleared":
+                messages.success(
+                    request,
+                    "Uploaded stamp removed. Your documents now use the "
+                    f"{choice.get_template_display()} design.",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Your digital stamp was saved as {choice.get_template_display()} "
+                    f"({choice.get_accent_display()}).",
+                )
             return redirect(user.workspace_url(*resolved["trail"]))
 
         context.update(self._my_digital_stamp_context(user, form=form))
@@ -6436,9 +6557,8 @@ class RoleWorkspaceView(View):
 
         if connection.is_connected:
             try:
-                connection = ensure_templates_forms_folder(connection)
-                folder_id = (connection.templates_forms_folder_id or "").strip()
                 library = list_templates_forms_library(connection)
+                folder_id = (connection.templates_forms_folder_id or "").strip()
             except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
                 error = error or str(exc) or (
                     "Could not prepare the Templates and Forms folder."
@@ -6600,6 +6720,7 @@ class RoleWorkspaceView(View):
                         f"“{title}” created in {category_label} as a {label} "
                         "template.",
                     )
+                invalidate_templates_forms_library_cache(connection)
                 return success_redirect(category)
             except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
                 messages.error(
@@ -6635,6 +6756,7 @@ class RoleWorkspaceView(View):
                 request,
                 f"“{title}” uploaded to {category_label}.",
             )
+            invalidate_templates_forms_library_cache(connection)
             return success_redirect(category)
         except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
             messages.error(
@@ -7806,7 +7928,9 @@ class RoleWorkspaceView(View):
         if action != "register-petty-cash-expense":
             return redirect(page_url)
 
-        form = RegisterPettyCashExpenseForm(request.POST, submitted_by=user)
+        form = RegisterPettyCashExpenseForm(
+            request.POST, request.FILES, submitted_by=user
+        )
         context = workspace_context(
             user,
             request=request,
@@ -11687,7 +11811,10 @@ class EditActiveLitigationCaseView(View):
         if access_denied:
             return access_denied
 
-        form = RegisterCaseForm(instance=case)
+        form = EditActiveLitigationCaseForm(
+            instance=case,
+            **self._management_permissions(user),
+        )
         party_formset = CasePartyEditFormSet(
             queryset=case.parties.order_by("sort_order", "pk"),
             prefix="parties",
@@ -11710,7 +11837,11 @@ class EditActiveLitigationCaseView(View):
         if access_denied:
             return access_denied
 
-        form = RegisterCaseForm(request.POST, instance=case)
+        form = EditActiveLitigationCaseForm(
+            request.POST,
+            instance=case,
+            **self._management_permissions(user),
+        )
         party_formset = CasePartyEditFormSet(
             request.POST,
             queryset=case.parties.order_by("sort_order", "pk"),
@@ -11728,9 +11859,7 @@ class EditActiveLitigationCaseView(View):
                 response = render(request, self.template_name, context)
                 return attach_greeting_cookie(response, request)
 
-            previous_status = case.status
             case = form.save(commit=False)
-            case.status = previous_status
             case.save()
 
             for party_form in party_formset.deleted_forms:
@@ -11754,6 +11883,23 @@ class EditActiveLitigationCaseView(View):
         context = self._context(user, case, form, party_formset)
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _management_permissions(user):
+        return {
+            "can_change_status": workspace_activity_action_permitted(
+                user,
+                "matter-management",
+                "litigation-matters",
+                "status",
+            ),
+            "can_change_allocation": workspace_activity_action_permitted(
+                user,
+                "matter-management",
+                "litigation-matters",
+                "allocate",
+            ),
+        }
 
     def _guard(self, request, role, case):
         if case.status == LitigationCase.Status.PENDING_APPROVAL:

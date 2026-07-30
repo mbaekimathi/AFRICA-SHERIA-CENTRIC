@@ -78,11 +78,28 @@
           </tr>
         </thead>
         <tbody>
+          {% for item in invoice.line_items %}
+          <tr>
+            <td class="invoice-table__desc">
+              <div class="invoice-item__title">{{ item.title }}</div>
+              {% if item.details %}
+              <ul class="invoice-item__details">
+                {% for detail in item.details %}
+                <li>{{ detail }}</li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+            </td>
+            <td class="invoice-table__qty">1</td>
+            <td class="invoice-table__amt">{{ item.amount|floatformat:2 }}</td>
+          </tr>
+          {% empty %}
           <tr>
             <td class="invoice-table__desc">{{ invoice.description|linebreaksbr }}</td>
             <td class="invoice-table__qty">1</td>
             <td class="invoice-table__amt">{{ invoice.amount|floatformat:2 }}</td>
           </tr>
+          {% endfor %}
         </tbody>
       </table>
     </section>
@@ -94,7 +111,7 @@
           <dd>KES {{ invoice.amount|floatformat:2 }}</dd>
         </div>
         <div>
-          <dt>Tax</dt>
+          <dt>{{ invoice.tax_label }}</dt>
           <dd>KES {{ invoice.tax_amount|floatformat:2 }}</dd>
         </div>
         <div>

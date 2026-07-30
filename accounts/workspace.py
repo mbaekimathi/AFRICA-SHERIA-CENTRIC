@@ -17,7 +17,7 @@ from .models import (
     NonLitigationMatter,
     get_firm_display_name,
 )
-from .appearance import resolve_user_workspace_theme
+from .appearance import google_fonts_stylesheet_href, resolve_user_workspace_theme
 
 SESSION_GREETING_KEY = "greeting_name_key"
 SESSION_STARTED_AT_KEY = "session_started_at"
@@ -173,7 +173,7 @@ def _attach_page_nav_badges(page_nav_items: list[dict], employee=None) -> None:
             if pending_matters is None:
                 pending_matters = pending_non_litigation_matters_count(employee)
             item["badge_count"] = pending_matters
-        elif slug == "petty-cash-book":
+        elif slug in {"finance-billing", "petty-cash-book"}:
             if pending_petty_cash is None:
                 pending_petty_cash = pending_petty_cash_expenses_count()
             item["badge_count"] = pending_petty_cash
@@ -804,8 +804,6 @@ LITIGATION_CASE_DETAIL_LINKS = [
     ("Create task", "create-task", ICON_TASK),
     ("Case documents", "upload-documents", ICON_DOC),
     ("Edit case details", "edit-case-details", ICON_DOC),
-    ("Change status", "change-status", ICON_SCALE),
-    ("Change allocation", "change-allocation", ICON_USERS),
     ("Case audit progress", "case-audit-progress", ICON_BRIEF),
 ]
 LITIGATION_CASE_ACTION_SLUGS = {slug for _, slug, _ in LITIGATION_CASE_DETAIL_LINKS}
@@ -1942,6 +1940,7 @@ def resolve_workspace_page(role, pages: str):
         "is_digital_stamp": leaf == "digital-stamp",
         "is_default_signature": leaf == "default-signature",
         "is_templates_and_forms": leaf == "templates-and-forms",
+        "is_my_tools": leaf == "my-tools",
         "is_my_digital_stamp": leaf == "my-digital-stamp",
         "is_my_digital_signature": leaf == "my-digital-signature",
         "is_practice_areas": leaf == "practice-areas",
@@ -3441,6 +3440,7 @@ def workspace_context(
             user, request=request, page_role_slug=role_slug
         ),
         "ui_font": user.workspace_font,
+        "google_fonts_href": google_fonts_stylesheet_href(user.workspace_font),
         "ui_density": user.workspace_density,
         "has_personal_theme_override": user.has_personal_theme_override(),
         "nav_items": nav_items,
@@ -3567,6 +3567,7 @@ def employee_preactive_context(request, user, *, page_title, active="onboarding"
         "role_slug": role_slug,
         "theme": resolve_user_workspace_theme(user, page_role_slug=role_slug),
         "ui_font": user.workspace_font,
+        "google_fonts_href": google_fonts_stylesheet_href(user.workspace_font),
         "ui_density": user.workspace_density,
         "has_personal_theme_override": user.has_personal_theme_override(),
         "nav_items": [],

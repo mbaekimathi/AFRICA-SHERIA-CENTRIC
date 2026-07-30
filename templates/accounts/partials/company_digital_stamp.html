@@ -1,16 +1,33 @@
+{% if digital_stamp.stamp_image %}
 <div
-  class="doc-stamp {{ digital_stamp.css_modifier }}{% if stamp_status_key %} doc-stamp--{{ stamp_status_key }}{% endif %}{% if not digital_stamp.show_firm_name %} doc-stamp--no-firm{% endif %}{% if not digital_stamp.show_status %} doc-stamp--no-status{% endif %}{% if not digital_stamp.show_approver %} doc-stamp--no-approver{% endif %}{% if not digital_stamp.show_date %} doc-stamp--no-date{% endif %}"
+  class="doc-stamp doc-stamp--scan{% if stamp_status_key %} doc-stamp--{{ stamp_status_key }}{% endif %}"
+  role="img"
+  aria-label="{% if stamp_name %}{{ stamp_status }}, {{ stamp_label }} {{ stamp_name }}{% else %}{{ stamp_status }}{% endif %}"
+>
+  <img
+    class="doc-stamp__scan"
+    src="{{ digital_stamp.stamp_image.url }}"
+    alt=""
+  >
+</div>
+{% else %}
+<div
+  class="doc-stamp {{ digital_stamp.css_modifier }}{% if stamp_status_key %} doc-stamp--{{ stamp_status_key }}{% endif %}{% if not digital_stamp.show_firm_name %} doc-stamp--no-firm{% endif %}{% if not digital_stamp.show_status %} doc-stamp--no-status{% endif %}{% if not digital_stamp.show_approver %} doc-stamp--no-approver{% endif %}{% if not digital_stamp.show_date %} doc-stamp--no-date{% endif %}{% if not stamp_address %} doc-stamp--no-address{% endif %}"
   style="--stamp-ink: {{ stamp_accent_hex }};"
   role="img"
   aria-label="{% if stamp_name %}{{ stamp_status }}, {{ stamp_label }} {{ stamp_name }}{% else %}{{ stamp_status }}{% endif %}"
 >
   <span class="doc-stamp__ring" aria-hidden="true"></span>
+  <span class="doc-stamp__grain" aria-hidden="true"></span>
   <span class="doc-stamp__inner">
     {% if digital_stamp.show_firm_name %}
     <span class="doc-stamp__firm">{{ firm.display_name }}</span>
     {% endif %}
     {% if digital_stamp.show_status %}
     <span class="doc-stamp__status">{{ stamp_status }}</span>
+    {% endif %}
+    {% if stamp_address %}
+    <span class="doc-stamp__address">{{ stamp_address }}</span>
     {% endif %}
     {% if digital_stamp.show_approver and stamp_name or digital_stamp.show_date and stamp_date %}
     <span class="doc-stamp__rule" aria-hidden="true"></span>
@@ -24,3 +41,4 @@
     {% endif %}
   </span>
 </div>
+{% endif %}

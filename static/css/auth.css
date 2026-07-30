@@ -21,7 +21,7 @@
   --surface-soft: rgba(255, 255, 255, 0.94);
   --danger: #b42318;
   --danger-bg: #fef3f2;
-  --success: #027a48;
+  --success: #067647;
   --border: rgba(121, 112, 255, 0.16);
   --shadow:
     0 1px 2px rgba(11, 11, 35, 0.05),
@@ -29,8 +29,9 @@
   --shadow-lg:
     0 8px 16px rgba(11, 11, 35, 0.08),
     0 24px 48px rgba(11, 11, 35, 0.14);
-  --radius: 12px;
-  --radius-sm: 9px;
+  --radius: 10px;
+  --radius-sm: 8px;
+  --radius-lg: 14px;
   --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
   --font-serif: "Playfair Display", "Libre Baskerville", Georgia, serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -238,7 +239,7 @@ a:hover {
   backdrop-filter: blur(16px) saturate(1.1);
   -webkit-backdrop-filter: blur(16px) saturate(1.1);
   border: 1px solid var(--border);
-  border-radius: calc(var(--radius) + 2px);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: clamp(1.5rem, 4vw, 2.25rem);
   animation: rise-in 0.65s var(--ease-out) both;
@@ -273,6 +274,11 @@ a:hover {
 .auth-card__header p {
   margin: 0;
   color: var(--ink-muted);
+}
+
+.auth-kicker {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
 }
 
 .auth-form {

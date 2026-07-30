@@ -34,6 +34,7 @@ from .google_drive import (
 from .models import ClientNotification, CompanyThemeSetting, Employee
 from .appearance import (
     appearance_catalog,
+    google_fonts_stylesheet_href,
     sync_session_client_appearance,
 )
 
@@ -572,6 +573,7 @@ def _client_theme_settings_context(client, *, appearance_form=None):
         "density_catalog": catalog["density_catalog"],
         "theme_count": catalog["theme_count"],
         "font_count": catalog["font_count"],
+        "google_fonts_href": google_fonts_stylesheet_href(include_all=True),
         "current_theme_label": current_theme_label,
         "current_font_label": dict(Employee.UiFont.choices).get(
             font_value, "Plex Chambers"

@@ -93,8 +93,8 @@
               <td>
                 <div class="person-cell__text">
                   <a class="person-cell__name" href="{% url 'accounts:client_invoice' invoice.pk %}">{{ invoice.invoice_number }}</a>
-                  {% if invoice.description %}
-                  <span class="person-cell__meta">{{ invoice.description|truncatechars:72 }}</span>
+                  {% if invoice.summary_label %}
+                  <span class="person-cell__meta">{{ invoice.summary_label|truncatechars:72 }}</span>
                   {% endif %}
                 </div>
               </td>

@@ -57,6 +57,7 @@
               <th scope="col">Type</th>
               <th scope="col">Description</th>
               <th scope="col">Amount</th>
+              <th scope="col">Attachment</th>
               <th scope="col">Status</th>
               <th scope="col">Submitted</th>
             </tr>
@@ -67,6 +68,15 @@
               <td>{{ row.get_expense_type_display }}</td>
               <td>{{ row.description|truncatechars:80 }}</td>
               <td class="mono">KES {{ row.amount|floatformat:2 }}</td>
+              <td>
+                {% if row.payment_attachment %}
+                <a href="{{ row.payment_attachment.url }}" target="_blank" rel="noopener noreferrer">
+                  View
+                </a>
+                {% else %}
+                —
+                {% endif %}
+              </td>
               <td>
                 <span class="status-pill status-pill--{{ row.status }}">
                   {{ row.get_status_display }}
@@ -115,7 +125,7 @@
           the company Petty Cash Book.
         </p>
       </header>
-      <form method="post" class="workspace-form" id="register-petty-cash-expense-form" novalidate>
+      <form method="post" class="workspace-form" id="register-petty-cash-expense-form" enctype="multipart/form-data" novalidate>
         {% csrf_token %}
         <input type="hidden" name="action" value="register-petty-cash-expense">
         <div class="workspace-modal__body">
@@ -154,6 +164,20 @@
             <p class="field-error">{{ form.description.errors.0 }}</p>
             {% endif %}
           </div>
+
+          <div class="form-field">
+            <label for="{{ form.payment_attachment.id_for_label }}">
+              {{ form.payment_attachment.label }}
+              <span class="field-hint">(optional)</span>
+            </label>
+            {{ form.payment_attachment }}
+            {% if form.payment_attachment.help_text %}
+            <p class="field-hint">{{ form.payment_attachment.help_text }}</p>
+            {% endif %}
+            {% if form.payment_attachment.errors %}
+            <p class="field-error">{{ form.payment_attachment.errors.0 }}</p>
+            {% endif %}
+          </div>
         </div>
         <div class="workspace-modal__actions">
           <button type="button" class="btn btn--quiet" id="register-petty-cash-cancel">Cancel</button>
@@ -184,7 +208,9 @@
     }
   }
 
-  document.querySelectorAll(".js-open-register-petty-cash").forEach(function (el) {
+  document.querySelectorAll(
+    '.js-open-register-petty-cash, a[href="#register-petty-cash-expense"]'
+  ).forEach(function (el) {
     el.addEventListener("click", function (event) {
       event.preventDefault();
       openDialog();
@@ -197,6 +223,9 @@
     modal.addEventListener("cancel", function (event) {
       event.preventDefault();
       closeDialog();
+    });
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) closeDialog();
     });
   }
 

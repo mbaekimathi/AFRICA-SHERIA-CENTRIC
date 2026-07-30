@@ -75,6 +75,15 @@ def _p(text: str, style) -> Paragraph:
     return Paragraph((text or "").replace("\n", "<br/>"), style)
 
 
+def _escape_pdf(text: str) -> str:
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def _firm_header_lines(firm) -> list[str]:
     """Compact contact lines for the invoice letterhead."""
     lines = []
@@ -372,15 +381,35 @@ def build_invoice_pdf(invoice, firm) -> bytes:
         )
     )
 
-    items = Table(
-        [
-            ["Description", "Qty", "Amount (KES)"],
+    item_rows = [["Description", "Qty", "Amount (KES)"]]
+    line_items = invoice.line_items
+    if line_items:
+        for item in line_items:
+            detail_html = ""
+            if item.get("details"):
+                bullets = "".join(
+                    f"<br/>• {_escape_pdf(detail)}" for detail in item["details"]
+                )
+                detail_html = bullets
+            title = _escape_pdf(item.get("title") or "—")
+            item_rows.append(
+                [
+                    _p(f"<b>{title}</b>{detail_html}", body),
+                    "1",
+                    f"{float(item.get('amount') or 0):,.2f}",
+                ]
+            )
+    else:
+        item_rows.append(
             [
                 _p(invoice.description or "—", body),
                 "1",
                 f"{float(invoice.amount):,.2f}",
-            ],
-        ],
+            ]
+        )
+
+    items = Table(
+        item_rows,
         colWidths=[118 * mm, 18 * mm, 39 * mm],
     )
     items.setStyle(
@@ -408,7 +437,7 @@ def build_invoice_pdf(invoice, firm) -> bytes:
     totals = Table(
         [
             ["Subtotal", _money(invoice.amount)],
-            ["Tax", _money(invoice.tax_amount)],
+            [invoice.tax_label, _money(invoice.tax_amount)],
             ["Total due", _money(invoice.total_amount)],
         ],
         colWidths=[35 * mm, 40 * mm],

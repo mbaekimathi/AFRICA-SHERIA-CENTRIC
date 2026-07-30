@@ -1,0 +1,262 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page my-tools" data-reveal-root>
+  <header class="page-intro page-intro--card my-tools__hero" data-reveal>
+    <div class="my-tools__hero-main">
+      {% include "accounts/partials/icon_3d.html" with icon="document" tone=5 size="lg" float=True extra_class="my-tools__hero-icon" %}
+      <div class="page-intro__copy my-tools__hero-copy">
+        <p class="page-kicker">{{ session_greeting }}</p>
+        <h2>{{ page_title }}</h2>
+        <p class="page-lead">
+          Personal document marks for {{ signer_name }}. Stamp and signature appear
+          as they will on invoices and receipts; templates are the firm masters you
+          can start from. Use the sidebar to change any tool.
+        </p>
+      </div>
+    </div>
+
+    <dl class="my-tools__summary" aria-label="Tool readiness">
+      <div>
+        <dt>Stamp</dt>
+        <dd>{% if my_stamp_ready %}Ready{% else %}Unset{% endif %}</dd>
+      </div>
+      <div>
+        <dt>Signature</dt>
+        <dd>{% if my_signature_ready %}Ready{% else %}Unset{% endif %}</dd>
+      </div>
+      <div>
+        <dt>Templates</dt>
+        <dd>
+          {% if templates_forms_ready %}
+          {{ templates_forms_total_count }}
+          {% else %}
+          None
+          {% endif %}
+        </dd>
+      </div>
+    </dl>
+  </header>
+
+  <div class="my-tools__atelier">
+    <article class="my-tool" aria-labelledby="my-tool-stamp-title" data-reveal>
+      <header class="my-tool__head">
+        <div class="my-tool__title">
+          {% include "accounts/partials/icon_3d.html" with icon="scales" tone=3 size="sm" %}
+          <div>
+            <p class="my-tool__eyebrow">Approval mark</p>
+            <h3 id="my-tool-stamp-title">My digital stamp</h3>
+            <p class="my-tool__hint">Applied when you approve invoices and receipts.</p>
+          </div>
+        </div>
+        <span class="my-tool__state{% if my_stamp_ready %} my-tool__state--on{% else %} my-tool__state--off{% endif %}">
+          {% if my_stamp_ready %}Ready{% else %}Not set up{% endif %}
+        </span>
+      </header>
+
+      {% if my_stamp_ready %}
+      <div class="my-tool__paper my-tool__paper--stamp" aria-label="Stamp preview">
+        <div class="my-tool__paper-sheet">
+          <div class="my-tool__paper-lines" aria-hidden="true"></div>
+          <div class="my-tool__paper-mark">
+            {% include "accounts/partials/company_digital_stamp.html" %}
+          </div>
+        </div>
+      </div>
+      <dl class="my-tool__meta">
+        <div>
+          <dt>Design</dt>
+          <dd>
+            {% if my_stamp_is_scan %}
+            Uploaded stamp
+            {% else %}
+            {{ my_stamp_setting.get_template_display }}
+            {% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>Ink</dt>
+          <dd>
+            {% if my_stamp_is_scan %}
+            As scanned
+            {% else %}
+            <span
+              class="my-tool__swatch"
+              style="--swatch: {{ stamp_accent_hex }};"
+              aria-hidden="true"
+            ></span>
+            {{ my_stamp_setting.get_accent_display }}
+            {% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>{{ my_stamp_setting.updated_at|date:"j M Y" }}</dd>
+        </div>
+      </dl>
+      {% else %}
+      <div class="my-tool__empty">
+        <div class="my-tool__empty-visual" aria-hidden="true">
+          <span class="my-tool__ghost my-tool__ghost--stamp"></span>
+        </div>
+        <p class="my-tool__empty-title">No stamp saved yet</p>
+        <p class="my-tool__empty-copy">
+          Choose a design and accent colour once, and it will be stamped on the
+          documents you approve.
+        </p>
+        {% if my_stamp_url %}
+        <a href="{{ my_stamp_url }}" class="btn btn--primary btn--inline">
+          Set up stamp
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+    </article>
+
+    <article class="my-tool" aria-labelledby="my-tool-signature-title" data-reveal>
+      <header class="my-tool__head">
+        <div class="my-tool__title">
+          {% include "accounts/partials/icon_3d.html" with icon="scroll" tone=6 size="sm" %}
+          <div>
+            <p class="my-tool__eyebrow">Sign-off</p>
+            <h3 id="my-tool-signature-title">My digital signature</h3>
+            <p class="my-tool__hint">Closes documents you issue as {{ role_label }}.</p>
+          </div>
+        </div>
+        <span class="my-tool__state{% if my_signature_ready %} my-tool__state--on{% else %} my-tool__state--off{% endif %}">
+          {% if my_signature_ready %}Ready{% else %}Not set up{% endif %}
+        </span>
+      </header>
+
+      {% if my_signature_ready %}
+      <div class="my-tool__paper my-tool__paper--signature" aria-label="Signature preview">
+        <div class="my-tool__paper-sheet">
+          <div class="my-tool__paper-lines" aria-hidden="true"></div>
+          <div class="my-tool__paper-mark my-tool__paper-mark--signature">
+            {% include "accounts/partials/company_digital_signature.html" %}
+          </div>
+        </div>
+      </div>
+      <dl class="my-tool__meta">
+        <div>
+          <dt>Design</dt>
+          <dd>{{ my_signature_setting.get_template_display }}</dd>
+        </div>
+        <div>
+          <dt>Accent</dt>
+          <dd>
+            <span
+              class="my-tool__swatch"
+              style="--swatch: {{ signature_accent_hex }};"
+              aria-hidden="true"
+            ></span>
+            {{ my_signature_setting.get_accent_display }}
+          </dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>{{ my_signature_setting.updated_at|date:"j M Y" }}</dd>
+        </div>
+      </dl>
+      {% else %}
+      <div class="my-tool__empty">
+        <div class="my-tool__empty-visual" aria-hidden="true">
+          <span class="my-tool__ghost my-tool__ghost--signature"></span>
+        </div>
+        <p class="my-tool__empty-title">No signature saved yet</p>
+        <p class="my-tool__empty-copy">
+          Pick a signature block and it will close the invoices, receipts, and
+          letters you sign.
+        </p>
+        {% if my_signature_url %}
+        <a href="{{ my_signature_url }}" class="btn btn--primary btn--inline">
+          Set up signature
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+    </article>
+  </div>
+
+  <article class="my-tool my-tool--library" aria-labelledby="my-tool-templates-title" data-reveal>
+    <header class="my-tool__head">
+      <div class="my-tool__title">
+        {% include "accounts/partials/icon_3d.html" with icon="folder" tone=2 size="sm" %}
+        <div>
+          <p class="my-tool__eyebrow">Firm library</p>
+          <h3 id="my-tool-templates-title">Templates and forms</h3>
+          <p class="my-tool__hint">
+            Master files you can start a case or matter document from.
+          </p>
+        </div>
+      </div>
+      <span class="my-tool__state{% if templates_forms_ready %} my-tool__state--on{% else %} my-tool__state--off{% endif %}">
+        {% if templates_forms_ready %}
+        {{ templates_forms_total_count }} template{{ templates_forms_total_count|pluralize }}
+        {% else %}
+        Not set up
+        {% endif %}
+      </span>
+    </header>
+
+    {% if templates_forms_error %}
+    <div class="docs-alert" role="alert">{{ templates_forms_error }}</div>
+    {% endif %}
+
+    {% if templates_forms_ready %}
+    <div class="my-tool__buckets">
+      {% for bucket in templates_forms_buckets %}
+      <section class="my-tool__bucket" aria-label="{{ bucket.label }}">
+        <p class="my-tool__bucket-head">
+          <span>{{ bucket.label }}</span>
+          <em>{{ bucket.count }}</em>
+        </p>
+        <ul class="my-tool__files">
+          {% for item in bucket.files|slice:":4" %}
+          <li>
+            {% if item.open_url %}
+            <a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">
+              <span class="my-tool__file-name">{{ item.name }}</span>
+              <span class="my-tool__file-open">Open</span>
+            </a>
+            {% else %}
+            <span class="my-tool__file-name">{{ item.name }}</span>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% if bucket.count > 4 %}
+        <p class="my-tool__bucket-more">
+          {{ bucket.count|add:"-4" }} more in this category
+        </p>
+        {% endif %}
+      </section>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="my-tool__empty my-tool__empty--wide">
+      <div class="my-tool__empty-visual" aria-hidden="true">
+        <span class="my-tool__ghost my-tool__ghost--folder"></span>
+      </div>
+      <p class="my-tool__empty-title">No templates in your library yet</p>
+      <p class="my-tool__empty-copy">
+        {% if templates_forms_connected %}
+        Court forms, affidavits, notices, agreements, letters, and applications
+        you save will be listed here.
+        {% else %}
+        Google Drive is not connected, so the firm template library cannot be
+        read yet.
+        {% endif %}
+      </p>
+      {% if templates_forms_url %}
+      <a href="{{ templates_forms_url }}" class="btn btn--primary btn--inline">
+        Set up templates
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

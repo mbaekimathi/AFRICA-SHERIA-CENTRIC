@@ -1,0 +1,84 @@
+{# Upload a photo of a physical stamp. Expects: form, stamp_setting, stamp_owner_copy #}
+<section
+  class="stamp-upload{% if stamp_setting.stamp_image %} stamp-upload--active{% endif %}"
+  id="stamp-upload"
+  aria-labelledby="stamp-upload-title"
+>
+  <div class="settings-panel__intro">
+    <h3 id="stamp-upload-title">Add your own stamp</h3>
+    <p>
+      {{ stamp_owner_copy }} Upload a clean scan or photo and it is used on
+      documents in place of the designed stamp above.
+    </p>
+  </div>
+
+  <div class="stamp-upload__body">
+    <div class="stamp-upload__current">
+      <p class="stamp-upload__current-kicker">
+        {% if stamp_setting.stamp_image %}In use{% else %}Nothing uploaded{% endif %}
+      </p>
+      <div class="stamp-upload__paper" data-stamp-upload-paper>
+        {% if stamp_setting.stamp_image %}
+        <img
+          class="stamp-upload__image"
+          src="{{ stamp_setting.stamp_image.url }}"
+          alt="Uploaded stamp"
+          data-stamp-upload-preview
+        >
+        {% else %}
+        <img
+          class="stamp-upload__image"
+          alt=""
+          hidden
+          data-stamp-upload-preview
+        >
+        <p class="stamp-upload__placeholder" data-stamp-upload-placeholder>
+          Your stamp will show here
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="stamp-upload__controls">
+      <label class="stamp-upload__drop" for="{{ form.stamp_image.id_for_label }}">
+        <span class="stamp-upload__drop-visual" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+            <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="stamp-upload__drop-copy">
+          <strong data-stamp-upload-name>Choose a stamp image</strong>
+          <span>{{ form.stamp_image.help_text }}</span>
+        </span>
+        {{ form.stamp_image }}
+      </label>
+      {% if form.stamp_image.errors %}
+      <p class="field-error">{{ form.stamp_image.errors.0 }}</p>
+      {% endif %}
+
+      <label class="letterhead-option">
+        {{ form.cutout_stamp_background }}
+        <span>
+          {{ form.cutout_stamp_background.label }}
+          <em>{{ form.cutout_stamp_background.help_text }}</em>
+        </span>
+      </label>
+
+      {% if stamp_setting.stamp_image %}
+      <label class="letterhead-option letterhead-option--danger">
+        {{ form.clear_stamp_image }}
+        <span>
+          {{ form.clear_stamp_image.label }}
+          <em>Go back to the designed stamp above.</em>
+        </span>
+      </label>
+      {% endif %}
+
+      <p class="stamp-upload__hint">
+        Stamp on white paper, crop close to the ink, and keep it straight.
+        Saving happens with the button at the bottom of this page.
+      </p>
+    </div>
+  </div>
+</section>

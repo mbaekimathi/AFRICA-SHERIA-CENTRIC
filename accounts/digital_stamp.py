@@ -16,6 +16,11 @@ STAMP_SAMPLES = (
         "blurb": "Circular seal with dashed inner ring — the familiar invoice stamp.",
     },
     {
+        "value": CompanyDigitalStampSetting.Template.ADVOCATE,
+        "label": "Advocate block",
+        "blurb": "Double-framed rectangle in heavy caps — the everyday advocate rubber stamp.",
+    },
+    {
         "value": CompanyDigitalStampSetting.Template.SQUARE,
         "label": "Square seal",
         "blurb": "Double-border square stamp — formal chambers rubber-stamp look.",
@@ -42,7 +47,15 @@ STAMP_SAMPLES = (
     },
 )
 
+# Rubber-stamp pad blue — not part of the letterhead palette.
+STAMP_INK_HEX = "#1a22e0"
+
 ACCENT_SAMPLES = (
+    {
+        "value": CompanyDigitalStampSetting.Accent.INK,
+        "label": "Stamp ink blue",
+        "hex": STAMP_INK_HEX,
+    },
     {
         "value": CompanyDigitalStampSetting.Accent.FOREST,
         "label": "Forest",
@@ -74,6 +87,14 @@ ACCENT_SAMPLES = (
         "hex": ACCENT_HEX.get("gold", "#8a6a1f"),
     },
 )
+
+
+STAMP_ACCENT_HEX = {item["value"]: item["hex"] for item in ACCENT_SAMPLES}
+
+
+def stamp_accent_hex(accent: str) -> str:
+    """Ink colour for a stamp accent, including the stamp-only ink blue."""
+    return STAMP_ACCENT_HEX.get(accent) or accent_hex(accent)
 
 
 def stamp_samples(*, current: str | None = None) -> list[dict]:
@@ -108,6 +129,19 @@ def get_employee_digital_stamp_setting(
     return EmployeeDigitalStampSetting.for_employee(employee)
 
 
+def stamp_postal_line(firm: FirmCompanyInformation) -> str:
+    """
+    Postal line for block stamps, e.g. "P. O. Box 7728 - 00100, Nairobi".
+    """
+    postal = (firm.postal_address or "").strip().rstrip(",")
+    city = (firm.city or "").strip()
+    if not postal:
+        return city
+    if city and city.casefold() not in postal.casefold():
+        return f"{postal}, {city}"
+    return postal
+
+
 def stamp_render_context(
     *,
     firm: FirmCompanyInformation | None = None,
@@ -124,10 +158,11 @@ def stamp_render_context(
     return {
         "firm": firm,
         "digital_stamp": setting,
-        "stamp_accent_hex": accent_hex(setting.accent),
+        "stamp_accent_hex": stamp_accent_hex(setting.accent),
         "stamp_status": status,
         "stamp_status_key": status_key,
         "stamp_label": label,
         "stamp_name": name,
         "stamp_date": date_display,
+        "stamp_address": stamp_postal_line(firm),
     }

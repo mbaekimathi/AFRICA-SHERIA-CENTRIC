@@ -4,6 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .appearance import (
+    google_fonts_stylesheet_href,
     resolve_client_portal_density,
     resolve_client_portal_font,
     resolve_client_portal_theme,
@@ -129,6 +130,7 @@ def client_portal_context(request, client, *, page_title="My profile", active="p
         "client": client,
         "theme": theme,
         "ui_font": ui_font,
+        "google_fonts_href": google_fonts_stylesheet_href(ui_font),
         "ui_density": ui_density,
         "page_title": page_title,
         "role_label": "Client",

@@ -2785,6 +2785,7 @@ class CompanyDigitalStampSetting(models.Model):
 
     class Template(models.TextChoices):
         CLASSIC = "classic", "Classic ring"
+        ADVOCATE = "advocate", "Advocate block"
         SQUARE = "square", "Square seal"
         OVAL = "oval", "Oval seal"
         BADGE = "badge", "Shield badge"
@@ -2792,6 +2793,7 @@ class CompanyDigitalStampSetting(models.Model):
         WAX = "wax", "Wax stamp"
 
     class Accent(models.TextChoices):
+        INK = "ink", "Stamp ink blue"
         FOREST = "forest", "Forest"
         NAVY = "navy", "Navy"
         CHARCOAL = "charcoal", "Charcoal"
@@ -2810,6 +2812,15 @@ class CompanyDigitalStampSetting(models.Model):
         choices=Accent.choices,
         default=Accent.FOREST,
         help_text="Accent colour for the stamp ink and borders.",
+    )
+    stamp_image = models.ImageField(
+        upload_to="stamps/company/",
+        blank=True,
+        null=True,
+        help_text=(
+            "Scan or photo of the firm's physical stamp. Used on documents "
+            "instead of the designed stamp while it is uploaded."
+        ),
     )
     show_firm_name = models.BooleanField(
         default=True,
@@ -2849,6 +2860,11 @@ class CompanyDigitalStampSetting(models.Model):
         return obj
 
     @property
+    def has_scan(self) -> bool:
+        """True when an uploaded stamp image should be used on documents."""
+        return bool(self.stamp_image)
+
+    @property
     def css_modifier(self) -> str:
         return f"doc-stamp--{self.template} doc-stamp--accent-{self.accent}"
 
@@ -2860,6 +2876,7 @@ class EmployeeDigitalStampSetting(models.Model):
 
     class Template(models.TextChoices):
         CLASSIC = "classic", "Classic ring"
+        ADVOCATE = "advocate", "Advocate block"
         SQUARE = "square", "Square seal"
         OVAL = "oval", "Oval seal"
         BADGE = "badge", "Shield badge"
@@ -2867,6 +2884,7 @@ class EmployeeDigitalStampSetting(models.Model):
         WAX = "wax", "Wax stamp"
 
     class Accent(models.TextChoices):
+        INK = "ink", "Stamp ink blue"
         FOREST = "forest", "Forest"
         NAVY = "navy", "Navy"
         CHARCOAL = "charcoal", "Charcoal"
@@ -2890,6 +2908,15 @@ class EmployeeDigitalStampSetting(models.Model):
         choices=Accent.choices,
         default=Accent.NAVY,
         help_text="Accent colour for the stamp ink and borders.",
+    )
+    stamp_image = models.ImageField(
+        upload_to="stamps/employee/",
+        blank=True,
+        null=True,
+        help_text=(
+            "Scan or photo of your physical stamp. Used on documents instead "
+            "of the designed stamp while it is uploaded."
+        ),
     )
     show_firm_name = models.BooleanField(
         default=True,
@@ -2920,6 +2947,11 @@ class EmployeeDigitalStampSetting(models.Model):
     def for_employee(cls, employee: Employee):
         obj, _ = cls.objects.get_or_create(employee=employee)
         return obj
+
+    @property
+    def has_scan(self) -> bool:
+        """True when an uploaded stamp image should be used on documents."""
+        return bool(self.stamp_image)
 
     @property
     def css_modifier(self) -> str:
@@ -3608,6 +3640,32 @@ class DocumentContentSnapshot(models.Model):
         return text[:277].rstrip() + "…"
 
 
+class TaxRate(models.Model):
+    """Reusable tax type available when generating invoices."""
+
+    name = models.CharField(max_length=80, unique=True)
+    percentage = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MaxValueValidator(Decimal("100.00")),
+        ],
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "percentage"]
+        verbose_name = "Tax rate"
+        verbose_name_plural = "Tax rates"
+
+    def __str__(self):
+        percentage = format(self.percentage.normalize(), "f")
+        return f"{self.name} ({percentage}%)"
+
+
 class Invoice(models.Model):
     """A firm invoice generated under Finance & Billing → General Accounts."""
 
@@ -3639,6 +3697,13 @@ class Invoice(models.Model):
         max_digits=14,
         decimal_places=2,
         default=0,
+    )
+    tax_name = models.CharField(max_length=80, blank=True, default="")
+    tax_rate = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
     )
     amount_paid = models.DecimalField(
         max_digits=14,
@@ -3685,6 +3750,15 @@ class Invoice(models.Model):
         return (self.amount or 0) + (self.tax_amount or 0)
 
     @property
+    def tax_label(self):
+        if not self.tax_name:
+            return "Tax"
+        if self.tax_rate is None:
+            return self.tax_name
+        percentage = format(self.tax_rate.normalize(), "f")
+        return f"{self.tax_name} ({percentage}%)"
+
+    @property
     def balance_due(self):
         from decimal import Decimal
 
@@ -3699,6 +3773,120 @@ class Invoice(models.Model):
             self.Status.GENERATED,
             self.Status.PARTIALLY_PAID,
         } and self.balance_due > 0
+
+    # Structured multi-service description markers (see format_line_items).
+    SERVICE_MARKER = "[SERVICE]"
+    AMOUNT_MARKER = "[AMOUNT]"
+
+    @classmethod
+    def format_line_items(cls, services):
+        """
+        Serialize service cards into Invoice.description.
+
+        Each service: {title, amount, details: [str, ...]}.
+        """
+        from decimal import Decimal
+
+        blocks = []
+        for service in services or []:
+            title = (service.get("title") or "").strip()
+            if not title:
+                continue
+            try:
+                amount = Decimal(str(service.get("amount") or "0")).quantize(
+                    Decimal("0.01")
+                )
+            except Exception:
+                amount = Decimal("0.00")
+            details = [
+                (detail or "").strip()
+                for detail in (service.get("details") or [])
+                if (detail or "").strip()
+            ]
+            lines = [
+                f"{cls.SERVICE_MARKER} {title}",
+                f"{cls.AMOUNT_MARKER} {amount}",
+            ]
+            lines.extend(f"- {detail}" for detail in details)
+            blocks.append("\n".join(lines))
+        return "\n\n".join(blocks)
+
+    @classmethod
+    def parse_line_items(cls, description, *, fallback_amount=None):
+        """
+        Parse Invoice.description into service dicts.
+
+        Legacy free-text descriptions become a single service with the
+        invoice amount as fallback.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        text = (description or "").strip()
+        if not text:
+            return []
+
+        if cls.SERVICE_MARKER not in text:
+            return [
+                {
+                    "title": text,
+                    "amount": fallback_amount
+                    if fallback_amount is not None
+                    else Decimal("0.00"),
+                    "details": [],
+                }
+            ]
+
+        services = []
+        current = None
+        for raw_line in text.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            if stripped.startswith(cls.SERVICE_MARKER):
+                if current and current["title"]:
+                    services.append(current)
+                current = {
+                    "title": stripped[len(cls.SERVICE_MARKER) :].strip(),
+                    "amount": Decimal("0.00"),
+                    "details": [],
+                }
+                continue
+            if current is None:
+                continue
+            if stripped.startswith(cls.AMOUNT_MARKER):
+                amount_text = stripped[len(cls.AMOUNT_MARKER) :].strip()
+                try:
+                    current["amount"] = Decimal(amount_text).quantize(
+                        Decimal("0.01")
+                    )
+                except (InvalidOperation, ValueError):
+                    current["amount"] = Decimal("0.00")
+                continue
+            if stripped.startswith(("- ", "• ", "* ")):
+                current["details"].append(stripped[2:].strip())
+            elif stripped:
+                current["details"].append(stripped)
+        if current and current["title"]:
+            services.append(current)
+        return services
+
+    @property
+    def line_items(self):
+        """Service rows for invoice documents (title, details, amount)."""
+        return self.parse_line_items(
+            self.description,
+            fallback_amount=self.amount,
+        )
+
+    @property
+    def summary_label(self):
+        """Short label for lists / tables."""
+        items = self.line_items
+        titles = [item["title"] for item in items if item.get("title")]
+        if not titles:
+            return (self.description or "").strip()
+        if len(titles) == 1:
+            return titles[0]
+        return f"{titles[0]} + {len(titles) - 1} more"
 
     def apply_payment(self, amount, *, mpesa_receipt: str = ""):
         """
@@ -5025,6 +5213,12 @@ class PettyCashExpenseRequest(models.Model):
         help_text="What this petty cash expense covers.",
     )
     amount = models.DecimalField(max_digits=14, decimal_places=2)
+    payment_attachment = models.FileField(
+        upload_to="petty-cash/receipts/%Y/%m/",
+        blank=True,
+        null=True,
+        help_text="Optional proof of payment (receipt, M-Pesa message, invoice).",
+    )
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
