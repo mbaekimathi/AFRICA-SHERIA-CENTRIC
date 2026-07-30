@@ -10,7 +10,7 @@
   data-template="{{ form.template.value|default:digital_stamp.template }}"
   data-accent="{{ form.accent.value|default:digital_stamp.accent }}"
 >
-  <header class="page-intro">
+  <header class="page-intro page-intro--split stamp-page__intro">
     <div class="page-intro__copy">
       <p class="page-kicker">My tools</p>
       <h2>{{ page_title }}</h2>
@@ -22,6 +22,33 @@
       </p>
     </div>
   </header>
+
+  <div
+    class="studio-float-actions"
+    role="group"
+    aria-label="Stamp save actions"
+  >
+    <button
+      type="submit"
+      form="stamp-form"
+      class="btn btn--primary btn--inline"
+      data-save-upload-label="Save uploaded stamp"
+    >
+      Save my digital stamp
+    </button>
+    {% if stamp_override_active %}
+    <button
+      type="submit"
+      form="stamp-form"
+      name="use_company_stamp"
+      value="1"
+      class="btn btn--quiet btn--inline"
+      formnovalidate
+    >
+      Use the firm default instead
+    </button>
+    {% endif %}
+  </div>
 
   <div class="letterhead-studio__current" aria-label="Current personal digital stamp">
     <p class="letterhead-studio__current-kicker">
@@ -189,27 +216,6 @@
         </p>
       </div>
     </aside>
-
-    <div class="form-actions form-actions--start letterhead-studio__actions">
-      <button
-        type="submit"
-        class="btn btn--primary btn--inline"
-        data-save-upload-label="Save uploaded stamp"
-      >
-        Save my digital stamp
-      </button>
-      {% if stamp_override_active %}
-      <button
-        type="submit"
-        name="use_company_stamp"
-        value="1"
-        class="btn btn--quiet btn--inline"
-        formnovalidate
-      >
-        Use the firm default instead
-      </button>
-      {% endif %}
-    </div>
   </form>
 
   {% if digital_stamp_setting.updated_at %}
@@ -221,5 +227,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/digital-stamp.js' %}?v=stamp-preview-2" defer></script>
+<script src="{% static 'js/digital-stamp.js' %}?v=stamp-preview-3" defer></script>
 {% endblock %}

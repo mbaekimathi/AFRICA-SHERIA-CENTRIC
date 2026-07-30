@@ -121,15 +121,34 @@ def sync_google_document_content(
     actor: Employee | None = None,
     *,
     force: bool = False,
+    max_age_seconds: int | None = 120,
 ) -> tuple[DocumentContentSnapshot | None, bool, int]:
     """
     Pull Google Drive metadata + exported text content for a document.
 
     Returns (snapshot, content_changed, char_count).
+
+    When ``max_age_seconds`` is set and the document was synced more recently
+    than that window, this is a no-op (unless ``force`` is True). A cheap
+    metadata check decides whether a full text export is needed.
     """
     file_id = (document.drive_file_id or "").strip()
     if not file_id:
         return None, False, 0
+
+    if (
+        not force
+        and max_age_seconds is not None
+        and document.content_synced_at
+        and (timezone.now() - document.content_synced_at).total_seconds()
+        < max_age_seconds
+    ):
+        latest = document.content_snapshots.first()
+        return (
+            latest,
+            False,
+            latest.char_count if latest else 0,
+        )
 
     try:
         meta = get_drive_file_meta(file_id)
@@ -144,6 +163,30 @@ def sync_google_document_content(
     last_user = meta.get("lastModifyingUser") or {}
     modifier_name = (last_user.get("displayName") or "").strip()
     modifier_email = (last_user.get("emailAddress") or "").strip()
+
+    meta_unchanged = (
+        not force
+        and bool(document.content_hash)
+        and document.drive_head_revision_id == revision_id
+        and document.drive_version == version
+        and (
+            document.drive_modified_at == modified_at
+            or (document.drive_modified_at is None and modified_at is None)
+        )
+    )
+    if meta_unchanged:
+        # Touch the sync timestamp so list pages can skip this file soon.
+        document.content_synced_at = timezone.now()
+        document.mime_type = mime or document.mime_type
+        document.save(
+            update_fields=["content_synced_at", "mime_type", "updated_at"]
+        )
+        latest = document.content_snapshots.first()
+        return (
+            latest,
+            False,
+            latest.char_count if latest else 0,
+        )
 
     content_text = ""
     try:
@@ -243,7 +286,7 @@ def detect_session_behavior(
     char_count = session.baseline_char_count or 0
     if sync:
         _, _, char_count = sync_google_document_content(
-            document, actor=session.actor
+            document, actor=session.actor, max_age_seconds=None
         )
         document.refresh_from_db(fields=["content_hash"])
 
@@ -284,7 +327,9 @@ def start_open_session(
         actor=actor,
         kind=DocumentOpenSession.Kind.VIEWING,
     )
-    snapshot, _, char_count = sync_google_document_content(document, actor=actor)
+    snapshot, _, char_count = sync_google_document_content(
+        document, actor=actor, max_age_seconds=None
+    )
     document.refresh_from_db(fields=["content_hash"])
     session.baseline_content_hash = document.content_hash or ""
     session.baseline_char_count = (

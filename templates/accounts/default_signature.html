@@ -12,7 +12,7 @@
   data-role-title="{{ signature_role_title }}"
   data-reveal-root
 >
-  <header class="page-intro signature-page__intro" data-reveal>
+  <header class="page-intro page-intro--split signature-page__intro" data-reveal>
     <div class="page-intro__copy">
       <p class="page-kicker">{% if is_personal_signature %}My tools{% else %}Document settings{% endif %}</p>
       <h2>{{ page_title }}</h2>
@@ -34,6 +34,29 @@
       {% endif %}
     </div>
   </header>
+
+  <div
+    class="studio-float-actions"
+    role="group"
+    aria-label="Signature save actions"
+    data-reveal
+  >
+    <button type="submit" form="signature-form" class="btn btn--primary btn--inline">
+      {% if is_personal_signature %}Save my signature{% else %}Save default signature{% endif %}
+    </button>
+    {% if signature_override_active %}
+    <button
+      type="submit"
+      form="signature-form"
+      name="use_company_signature"
+      value="1"
+      class="btn btn--quiet btn--inline"
+      formnovalidate
+    >
+      Use the firm default instead
+    </button>
+    {% endif %}
+  </div>
 
   <div class="signature-page__status" aria-label="Current digital signature" data-reveal>
     <div class="signature-page__status-main">
@@ -244,23 +267,6 @@
       </div>
       {% endif %}
     </aside>
-
-    <div class="form-actions form-actions--start letterhead-studio__actions signature-studio__actions">
-      <button type="submit" class="btn btn--primary btn--inline">
-        {% if is_personal_signature %}Save my signature{% else %}Save default signature{% endif %}
-      </button>
-      {% if signature_override_active %}
-      <button
-        type="submit"
-        name="use_company_signature"
-        value="1"
-        class="btn btn--quiet btn--inline"
-        formnovalidate
-      >
-        Use the firm default instead
-      </button>
-      {% endif %}
-    </div>
   </form>
 
   {% if digital_signature_setting.updated_at %}
@@ -275,6 +281,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/digital-signature.js' %}?v=signature-ui-3" defer></script>
-<script src="{% static 'js/signature-pad.js' %}?v=signature-ui-3" defer></script>
+<script src="{% static 'js/digital-signature.js' %}?v=signature-ui-4" defer></script>
+<script src="{% static 'js/signature-pad.js' %}?v=signature-ui-4" defer></script>
 {% endblock %}

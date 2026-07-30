@@ -276,6 +276,9 @@ function initTemplatePicker() {
   const fileSelect = form.querySelector("[data-template-file]");
   const titleInput = form.querySelector("[data-template-title]");
   const payloadEl = document.getElementById("template-library-files");
+  const statusEl = form.querySelector("[data-template-status]");
+  const emptyEl = form.querySelector("[data-template-empty]");
+  const submitBtn = form.querySelector("[data-template-submit]");
   if (!category || !fileSelect || !payloadEl) return;
 
   let files = [];
@@ -289,6 +292,28 @@ function initTemplatePicker() {
   const placeholder = document.createElement("option");
   placeholder.value = "";
   placeholder.textContent = "Select a template…";
+
+  const setStatus = (message, { loading = false } = {}) => {
+    if (!statusEl) return;
+    if (!message) {
+      statusEl.hidden = true;
+      statusEl.textContent = "";
+      return;
+    }
+    statusEl.hidden = false;
+    statusEl.textContent = message;
+    statusEl.dataset.loading = loading ? "1" : "0";
+  };
+
+  const syncEmptyState = () => {
+    if (emptyEl) {
+      emptyEl.hidden = files.length > 0;
+    }
+    if (submitBtn) {
+      const driveConnected = form.dataset.driveConnected !== "0";
+      submitBtn.disabled = !(driveConnected && files.length > 0);
+    }
+  };
 
   const rebuild = () => {
     const selectedCategory = (category.value || "").trim();
@@ -308,6 +333,7 @@ function initTemplatePicker() {
     } else {
       fileSelect.value = "";
     }
+    syncEmptyState();
   };
 
   const syncTitle = () => {
@@ -321,6 +347,36 @@ function initTemplatePicker() {
     }
   };
 
+  const applyFiles = (nextFiles) => {
+    files = Array.isArray(nextFiles) ? nextFiles : [];
+    payloadEl.textContent = JSON.stringify(files);
+    rebuild();
+  };
+
+  const fetchLibrary = async () => {
+    const url = (form.dataset.templatesLibraryUrl || "").trim();
+    if (!url) return;
+    setStatus("Loading templates from Google Drive…", { loading: true });
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      applyFiles(data.files || []);
+      if (!files.length) {
+        setStatus("No templates yet.");
+      } else {
+        setStatus("");
+      }
+    } catch (_err) {
+      setStatus("Could not load templates right now. Try again shortly.");
+    }
+  };
+
   category.addEventListener("change", () => {
     rebuild();
     syncTitle();
@@ -331,6 +387,10 @@ function initTemplatePicker() {
   });
 
   rebuild();
+
+  if (form.dataset.templatesLibraryDeferred === "1") {
+    fetchLibrary();
+  }
 }
 
 function initTemplatesScopeSelect() {

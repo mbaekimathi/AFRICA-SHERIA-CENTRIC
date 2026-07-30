@@ -79,6 +79,9 @@ CSRF_TRUSTED_ORIGINS = (
     ]
 )
 
+# A stale form (page left open while the token rotated) retries instead of 403.
+CSRF_FAILURE_VIEW = "config.csrf.csrf_failure"
+
 # cPanel / reverse proxies terminate SSL in front of the app.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True

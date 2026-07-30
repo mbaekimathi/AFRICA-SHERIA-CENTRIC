@@ -25,10 +25,14 @@
   color: var(--lp-ink);
   min-height: 100dvh;
   font-family: var(--lp-sans);
+  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .landing {
   display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 /* —— Top navigation —— */
@@ -51,6 +55,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
+  min-width: 0;
   color: var(--lp-ink);
   text-decoration: none;
 }
@@ -83,12 +88,14 @@
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .lp-nav__actions {
   display: flex;
   align-items: center;
   gap: 0.55rem;
+  flex: 0 0 auto;
 }
 
 .lp-nav__link {
@@ -416,11 +423,12 @@
 .lp-slide__title {
   margin: 0 0 0.95rem;
   font-family: var(--lp-serif);
-  font-size: clamp(2.25rem, 6vw, 3.65rem);
+  font-size: clamp(2.1rem, 6vw, 3.65rem);
   font-weight: 700;
   line-height: 1.06;
   letter-spacing: 0.01em;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .lp-slide__type {
@@ -822,9 +830,90 @@
   font-size: 0.82rem;
 }
 
+@media (max-width: 767px) {
+  :root {
+    --lp-pad: clamp(1rem, 5vw, 2rem);
+  }
+
+  .lp-nav {
+    padding-block: 0.7rem;
+  }
+
+  .lp-hero {
+    min-height: auto;
+    align-items: flex-start;
+    padding-top: clamp(2rem, 8vw, 3rem);
+    padding-bottom: clamp(2.75rem, 10vw, 4rem);
+  }
+
+  .lp-hero__inner {
+    gap: clamp(1.25rem, 4vw, 1.75rem);
+  }
+
+  .lp-hero__intro {
+    gap: 1rem;
+  }
+
+  .lp-slides {
+    min-height: clamp(18rem, 63vw, 21rem);
+  }
+
+  .lp-section {
+    padding-block: clamp(2.75rem, 10vw, 4rem);
+  }
+
+  .lp-section__head {
+    margin-bottom: 1.5rem;
+  }
+}
+
 @media (max-width: 520px) {
+  .lp-nav {
+    gap: 0.55rem;
+  }
+
+  .lp-nav__brand {
+    gap: 0.5rem;
+  }
+
+  .lp-nav__mark {
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+  }
+
+  .lp-nav__name {
+    font-size: clamp(0.78rem, 3.7vw, 0.95rem);
+    letter-spacing: 0.015em;
+  }
+
   .lp-nav__link {
     display: none;
+  }
+
+  .lp-nav__cta {
+    min-height: 2.25rem;
+    padding-inline: 0.85rem;
+    font-size: 0.8rem;
+  }
+
+  .lp-brand__mark {
+    width: 2.85rem;
+    height: 2.85rem;
+    flex: 0 0 auto;
+  }
+
+  .lp-brand__name {
+    font-size: clamp(1.1rem, 6vw, 1.35rem);
+  }
+
+  .lp-slide__title {
+    font-size: clamp(1.95rem, 10.5vw, 2.65rem);
+    line-height: 1.08;
+  }
+
+  .lp-slide__lede {
+    line-height: 1.55;
   }
 
   .lp-ctas {
@@ -833,6 +922,64 @@
 
   .lp-btn {
     width: 100%;
+  }
+
+  .lp-cap,
+  .lp-portal {
+    padding: 1.2rem;
+  }
+
+  .lp-footer {
+    padding-top: 1.5rem;
+    padding-bottom: calc(1.75rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 340px) {
+  :root {
+    --lp-pad: 0.85rem;
+  }
+
+  .lp-nav__name {
+    font-size: 0.72rem;
+  }
+
+  .lp-nav__cta {
+    padding-inline: 0.7rem;
+    font-size: 0.75rem;
+  }
+
+  .lp-brand {
+    gap: 0.7rem;
+  }
+
+  .lp-brand__tag {
+    letter-spacing: 0.1em;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .lp-hero {
+    min-height: auto;
+    padding-top: 1.75rem;
+    padding-bottom: 2.25rem;
+  }
+
+  .lp-hero__inner {
+    gap: 1.1rem;
+  }
+
+  .lp-hero__intro {
+    gap: 0.75rem;
+  }
+
+  .lp-brand__mark {
+    width: 2.65rem;
+    height: 2.65rem;
+  }
+
+  .lp-slides {
+    min-height: 17rem;
   }
 }
 

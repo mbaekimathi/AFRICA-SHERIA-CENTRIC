@@ -48,6 +48,11 @@ urlpatterns = [
         name="workspace_notifications",
     ),
     path(
+        "api/workspace/templates-library/",
+        views.workspace_templates_library,
+        name="workspace_templates_library",
+    ),
+    path(
         "api/workspace/notifications/<int:notification_id>/open/",
         views.workspace_notification_open,
         name="workspace_notification_open",

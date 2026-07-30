@@ -139,6 +139,8 @@ from .google_drive import (
     list_employee_templates_library,
     list_templates_forms_library,
     invalidate_templates_forms_library_cache,
+    peek_employee_templates_library_cache,
+    peek_templates_forms_library_cache,
     pop_oauth_return,
     rename_drive_file,
     templates_forms_category_folder_id,
@@ -268,6 +270,7 @@ from .employee_sessions import (
 )
 from .workspace import (
     activity_permission_actions,
+    activity_permission_chain,
     apply_notification_badges,
     assign_session_greeting,
     attach_greeting_cookie,
@@ -299,6 +302,7 @@ from .workspace import (
     NON_LITIGATION_MATTER_ACTION_SLUGS,
     PAGE_LOCAL_LINKS,
     PAGE_TITLES,
+    page_title_for,
     pending_litigation_cases_count,
     pending_non_litigation_matters_count,
     permission_activity_slug,
@@ -325,6 +329,7 @@ from .workspace import (
     workspace_activity_denial_copy,
     workspace_detail_permission_action,
     workspace_context,
+    workspace_module_visible,
 )
 from .utils import optimize_image, render_blog_body, whatsapp_chat_url
 
@@ -2510,6 +2515,29 @@ def workspace_notifications(request):
 
 @login_required
 @require_GET
+def workspace_templates_library(request):
+    """
+    JSON payload for Start-from-template pickers.
+
+    Upload-document pages render immediately from cache and call this when the
+    Drive listing still needs a refresh.
+    """
+    user = request.user
+    if user.status != Employee.Status.ACTIVE:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    payload = _templates_library_payload(user)
+    return JsonResponse(
+        {
+            "connected": payload["connected"],
+            "categories": payload["categories"],
+            "files": payload["files"],
+            "deferred": False,
+        }
+    )
+
+
+@login_required
+@require_GET
 def workspace_notification_open(request, notification_id):
     """Mark a notification read and redirect to its target page."""
     user = request.user
@@ -4118,26 +4146,34 @@ class RoleWorkspaceView(View):
         return attach_greeting_cookie(response, request)
 
     def _redirect_if_activity_locked(self, request, user, resolved, *, action="view"):
-        if (
-            "roles-permissions" in resolved["trail"]
-            or resolved["leaf"] in SYSTEM_MODULE_SLUGS
-            or resolved["leaf"] == "dashboard"
-        ):
-            return None
-
-        module_slug = module_slug_for_trail(resolved["trail"])
-        if not module_slug:
+        if "roles-permissions" in resolved["trail"] or resolved["leaf"] == "dashboard":
             return None
 
         activity_slug = resolved["leaf"]
-        if workspace_activity_action_permitted(
-            user, module_slug, activity_slug, action
-        ):
-            return None
+        if activity_slug in SYSTEM_MODULE_SLUGS:
+            if workspace_module_visible(user, activity_slug):
+                return None
+            module_label = PAGE_TITLES.get(
+                activity_slug, activity_slug.replace("-", " ").title()
+            )
+            title = "Role access locked"
+            message = (
+                f"Your role cannot use {module_label}. "
+                "Ask an administrator to enable it in Roles & Permissions."
+            )
+        else:
+            module_slug = module_slug_for_trail(resolved["trail"])
+            if not module_slug:
+                return None
 
-        title, message = workspace_action_denial_copy(
-            user, module_slug, activity_slug, action
-        )
+            if workspace_activity_action_permitted(
+                user, module_slug, activity_slug, action
+            ):
+                return None
+
+            title, message = workspace_action_denial_copy(
+                user, module_slug, activity_slug, action
+            )
         set_workspace_access_denied_modal(
             request,
             title=title,
@@ -4686,13 +4722,15 @@ class RoleWorkspaceView(View):
         open_url = module_activity_url(user, module_slug, activity_meta)
         activity_actions = activity_permission_actions(activity_slug)
 
-        locked_roles = {
-            row.role
+        permission_chain = activity_permission_chain(module_slug, activity_slug)
+        own_permission_slug = permission_chain[0]
+        parent_permission_slugs = permission_chain[1:]
+        chain_rows = {
+            (row.role, row.activity_slug): bool(row.is_allowed)
             for row in RoleActivityPermission.objects.filter(
                 module_slug=module_slug,
-                activity_slug=activity_slug,
-                is_allowed=False,
-            ).only("role")
+                activity_slug__in=permission_chain,
+            ).only("role", "activity_slug", "is_allowed")
         }
 
         employees = list(
@@ -4725,7 +4763,18 @@ class RoleWorkspaceView(View):
         total_employees = 0
         for role_value, role_label in Employee.Role.choices:
             members = employees_by_role.get(role_value, [])
-            is_allowed = role_value not in locked_roles
+            locked_by = next(
+                (
+                    slug
+                    for slug in parent_permission_slugs
+                    if not chain_rows.get((role_value, slug), True)
+                ),
+                None,
+            )
+            is_allowed = (
+                chain_rows.get((role_value, own_permission_slug), True)
+                and locked_by is None
+            )
             if is_allowed:
                 allowed_count += 1
             else:
@@ -4759,6 +4808,7 @@ class RoleWorkspaceView(View):
                     "role": role_value,
                     "label": role_label,
                     "is_allowed": is_allowed,
+                    "locked_by_label": page_title_for(locked_by) if locked_by else "",
                     "members": member_rows,
                     "employee_count": len(members),
                 }
@@ -15196,13 +15246,20 @@ def _group_documents_by_party_type(documents, party_type_choices):
     return groups
 
 
-def _templates_library_payload(user=None):
+def _templates_library_payload(user=None, *, cache_only=False):
     """
     Return template library data for Start from template pickers.
 
     Includes company masters plus the current user's My templates when available.
     Never raises — Drive failures yield an empty library.
+
+    When ``cache_only`` is True, never contacts Google Drive. Missing cache
+    entries leave ``deferred`` True so the page can fetch asynchronously.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from django.db import close_old_connections
+
     connection = GoogleDriveConnection.get_solo()
     if not connection.is_connected:
         return {
@@ -15210,12 +15267,56 @@ def _templates_library_payload(user=None):
             "categories": [],
             "files": [],
             "choices": [],
+            "library": [],
+            "deferred": False,
             "settings_url": "",
         }
-    try:
-        library = list_templates_forms_library(connection)
-    except (GoogleDriveAPIError, GoogleDriveOAuthError):
-        library = []
+
+    deferred = False
+    if cache_only:
+        library = peek_templates_forms_library_cache(connection)
+        if library is None:
+            library = []
+            deferred = True
+        personal = []
+        if user is not None:
+            cached_personal = peek_employee_templates_library_cache(user)
+            if cached_personal is None:
+                deferred = True
+            else:
+                personal = cached_personal
+    else:
+
+        def _company_library():
+            close_old_connections()
+            try:
+                return list_templates_forms_library(connection)
+            except (GoogleDriveAPIError, GoogleDriveOAuthError):
+                return []
+            finally:
+                close_old_connections()
+
+        def _personal_library():
+            close_old_connections()
+            try:
+                return list_employee_templates_library(user)
+            except (GoogleDriveAPIError, GoogleDriveOAuthError):
+                return []
+            finally:
+                close_old_connections()
+
+        if user is not None:
+            with ThreadPoolExecutor(
+                max_workers=2, thread_name_prefix="tpl-lib"
+            ) as pool:
+                company_future = pool.submit(_company_library)
+                personal_future = pool.submit(_personal_library)
+                library = company_future.result()
+                personal = personal_future.result()
+        else:
+            library = _company_library()
+            personal = []
+
     files = []
     choices = []
     category_counts = {slug: 0 for slug, _label in TEMPLATES_FORMS_CATEGORIES}
@@ -15241,32 +15342,27 @@ def _templates_library_payload(user=None):
                 category_counts.get(bucket["slug"]) or 0
             ) + 1
 
-    if user is not None:
-        try:
-            personal = list_employee_templates_library(user)
-        except (GoogleDriveAPIError, GoogleDriveOAuthError):
-            personal = []
-        for bucket in personal:
-            for item in bucket.get("files") or []:
-                files.append(
-                    {
-                        "id": item["id"],
-                        "name": item["name"],
-                        "category": bucket["slug"],
-                        "category_label": bucket["label"],
-                        "mime_type": item.get("mime_type") or "",
-                        "scope": TEMPLATES_FORMS_SCOPE_MINE,
-                    }
+    for bucket in personal:
+        for item in bucket.get("files") or []:
+            files.append(
+                {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "category": bucket["slug"],
+                    "category_label": bucket["label"],
+                    "mime_type": item.get("mime_type") or "",
+                    "scope": TEMPLATES_FORMS_SCOPE_MINE,
+                }
+            )
+            choices.append(
+                (
+                    item["id"],
+                    f"My templates · {bucket['label']} — {item['name']}",
                 )
-                choices.append(
-                    (
-                        item["id"],
-                        f"My templates · {bucket['label']} — {item['name']}",
-                    )
-                )
-                category_counts[bucket["slug"]] = (
-                    category_counts.get(bucket["slug"]) or 0
-                ) + 1
+            )
+            category_counts[bucket["slug"]] = (
+                category_counts.get(bucket["slug"]) or 0
+            ) + 1
 
     return {
         "connected": True,
@@ -15281,6 +15377,7 @@ def _templates_library_payload(user=None):
         "files": files,
         "choices": choices,
         "library": library,
+        "deferred": deferred,
     }
 
 
@@ -15386,7 +15483,7 @@ class UploadCaseDocumentsView(View):
                 return upload_denied
 
         party_type_choices = CaseParty.PartyType.choices
-        template_library = _templates_library_payload(user)
+        template_library = _templates_library_payload(user, cache_only=True)
         context = self._context(
             user,
             case,
@@ -15473,7 +15570,6 @@ class UploadCaseDocumentsView(View):
             return access_denied
 
         party_type_choices = CaseParty.PartyType.choices
-        template_library = _templates_library_payload(user)
         create_form = CreateGoogleDocumentForm(
             prefix="create",
             auto_id="create_%s",
@@ -15484,12 +15580,23 @@ class UploadCaseDocumentsView(View):
             auto_id="upload_%s",
             party_type_choices=party_type_choices,
         )
-        template_form = StartFromTemplateForm(
-            prefix="template",
-            auto_id="template_%s",
-            party_type_choices=party_type_choices,
-            template_choices=template_library["choices"],
-        )
+        # Template library hits Google Drive — only load it when the picker is
+        # actually needed (start-from-template, or re-rendering validation errors).
+        template_library = None
+        template_form = None
+
+        def ensure_template_forms(data=None):
+            nonlocal template_library, template_form
+            if template_library is None:
+                template_library = _templates_library_payload(user)
+            template_form = StartFromTemplateForm(
+                data,
+                prefix="template",
+                auto_id="template_%s",
+                party_type_choices=party_type_choices,
+                template_choices=template_library["choices"],
+            )
+            return template_form
 
         try:
             if action == "create_google":
@@ -15514,13 +15621,7 @@ class UploadCaseDocumentsView(View):
                     self._upload_file(user, case, upload_form)
                     return self._library_redirect(role, case.pk)
             elif action == "start_from_template":
-                template_form = StartFromTemplateForm(
-                    request.POST,
-                    prefix="template",
-                    auto_id="template_%s",
-                    party_type_choices=party_type_choices,
-                    template_choices=template_library["choices"],
-                )
+                template_form = ensure_template_forms(request.POST)
                 if template_form.is_valid():
                     document = self._start_from_template(
                         user, case, template_form
@@ -15539,6 +15640,8 @@ class UploadCaseDocumentsView(View):
             messages.error(request, str(exc))
             return self._library_redirect(role, case.pk)
 
+        if template_form is None:
+            ensure_template_forms()
         context = self._context(
             user,
             case,
@@ -15825,7 +15928,7 @@ class UploadCaseDocumentsView(View):
         documents = _documents_with_activity(
             case.documents.all(),
             actor=user,
-            sync_google=True,
+            sync_google=False,
             role=user.role_slug,
         )
         task_access = CaseTask.effective_access_for(user, case)
@@ -15875,6 +15978,9 @@ class UploadCaseDocumentsView(View):
                     "system-settings",
                     "document-settings",
                     "templates-and-forms",
+                ),
+                "templates_library_fetch_url": reverse(
+                    "accounts:workspace_templates_library"
                 ),
                 "task_access": task_access,
             }
@@ -16857,7 +16963,7 @@ class UploadMatterDocumentsView(View):
                 return upload_denied
 
         party_type_choices = MatterParty.PartyType.choices
-        template_library = _templates_library_payload(user)
+        template_library = _templates_library_payload(user, cache_only=True)
         context = self._context(
             user,
             matter,
@@ -16948,7 +17054,6 @@ class UploadMatterDocumentsView(View):
             return access_denied
 
         party_type_choices = MatterParty.PartyType.choices
-        template_library = _templates_library_payload(user)
         create_form = CreateGoogleDocumentForm(
             prefix="create",
             auto_id="create_%s",
@@ -16959,12 +17064,23 @@ class UploadMatterDocumentsView(View):
             auto_id="upload_%s",
             party_type_choices=party_type_choices,
         )
-        template_form = StartFromTemplateForm(
-            prefix="template",
-            auto_id="template_%s",
-            party_type_choices=party_type_choices,
-            template_choices=template_library["choices"],
-        )
+        # Template library hits Google Drive — only load it when the picker is
+        # actually needed (start-from-template, or re-rendering validation errors).
+        template_library = None
+        template_form = None
+
+        def ensure_template_forms(data=None):
+            nonlocal template_library, template_form
+            if template_library is None:
+                template_library = _templates_library_payload(user)
+            template_form = StartFromTemplateForm(
+                data,
+                prefix="template",
+                auto_id="template_%s",
+                party_type_choices=party_type_choices,
+                template_choices=template_library["choices"],
+            )
+            return template_form
 
         try:
             if action == "create_google":
@@ -16989,13 +17105,7 @@ class UploadMatterDocumentsView(View):
                     self._upload_file(user, matter, upload_form)
                     return self._library_redirect(role, matter.pk)
             elif action == "start_from_template":
-                template_form = StartFromTemplateForm(
-                    request.POST,
-                    prefix="template",
-                    auto_id="template_%s",
-                    party_type_choices=party_type_choices,
-                    template_choices=template_library["choices"],
-                )
+                template_form = ensure_template_forms(request.POST)
                 if template_form.is_valid():
                     document = self._start_from_template(
                         user, matter, template_form
@@ -17014,6 +17124,8 @@ class UploadMatterDocumentsView(View):
             messages.error(request, str(exc))
             return self._library_redirect(role, matter.pk)
 
+        if template_form is None:
+            ensure_template_forms()
         context = self._context(
             user,
             matter,
@@ -17300,7 +17412,7 @@ class UploadMatterDocumentsView(View):
         documents = _documents_with_activity(
             matter.documents.all(),
             actor=user,
-            sync_google=True,
+            sync_google=False,
             role=user.role_slug,
         )
         task_access = MatterTask.effective_access_for(user, matter)
@@ -17351,6 +17463,9 @@ class UploadMatterDocumentsView(View):
                     "document-settings",
                     "templates-and-forms",
                 ),
+                "templates_library_fetch_url": reverse(
+                    "accounts:workspace_templates_library"
+                ),
                 "task_access": task_access,
             }
         )
@@ -17370,7 +17485,16 @@ class ViewMatterDocumentsView(UploadMatterDocumentsView):
     page_title_label = "Matter documents"
 
 
-def _documents_with_activity(queryset, *, actor=None, sync_google: bool = False, role=""):
+def _documents_with_activity(
+    queryset,
+    *,
+    actor=None,
+    sync_google: bool = False,
+    role="",
+):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from django.db import close_old_connections
     from django.db.models import Prefetch
 
     documents = list(
@@ -17389,13 +17513,24 @@ def _documents_with_activity(queryset, *, actor=None, sync_google: bool = False,
         .all()
     )
     if sync_google:
-        for document in documents:
-            if document.drive_file_id:
+        drive_docs = [document for document in documents if document.drive_file_id]
+        if drive_docs:
+
+            def _sync_one(document):
+                close_old_connections()
                 try:
                     sync_google_document_content(document, actor=actor)
                 except GoogleDriveAPIError:
                     # Never block the library page on Drive sync issues.
                     pass
+                finally:
+                    close_old_connections()
+
+            workers = min(6, len(drive_docs))
+            with ThreadPoolExecutor(
+                max_workers=workers, thread_name_prefix="doc-sync"
+            ) as pool:
+                list(pool.map(_sync_one, drive_docs))
         # Re-fetch activities/snapshots after sync so new edits appear immediately.
         documents = list(
             queryset.select_related("uploaded_by")

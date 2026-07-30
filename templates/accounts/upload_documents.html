@@ -326,6 +326,9 @@
         class="docs-tile__form"
         novalidate
         data-docs-template
+        data-drive-connected="{% if google_drive_connected %}1{% else %}0{% endif %}"
+        {% if templates_library_fetch_url %}data-templates-library-url="{{ templates_library_fetch_url }}"{% endif %}
+        {% if template_library.deferred %}data-templates-library-deferred="1"{% endif %}
       >
         {% csrf_token %}
         <input type="hidden" name="document_action" value="start_from_template">
@@ -338,8 +341,9 @@
         {% endif %}
 
         <div class="docs-tile__body">
-          {% if not template_library.files %}
-          <div class="docs-alert docs-alert--inline" role="status">
+          <div class="docs-alert docs-alert--inline" role="status" data-template-status hidden></div>
+          {% if not template_library.files and not template_library.deferred %}
+          <div class="docs-alert docs-alert--inline" role="status" data-template-empty>
             No templates yet.
             {% if templates_and_forms_url %}
             <a href="{{ templates_and_forms_url }}">Add templates in Document settings</a>
@@ -381,6 +385,7 @@
           <button
             type="submit"
             class="btn btn--docs-template"
+            data-template-submit
             {% if not google_drive_connected or not template_library.files %}disabled{% endif %}
           >
             Use template

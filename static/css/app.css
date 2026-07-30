@@ -20408,6 +20408,15 @@ button.invoice-share-option:hover {
   outline-offset: 2px;
 }
 
+.roles-switch input:disabled + .roles-switch__track {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.roles-switch:has(input:disabled) {
+  cursor: not-allowed;
+}
+
 .roles-access-employees {
   list-style: none;
   margin: 0;
@@ -22605,6 +22614,45 @@ button.invoice-share-option:hover {
   grid-column: 1 / -1;
 }
 
+/* Sticky top-right save cluster for stamp / signature studios */
+.studio-float-actions {
+  position: sticky;
+  top: 0.65rem;
+  z-index: 18;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: -0.25rem 0 0.85rem auto;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface, #fff) 86%, transparent);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--ink, #12141a) 10%, transparent),
+    0 1px 0 color-mix(in srgb, #fff 55%, transparent);
+}
+
+.studio-float-actions .btn {
+  min-height: 2.35rem;
+  white-space: nowrap;
+}
+
+.stamp-page,
+.signature-page {
+  min-width: 0;
+}
+
+.stamp-page .letterhead-studio__current,
+.signature-page .signature-page__status {
+  min-width: 0;
+}
+
 .letterhead-sample-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
@@ -23107,6 +23155,58 @@ button.invoice-share-option:hover {
 
   .letterhead-preview {
     position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .studio-float-actions {
+    top: 0.5rem;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    justify-content: stretch;
+    border-radius: 0.95rem;
+    padding: 0.55rem;
+  }
+
+  .studio-float-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .stamp-page .page-intro--split,
+  .signature-page .page-intro--split {
+    gap: 0.75rem;
+  }
+
+  .stamp-page .page-lead,
+  .signature-page .page-lead {
+    max-width: none;
+  }
+
+  .letterhead-studio__current {
+    padding: 0.85rem 0.9rem;
+  }
+
+  .letterhead-accent-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr));
+  }
+
+  .letterhead-sample-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .studio-float-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .studio-float-actions .btn {
+    width: 100%;
   }
 }
 
@@ -23966,6 +24066,10 @@ button.invoice-share-option:hover {
   margin-top: 0.25rem;
 }
 
+.signature-page .studio-float-actions {
+  margin-bottom: 1rem;
+}
+
 .signature-pad {
   display: grid;
   gap: 1rem;
@@ -24359,12 +24463,30 @@ button.invoice-share-option:hover {
 
   .signature-page__status-preview {
     justify-self: start;
+    min-width: 0;
+    width: 100%;
+    max-width: 18rem;
   }
 }
 
 @media (max-width: 860px) {
   .signature-pad__body {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .signature-page__status {
+    padding: 0.9rem 0.95rem;
+  }
+
+  .signature-page__status-preview {
+    max-width: none;
+  }
+
+  .signature-studio__panel,
+  .signature-pad {
+    padding-inline: 0.9rem;
   }
 }
 

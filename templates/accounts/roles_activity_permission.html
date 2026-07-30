@@ -24,6 +24,11 @@
       {% if hub_intro %}
       <p class="page-lead">{{ hub_intro }}</p>
       {% endif %}
+      <p class="page-lead">
+        Turning a role off removes this link from that role's workspace
+        sidebar, locks everything nested under it, and blocks the page for
+        every employee holding the role.
+      </p>
       {% if has_view_all_action %}
       <p class="page-lead">
         <strong>View all</strong> lets this employee see every record
@@ -54,18 +59,25 @@
         <div class="roles-access-group__head">
           <div class="roles-access-group__title">
             <strong>{{ group.label }}</strong>
-            <span>{{ group.employee_count }} employee{{ group.employee_count|pluralize }}</span>
+            <span>
+              {{ group.employee_count }} employee{{ group.employee_count|pluralize }}
+              {% if group.locked_by_label %}· locked by {{ group.locked_by_label }}{% endif %}
+            </span>
           </div>
           <form method="post" class="roles-access-toggle">
             {% csrf_token %}
             <input type="hidden" name="permission_action" value="role">
             <input type="hidden" name="role" value="{{ group.role }}">
-            <label class="roles-switch roles-switch--role" title="Toggle {{ group.label }} access">
+            <label
+              class="roles-switch roles-switch--role"
+              title="{% if group.locked_by_label %}Unlock {{ group.locked_by_label }} first{% else %}Toggle {{ group.label }} access{% endif %}"
+            >
               <input
                 type="checkbox"
                 name="is_allowed"
                 value="1"
                 {% if group.is_allowed %}checked{% endif %}
+                {% if group.locked_by_label %}disabled{% endif %}
                 onchange="this.form.submit()"
               >
               <span class="roles-switch__track" aria-hidden="true"></span>
@@ -143,6 +155,10 @@
         </div>
         {% elif group.is_allowed %}
         <p class="roles-access-empty">No employees assigned to this role.</p>
+        {% elif group.locked_by_label %}
+        <p class="roles-access-empty">
+          Locked by {{ group.locked_by_label }} — enable it there to restore this activity.
+        </p>
         {% else %}
         <p class="roles-access-empty">Enable this role to set employee permissions.</p>
         {% endif %}

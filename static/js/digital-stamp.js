@@ -106,7 +106,10 @@ document.addEventListener("DOMContentLoaded", () => {
     "[data-stamp-upload-placeholder]"
   );
   const uploadKicker = form.querySelector("[data-stamp-upload-kicker]");
-  const submitBtn = form.querySelector('button[type="submit"]');
+  const submitBtn =
+    document.querySelector(
+      '#stamp-page .studio-float-actions button[type="submit"]:not([name])'
+    ) || form.querySelector('button[type="submit"]:not([name])');
   let previewObjectUrl = "";
 
   const showChosenStamp = (file) => {

@@ -1992,34 +1992,69 @@ def permission_activity_slug(activity_slug: str) -> str:
     return hub or activity_slug
 
 
-def role_activity_is_allowed(role: str, module_slug: str, activity_slug: str) -> bool:
-    """Return whether a role may access an activity (default allow)."""
+@lru_cache(maxsize=None)
+def _module_activity_parents(module_slug: str) -> dict[str, tuple[str, ...]]:
+    """Activity slug -> its nav ancestors inside the module, nearest last."""
+    parents: dict[str, tuple[str, ...]] = {}
+    for activity in collect_module_activities(module_slug):
+        path_slugs = activity.get("path_slugs") or [activity["slug"]]
+        parents[activity["slug"]] = tuple(path_slugs[:-1])
+    return parents
+
+
+@lru_cache(maxsize=None)
+def activity_permission_chain(module_slug: str, activity_slug: str) -> tuple[str, ...]:
+    """
+    Permission slugs that must all be allowed before an activity opens.
+
+    Locking a parent (e.g. Client Management) therefore locks its whole
+    subtree — Register Client, Approve pending clients, and so on.
+    """
+    chain = [permission_activity_slug(activity_slug)]
+    for parent in _module_activity_parents(module_slug).get(activity_slug, ()):
+        canonical = permission_activity_slug(parent)
+        if canonical not in chain:
+            chain.append(canonical)
+    return tuple(chain)
+
+
+def _role_permission_lock_source(
+    role: str, module_slug: str, activity_slug: str
+) -> str | None:
+    """The chain slug that locks this activity for the role, if any."""
     from .models import RoleActivityPermission
 
-    activity_slug = permission_activity_slug(activity_slug)
-    row = (
-        RoleActivityPermission.objects.filter(
+    chain = activity_permission_chain(module_slug, activity_slug)
+    rows = {
+        row.activity_slug: bool(row.is_allowed)
+        for row in RoleActivityPermission.objects.filter(
             role=role,
             module_slug=module_slug,
-            activity_slug=activity_slug,
-        )
-        .only("is_allowed")
-        .first()
-    )
-    hub_meta = MODULE_HUB_PERMISSIONS.get(activity_slug)
-    if row is None and hub_meta and hub_meta["legacy_slugs"]:
-        legacy = list(
-            RoleActivityPermission.objects.filter(
-                role=role,
-                module_slug=module_slug,
-                activity_slug__in=hub_meta["legacy_slugs"],
-            ).only("is_allowed")
-        )
-        if legacy:
-            return all(bool(item.is_allowed) for item in legacy)
-    if row is None:
-        return True
-    return bool(row.is_allowed)
+            activity_slug__in=chain,
+        ).only("activity_slug", "is_allowed")
+    }
+    for slug in chain:
+        if slug in rows:
+            if not rows[slug]:
+                return slug
+            continue
+        hub_meta = MODULE_HUB_PERMISSIONS.get(slug)
+        if hub_meta and hub_meta["legacy_slugs"]:
+            legacy = list(
+                RoleActivityPermission.objects.filter(
+                    role=role,
+                    module_slug=module_slug,
+                    activity_slug__in=hub_meta["legacy_slugs"],
+                ).only("is_allowed")
+            )
+            if legacy and not all(bool(item.is_allowed) for item in legacy):
+                return slug
+    return None
+
+
+def role_activity_is_allowed(role: str, module_slug: str, activity_slug: str) -> bool:
+    """Return whether a role may access an activity (default allow)."""
+    return _role_permission_lock_source(role, module_slug, activity_slug) is None
 
 
 def set_role_activity_permission(
@@ -2446,6 +2481,86 @@ def workspace_activity_access_allowed(
     return workspace_activity_action_permitted(
         employee, module_slug, activity_slug, "view"
     )
+
+
+@lru_cache(maxsize=None)
+def module_gate_activity_slugs(module_slug: str) -> tuple[str, ...]:
+    """
+    Activities that keep a system module worth opening.
+
+    Workspace utilities (Tasks, Calendar, Reminders, Notifications, matter
+    documents) are excluded — they hang off the account nav, not the module.
+    """
+    return tuple(
+        activity["slug"]
+        for activity in collect_module_activities(module_slug)
+        if activity["slug"] not in WORKSPACE_VISIBILITY_SLUGS
+    )
+
+
+def visible_module_slugs(employee, module_slugs) -> set[str]:
+    """
+    System modules this employee still has something to open inside.
+
+    Batches the permission rows so the dashboard sidebar costs two queries
+    instead of one per activity.
+    """
+    from .models import EmployeeActivityPermission, RoleActivityPermission
+
+    modules = list(module_slugs)
+    if not modules:
+        return set()
+
+    role_rows = {
+        (row.module_slug, row.activity_slug): row.is_allowed
+        for row in RoleActivityPermission.objects.filter(
+            role=employee.role, module_slug__in=modules
+        ).only("module_slug", "activity_slug", "is_allowed")
+    }
+    employee_rows = {
+        (row.module_slug, row.activity_slug, row.action): row.is_allowed
+        for row in EmployeeActivityPermission.objects.filter(
+            employee_id=employee.pk, module_slug__in=modules
+        ).only("module_slug", "activity_slug", "action", "is_allowed")
+    }
+
+    def role_allows(module_slug: str, canonical: str) -> bool:
+        if (module_slug, canonical) in role_rows:
+            return bool(role_rows[(module_slug, canonical)])
+        hub_meta = MODULE_HUB_PERMISSIONS.get(canonical)
+        if hub_meta and hub_meta["legacy_slugs"]:
+            legacy = [
+                allowed
+                for (row_module, row_activity), allowed in role_rows.items()
+                if row_module == module_slug
+                and row_activity in hub_meta["legacy_slugs"]
+            ]
+            if legacy:
+                return all(legacy)
+        return True
+
+    def can_open(module_slug: str, activity_slug: str) -> bool:
+        chain = activity_permission_chain(module_slug, activity_slug)
+        if not all(role_allows(module_slug, slug) for slug in chain):
+            return False
+        action = resolve_workspace_open_action(activity_slug)
+        return bool(
+            employee_rows.get((module_slug, chain[0], action), True)
+        )
+
+    visible = set()
+    for module_slug in modules:
+        if not role_allows(module_slug, permission_activity_slug(module_slug)):
+            continue
+        gates = module_gate_activity_slugs(module_slug)
+        if not gates or any(can_open(module_slug, slug) for slug in gates):
+            visible.add(module_slug)
+    return visible
+
+
+def workspace_module_visible(employee, module_slug: str) -> bool:
+    """True when the module hub is still reachable for this employee."""
+    return module_slug in visible_module_slugs(employee, [module_slug])
 
 
 def workspace_action_denial_copy(
@@ -3395,6 +3510,9 @@ def workspace_context(
     # Secondary links — dashboard hubs on dashboard; otherwise page-allocated only.
     if page_nav_items is None:
         if is_dashboard:
+            open_modules = visible_module_slugs(
+                user, [slug for _, slug, _ in DASHBOARD_PAGE_LINKS]
+            )
             page_nav_items = [
                 {
                     "label": label,
@@ -3406,6 +3524,7 @@ def workspace_context(
                     "active": False,
                 }
                 for label, slug, icon in DASHBOARD_PAGE_LINKS
+                if slug in open_modules
             ]
         else:
             local_links = page_local_links_for(active, trail)

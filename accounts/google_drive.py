@@ -103,7 +103,7 @@ TEMPLATE_DOCUMENT_KINDS = {
 # Once a folder is confirmed, trust it for this long before checking again.
 FOLDER_VERIFY_TTL_SECONDS = 900
 # Listings change rarely compared with how often the pages are opened.
-LIBRARY_CACHE_TTL_SECONDS = 60
+LIBRARY_CACHE_TTL_SECONDS = 300
 # Browser folder listings and breadcrumb meta — short TTL keeps navigation snappy.
 DRIVE_LISTING_CACHE_TTL_SECONDS = 45
 DRIVE_FOLDER_META_CACHE_TTL_SECONDS = 120
@@ -402,14 +402,24 @@ def _request_bytes(
 
 
 def get_drive_file_meta(file_id: str) -> dict:
-    """Fetch Drive metadata used for content-change tracking."""
+    """
+    Fetch Drive file metadata used for ownership checks and content tracking.
+
+    Includes parents/trashed for folder ownership plus revision fields for
+    content-change detection.
+    """
+    file_id = (file_id or "").strip()
     if not file_id:
         raise GoogleDriveAPIError("Missing Drive file id.")
     token = get_valid_access_token()
     return _request_json(
         "GET",
-        f"{DRIVE_FILES_URL}/{urllib.parse.quote(file_id)}"
-        f"?fields={DRIVE_CONTENT_FIELDS}&supportsAllDrives=true",
+        (
+            f"{DRIVE_FILES_URL}/{urllib.parse.quote(file_id)}"
+            f"?fields={DRIVE_CONTENT_FIELDS},parents,trashed,webViewLink,"
+            "webContentLink,appProperties"
+            "&supportsAllDrives=true"
+        ),
         access_token=token,
     )
 
@@ -1216,6 +1226,16 @@ def invalidate_templates_forms_library_cache(
     cache.delete(_templates_forms_library_cache_key(connection))
 
 
+def peek_templates_forms_library_cache(
+    connection: GoogleDriveConnection | None = None,
+) -> list[dict] | None:
+    """Return the cached company templates listing, or None on a miss."""
+    connection = connection or GoogleDriveConnection.get_solo()
+    if not (connection.templates_forms_folder_id or "").strip():
+        return None
+    return cache.get(_templates_forms_library_cache_key(connection))
+
+
 def template_document_kind(raw: dict, category_slug: str = "") -> tuple[str, str]:
     """Return a template's stored court/office classification and label."""
     properties = raw.get("appProperties") or {}
@@ -1262,6 +1282,11 @@ def list_templates_forms_library(
     Category listings are fetched in parallel. Results are cached briefly so
     opening My tools / Templates repeatedly does not re-hit Drive every time.
     """
+    connection = connection or GoogleDriveConnection.get_solo()
+    if use_cache and (connection.templates_forms_folder_id or "").strip():
+        cached = cache.get(_templates_forms_library_cache_key(connection))
+        if cached is not None:
+            return cached
     connection = ensure_templates_forms_categories(connection)
     cache_key = _templates_forms_library_cache_key(connection)
     if use_cache:
@@ -1342,6 +1367,19 @@ def ensure_employee_templates_folder(employee: Employee) -> Employee:
     connection = GoogleDriveConnection.get_solo()
     if not connection.is_connected:
         raise GoogleDriveAPIError("Google Drive is not connected.")
+
+    stored = dict(employee.drive_my_templates_category_folder_ids or {})
+    templates_folder_id = (employee.drive_my_templates_folder_id or "").strip()
+    all_known = bool(templates_folder_id) and all(
+        (stored.get(slug) or "").strip() for slug, _label in TEMPLATES_FORMS_CATEGORIES
+    )
+    if all_known and all(
+        cache.get(
+            _folder_verify_cache_key(stored[slug], label, templates_folder_id)
+        )
+        for slug, label in TEMPLATES_FORMS_CATEGORIES
+    ):
+        return employee
 
     employee = ensure_employee_folder_structure(employee)
     parent_id = (employee.drive_folder_id or "").strip()
@@ -1433,12 +1471,27 @@ def invalidate_employee_templates_library_cache(
     cache.delete(_employee_templates_library_cache_key(employee))
 
 
+def peek_employee_templates_library_cache(
+    employee: Employee | None = None,
+) -> list[dict] | None:
+    """Return the cached personal templates listing, or None on a miss."""
+    if employee is None:
+        return None
+    if not (employee.drive_my_templates_folder_id or "").strip():
+        return None
+    return cache.get(_employee_templates_library_cache_key(employee))
+
+
 def list_employee_templates_library(
     employee: Employee,
     *,
     use_cache: bool = True,
 ) -> list[dict]:
     """List this employee's My Templates categories and non-folder files."""
+    if use_cache and (employee.drive_my_templates_folder_id or "").strip():
+        cached = cache.get(_employee_templates_library_cache_key(employee))
+        if cached is not None:
+            return cached
     employee = ensure_employee_templates_folder(employee)
     cache_key = _employee_templates_library_cache_key(employee)
     if use_cache:
@@ -1514,23 +1567,6 @@ def list_employee_templates_library(
     return library
 
 
-def get_drive_file_meta(file_id: str) -> dict:
-    """Fetch basic Drive file metadata."""
-    file_id = (file_id or "").strip()
-    if not file_id:
-        raise GoogleDriveAPIError("Missing Drive file id.")
-    token = get_valid_access_token()
-    return _request_json(
-        "GET",
-        (
-            f"{DRIVE_FILES_URL}/{urllib.parse.quote(file_id)}"
-            f"?fields={DRIVE_FILE_FIELDS},parents,trashed"
-            "&supportsAllDrives=true"
-        ),
-        access_token=token,
-    )
-
-
 def copy_drive_file(
     file_id: str,
     *,
@@ -1572,9 +1608,13 @@ def ensure_employee_folder_structure(employee: Employee) -> Employee:
         return employee
 
     token = get_valid_access_token(connection)
-    if not folder_exists(token, connection.work_folder_id):
-        connection = ensure_firm_folder_structure(connection)
-        token = get_valid_access_token(connection)
+    work_folder_key = f"drive_work_folder_ok:{connection.work_folder_id}"
+    if not cache.get(work_folder_key):
+        if folder_exists(token, connection.work_folder_id):
+            cache.set(work_folder_key, True, FOLDER_VERIFY_TTL_SECONDS)
+        else:
+            connection = ensure_firm_folder_structure(connection)
+            token = get_valid_access_token(connection)
 
     parent_id = connection.work_folder_id
     if not parent_id:
@@ -1597,14 +1637,19 @@ def ensure_employee_folder_structure(employee: Employee) -> Employee:
         existing_id=employee.drive_personal_details_folder_id,
     )
 
+    changed = (
+        employee.drive_folder_id != employee_folder_id
+        or employee.drive_personal_details_folder_id != personal_folder_id
+    )
     employee.drive_folder_id = employee_folder_id
     employee.drive_personal_details_folder_id = personal_folder_id
-    employee.save(
-        update_fields=[
-            "drive_folder_id",
-            "drive_personal_details_folder_id",
-        ]
-    )
+    if changed:
+        employee.save(
+            update_fields=[
+                "drive_folder_id",
+                "drive_personal_details_folder_id",
+            ]
+        )
     return employee
 
 
