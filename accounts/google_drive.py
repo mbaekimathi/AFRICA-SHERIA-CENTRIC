@@ -66,6 +66,7 @@ CLIENTS_FOLDER_NAME = "Clients"
 WORK_FOLDER_NAME = "Employees"
 TEMPLATES_FORMS_FOLDER_NAME = "Templates and Forms"
 PERSONAL_FOLDER_NAME = "Personal"
+MY_TEMPLATES_FOLDER_NAME = "My Templates"
 PERSONAL_DOCUMENTS_FOLDER_NAME = "Personal Documents"
 LITIGATION_FOLDER_NAME = "Litigation"
 NON_LITIGATION_FOLDER_NAME = "Non-Litigation"
@@ -81,6 +82,21 @@ TEMPLATES_FORMS_CATEGORIES = (
 )
 TEMPLATES_FORMS_CATEGORY_SLUGS = {slug for slug, _label in TEMPLATES_FORMS_CATEGORIES}
 TEMPLATES_FORMS_CATEGORY_LABELS = dict(TEMPLATES_FORMS_CATEGORIES)
+
+# Scope for the Templates and Forms settings page.
+TEMPLATES_FORMS_SCOPE_COMPANY = "company"
+TEMPLATES_FORMS_SCOPE_MINE = "mine"
+TEMPLATES_FORMS_SCOPES = (
+    (TEMPLATES_FORMS_SCOPE_COMPANY, "Company templates"),
+    (TEMPLATES_FORMS_SCOPE_MINE, "My templates"),
+)
+TEMPLATES_FORMS_SCOPE_SLUGS = {slug for slug, _label in TEMPLATES_FORMS_SCOPES}
+TEMPLATES_FORMS_SCOPE_LABELS = dict(TEMPLATES_FORMS_SCOPES)
+TEMPLATE_DOCUMENT_KIND_PROPERTY = "sheriaTemplateKind"
+TEMPLATE_DOCUMENT_KINDS = {
+    "court": "Court document",
+    "office": "Office document",
+}
 
 # Folder ids are stored on GoogleDriveConnection, but re-checking every one of
 # them over the network on each page render costs dozens of serial round trips.
@@ -123,7 +139,9 @@ SESSION_OAUTH_STATE = "google_drive_oauth_state"
 SESSION_OAUTH_RETURN = "google_drive_oauth_return"
 SESSION_OAUTH_REDIRECT = "google_drive_oauth_redirect"
 
-DRIVE_FILE_FIELDS = "id,name,mimeType,webViewLink,webContentLink,trashed"
+DRIVE_FILE_FIELDS = (
+    "id,name,mimeType,webViewLink,webContentLink,trashed,appProperties"
+)
 DRIVE_CONTENT_FIELDS = (
     "id,name,mimeType,modifiedTime,version,md5Checksum,headRevisionId,"
     "lastModifyingUser(displayName,emailAddress)"
@@ -398,7 +416,7 @@ def get_drive_file_meta(file_id: str) -> dict:
 
 DRIVE_BROWSER_FIELDS = (
     "id,name,mimeType,webViewLink,webContentLink,modifiedTime,size,"
-    "owners(displayName,emailAddress),lastModifyingUser(displayName)"
+    "owners(displayName,emailAddress),lastModifyingUser(displayName),appProperties"
 )
 
 
@@ -1198,6 +1216,41 @@ def invalidate_templates_forms_library_cache(
     cache.delete(_templates_forms_library_cache_key(connection))
 
 
+def template_document_kind(raw: dict, category_slug: str = "") -> tuple[str, str]:
+    """Return a template's stored court/office classification and label."""
+    properties = raw.get("appProperties") or {}
+    value = (properties.get(TEMPLATE_DOCUMENT_KIND_PROPERTY) or "").strip()
+    if value not in TEMPLATE_DOCUMENT_KINDS:
+        # Preserve a sensible classification for templates created before this
+        # metadata was introduced.
+        value = "court" if category_slug == "court-forms" else "office"
+    return value, TEMPLATE_DOCUMENT_KINDS[value]
+
+
+def drive_file_display_type(mime_type: str) -> tuple[str, str]:
+    """Return a drive-file-3d icon key and a readable file type label."""
+    mime = (mime_type or "").strip()
+    if mime == GOOGLE_DOC_MIME:
+        return "docs", "Google Doc"
+    if mime == GOOGLE_SHEET_MIME:
+        return "sheets", "Google Sheet"
+    if mime == GOOGLE_SLIDE_MIME:
+        return "slides", "Google Slides"
+    if mime == "application/pdf":
+        return "pdf", "PDF"
+    if mime.startswith("image/"):
+        return "image", "Image"
+    if "wordprocessingml" in mime or mime == "application/msword":
+        return "docs", "Word document"
+    if "spreadsheetml" in mime or mime == "application/vnd.ms-excel":
+        return "sheets", "Excel workbook"
+    if "presentationml" in mime or mime == "application/vnd.ms-powerpoint":
+        return "slides", "PowerPoint deck"
+    if mime.startswith("text/"):
+        return "file", "Text file"
+    return "file", "File"
+
+
 def list_templates_forms_library(
     connection: GoogleDriveConnection | None = None,
     *,
@@ -1239,15 +1292,23 @@ def list_templates_forms_library(
                 ).strip() or (
                     f"https://drive.google.com/file/d/{file_id}/view"
                 )
+                document_kind, document_kind_label = template_document_kind(
+                    raw, slug
+                )
+                file_kind, type_label = drive_file_display_type(mime)
                 files.append(
                     {
                         "id": file_id,
                         "name": (raw.get("name") or "Untitled").strip() or "Untitled",
                         "mime_type": mime,
+                        "file_kind": file_kind,
+                        "type_label": type_label,
                         "modified_at": raw.get("modifiedTime") or "",
                         "open_url": open_url,
                         "category": slug,
                         "category_label": label,
+                        "document_kind": document_kind,
+                        "document_kind_label": document_kind_label,
                     }
                 )
         return {
@@ -1273,6 +1334,184 @@ def list_templates_forms_library(
         cache.set(cache_key, library, LIBRARY_CACHE_TTL_SECONDS)
     return library
 
+
+def ensure_employee_templates_folder(employee: Employee) -> Employee:
+    """
+    Ensure Employees/{Name}/My Templates/{categories} for personal templates.
+    """
+    connection = GoogleDriveConnection.get_solo()
+    if not connection.is_connected:
+        raise GoogleDriveAPIError("Google Drive is not connected.")
+
+    employee = ensure_employee_folder_structure(employee)
+    parent_id = (employee.drive_folder_id or "").strip()
+    if not parent_id:
+        raise GoogleDriveAPIError(
+            "Could not prepare your employee folder in Google Drive."
+        )
+
+    token = get_valid_access_token(connection)
+    templates_folder_id = ensure_folder(
+        token,
+        name=MY_TEMPLATES_FOLDER_NAME,
+        parent_id=parent_id,
+        existing_id=(employee.drive_my_templates_folder_id or "").strip(),
+    )
+    stored = dict(employee.drive_my_templates_category_folder_ids or {})
+
+    def _ensure_category(slug: str, label: str) -> tuple[str, str]:
+        folder_id = ensure_folder(
+            token,
+            name=label,
+            parent_id=templates_folder_id,
+            existing_id=(stored.get(slug) or "").strip(),
+        )
+        return slug, folder_id
+
+    with ThreadPoolExecutor(
+        max_workers=min(DRIVE_MAX_PARALLEL_REQUESTS, len(TEMPLATES_FORMS_CATEGORIES))
+    ) as pool:
+        results = list(
+            pool.map(
+                lambda item: _ensure_category(*item),
+                TEMPLATES_FORMS_CATEGORIES,
+            )
+        )
+
+    updated = employee.drive_my_templates_folder_id != templates_folder_id
+    employee.drive_my_templates_folder_id = templates_folder_id
+    for slug, folder_id in results:
+        if stored.get(slug) != folder_id:
+            stored[slug] = folder_id
+            updated = True
+    stale = [key for key in stored if key not in TEMPLATES_FORMS_CATEGORY_SLUGS]
+    for key in stale:
+        stored.pop(key, None)
+        updated = True
+    employee.drive_my_templates_category_folder_ids = stored
+    if updated:
+        employee.save(
+            update_fields=[
+                "drive_my_templates_folder_id",
+                "drive_my_templates_category_folder_ids",
+            ]
+        )
+    return employee
+
+
+def employee_template_category_folder_id(
+    employee: Employee,
+    category_slug: str,
+) -> str:
+    """Return this employee's My Templates category folder id."""
+    slug = (category_slug or "").strip()
+    if slug not in TEMPLATES_FORMS_CATEGORY_SLUGS:
+        raise GoogleDriveAPIError("Unknown template category.")
+    employee = ensure_employee_templates_folder(employee)
+    folder_id = (
+        (employee.drive_my_templates_category_folder_ids or {}).get(slug) or ""
+    ).strip()
+    if not folder_id:
+        raise GoogleDriveAPIError(
+            f"Could not prepare your "
+            f"{TEMPLATES_FORMS_CATEGORY_LABELS[slug]} templates folder."
+        )
+    return folder_id
+
+
+def _employee_templates_library_cache_key(employee: Employee) -> str:
+    folder_id = (employee.drive_my_templates_folder_id or "").strip()
+    return f"drive_my_templates_library:{employee.pk}:{folder_id}"
+
+
+def invalidate_employee_templates_library_cache(
+    employee: Employee | None = None,
+) -> None:
+    """Drop the cached personal templates listing after mutations."""
+    if employee is None:
+        return
+    cache.delete(_employee_templates_library_cache_key(employee))
+
+
+def list_employee_templates_library(
+    employee: Employee,
+    *,
+    use_cache: bool = True,
+) -> list[dict]:
+    """List this employee's My Templates categories and non-folder files."""
+    employee = ensure_employee_templates_folder(employee)
+    cache_key = _employee_templates_library_cache_key(employee)
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    def _bucket_for(slug: str, label: str) -> dict:
+        folder_id = (
+            (employee.drive_my_templates_category_folder_ids or {}).get(slug) or ""
+        ).strip()
+        files: list[dict] = []
+        folder_url = (
+            f"https://drive.google.com/drive/folders/{folder_id}" if folder_id else ""
+        )
+        if folder_id:
+            try:
+                children = list_drive_children(folder_id)
+            except GoogleDriveAPIError:
+                children = []
+            for raw in children:
+                mime = (raw.get("mimeType") or "").strip()
+                file_id = (raw.get("id") or "").strip()
+                if not file_id or mime == FOLDER_MIME:
+                    continue
+                open_url = google_edit_url(file_id, mime) or (
+                    raw.get("webViewLink") or ""
+                ).strip() or (
+                    f"https://drive.google.com/file/d/{file_id}/view"
+                )
+                document_kind, document_kind_label = template_document_kind(
+                    raw, slug
+                )
+                file_kind, type_label = drive_file_display_type(mime)
+                files.append(
+                    {
+                        "id": file_id,
+                        "name": (raw.get("name") or "Untitled").strip() or "Untitled",
+                        "mime_type": mime,
+                        "file_kind": file_kind,
+                        "type_label": type_label,
+                        "modified_at": raw.get("modifiedTime") or "",
+                        "open_url": open_url,
+                        "category": slug,
+                        "category_label": label,
+                        "document_kind": document_kind,
+                        "document_kind_label": document_kind_label,
+                        "scope": TEMPLATES_FORMS_SCOPE_MINE,
+                        "can_manage": True,
+                    }
+                )
+        return {
+            "slug": slug,
+            "label": label,
+            "folder_id": folder_id,
+            "folder_url": folder_url,
+            "files": files,
+            "count": len(files),
+        }
+
+    with ThreadPoolExecutor(
+        max_workers=min(DRIVE_MAX_PARALLEL_REQUESTS, len(TEMPLATES_FORMS_CATEGORIES))
+    ) as pool:
+        library = list(
+            pool.map(
+                lambda item: _bucket_for(*item),
+                TEMPLATES_FORMS_CATEGORIES,
+            )
+        )
+
+    if use_cache:
+        cache.set(cache_key, library, LIBRARY_CACHE_TTL_SECONDS)
+    return library
 
 
 def get_drive_file_meta(file_id: str) -> dict:
@@ -1647,6 +1886,7 @@ def create_google_workspace_file(
     *,
     type_key: str = "document",
     parent_id: str | None = None,
+    app_properties: dict[str, str] | None = None,
 ) -> dict:
     """Create an empty Google Docs / Sheets / Slides file."""
     info = resolve_google_workspace_type(type_key)
@@ -1657,6 +1897,12 @@ def create_google_workspace_file(
     }
     if parent_id:
         payload["parents"] = [parent_id]
+    if app_properties:
+        payload["appProperties"] = {
+            str(key): str(value)
+            for key, value in app_properties.items()
+            if str(key).strip() and str(value).strip()
+        }
     created = _request_json(
         "POST",
         f"{DRIVE_FILES_URL}?fields={DRIVE_FILE_FIELDS}",
@@ -1881,6 +2127,7 @@ def upload_drive_file(
     mime_type: str = "",
     parent_id: str | None = None,
     original_filename: str = "",
+    app_properties: dict[str, str] | None = None,
 ) -> dict:
     """Upload binary content to Drive via multipart upload."""
     token = get_valid_access_token()
@@ -1891,6 +2138,12 @@ def upload_drive_file(
     metadata: dict = {"name": safe_name}
     if parent_id:
         metadata["parents"] = [parent_id]
+    if app_properties:
+        metadata["appProperties"] = {
+            str(key): str(value)
+            for key, value in app_properties.items()
+            if str(key).strip() and str(value).strip()
+        }
 
     boundary = f"sheria_boundary_{secrets.token_hex(12)}"
     meta_json = json.dumps(metadata)

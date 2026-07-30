@@ -405,7 +405,7 @@ ROLE_WELCOME = {
         "copy": "Prepare matters, manage filings, and keep client records in order.",
         "stats": [
             ("My matters", "—"),
-            ("Upcoming hearings", "—"),
+            ("Matters this week", "—"),
             ("Tasks and progress", "—"),
         ],
     },
@@ -414,7 +414,7 @@ ROLE_WELCOME = {
         "copy": "Complete assigned research, drafts, and supervised learning tasks.",
         "stats": [
             ("My matters", "—"),
-            ("Upcoming hearings", "—"),
+            ("Matters this week", "—"),
             ("Tasks and progress", "—"),
         ],
     },
@@ -423,7 +423,7 @@ ROLE_WELCOME = {
         "copy": "Support accounts, resolve access issues, and safeguard platform uptime.",
         "stats": [
             ("My matters", "—"),
-            ("Upcoming hearings", "—"),
+            ("Matters this week", "—"),
             ("Tasks and progress", "—"),
         ],
     },
@@ -432,7 +432,7 @@ ROLE_WELCOME = {
         "copy": "Access assigned tasks, internal notices, and shared firm documents.",
         "stats": [
             ("My matters", "—"),
-            ("Upcoming hearings", "—"),
+            ("Matters this week", "—"),
             ("Tasks and progress", "—"),
         ],
     },
@@ -699,7 +699,6 @@ DOCUMENT_SETTINGS_PAGE_LINKS = [
 ]
 
 DOCUMENT_MANAGEMENT_PAGE_LINKS = [
-    ("Templates and forms", "templates-and-forms", ICON_DOC),
     ("Google Drive Settings", "google-drive-settings", ICON_SETTINGS),
 ]
 
@@ -802,7 +801,7 @@ LITIGATION_CASE_DETAIL_LINKS = [
     ("Case calendar", "case-calendar", ICON_CALENDAR),
     ("Update court attendance", "update-court-attendance", ICON_CALENDAR),
     ("Create task", "create-task", ICON_TASK),
-    ("Case documents", "upload-documents", ICON_DOC),
+    ("Upload documents", "upload-documents", ICON_DOC),
     ("Edit case details", "edit-case-details", ICON_DOC),
     ("Case audit progress", "case-audit-progress", ICON_BRIEF),
 ]
@@ -815,8 +814,6 @@ NON_LITIGATION_MATTER_DETAIL_LINKS = [
     ("Create task", "create-task", ICON_TASK),
     ("Matter documents", "upload-documents", ICON_DOC),
     ("Edit matter details", "edit-matter-details", ICON_DOC),
-    ("Change status", "change-status", ICON_SCALE),
-    ("Change allocation", "change-allocation", ICON_USERS),
     ("Matter audit progress", "matter-audit-progress", ICON_BRIEF),
 ]
 NON_LITIGATION_MATTER_ACTION_SLUGS = {
@@ -2876,27 +2873,43 @@ def matter_desk_welcome_stats(user):
     """
     Live dashboard metrics for counsel / staff desks.
 
-    Matters and hearings respect View all vs allocated-only on matter lists.
+    Matter counts respect View all vs allocated-only on matter lists.
     Tasks respect the tasks View all permission.
     """
     role = user.role_slug
+    week_start = _calendar_week_start()
     cases = list(_visible_active_cases(user))
     matters = list(_visible_active_matters(user))
-    case_ids = [case.pk for case in cases]
-    matter_ids = [matter.pk for matter in matters]
+    cases_this_week = [
+        case
+        for case in cases
+        if (
+            case.approved_at
+            and timezone.localtime(case.approved_at).date() >= week_start
+        )
+        or (case.filing_date and case.filing_date >= week_start)
+    ]
+    matters_this_week = [
+        matter
+        for matter in matters
+        if (
+            matter.approved_at
+            and timezone.localtime(matter.approved_at).date() >= week_start
+        )
+        or (matter.date_opened and matter.date_opened >= week_start)
+    ]
 
     matter_items = (
         _serialize_linked_cases(user, cases) + _serialize_linked_matters(user, matters)
     )[:10]
-    hearing_rows = _upcoming_hearings(
-        user, case_ids=case_ids, matter_ids=matter_ids
-    )
-    hearing_items = _serialize_upcoming_hearings(user, hearing_rows)
+    week_items = (
+        _serialize_linked_cases(user, cases_this_week)
+        + _serialize_linked_matters(user, matters_this_week)
+    )[:10]
     case_tasks, matter_tasks = _open_tasks_in_progress(user)
     task_items = _serialize_linked_tasks(user, case_tasks, matter_tasks)
 
     matter_hub_url = workspace_reverse(role, "dashboard", "matter-management")
-    calendar_url = workspace_reverse(role, "dashboard", "calendar")
     tasks_url = workspace_reverse(role, "dashboard", "tasks")
     view_all = employee_can_view_all(
         user, "litigation-matters"
@@ -2905,6 +2918,11 @@ def matter_desk_welcome_stats(user):
         "No active matters on the firm list."
         if view_all
         else "No active matters linked or allocated to you."
+    )
+    empty_week = (
+        "No matters opened or approved this week."
+        if view_all
+        else "No linked matters opened or approved this week."
     )
     tasks_view_all = employee_can_view_all(user, "tasks")
     empty_tasks = (
@@ -2925,14 +2943,14 @@ def matter_desk_welcome_stats(user):
             "view_all_label": "Open matter management",
         },
         {
-            "key": "upcoming-hearings",
-            "label": "Upcoming hearings",
-            "value": len(hearing_rows),
+            "key": "matters-this-week",
+            "label": "Matters this week",
+            "value": len(cases_this_week) + len(matters_this_week),
             "interactive": True,
-            "items": hearing_items,
-            "empty_copy": "No upcoming hearings on your visible matters.",
-            "view_all_url": calendar_url,
-            "view_all_label": "Open calendar",
+            "items": week_items,
+            "empty_copy": empty_week,
+            "view_all_url": matter_hub_url,
+            "view_all_label": "Open matter management",
         },
         {
             "key": "tasks-and-progress",
@@ -2958,7 +2976,7 @@ def firm_admin_welcome_stats(user):
                 Client.Status.PENDING_ONBOARDING,
                 Client.Status.PENDING_APPROVAL,
             ]
-        ).order_by("created_at", "pk")[:10]
+        ).order_by("date_joined", "pk")[:10]
     )
     pending_employees = list(
         Employee.objects.filter(
@@ -2966,7 +2984,7 @@ def firm_admin_welcome_stats(user):
                 Employee.Status.PENDING_ONBOARDING,
                 Employee.Status.PENDING_APPROVAL,
             ]
-        ).order_by("created_at", "pk")[:10]
+        ).order_by("date_joined", "pk")[:10]
     )
     active_personnel = list(
         Employee.objects.filter(status=Employee.Status.ACTIVE)
@@ -3277,6 +3295,10 @@ def workspace_context(
     ]
 
     module_source = ROLE_MODULES.get(role, ROLE_MODULES[Employee.Role.EMPLOYEE])
+    if role == Employee.Role.ADVOCATE:
+        # These routes remain available, but are intentionally omitted from
+        # the advocate dashboard sidebar.
+        module_source = []
     module_items = [
         {
             "label": label,

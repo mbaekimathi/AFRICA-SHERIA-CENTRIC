@@ -324,7 +324,7 @@ class Employee(AbstractUser):
         null=True,
     )
 
-    # Google Drive: Employees/{Name}/Personal/
+    # Google Drive: Employees/{Name}/Personal/ and My Templates/
     drive_folder_id = models.CharField(
         max_length=128,
         blank=True,
@@ -336,6 +336,20 @@ class Employee(AbstractUser):
         blank=True,
         default="",
         help_text="Google Drive Personal subfolder for this employee.",
+    )
+    drive_my_templates_folder_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Google Drive My Templates folder for this employee.",
+    )
+    drive_my_templates_category_folder_ids = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Map of template category slug → Google Drive folder id under "
+            "this employee's My Templates folder."
+        ),
     )
 
     # Personal workspace appearance (this employee only — not firm-wide)
@@ -2999,6 +3013,15 @@ class CompanyDigitalSignatureSetting(models.Model):
         default="Authorized Signatory",
         help_text="Default title / capacity shown under the signatory name.",
     )
+    signature_image = models.ImageField(
+        upload_to="signatures/company/",
+        blank=True,
+        null=True,
+        help_text=(
+            "Signature sketched on the signature pad, or an uploaded scan. "
+            "Used on documents instead of the designed signature block."
+        ),
+    )
     show_firm_name = models.BooleanField(
         default=True,
         help_text="Show the firm display name on the signature block.",
@@ -3035,6 +3058,110 @@ class CompanyDigitalSignatureSetting(models.Model):
     def get_solo(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+    @property
+    def has_drawing(self) -> bool:
+        """True when a sketched or uploaded signature should be used."""
+        return bool(self.signature_image)
+
+    @property
+    def css_modifier(self) -> str:
+        return (
+            f"doc-signature--{self.template} "
+            f"doc-signature--accent-{self.accent}"
+        )
+
+
+class EmployeeDigitalSignatureSetting(models.Model):
+    """
+    Per-employee digital signature (My tools → My digital signature).
+
+    A saved row overrides the firm default signature on every document the
+    employee signs. Deleting the row hands the employee back to the firm one.
+    """
+
+    class Template(models.TextChoices):
+        CLASSIC = "classic", "Classic line"
+        SCRIPT = "script", "Script flourish"
+        FORMAL = "formal", "Formal block"
+        MONOGRAM = "monogram", "Monogram mark"
+        STACKED = "stacked", "Stacked authority"
+        COMPACT = "compact", "Compact strip"
+
+    class Accent(models.TextChoices):
+        FOREST = "forest", "Forest"
+        NAVY = "navy", "Navy"
+        CHARCOAL = "charcoal", "Charcoal"
+        BURGUNDY = "burgundy", "Burgundy"
+        TEAL = "teal", "Teal"
+        GOLD = "gold", "Gold"
+
+    employee = models.OneToOneField(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="digital_signature_setting",
+    )
+    template = models.CharField(
+        max_length=32,
+        choices=Template.choices,
+        default=Template.CLASSIC,
+        help_text="Personal digital signature layout sample.",
+    )
+    accent = models.CharField(
+        max_length=32,
+        choices=Accent.choices,
+        default=Accent.NAVY,
+        help_text="Accent colour for the signature ink and rules.",
+    )
+    default_title = models.CharField(
+        max_length=120,
+        blank=True,
+        default="Authorized Signatory",
+        help_text="Title / capacity shown when you have no role on file.",
+    )
+    signature_image = models.ImageField(
+        upload_to="signatures/employee/",
+        blank=True,
+        null=True,
+        help_text=(
+            "Signature sketched on the signature pad, or an uploaded scan. "
+            "Used on your documents instead of the designed signature block."
+        ),
+    )
+    show_firm_name = models.BooleanField(
+        default=True,
+        help_text="Show the firm display name on the signature block.",
+    )
+    show_name = models.BooleanField(
+        default=True,
+        help_text="Show your name when available.",
+    )
+    show_title = models.BooleanField(
+        default=True,
+        help_text="Show your title / capacity.",
+    )
+    show_date = models.BooleanField(
+        default=True,
+        help_text="Show the signature date when available.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Employee digital signature setting"
+        verbose_name_plural = "Employee digital signature settings"
+
+    def __str__(self):
+        return f"{self.employee} — {self.get_template_display()}"
+
+    @classmethod
+    def for_employee(cls, employee: Employee):
+        obj, _ = cls.objects.get_or_create(employee=employee)
+        return obj
+
+    @property
+    def has_drawing(self) -> bool:
+        """True when a sketched or uploaded signature should be used."""
+        return bool(self.signature_image)
 
     @property
     def css_modifier(self) -> str:
@@ -3476,6 +3603,70 @@ class Document(models.Model):
 
 
 
+class DocumentMark(models.Model):
+    """
+    A signatory's own stamp or signature placed on a document.
+
+    Position is stored against the document preview so the mark lands in the
+    same spot every time: x/y are the top-left corner and width is the mark
+    size, all as a percentage of the preview sheet.
+    """
+
+    class Kind(models.TextChoices):
+        SIGNATURE = "signature", "Signature"
+        STAMP = "stamp", "Stamp"
+
+    DEFAULTS = {
+        Kind.SIGNATURE: {"x": 8.0, "y": 74.0, "width": 30.0},
+        Kind.STAMP: {"x": 62.0, "y": 68.0, "width": 22.0},
+    }
+
+    document = models.ForeignKey(
+        Document,
+        on_delete=models.CASCADE,
+        related_name="marks",
+    )
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="document_marks",
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    page = models.PositiveSmallIntegerField(default=1)
+    x_percent = models.FloatField(default=60.0)
+    y_percent = models.FloatField(default=70.0)
+    width_percent = models.FloatField(default=24.0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["kind", "id"]
+        verbose_name = "Document mark"
+        verbose_name_plural = "Document marks"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["document", "employee", "kind"],
+                name="document_mark_unique_per_signatory",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} — {self.document_id}"
+
+    @classmethod
+    def default_position(cls, kind: str) -> dict:
+        return dict(cls.DEFAULTS.get(kind, cls.DEFAULTS[cls.Kind.SIGNATURE]))
+
+    def as_payload(self) -> dict:
+        return {
+            "kind": self.kind,
+            "page": self.page,
+            "x": round(self.x_percent, 3),
+            "y": round(self.y_percent, 3),
+            "width": round(self.width_percent, 3),
+        }
+
+
 class DocumentActivity(models.Model):
     """Immutable event log for a matter/case document."""
 
@@ -3487,6 +3678,8 @@ class DocumentActivity(models.Model):
         RENAMED = "renamed", "Renamed"
         CONTENT_EDITED = "content_edited", "Content edited"
         SESSION_ENDED = "session_ended", "Session ended"
+        MARK_PLACED = "mark_placed", "Stamp / signature placed"
+        MARK_REMOVED = "mark_removed", "Stamp / signature removed"
 
     document = models.ForeignKey(
         Document,

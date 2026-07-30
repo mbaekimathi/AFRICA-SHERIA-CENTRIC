@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from .letterhead import ACCENT_HEX, accent_hex
-from .models import CompanyDigitalSignatureSetting, FirmCompanyInformation
+from .models import (
+    CompanyDigitalSignatureSetting,
+    EmployeeDigitalSignatureSetting,
+    FirmCompanyInformation,
+)
 
 SIGNATURE_SAMPLES = (
     {
@@ -98,6 +102,28 @@ def get_digital_signature_setting() -> CompanyDigitalSignatureSetting:
     return CompanyDigitalSignatureSetting.get_solo()
 
 
+def get_employee_digital_signature_setting(
+    employee,
+) -> EmployeeDigitalSignatureSetting:
+    return EmployeeDigitalSignatureSetting.for_employee(employee)
+
+
+def employee_signature_setting(signer) -> EmployeeDigitalSignatureSetting | None:
+    """The signatory's own signature row, or None when they never saved one."""
+    if signer is None or not getattr(signer, "pk", None):
+        return None
+    return EmployeeDigitalSignatureSetting.objects.filter(
+        employee=signer
+    ).first()
+
+
+def resolve_signature_setting(
+    signer,
+) -> CompanyDigitalSignatureSetting | EmployeeDigitalSignatureSetting:
+    """A signatory's own signature overrides the firm default."""
+    return employee_signature_setting(signer) or CompanyDigitalSignatureSetting.get_solo()
+
+
 def _initials_from_name(name: str) -> str:
     parts = [p for p in (name or "").split() if p]
     if not parts:
@@ -107,18 +133,31 @@ def _initials_from_name(name: str) -> str:
     return f"{parts[0][0]}{parts[-1][0]}".upper()
 
 
+def signature_role_title(signer) -> str:
+    """The signatory's role, as shown on the title / capacity line."""
+    getter = getattr(signer, "get_role_display", None)
+    if not callable(getter):
+        return ""
+    return (getter() or "").strip()
+
+
 def signature_render_context(
     *,
     firm: FirmCompanyInformation | None = None,
-    setting: CompanyDigitalSignatureSetting | None = None,
+    setting: (
+        CompanyDigitalSignatureSetting | EmployeeDigitalSignatureSetting | None
+    ) = None,
     name: str = "",
     title: str = "",
+    signer=None,
     date_display: str = "",
 ) -> dict:
     """Context for the shared digital signature partial."""
     firm = firm or FirmCompanyInformation.get_solo()
-    setting = setting or CompanyDigitalSignatureSetting.get_solo()
-    resolved_title = (title or setting.default_title or "").strip()
+    setting = setting or resolve_signature_setting(signer)
+    resolved_title = (
+        title or signature_role_title(signer) or setting.default_title or ""
+    ).strip()
     resolved_name = (name or "").strip()
     return {
         "firm": firm,

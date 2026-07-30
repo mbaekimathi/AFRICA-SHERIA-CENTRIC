@@ -1,0 +1,64 @@
+<dialog
+  class="workspace-modal docs-edit-modal"
+  id="docs-edit-modal"
+  aria-labelledby="docs-edit-heading"
+>
+  <form method="post" class="workspace-modal__card docs-edit-card" id="docs-edit-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="document_action" value="rename">
+    <input type="hidden" name="document_id" id="docs-edit-id" value="">
+    <header class="workspace-modal__head docs-edit-head">
+      <div>
+        <p class="docs-edit-eyebrow" id="docs-edit-type">Document</p>
+        <h2 id="docs-edit-heading">Edit document details</h2>
+        <p>Update the name, description, notes, and party type. Changing the name also renames the file on Google Drive.</p>
+      </div>
+      <button type="button" class="btn btn--quiet btn--inline" id="docs-edit-close" aria-label="Close">
+        Close
+      </button>
+    </header>
+    <div class="workspace-modal__body docs-edit-body">
+      <div class="docs-field">
+        <label for="docs-edit-name">Name <span aria-hidden="true">*</span></label>
+        <input
+          id="docs-edit-name"
+          class="form-input"
+          type="text"
+          name="title"
+          required
+          maxlength="255"
+          autocomplete="off"
+        >
+      </div>
+      <div class="docs-field">
+        <label for="docs-edit-description">Description</label>
+        <textarea
+          id="docs-edit-description"
+          class="form-input"
+          name="description"
+          rows="3"
+          placeholder="What this document is for"
+        ></textarea>
+      </div>
+      <div class="docs-field">
+        <label for="docs-edit-notes">Notes</label>
+        <textarea
+          id="docs-edit-notes"
+          class="form-input"
+          name="notes"
+          rows="2"
+          placeholder="Optional internal notes"
+        ></textarea>
+      </div>
+      <div class="docs-field">
+        <label for="{{ edit_form.party_type.id_for_label }}">Party type <span aria-hidden="true">*</span></label>
+        {{ edit_form.party_type }}
+        {% if edit_form.party_type.errors %}<span class="field-error">{{ edit_form.party_type.errors.0 }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="docs-edit-cancel">Cancel</button>
+      <button type="submit" class="btn btn--primary">Save details</button>
+    </div>
+  </form>
+</dialog>

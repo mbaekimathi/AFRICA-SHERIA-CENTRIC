@@ -15,8 +15,8 @@
       <p class="page-kicker">Document settings</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Choose a company digital stamp template for invoices and receipts. The stamp
-        shows the firm name from
+        Choose a company digital stamp template for invoices and receipts, and
+        sketch the signature that signs them. The stamp shows the firm name from
         <a href="{{ company_profile_url }}">Company profile</a>;
         document status and date come from each invoice or receipt.
       </p>
@@ -51,46 +51,6 @@
     {% endif %}
 
     <div class="letterhead-studio__main">
-      {% include "accounts/partials/stamp_scan_upload.html" with stamp_setting=digital_stamp_setting stamp_owner_copy="Already have a physical firm stamp?" %}
-
-      <section class="letterhead-studio__samples" aria-labelledby="stamp-samples-title">
-        <div class="settings-panel__intro">
-          <h3 id="stamp-samples-title">Stamp samples</h3>
-          <p>Select a starting design. The live preview updates as you choose.</p>
-        </div>
-        <div class="letterhead-sample-grid" role="radiogroup" aria-label="Stamp samples">
-          {% for sample in stamp_samples %}
-          <label
-            class="letterhead-sample-card stamp-sample-card stamp-sample-card--{{ sample.value }}{% if form.template.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-sample-card--current{% endif %}"
-          >
-            <input
-              type="radio"
-              name="{{ form.template.name }}"
-              value="{{ sample.value }}"
-              {% if form.template.value == sample.value %}checked{% endif %}
-              data-stamp-template="{{ sample.value }}"
-              data-stamp-label="{{ sample.label }}"
-            >
-            {% if sample.is_current %}
-            <span class="letterhead-sample-card__badge">Active</span>
-            {% endif %}
-            <span class="letterhead-sample-card__stage" aria-hidden="true">
-              <span class="stamp-mini stamp-mini--{{ sample.value }}">
-                <span class="stamp-mini__mark"></span>
-              </span>
-            </span>
-            <span class="letterhead-sample-card__meta">
-              <span class="letterhead-sample-card__name">{{ sample.label }}</span>
-              <span class="letterhead-sample-card__blurb">{{ sample.blurb }}</span>
-            </span>
-          </label>
-          {% endfor %}
-        </div>
-        {% if form.template.errors %}
-        <p class="field-error">{{ form.template.errors.0 }}</p>
-        {% endif %}
-      </section>
-
       <section class="letterhead-studio__accents" aria-labelledby="stamp-accents-title">
         <div class="settings-panel__intro">
           <h3 id="stamp-accents-title">Accent colour</h3>
@@ -145,6 +105,48 @@
           </label>
         </div>
       </section>
+
+      {% include "accounts/partials/stamp_scan_upload.html" with stamp_setting=digital_stamp_setting stamp_owner_copy="Already have a physical firm stamp?" %}
+
+      {% include "accounts/partials/signature_pad.html" with signature_pad_copy="This signature signs invoices and receipts alongside the stamp." %}
+
+      <section class="letterhead-studio__samples" aria-labelledby="stamp-samples-title">
+        <div class="settings-panel__intro">
+          <h3 id="stamp-samples-title">Stamp samples</h3>
+          <p>Select a starting design. The live preview updates as you choose.</p>
+        </div>
+        <div class="letterhead-sample-grid" role="radiogroup" aria-label="Stamp samples">
+          {% for sample in stamp_samples %}
+          <label
+            class="letterhead-sample-card stamp-sample-card stamp-sample-card--{{ sample.value }}{% if form.template.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-sample-card--current{% endif %}"
+          >
+            <input
+              type="radio"
+              name="{{ form.template.name }}"
+              value="{{ sample.value }}"
+              {% if form.template.value == sample.value %}checked{% endif %}
+              data-stamp-template="{{ sample.value }}"
+              data-stamp-label="{{ sample.label }}"
+            >
+            {% if sample.is_current %}
+            <span class="letterhead-sample-card__badge">Active</span>
+            {% endif %}
+            <span class="letterhead-sample-card__stage" aria-hidden="true">
+              <span class="stamp-mini stamp-mini--{{ sample.value }}">
+                <span class="stamp-mini__mark"></span>
+              </span>
+            </span>
+            <span class="letterhead-sample-card__meta">
+              <span class="letterhead-sample-card__name">{{ sample.label }}</span>
+              <span class="letterhead-sample-card__blurb">{{ sample.blurb }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% if form.template.errors %}
+        <p class="field-error">{{ form.template.errors.0 }}</p>
+        {% endif %}
+      </section>
     </div>
 
     <aside class="letterhead-studio__aside" aria-label="Live stamp preview">
@@ -158,12 +160,25 @@
             {% include "accounts/partials/company_digital_stamp.html" %}
           </div>
         </div>
+        <div class="letterhead-preview__stage signature-preview__stage">
+          <div class="signature-preview__canvas">
+            {% include "accounts/partials/company_digital_signature.html" %}
+          </div>
+        </div>
+        <p class="signature-pad__aside-note">
+          Signature details and layout live on
+          <a href="{{ default_signature_url }}">Default signature</a>.
+        </p>
       </div>
     </aside>
 
     <div class="form-actions form-actions--start letterhead-studio__actions">
-      <button type="submit" class="btn btn--primary btn--inline">
-        Save digital stamp
+      <button
+        type="submit"
+        class="btn btn--primary btn--inline"
+        data-save-upload-label="Save uploaded stamp"
+      >
+        Save stamp and signature
       </button>
     </div>
   </form>
@@ -180,5 +195,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/digital-stamp.js' %}" defer></script>
+<script src="{% static 'js/digital-stamp.js' %}?v=stamp-preview-2" defer></script>
+<script src="{% static 'js/signature-pad.js' %}?v=signature-ui-2" defer></script>
 {% endblock %}

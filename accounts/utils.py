@@ -1,3 +1,4 @@
+import base64
 from io import BytesIO
 import re
 from html import escape
@@ -62,6 +63,53 @@ def remove_solid_background(image: Image.Image, tolerance: int = 28) -> Image.Im
             ):
                 pixels[x, y] = (r, g, b, 0)
     return rgba
+
+
+SIGNATURE_DATA_URL_RE = re.compile(
+    r"^data:image/(?P<kind>png|jpeg|webp);base64,(?P<payload>[A-Za-z0-9+/=\s]+)$"
+)
+
+
+def _trim_transparent(image: Image.Image, *, padding: int = 12) -> Image.Image:
+    """Crop away empty space around the ink, keeping a small margin."""
+    box = image.getbbox()
+    if not box:
+        return image
+    left, top, right, bottom = box
+    return image.crop(
+        (
+            max(left - padding, 0),
+            max(top - padding, 0),
+            min(right + padding, image.width),
+            min(bottom + padding, image.height),
+        )
+    )
+
+
+def decode_signature_drawing(data_url, *, max_size=900, name="signature.png"):
+    """
+    Turn a signature pad data URL into a trimmed, transparent PNG.
+
+    Returns None when the value is empty or not a base64 image data URL.
+    """
+    match = SIGNATURE_DATA_URL_RE.match((data_url or "").strip())
+    if not match:
+        return None
+
+    raw = base64.b64decode(
+        re.sub(r"\s+", "", match.group("payload")), validate=True
+    )
+    image = Image.open(BytesIO(raw)).convert("RGBA")
+    image = _trim_transparent(image)
+    if not image.getbbox():
+        return None
+
+    image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    buffer.seek(0)
+    return ContentFile(buffer.read(), name=name)
 
 
 def optimize_logo(uploaded_file, *, remove_background=False, max_size=800):

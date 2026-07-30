@@ -33,6 +33,7 @@ from .models import (
     CompanyLetterheadSetting,
     CompanyDigitalStampSetting,
     CompanyDigitalSignatureSetting,
+    EmployeeDigitalSignatureSetting,
     EmployeeDigitalStampSetting,
     CompanyThemeSetting,
     FinanceSettings,
@@ -55,7 +56,13 @@ from .models import (
     PettyCashExpenseRequest,
     WebsiteTemplateSetting,
 )
-from .utils import optimize_image, optimize_logo, optimize_profile_photo
+from .utils import (
+    SIGNATURE_DATA_URL_RE,
+    decode_signature_drawing,
+    optimize_image,
+    optimize_logo,
+    optimize_profile_photo,
+)
 
 
 class LatestNewsScrapeForm(forms.Form):
@@ -3048,6 +3055,63 @@ class RegisterMatterForm(forms.ModelForm):
         return client
 
 
+class EditActiveNonLitigationMatterForm(RegisterMatterForm):
+    """Edit matter details together with status and allocation."""
+
+    status = forms.ChoiceField(
+        choices=(
+            (NonLitigationMatter.Status.ACTIVE, "Active"),
+            (NonLitigationMatter.Status.CLOSED, "Closed"),
+        ),
+        widget=forms.Select(attrs={"class": "form-input", "id": "id_status"}),
+    )
+    assigned_to = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        empty_label="Select employee",
+        widget=forms.Select(
+            attrs={"class": "form-input", "id": "id_assigned_to"}
+        ),
+        error_messages={"required": "Allocate the matter to an employee."},
+    )
+
+    class Meta(RegisterMatterForm.Meta):
+        fields = RegisterMatterForm.Meta.fields + ("status", "assigned_to")
+
+    def __init__(
+        self,
+        *args,
+        can_change_status=True,
+        can_change_allocation=True,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if can_change_status:
+            self.fields["status"].help_text = (
+                "Closing the matter removes it from the active matters list."
+            )
+        else:
+            self.fields.pop("status")
+
+        if can_change_allocation:
+            self.fields["assigned_to"].queryset = Employee.objects.filter(
+                status=Employee.Status.ACTIVE
+            ).order_by("first_name", "last_name", "login_code")
+            self.fields["assigned_to"].label_from_instance = (
+                lambda employee: (
+                    f"{employee.get_full_name() or employee.login_code} "
+                    f"({employee.get_role_display()})"
+                )
+            )
+        else:
+            self.fields.pop("assigned_to")
+
+    def clean_assigned_to(self):
+        employee = self.cleaned_data.get("assigned_to")
+        if employee and employee.status != Employee.Status.ACTIVE:
+            raise ValidationError("Only active employees can be allocated.")
+        return employee
+
+
 class MatterPartyForm(forms.ModelForm):
     class Meta:
         model = MatterParty
@@ -4025,11 +4089,10 @@ class EmployeeDigitalStampForm(BaseStampSettingsForm):
         self.fields["accent"].required = True
 
 
-class CompanyDigitalSignatureForm(forms.ModelForm):
-    """Firm digital signature layout (Document settings)."""
+class BaseDigitalSignatureForm(forms.ModelForm):
+    """Shared layout, accent, and detail fields for a signature block."""
 
     class Meta:
-        model = CompanyDigitalSignatureSetting
         fields = [
             "template",
             "accent",
@@ -4042,10 +4105,10 @@ class CompanyDigitalSignatureForm(forms.ModelForm):
         labels = {
             "template": "Signature sample",
             "accent": "Accent colour",
-            "default_title": "Default title / capacity",
+            "default_title": "Fallback title / capacity",
             "show_firm_name": "Show firm name",
             "show_name": "Show signatory name",
-            "show_title": "Show title / capacity",
+            "show_title": "Show role / capacity",
             "show_date": "Show date",
         }
         widgets = {
@@ -4068,20 +4131,141 @@ class CompanyDigitalSignatureForm(forms.ModelForm):
             "show_date": forms.CheckboxInput(attrs={"class": "form-check"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, role_title="", **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["template"].choices = list(
-            CompanyDigitalSignatureSetting.Template.choices
-        )
-        self.fields["accent"].choices = list(
-            CompanyDigitalSignatureSetting.Accent.choices
-        )
+        model = self._meta.model
+        self.fields["template"].choices = list(model.Template.choices)
+        self.fields["accent"].choices = list(model.Accent.choices)
         self.fields["template"].required = True
         self.fields["accent"].required = True
         self.fields["default_title"].required = False
+        self.role_title = (role_title or "").strip()
+        self.fields["show_title"].help_text = (
+            f"Signatures show the signatory's role — yours reads "
+            f"{self.role_title}."
+            if self.role_title
+            else "Signatures show the signatory's role."
+        )
+        self.fields["default_title"].help_text = (
+            "Used only when a signatory has no role on file."
+        )
 
     def clean_default_title(self):
         return (self.cleaned_data.get("default_title") or "").strip()
+
+
+class CompanyDigitalSignatureForm(BaseDigitalSignatureForm):
+    """Firm digital signature layout (Document settings)."""
+
+    class Meta(BaseDigitalSignatureForm.Meta):
+        model = CompanyDigitalSignatureSetting
+
+
+class EmployeeDigitalSignatureForm(BaseDigitalSignatureForm):
+    """Personal digital signature layout (My tools)."""
+
+    class Meta(BaseDigitalSignatureForm.Meta):
+        model = EmployeeDigitalSignatureSetting
+        labels = {
+            **BaseDigitalSignatureForm.Meta.labels,
+            "show_name": "Show my name",
+        }
+
+
+class SignatureCaptureForm(forms.Form):
+    """
+    Sketch or upload the signature used on documents.
+
+    Runs alongside the stamp and signature designers, so the drawing pad can
+    appear on either page without touching their model forms.
+    """
+
+    MAX_SIGNATURE_IMAGE_BYTES = 5 * 1024 * 1024
+    MAX_SIGNATURE_DRAWING_CHARS = 4 * 1024 * 1024
+
+    signature_drawing = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(
+            attrs={
+                "id": "id_signature_drawing",
+                "data-signature-drawing": "",
+            }
+        ),
+    )
+    signature_image = forms.ImageField(
+        required=False,
+        label="Upload a signature instead",
+        help_text="PNG or JPG of a signed sheet, up to 5 MB.",
+        widget=forms.FileInput(
+            attrs={
+                "class": "signature-pad__file",
+                "accept": "image/*",
+                "id": "id_signature_image",
+                "data-signature-upload": "",
+            }
+        ),
+    )
+    clear_signature_image = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="Remove saved signature",
+        widget=forms.CheckboxInput(
+            attrs={"class": "form-check", "id": "id_clear_signature_image"}
+        ),
+    )
+
+    def clean_signature_drawing(self):
+        raw = (self.cleaned_data.get("signature_drawing") or "").strip()
+        if not raw:
+            return ""
+        if len(raw) > self.MAX_SIGNATURE_DRAWING_CHARS:
+            raise forms.ValidationError(
+                "That signature is too large to save. Clear the pad and sign again."
+            )
+        if not SIGNATURE_DATA_URL_RE.match(raw):
+            raise forms.ValidationError(
+                "The signature could not be read. Clear the pad and sign again."
+            )
+        return raw
+
+    def clean_signature_image(self):
+        uploaded = self.cleaned_data.get("signature_image")
+        if uploaded and uploaded.size > self.MAX_SIGNATURE_IMAGE_BYTES:
+            raise forms.ValidationError(
+                "That signature image is larger than 5 MB. Upload a smaller scan."
+            )
+        return uploaded
+
+    def apply_signature(self, setting):
+        """Save the sketch, upload, or removal onto a signature settings row."""
+        drawing = self.cleaned_data.get("signature_drawing")
+        if drawing:
+            decoded = decode_signature_drawing(drawing)
+            if decoded is not None:
+                if setting.signature_image:
+                    setting.signature_image.delete(save=False)
+                setting.signature_image = decoded
+                setting.save(update_fields=["signature_image", "updated_at"])
+                return "drawn"
+
+        uploaded = self.cleaned_data.get("signature_image")
+        if uploaded:
+            optimized = optimize_logo(
+                uploaded, remove_background=True, max_size=900
+            )
+            if setting.signature_image:
+                setting.signature_image.delete(save=False)
+            setting.signature_image = optimized
+            setting.save(update_fields=["signature_image", "updated_at"])
+            return "uploaded"
+
+        if self.cleaned_data.get("clear_signature_image") and setting.signature_image:
+            setting.signature_image.delete(save=False)
+            setting.signature_image = None
+            setting.save(update_fields=["signature_image", "updated_at"])
+            return "cleared"
+
+        return ""
 
 
 class NotificationSettingsForm(forms.ModelForm):
@@ -5979,6 +6163,18 @@ class UploadDocumentForm(DocumentPartyTypeMixin, forms.Form):
 class TemplatesFormsUploadForm(forms.Form):
     """Upload a firm template or form into a Templates and Forms category folder."""
 
+    DOCUMENT_KIND_CHOICES = (
+        ("court", "Court document"),
+        ("office", "Office document"),
+    )
+
+    document_kind = forms.ChoiceField(
+        choices=DOCUMENT_KIND_CHOICES,
+        required=False,
+        initial="office",
+        label="Document type",
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
     category = forms.ChoiceField(
         choices=[],
         label="Category",
@@ -5997,6 +6193,7 @@ class TemplatesFormsUploadForm(forms.Form):
     )
     file = forms.FileField(
         label="File",
+        error_messages={"required": "Choose a file to upload."},
         widget=forms.FileInput(
             attrs={
                 "class": "form-input docs-drop__input",
@@ -6035,6 +6232,13 @@ class TemplatesFormsUploadForm(forms.Form):
             raise ValidationError("Select a template category.")
         return value
 
+    def clean_document_kind(self):
+        value = (self.cleaned_data.get("document_kind") or "office").strip()
+        valid = {key for key, _label in self.DOCUMENT_KIND_CHOICES}
+        if value not in valid:
+            raise ValidationError("Select Court document or Office document.")
+        return value
+
     def clean_title(self):
         title = (self.cleaned_data.get("title") or "").strip()
         if not title:
@@ -6054,12 +6258,20 @@ class TemplatesFormsUploadForm(forms.Form):
 class TemplatesFormsCreateForm(forms.Form):
     """Create a blank Google Docs / Sheets / Slides template in a category folder."""
 
+    DOCUMENT_KIND_CHOICES = TemplatesFormsUploadForm.DOCUMENT_KIND_CHOICES
     GOOGLE_TYPE_CHOICES = (
         ("document", "Docs"),
         ("spreadsheet", "Excel"),
         ("presentation", "Slides"),
     )
 
+    document_kind = forms.ChoiceField(
+        choices=DOCUMENT_KIND_CHOICES,
+        required=False,
+        initial="office",
+        label="Document type",
+        widget=forms.Select(attrs={"class": "form-input"}),
+    )
     category = forms.ChoiceField(
         choices=[],
         label="Category",
@@ -6125,6 +6337,13 @@ class TemplatesFormsCreateForm(forms.Form):
         value = (self.cleaned_data.get("category") or "").strip()
         if value not in TEMPLATES_FORMS_CATEGORY_SLUGS:
             raise ValidationError("Select a template category.")
+        return value
+
+    def clean_document_kind(self):
+        value = (self.cleaned_data.get("document_kind") or "office").strip()
+        valid = {key for key, _label in self.DOCUMENT_KIND_CHOICES}
+        if value not in valid:
+            raise ValidationError("Select Court document or Office document.")
         return value
 
     def clean_title(self):

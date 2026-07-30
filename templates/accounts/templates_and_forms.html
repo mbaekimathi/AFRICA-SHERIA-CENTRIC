@@ -5,22 +5,37 @@
 
 {% block content %}
 <section class="page page--docs" id="templates-and-forms-page" data-reveal-root>
-  <header class="page-intro" data-reveal>
-    <div class="page-intro__copy">
-      <p class="page-kicker">Document settings</p>
-      <h2>{{ page_title }}</h2>
-      <p class="page-lead">
-        Keep ready templates for court forms, affidavits, notices, agreements,
-        letters, and applications in Google Drive. Case and matter libraries can
-        start from these masters without editing the originals.
-      </p>
+  <header class="page-intro page-intro--card docs-hero" data-reveal>
+    <div class="docs-hero__main">
+      {% include "accounts/partials/icon_3d.html" with icon="document" tone=5 size="lg" float=True extra_class="docs-hero__icon" %}
+      <div class="page-intro__copy docs-hero__copy">
+        <p class="page-kicker">Document settings</p>
+        <h2>{{ page_title }}</h2>
+        <p class="page-lead">
+          Keep ready templates for court forms, affidavits, notices, agreements,
+          letters, and applications in Google Drive. Duplicate a company master
+          into My templates to edit your own copy without changing the original.
+        </p>
+      </div>
     </div>
+    {% if templates_forms_folder_url %}
+    <div class="docs-hero__actions">
+      <a
+        class="btn btn--quiet"
+        href="{{ templates_forms_folder_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Open templates folder
+      </a>
+    </div>
+    {% endif %}
   </header>
 
   <div class="docs-context" aria-label="Drive status">
-    <span class="docs-context__badge">Firm Drive</span>
+    <span class="docs-context__badge">{% if active_scope == "mine" %}My templates{% else %}Firm Drive{% endif %}</span>
     <div class="docs-context__text">
-      <strong>Templates and Forms</strong>
+      <strong>{{ active_scope_label }}</strong>
       <span>{{ templates_forms_total_count }} template{{ templates_forms_total_count|pluralize }} across categories</span>
     </div>
     {% if google_drive_connected %}
@@ -41,63 +56,106 @@
   <div class="docs-alert" role="alert">{{ drive_error }}</div>
   {% endif %}
 
-  <nav class="template-category-nav" aria-label="Template categories">
-    {% for slug, label in templates_forms_categories %}
-    <a
-      class="template-category-nav__item{% if slug == active_category %} is-active{% endif %}"
-      href="?category={{ slug }}"
-    >
-      <span>{{ label }}</span>
-      {% for bucket in templates_forms_library %}
-        {% if bucket.slug == slug %}
-        <em>{{ bucket.count }}</em>
-        {% endif %}
-      {% empty %}
+  <div class="templates-toolbar" data-reveal>
+    <div class="template-scope-bar">
+      <span class="template-scope-bar__label" id="templates-scope-label">Library</span>
+      <div
+        class="template-scope"
+        role="group"
+        aria-labelledby="templates-scope-label"
+        data-templates-scope
+      >
+        {% for slug, label in templates_forms_scopes %}
+        <a
+          class="template-scope__option{% if slug == active_scope %} is-active{% endif %}"
+          href="?scope={{ slug }}&category={{ active_category }}"
+          {% if slug == active_scope %}aria-current="true"{% endif %}
+        >
+          {{ label }}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <nav class="template-category-nav" aria-label="Template categories">
+      {% for slug, label in templates_forms_categories %}
+      <a
+        class="template-category-nav__item{% if slug == active_category %} is-active{% endif %}"
+        href="?scope={{ active_scope }}&category={{ slug }}"
+        {% if slug == active_category %}aria-current="true"{% endif %}
+      >
+        <span>{{ label }}</span>
+        {% for bucket in templates_forms_library %}
+          {% if bucket.slug == slug %}
+          <em>{{ bucket.count }}</em>
+          {% endif %}
+        {% empty %}
+        {% endfor %}
+      </a>
       {% endfor %}
-    </a>
-    {% endfor %}
-  </nav>
+    </nav>
+  </div>
 
   <div class="docs-compose">
     <div class="docs-compose__intro">
-      <h3>{{ active_category_label }}</h3>
-      <p>
-        Create or upload into this category folder under
-        <code>Sheria-Centric / Templates and Forms / {{ active_category_label }}</code>.
+      <div class="docs-compose__heading">
+        <h3>{{ active_category_label }}</h3>
         {% if active_category_folder_url %}
-        <a href="{{ active_category_folder_url }}" target="_blank" rel="noopener noreferrer">
-          Open category in Google Drive
+        <a
+          class="btn btn--quiet btn--inline"
+          href="{{ active_category_folder_url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open category in Drive
         </a>
         {% elif templates_forms_folder_url %}
-        <a href="{{ templates_forms_folder_url }}" target="_blank" rel="noopener noreferrer">
-          Open Templates and Forms
+        <a
+          class="btn btn--quiet btn--inline"
+          href="{{ templates_forms_folder_url }}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open folder in Drive
         </a>
         {% endif %}
+      </div>
+      <p class="docs-compose__path">
+        <span class="docs-compose__path-label">Saves to</span>
+        <code>{{ templates_forms_drive_path }}</code>
       </p>
     </div>
 
-    <div class="docs-actions">
-      <form
-        method="post"
-        class="docs-tile docs-tile--upload"
-        enctype="multipart/form-data"
-        novalidate
-        data-docs-upload
-      >
-        {% csrf_token %}
-        <input type="hidden" name="template_action" value="upload">
-        <div class="docs-tile__head">
+    <div class="docs-actions docs-actions--collapsible">
+      <details class="docs-tile docs-tile--upload" {% if upload_form.errors %}open{% endif %}>
+        <summary class="docs-tile__head">
           <span class="docs-tile__icon docs-tile__icon--upload" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
               <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
               <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
-          <div class="docs-tile__copy">
-            <h3>Upload template or form</h3>
-            <p>PDF, Word, Excel, PowerPoint, images, and text files up to 15 MB.</p>
-          </div>
-        </div>
+          <span class="docs-tile__copy">
+            <strong class="docs-tile__title">Upload template or form</strong>
+            <span class="docs-tile__text">PDF, Word, Excel, PowerPoint, images, and text files up to 15 MB.</span>
+          </span>
+          <span class="docs-tile__chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </summary>
+
+      <form
+        method="post"
+        class="docs-tile__form"
+        enctype="multipart/form-data"
+        novalidate
+        data-docs-upload
+      >
+        {% csrf_token %}
+        <input type="hidden" name="template_action" value="upload">
+        <input type="hidden" name="scope" value="{{ active_scope }}">
 
         {% if upload_form.non_field_errors %}
         <div class="form-alert" role="alert">
@@ -106,6 +164,27 @@
         {% endif %}
 
         <div class="docs-tile__body">
+          <fieldset class="docs-kind">
+            <legend>Document type <span aria-hidden="true">*</span></legend>
+            <div class="docs-kind__options" role="radiogroup" aria-label="Document type">
+              {% for value, label in upload_form.document_kind.field.choices %}
+              <label class="docs-kind__option">
+                <input
+                  type="radio"
+                  name="{{ upload_form.document_kind.html_name }}"
+                  value="{{ value }}"
+                  class="docs-kind-input"
+                  {% if upload_form.document_kind.value|default:"office" == value %}checked{% endif %}
+                >
+                <span class="docs-kind__card">
+                  {% include "accounts/partials/template_kind_glyph.html" with kind=value %}
+                  <span class="docs-kind__name">{{ label }}</span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% if upload_form.document_kind.errors %}<span class="field-error">{{ upload_form.document_kind.errors.0 }}</span>{% endif %}
+          </fieldset>
           <div class="docs-field">
             <label for="{{ upload_form.category.id_for_label }}">Category <span aria-hidden="true">*</span></label>
             {{ upload_form.category }}
@@ -141,32 +220,41 @@
         </div>
 
         <div class="docs-tile__foot">
-          <p class="docs-tile__hint">Saved as a master template in this category.</p>
+          <p class="docs-tile__hint">{{ templates_forms_compose_hint }}</p>
           <button type="submit" class="btn btn--docs-upload" {% if not google_drive_connected %}disabled{% endif %}>
             Upload &amp; save
           </button>
         </div>
       </form>
+      </details>
 
-      <form
-        method="post"
-        class="docs-tile docs-tile--google"
-        novalidate
-        data-docs-create
-      >
-        {% csrf_token %}
-        <input type="hidden" name="template_action" value="create_google">
-        <div class="docs-tile__head">
+      <details class="docs-tile docs-tile--google" {% if create_form.errors %}open{% endif %}>
+        <summary class="docs-tile__head">
           <span class="docs-tile__icon docs-tile__icon--google" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M8.05 3.5 2.2 13.6h4.95l5.85-10.1H8.05Zm7.9 0-2.9 5.02 2.92 5.08h5.83L15.95 3.5ZM4.55 15.1 2.2 19.15c.45.95 1.2 1.7 2.15 2.2h15.3c.95-.5 1.7-1.25 2.15-2.2L19.45 15.1H4.55Z"/>
             </svg>
           </span>
-          <div class="docs-tile__copy">
-            <h3>Create your own template</h3>
-            <p>Start a blank Google Doc, Sheet, or Slides file in this category.</p>
-          </div>
-        </div>
+          <span class="docs-tile__copy">
+            <strong class="docs-tile__title">Create your own template</strong>
+            <span class="docs-tile__text">Start a blank Google Doc, Sheet, or Slides file in this category.</span>
+          </span>
+          <span class="docs-tile__chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </summary>
+
+      <form
+        method="post"
+        class="docs-tile__form"
+        novalidate
+        data-docs-create
+      >
+        {% csrf_token %}
+        <input type="hidden" name="template_action" value="create_google">
+        <input type="hidden" name="scope" value="{{ active_scope }}">
 
         {% if create_form.non_field_errors %}
         <div class="form-alert" role="alert">
@@ -175,6 +263,27 @@
         {% endif %}
 
         <div class="docs-tile__body">
+          <fieldset class="docs-kind">
+            <legend>Document type <span aria-hidden="true">*</span></legend>
+            <div class="docs-kind__options" role="radiogroup" aria-label="Document type">
+              {% for value, label in create_form.document_kind.field.choices %}
+              <label class="docs-kind__option">
+                <input
+                  type="radio"
+                  name="{{ create_form.document_kind.html_name }}"
+                  value="{{ value }}"
+                  class="docs-kind-input"
+                  {% if create_form.document_kind.value|default:"office" == value %}checked{% endif %}
+                >
+                <span class="docs-kind__card">
+                  {% include "accounts/partials/template_kind_glyph.html" with kind=value %}
+                  <span class="docs-kind__name">{{ label }}</span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% if create_form.document_kind.errors %}<span class="field-error">{{ create_form.document_kind.errors.0 }}</span>{% endif %}
+          </fieldset>
           <div class="docs-field">
             <label for="{{ create_form.category.id_for_label }}">Category <span aria-hidden="true">*</span></label>
             {{ create_form.category }}
@@ -269,57 +378,140 @@
           </button>
         </div>
       </form>
+      </details>
     </div>
   </div>
 
-  <section class="docs-library" aria-labelledby="templates-forms-library-title">
+  <section
+    class="docs-library"
+    id="templates-forms-library"
+    aria-labelledby="templates-forms-library-title"
+  >
     <div class="docs-library__head">
       <div class="docs-library__title">
         <h3 id="templates-forms-library-title">{{ active_category_label }} library</h3>
-        <p class="docs-library__sub">
-          Master files in this category. Case/matter work copies them — do not edit masters for a single file.
-        </p>
+        <p class="docs-library__sub">{{ templates_forms_library_sub }}</p>
       </div>
       <span class="docs-library__count" title="Files in category">
         {{ templates_forms_files|length }}
       </span>
     </div>
 
-    {% if templates_forms_files %}
-    <ul class="docs-file-list">
-      {% for item in templates_forms_files %}
-      <li class="docs-file-list__item">
-        <div class="docs-file-list__main">
-          <strong>{{ item.name }}</strong>
-          {% if item.mime_type %}
-          <span class="docs-file-list__meta">{{ item.mime_type }}</span>
-          {% endif %}
+    {% if templates_forms_groups %}
+    <div class="template-groups">
+      {% for group in templates_forms_groups %}
+      <details class="template-group" {% if forloop.first %}open{% endif %}>
+        <summary class="template-group__head">
+          <span class="template-kind-badge template-kind-badge--{{ group.kind }}">
+            {{ group.label }}
+          </span>
+          <span class="template-group__count">
+            {{ group.count }} template{{ group.count|pluralize }}
+          </span>
+          <span class="template-group__chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </summary>
+        <div class="template-group__body">
+          {% for bucket in group.categories %}
+          <details class="template-subgroup" {% if forloop.first %}open{% endif %}>
+            <summary class="template-subgroup__head">
+              <span class="template-subgroup__title">{{ bucket.label }}</span>
+              <span class="template-subgroup__count">{{ bucket.count }}</span>
+              <span class="template-subgroup__chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                  <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+            </summary>
+            <ul class="docs-file-list">
+              {% for item in bucket.files %}
+              {% include "accounts/partials/template_library_item.html" %}
+              {% endfor %}
+            </ul>
+          </details>
+          {% endfor %}
         </div>
-        {% if item.open_url %}
-        <a
-          class="btn btn--quiet btn--inline"
-          href="{{ item.open_url }}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open
-        </a>
-        {% endif %}
-      </li>
+      </details>
       {% endfor %}
-    </ul>
+    </div>
     {% else %}
     <div class="empty-state">
+      {% include "accounts/partials/icon_3d.html" with icon="folder" tone=3 %}
       <p class="empty-state__title">No {{ active_category_label|lower }} yet</p>
       <p class="empty-state__copy">
+        {% if active_scope == "mine" %}
+        Create or upload above, or duplicate a company template into My templates.
+        {% else %}
         Create a Google template or upload a file above for this category.
+        {% endif %}
       </p>
     </div>
     {% endif %}
   </section>
 </section>
+
+<dialog
+  class="workspace-modal docs-edit-modal"
+  id="template-rename-modal"
+  aria-labelledby="template-rename-heading"
+>
+  <form method="post" class="workspace-modal__card docs-edit-card" id="template-rename-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="template_action" value="rename">
+    <input type="hidden" name="scope" value="mine">
+    <input type="hidden" name="file_id" id="template-rename-id" value="">
+    <input type="hidden" name="category" id="template-rename-category" value="{{ active_category }}">
+    <header class="workspace-modal__head docs-edit-head">
+      <div>
+        <p class="docs-edit-eyebrow">My templates</p>
+        <h2 id="template-rename-heading">Rename template</h2>
+        <p>Update the name in Google Drive. This only affects your personal copy.</p>
+      </div>
+      <button type="button" class="btn btn--quiet btn--inline" id="template-rename-close" aria-label="Close">
+        Close
+      </button>
+    </header>
+    <div class="workspace-modal__body docs-edit-body">
+      <div class="docs-field">
+        <label for="template-rename-name">Name <span aria-hidden="true">*</span></label>
+        <input
+          id="template-rename-name"
+          class="form-input"
+          type="text"
+          name="title"
+          required
+          maxlength="255"
+          autocomplete="off"
+        >
+      </div>
+    </div>
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="template-rename-cancel">Cancel</button>
+      <button type="submit" class="btn btn--primary">Save name</button>
+    </div>
+  </form>
+</dialog>
+
+<div
+  class="docs-busy-overlay"
+  id="docs-busy-overlay"
+  role="alertdialog"
+  aria-modal="true"
+  aria-labelledby="docs-busy-title"
+  aria-describedby="docs-busy-text"
+  hidden
+>
+  <div class="docs-busy-card">
+    <span class="docs-busy-card__spinner" aria-hidden="true"></span>
+    <h2 id="docs-busy-title">Working on your template</h2>
+    <p id="docs-busy-text">Please wait — do not close or submit again.</p>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/docs-upload.js' %}?v=5" defer></script>
+<script src="{% static 'js/docs-upload.js' %}?v=7" defer></script>
 {% endblock %}

@@ -129,6 +129,20 @@ def get_employee_digital_stamp_setting(
     return EmployeeDigitalStampSetting.for_employee(employee)
 
 
+def employee_stamp_setting(signer) -> EmployeeDigitalStampSetting | None:
+    """The signatory's own stamp row, or None when they never saved one."""
+    if signer is None or not getattr(signer, "pk", None):
+        return None
+    return EmployeeDigitalStampSetting.objects.filter(employee=signer).first()
+
+
+def resolve_stamp_setting(
+    signer,
+) -> CompanyDigitalStampSetting | EmployeeDigitalStampSetting:
+    """A signatory's own stamp overrides the firm default."""
+    return employee_stamp_setting(signer) or CompanyDigitalStampSetting.get_solo()
+
+
 def stamp_postal_line(firm: FirmCompanyInformation) -> str:
     """
     Postal line for block stamps, e.g. "P. O. Box 7728 - 00100, Nairobi".
@@ -150,11 +164,12 @@ def stamp_render_context(
     status_key: str = "issued",
     label: str = "Approved by",
     name: str = "",
+    signer=None,
     date_display: str = "",
 ) -> dict:
     """Context for the shared digital stamp partial."""
     firm = firm or FirmCompanyInformation.get_solo()
-    setting = setting or CompanyDigitalStampSetting.get_solo()
+    setting = setting or resolve_stamp_setting(signer)
     return {
         "firm": firm,
         "digital_stamp": setting,

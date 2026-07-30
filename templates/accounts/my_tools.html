@@ -126,7 +126,7 @@
           </div>
         </div>
         <span class="my-tool__state{% if my_signature_ready %} my-tool__state--on{% else %} my-tool__state--off{% endif %}">
-          {% if my_signature_ready %}Ready{% else %}Not set up{% endif %}
+          {% if my_signature_is_personal %}Mine{% elif my_signature_ready %}Firm default{% else %}Not set up{% endif %}
         </span>
       </header>
 
@@ -158,6 +158,16 @@
         <div>
           <dt>Updated</dt>
           <dd>{{ my_signature_setting.updated_at|date:"j M Y" }}</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>
+            {% if my_signature_is_personal %}
+            Yours — overrides the firm default
+            {% else %}
+            Firm default
+            {% endif %}
+          </dd>
         </div>
       </dl>
       {% else %}

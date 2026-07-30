@@ -31,6 +31,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  // A sketched signature replaces the designed block, so layout samples
+  // no longer drive the preview.
+  const isDrawn = signature.classList.contains("doc-signature--drawn");
+
   const applyPreview = () => {
     const templateInput = form.querySelector(
       'input[name="template"]:checked'
@@ -43,15 +47,17 @@ document.addEventListener("DOMContentLoaded", () => {
       signature.style.getPropertyValue("--signature-ink") ||
       "#1e3a5f";
 
-    templates.forEach((key) => {
-      signature.classList.toggle(`doc-signature--${key}`, key === template);
-    });
-    accents.forEach((key) => {
-      signature.classList.toggle(
-        `doc-signature--accent-${key}`,
-        key === accent
-      );
-    });
+    if (!isDrawn) {
+      templates.forEach((key) => {
+        signature.classList.toggle(`doc-signature--${key}`, key === template);
+      });
+      accents.forEach((key) => {
+        signature.classList.toggle(
+          `doc-signature--accent-${key}`,
+          key === accent
+        );
+      });
+    }
     signature.style.setProperty("--signature-ink", accentHex);
 
     const showFirm = Boolean(
@@ -66,20 +72,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const showDate = Boolean(
       form.querySelector('input[name="show_date"]')?.checked
     );
-    const defaultTitle = (
+    // The title line is the signatory's role; the field is only a fallback.
+    const roleTitle = (page.dataset.roleTitle || "").trim();
+    const fallbackTitle = (
       form.querySelector('input[name="default_title"]')?.value || ""
     ).trim();
+    const resolvedTitle = roleTitle || fallbackTitle;
 
     signature.classList.toggle("doc-signature--no-firm", !showFirm);
     signature.classList.toggle("doc-signature--no-name", !showName);
     signature.classList.toggle("doc-signature--no-title", !showTitle);
     signature.classList.toggle("doc-signature--no-date", !showDate);
 
-    if (titleEl && defaultTitle) {
-      titleEl.textContent = defaultTitle;
+    if (titleEl && resolvedTitle) {
+      titleEl.textContent = resolvedTitle;
     }
 
-    if (labelEl && templateInput?.dataset.signatureLabel) {
+    if (labelEl && templateInput?.dataset.signatureLabel && !isDrawn) {
       labelEl.textContent = templateInput.dataset.signatureLabel;
     }
     if (accentEl && accentInput?.dataset.signatureAccentLabel) {

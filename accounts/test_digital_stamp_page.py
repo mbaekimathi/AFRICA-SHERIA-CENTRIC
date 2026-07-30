@@ -192,3 +192,79 @@ class StampUploadTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(CompanyDigitalStampSetting.get_solo().has_scan)
+
+
+class MyDigitalStampOverrideTests(TestCase):
+    def setUp(self):
+        self.user = Employee.objects.create_user(
+            login_code="555551",
+            password="test-pass-123",
+            first_name="Personal",
+            last_name="Stamp",
+            personal_email="personal.stamp@example.com",
+            role=Employee.Role.ADVOCATE,
+            status=Employee.Status.ACTIVE,
+        )
+        self.other = Employee.objects.create_user(
+            login_code="555552",
+            password="test-pass-123",
+            first_name="Company",
+            last_name="Stamp",
+            personal_email="company.stamp@example.com",
+            role=Employee.Role.ADVOCATE,
+            status=Employee.Status.ACTIVE,
+        )
+        self.client.force_login(self.user)
+        self.url = self.user.workspace_url(
+            "dashboard", "my-tools", "my-digital-stamp"
+        )
+        self.company = CompanyDigitalStampSetting.get_solo()
+        self.company.template = CompanyDigitalStampSetting.Template.SQUARE
+        self.company.save()
+        self.payload = {
+            "template": "oval",
+            "accent": "teal",
+            "show_firm_name": "on",
+            "show_status": "on",
+            "show_approver": "on",
+            "show_date": "on",
+        }
+
+    def test_opening_the_page_does_not_activate_an_override(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "currently carry the firm default stamp")
+        self.assertFalse(
+            EmployeeDigitalStampSetting.objects.filter(employee=self.user).exists()
+        )
+
+    def test_saving_creates_an_override_without_changing_the_company(self):
+        response = self.client.post(self.url, self.payload, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "overrides the firm default")
+        self.assertContains(response, "Use the firm default instead")
+        personal = EmployeeDigitalStampSetting.objects.get(employee=self.user)
+        self.assertEqual(personal.template, EmployeeDigitalStampSetting.Template.OVAL)
+        self.company.refresh_from_db()
+        self.assertEqual(
+            self.company.template, CompanyDigitalStampSetting.Template.SQUARE
+        )
+
+    def test_rendering_uses_only_the_signers_personal_stamp(self):
+        self.client.post(self.url, self.payload)
+        mine = stamp_render_context(signer=self.user)["digital_stamp"]
+        company = stamp_render_context(signer=self.other)["digital_stamp"]
+        self.assertIsInstance(mine, EmployeeDigitalStampSetting)
+        self.assertEqual(mine.employee, self.user)
+        self.assertIsInstance(company, CompanyDigitalStampSetting)
+
+    def test_reverting_restores_the_company_stamp(self):
+        self.client.post(self.url, self.payload)
+        response = self.client.post(
+            self.url, {"use_company_stamp": "1"}, follow=True
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            EmployeeDigitalStampSetting.objects.filter(employee=self.user).exists()
+        )
+        self.assertContains(response, "firm default stamp again")

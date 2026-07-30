@@ -1,0 +1,82 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--document-marker"
+  data-doc-marks-modal
+  data-doc-marks-page
+  data-doc-marks
+  data-document-id="{{ document.pk }}"
+  data-document-title="{{ document.title }}"
+  data-preview-kind="{{ document.preview.kind }}"
+  data-preview-url="{{ document.preview.url }}"
+  data-marks-id="document-mark-data"
+  data-save-url="{{ save_marks_url }}"
+  data-return-url="{{ return_url }}"
+  data-initial-kind="{{ initial_mark_kind }}"
+>
+  {% csrf_token %}
+  <header class="document-marker__head">
+    <div>
+      <p class="page-kicker">Actual document</p>
+      <h2>Place signature and stamp</h2>
+      <p class="page-lead">{{ document.title }}</p>
+    </div>
+    <div class="document-marker__head-actions">
+      {% if open_url %}
+      <a class="btn btn--quiet btn--inline" href="{{ open_url }}" target="_blank" rel="noopener">
+        Open original
+      </a>
+      {% endif %}
+      <a class="btn btn--quiet btn--inline" href="{{ return_url }}">Back to case</a>
+    </div>
+  </header>
+
+  <div class="doc-marks-toolbar document-marker__toolbar">
+    <label class="doc-mark-check">
+      <input type="checkbox" data-doc-marks-studio-toggle="signature">
+      <span>My signature</span>
+    </label>
+    <label class="doc-mark-check">
+      <input type="checkbox" data-doc-marks-studio-toggle="stamp">
+      <span>My stamp</span>
+    </label>
+    <p class="doc-marks-hint">
+      Drag directly on the document to position a mark. Drag its corner to resize.
+    </p>
+  </div>
+
+  <div class="document-marker__workspace">
+    <div class="doc-marks-stage document-marker__stage" data-doc-marks-stage>
+      <div class="doc-marks-sheet document-marker__sheet" data-doc-marks-sheet>
+        <div class="doc-marks-preview" data-doc-marks-preview></div>
+        <div class="doc-marks-layer" data-doc-marks-layer></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="document-marker__actions">
+    <p class="doc-marks-status" data-doc-marks-status role="status"></p>
+    <a class="btn btn--quiet" href="{{ return_url }}" data-doc-marks-cancel>Cancel</a>
+    <button type="button" class="btn btn--primary" data-doc-marks-save>
+      Save on document
+    </button>
+  </footer>
+</section>
+
+{{ document.my_marks|json_script:"document-mark-data" }}
+
+<template data-doc-mark-source="signature">
+  {% include "accounts/partials/company_digital_signature.html" %}
+</template>
+<template data-doc-mark-source="stamp">
+  {% include "accounts/partials/company_digital_stamp.html" %}
+</template>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/document-marks.js' %}" defer></script>
+{% endblock %}

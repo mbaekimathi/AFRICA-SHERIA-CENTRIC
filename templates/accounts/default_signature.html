@@ -9,32 +9,79 @@
   id="signature-page"
   data-template="{{ form.template.value|default:digital_signature.template }}"
   data-accent="{{ form.accent.value|default:digital_signature.accent }}"
+  data-role-title="{{ signature_role_title }}"
+  data-reveal-root
 >
-  <header class="page-intro">
+  <header class="page-intro signature-page__intro" data-reveal>
     <div class="page-intro__copy">
-      <p class="page-kicker">Document settings</p>
+      <p class="page-kicker">{% if is_personal_signature %}My tools{% else %}Document settings{% endif %}</p>
       <h2>{{ page_title }}</h2>
+      {% if is_personal_signature %}
       <p class="page-lead">
-        Choose a digital signature template for invoices and receipts. Firm name comes from
+        Sketch your own signature. Once saved it overrides the firm default
+        signature on every invoice and receipt you sign — nobody else's
+        documents change. Firm name comes from
         <a href="{{ company_profile_url }}">Company profile</a>;
-        the signatory name and date come from each document.
+        your name, role, and date come from each document.
       </p>
+      {% else %}
+      <p class="page-lead">
+        Sketch the firm signature used on invoices and receipts, then tune the
+        designed block behind it. Firm name comes from
+        <a href="{{ company_profile_url }}">Company profile</a>;
+        the signatory name, role, and date come from each document.
+      </p>
+      {% endif %}
     </div>
   </header>
 
-  <div class="letterhead-studio__current" aria-label="Current digital signature">
-    <p class="letterhead-studio__current-kicker">Active signature</p>
-    <p class="letterhead-studio__current-name" id="signature-current-label">
-      {{ current_template_label }}
-    </p>
-    <p class="letterhead-studio__current-meta">
-      <span>{{ signature_samples|length }} samples</span>
-      <span aria-hidden="true">·</span>
-      <span id="signature-current-accent">{{ digital_signature.get_accent_display }}</span>
-    </p>
+  <div class="signature-page__status" aria-label="Current digital signature" data-reveal>
+    <div class="signature-page__status-main">
+      <p class="signature-page__status-kicker">Active signature</p>
+      <p class="signature-page__status-name" id="signature-current-label">
+        {% if digital_signature_setting.signature_image %}
+        Handwritten mark
+        {% else %}
+        {{ current_template_label }}
+        {% endif %}
+      </p>
+      <p class="signature-page__status-meta">
+        <span>{{ signature_samples|length }} samples</span>
+        <span aria-hidden="true">·</span>
+        <span id="signature-current-accent">{{ digital_signature.get_accent_display }}</span>
+        {% if signature_role_title %}
+        <span aria-hidden="true">·</span>
+        <span>{{ signature_role_title }}</span>
+        {% endif %}
+        {% if digital_signature_setting.signature_image %}
+        <span aria-hidden="true">·</span>
+        <span>Drawn mark in use</span>
+        {% endif %}
+      </p>
+      {% if is_personal_signature %}
+      <p class="signature-page__scope">
+        {% if signature_override_active %}
+        This signature overrides the firm default on documents you sign.
+        {% else %}
+        Your documents currently carry the firm default signature. Save here to
+        sign with your own.
+        {% endif %}
+      </p>
+      {% endif %}
+    </div>
+    <div class="signature-page__status-preview" aria-hidden="true">
+      {% include "accounts/partials/company_digital_signature.html" %}
+    </div>
   </div>
 
-  <form method="post" class="letterhead-studio signature-studio" id="signature-form" novalidate>
+  <form
+    method="post"
+    class="letterhead-studio signature-studio"
+    id="signature-form"
+    enctype="multipart/form-data"
+    novalidate
+    data-reveal
+  >
     {% csrf_token %}
 
     {% if form.non_field_errors %}
@@ -44,10 +91,12 @@
     {% endif %}
 
     <div class="letterhead-studio__main">
-      <section class="letterhead-studio__samples" aria-labelledby="signature-samples-title">
+      {% include "accounts/partials/signature_pad.html" with signature_pad_copy="Sign once and every invoice and receipt carries your own hand." %}
+
+      <section class="letterhead-studio__samples signature-studio__panel" aria-labelledby="signature-samples-title">
         <div class="settings-panel__intro">
           <h3 id="signature-samples-title">Signature samples</h3>
-          <p>Select a starting design. The live preview updates as you choose.</p>
+          <p>Fallback designs when no handwritten mark is saved. The live preview updates as you choose.</p>
         </div>
         <div class="letterhead-sample-grid" role="radiogroup" aria-label="Signature samples">
           {% for sample in signature_samples %}
@@ -83,7 +132,7 @@
         {% endif %}
       </section>
 
-      <section class="letterhead-studio__accents" aria-labelledby="signature-accents-title">
+      <section class="letterhead-studio__accents signature-studio__panel" aria-labelledby="signature-accents-title">
         <div class="settings-panel__intro">
           <h3 id="signature-accents-title">Accent colour</h3>
           <p>Used for signature ink, rules, and monogram marks.</p>
@@ -113,10 +162,15 @@
         {% endif %}
       </section>
 
-      <section class="letterhead-studio__options" aria-labelledby="signature-options-title">
+      <section class="letterhead-studio__options signature-studio__panel" aria-labelledby="signature-options-title">
         <div class="settings-panel__intro">
           <h3 id="signature-options-title">Details</h3>
-          <p>Choose which lines appear in the signature block, and set the default title.</p>
+          <p>
+            Choose which lines appear in the signature block. The title /
+            capacity line is the signatory's role
+            {% if signature_role_title %}— yours reads
+            <strong>{{ signature_role_title }}</strong>{% endif %}.
+          </p>
         </div>
         <div class="letterhead-option-grid">
           <label class="letterhead-option">
@@ -129,7 +183,10 @@
           </label>
           <label class="letterhead-option">
             {{ form.show_title }}
-            <span>{{ form.show_title.label }}</span>
+            <span>
+              {{ form.show_title.label }}
+              {% if signature_role_title %}<em>{{ signature_role_title }}</em>{% endif %}
+            </span>
           </label>
           <label class="letterhead-option">
             {{ form.show_date }}
@@ -139,6 +196,7 @@
         <label class="form-field signature-title-field">
           <span class="form-label">{{ form.default_title.label }}</span>
           {{ form.default_title }}
+          <span class="field-hint">{{ form.default_title.help_text }}</span>
           {% if form.default_title.errors %}
           <span class="field-error">{{ form.default_title.errors.0 }}</span>
           {% endif %}
@@ -153,17 +211,55 @@
           <span class="settings-preview__badge">Realtime</span>
         </div>
         <div class="letterhead-preview__stage signature-preview__stage" id="signature-preview-stage">
-          <div class="signature-preview__canvas">
-            {% include "accounts/partials/company_digital_signature.html" %}
+          <div class="signature-preview__sheet">
+            <p class="signature-preview__sheet-kicker">Invoice footer</p>
+            <div class="signature-preview__canvas">
+              {% include "accounts/partials/company_digital_signature.html" %}
+            </div>
           </div>
         </div>
+        <p class="signature-preview__note">
+          This is how the mark appears under invoices and receipts.
+        </p>
       </div>
+
+      {% if is_personal_signature %}
+      <div class="letterhead-preview signature-preview signature-preview--company">
+        <div class="letterhead-preview__head">
+          <h3>Firm default</h3>
+          <span class="settings-preview__badge">
+            {% if signature_override_active %}Overridden{% else %}In use{% endif %}
+          </span>
+        </div>
+        <div class="letterhead-preview__stage signature-preview__stage">
+          <div class="signature-preview__sheet">
+            <div class="signature-preview__canvas">
+              {% include "accounts/partials/company_digital_signature.html" with digital_signature=company_signature_context.digital_signature signature_accent_hex=company_signature_context.signature_accent_hex %}
+            </div>
+          </div>
+        </div>
+        <p class="signature-preview__note">
+          What your documents fall back to when you have no signature saved.
+        </p>
+      </div>
+      {% endif %}
     </aside>
 
-    <div class="form-actions form-actions--start letterhead-studio__actions">
+    <div class="form-actions form-actions--start letterhead-studio__actions signature-studio__actions">
       <button type="submit" class="btn btn--primary btn--inline">
-        Save default signature
+        {% if is_personal_signature %}Save my signature{% else %}Save default signature{% endif %}
       </button>
+      {% if signature_override_active %}
+      <button
+        type="submit"
+        name="use_company_signature"
+        value="1"
+        class="btn btn--quiet btn--inline"
+        formnovalidate
+      >
+        Use the firm default instead
+      </button>
+      {% endif %}
     </div>
   </form>
 
@@ -179,5 +275,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/digital-signature.js' %}" defer></script>
+<script src="{% static 'js/digital-signature.js' %}?v=signature-ui-3" defer></script>
+<script src="{% static 'js/signature-pad.js' %}?v=signature-ui-3" defer></script>
 {% endblock %}

@@ -10,11 +10,27 @@
       {% include "accounts/partials/icon_3d.html" with icon="document" tone=5 size="lg" float=True extra_class="docs-hero__icon" %}
       <div class="page-intro__copy docs-hero__copy">
         <p class="page-kicker">{{ session_greeting }}</p>
-        <h2>{% if entity_kind == "case" %}Case documents{% else %}Matter documents{% endif %}</h2>
+        <h2>
+          {% if show_compose %}
+          Upload documents
+          {% elif entity_kind == "case" %}
+          Case documents
+          {% else %}
+          Matter documents
+          {% endif %}
+        </h2>
         <p class="page-lead">
+          {% if show_compose and entity_kind == "case" %}
+          Upload a file, create one in Google Drive, or start from a template.
+          Open, rename, download, and delete documents from the case page.
+          {% elif show_compose %}
+          Create, upload, rename, and open files linked to this matter.
+          Opens are tracked with views, edits, and time used.
+          {% else %}
           Create, upload, rename, and open files linked to this
           {% if entity_kind == "case" %}case{% else %}matter{% endif %}.
           Opens are tracked with views, edits, and time used.
+          {% endif %}
         </p>
       </div>
     </div>
@@ -51,6 +67,7 @@
   </div>
   {% endif %}
 
+  {% if show_compose %}
   {% if not task_access or task_access.allow_upload %}
   <div class="docs-compose">
     <div class="docs-compose__intro">
@@ -61,28 +78,35 @@
       </p>
     </div>
 
-    <div class="docs-actions">
-      <form
-        method="post"
-        class="docs-tile docs-tile--upload"
-        enctype="multipart/form-data"
-        novalidate
-        data-docs-upload
-      >
-        {% csrf_token %}
-        <input type="hidden" name="document_action" value="upload">
-        <div class="docs-tile__head">
+    <div class="docs-actions docs-actions--collapsible">
+      <details class="docs-tile docs-tile--upload" {% if upload_form.errors %}open{% endif %}>
+        <summary class="docs-tile__head">
           <span class="docs-tile__icon docs-tile__icon--upload" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
               <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
               <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
-          <div class="docs-tile__copy">
-            <h3>Upload existing file</h3>
-            <p>Upload a PDF, Word file, image or scan into this {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder.</p>
-          </div>
-        </div>
+          <span class="docs-tile__copy">
+            <strong class="docs-tile__title">Upload existing file</strong>
+            <span class="docs-tile__text">Upload a PDF, Word file, image or scan into this {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder.</span>
+          </span>
+          <span class="docs-tile__chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </summary>
+
+      <form
+        method="post"
+        class="docs-tile__form"
+        enctype="multipart/form-data"
+        novalidate
+        data-docs-upload
+      >
+        {% csrf_token %}
+        <input type="hidden" name="document_action" value="upload">
 
         {% if upload_form.non_field_errors %}
         <div class="form-alert" role="alert">
@@ -135,26 +159,34 @@
           </button>
         </div>
       </form>
+      </details>
 
-      <form
-        method="post"
-        class="docs-tile docs-tile--google"
-        novalidate
-        data-docs-create
-      >
-        {% csrf_token %}
-        <input type="hidden" name="document_action" value="create_google">
-        <div class="docs-tile__head">
+      <details class="docs-tile docs-tile--google" {% if create_form.errors %}open{% endif %}>
+        <summary class="docs-tile__head">
           <span class="docs-tile__icon docs-tile__icon--google" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M8.05 3.5 2.2 13.6h4.95l5.85-10.1H8.05Zm7.9 0-2.9 5.02 2.92 5.08h5.83L15.95 3.5ZM4.55 15.1 2.2 19.15c.45.95 1.2 1.7 2.15 2.2h15.3c.95-.5 1.7-1.25 2.15-2.2L19.45 15.1H4.55Z"/>
             </svg>
           </span>
-          <div class="docs-tile__copy">
-            <h3>Create with Google</h3>
-            <p>Create a Google Doc, Sheet, or Slides file in this {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder.</p>
-          </div>
-        </div>
+          <span class="docs-tile__copy">
+            <strong class="docs-tile__title">Create with Google</strong>
+            <span class="docs-tile__text">Create a Google Doc, Sheet, or Slides file in this {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder.</span>
+          </span>
+          <span class="docs-tile__chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </summary>
+
+      <form
+        method="post"
+        class="docs-tile__form"
+        novalidate
+        data-docs-create
+      >
+        {% csrf_token %}
+        <input type="hidden" name="document_action" value="create_google">
 
         {% if create_form.non_field_errors %}
         <div class="form-alert" role="alert">
@@ -263,17 +295,10 @@
           </button>
         </div>
       </form>
+      </details>
 
-      <form
-        method="post"
-        class="docs-tile docs-tile--template"
-        novalidate
-        data-docs-template
-      >
-        {% csrf_token %}
-        <input type="hidden" name="document_action" value="start_from_template">
-        {{ template_library.files|json_script:"template-library-files" }}
-        <div class="docs-tile__head">
+      <details class="docs-tile docs-tile--template" {% if template_form.errors %}open{% endif %}>
+        <summary class="docs-tile__head">
           <span class="docs-tile__icon docs-tile__icon--template" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
               <path d="M7 4.5h7.5L19 9v10.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
@@ -281,14 +306,30 @@
               <path d="M9 13h6M9 16.5h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
             </svg>
           </span>
-          <div class="docs-tile__copy">
-            <h3>Start from template</h3>
-            <p>
-              Copy a firm master from Templates and Forms into this
-              {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder.
-            </p>
-          </div>
-        </div>
+          <span class="docs-tile__copy">
+            <strong class="docs-tile__title">Start from template</strong>
+            <span class="docs-tile__text">
+              Duplicate a firm master from Templates and Forms into this
+              {% if entity_kind == "case" %}case{% else %}matter{% endif %} folder,
+              then edit the copy.
+            </span>
+          </span>
+          <span class="docs-tile__chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </summary>
+
+      <form
+        method="post"
+        class="docs-tile__form"
+        novalidate
+        data-docs-template
+      >
+        {% csrf_token %}
+        <input type="hidden" name="document_action" value="start_from_template">
+        {{ template_library.files|json_script:"template-library-files" }}
 
         {% if template_form.non_field_errors %}
         <div class="form-alert" role="alert">
@@ -334,7 +375,9 @@
         </div>
 
         <div class="docs-tile__foot">
-          <p class="docs-tile__hint">Copies the master — the original template stays unchanged.</p>
+          <p class="docs-tile__hint">
+            Creates a working copy and opens it for editing — the original template stays unchanged.
+          </p>
           <button
             type="submit"
             class="btn btn--docs-template"
@@ -344,10 +387,21 @@
           </button>
         </div>
       </form>
+      </details>
     </div>
   </div>
   {% endif %}
+  {% if entity_kind == "case" %}
+  <section class="docs-manage-note" aria-label="Manage documents">
+    <p>
+      Linked files are managed on the case page — open, download, rename, activity, and delete.
+    </p>
+    <a class="btn btn--quiet btn--inline" href="{{ detail_url }}#documents">{{ detail_label }}</a>
+  </section>
+  {% endif %}
+  {% endif %}
 
+  {% if not show_compose or entity_kind != "case" %}
   <section class="docs-library" id="docs-library" aria-labelledby="docs-library-title">
     <div class="docs-library__head">
       <div class="docs-library__title">
@@ -422,7 +476,7 @@
                   data-docs-open-track
                   data-target-url="{% if document.open_url %}{{ document.open_url }}{% elif document.local_file %}{{ document.local_file.url }}{% endif %}"
                 >
-                  View
+                  Open
                 </a>
                 {% endif %}
                 {% endif %}
@@ -496,8 +550,10 @@
     </div>
     {% endif %}
   </section>
+  {% endif %}
 </section>
 
+{% if not show_compose or entity_kind != "case" %}
 <dialog
   class="workspace-modal docs-edit-modal"
   id="docs-edit-modal"
@@ -562,6 +618,7 @@
     </div>
   </form>
 </dialog>
+{% endif %}
 
 <div
   class="docs-busy-overlay"

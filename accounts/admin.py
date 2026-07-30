@@ -50,6 +50,7 @@ from .models import (
     CompanyLetterheadSetting,
     CompanyDigitalStampSetting,
     CompanyDigitalSignatureSetting,
+    EmployeeDigitalSignatureSetting,
     EmployeeDigitalStampSetting,
 )
 
@@ -873,6 +874,27 @@ class CompanyDigitalSignatureSettingAdmin(admin.ModelAdmin):
         "updated_by",
     )
     readonly_fields = ("updated_at", "updated_by")
+
+
+@admin.register(EmployeeDigitalSignatureSetting)
+class EmployeeDigitalSignatureSettingAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee",
+        "template",
+        "accent",
+        "default_title",
+        "show_firm_name",
+        "show_name",
+        "show_title",
+        "show_date",
+        "updated_at",
+    )
+    search_fields = (
+        "employee__login_code",
+        "employee__first_name",
+        "employee__last_name",
+    )
+    readonly_fields = ("updated_at",)
 
 
 @admin.register(CompanyExpenseAccount)

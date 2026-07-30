@@ -520,6 +520,16 @@ urlpatterns = [
         name="download_document",
     ),
     path(
+        "<slug:role>/dashboard/documents/<int:document_id>/place-marks/",
+        views.PlaceDocumentMarksView.as_view(),
+        name="place_document_marks",
+    ),
+    path(
+        "<slug:role>/dashboard/documents/<int:document_id>/marks/",
+        views.DocumentMarksView.as_view(),
+        name="document_marks",
+    ),
+    path(
         "<slug:role>/dashboard/documents/<int:document_id>/sessions/"
         "<int:session_id>/ping/",
         views.DocumentSessionPingView.as_view(),

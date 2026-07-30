@@ -236,13 +236,12 @@
     </div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="documents">
     <div class="panel__head">
       <h3>Documents</h3>
       <p class="panel__hint">
         {% if documents %}{{ documents|length }} linked{% else %}None linked{% endif %}
-        · <a href="{{ documents_url }}">Open library</a>
-        · <a href="{{ upload_documents_url }}">Upload</a>
+        · <a href="{{ upload_documents_url }}">Upload documents</a>
       </p>
     </div>
     <div class="panel__body panel__body--case-docs">
@@ -270,15 +269,45 @@
             </p>
           </div>
           <div class="case-doc__actions">
-            {% if document.can_open %}
+            {% include "accounts/partials/case_document_actions.html" %}
+          </div>
+          {% if not task_access or task_access.allow_edit %}
+          {% url "accounts:place_document_marks" role=role_slug document_id=document.pk as place_marks_url %}
+          <div
+            class="case-doc__marks"
+            data-doc-mark-editor
+          >
+            <span class="case-doc__marks-label">Sign &amp; stamp</span>
+            <label class="doc-mark-check">
+              <input
+                type="checkbox"
+                data-doc-mark-editor-url="{{ place_marks_url }}?mark=signature"
+                {% if document.has_my_signature %}checked{% endif %}
+              >
+              <span>My signature</span>
+            </label>
+            <label class="doc-mark-check">
+              <input
+                type="checkbox"
+                data-doc-mark-editor-url="{{ place_marks_url }}?mark=stamp"
+                {% if document.has_my_stamp %}checked{% endif %}
+              >
+              <span>My stamp</span>
+            </label>
             <a
-              class="btn btn--primary btn--inline"
-              href="{{ document.tracked_open_url|default:document.open_url }}"
-              {% if document.open_url and not document.local_file %}target="_blank" rel="noopener"{% endif %}
-            >View</a>
-            {% else %}
-            <span class="case-doc__unavailable">Unavailable</span>
-            {% endif %}
+              class="btn btn--quiet btn--inline doc-mark-place"
+              href="{{ place_marks_url }}"
+            >
+              Place on document
+            </a>
+          </div>
+          {% endif %}
+          <div hidden data-docs-edit-source="{{ document.pk }}">
+            <span data-field="title">{{ document.title }}</span>
+            <span data-field="description">{{ document.description }}</span>
+            <span data-field="notes">{{ document.notes }}</span>
+            <span data-field="type">{{ document.type_label }}</span>
+            <span data-field="party_type">{{ document.party_type }}</span>
           </div>
         </li>
         {% endfor %}
@@ -299,10 +328,19 @@
     <a href="{{ list_url }}" class="btn btn--quiet">Back to active cases</a>
   </div>
 </section>
+
+{% if documents and edit_form %}
+{% include "accounts/partials/docs_edit_modal.html" %}
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
 {% if live_tasks %}
 <script src="{% static 'js/live-entity-task.js' %}?v=7" defer></script>
+{% endif %}
+{% if documents %}
+<script src="{% static 'js/docs-upload.js' %}?v=6" defer></script>
+<script src="{% static 'js/docs-open.js' %}" defer></script>
+<script src="{% static 'js/document-marks.js' %}" defer></script>
 {% endif %}
 {% endblock %}

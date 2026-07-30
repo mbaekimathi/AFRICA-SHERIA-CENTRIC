@@ -73,15 +73,17 @@ def invoice_marks_context(invoice, *, firm: FirmCompanyInformation | None = None
     date_display = _mark_date(invoice)
     stamp_ctx = stamp_render_context(
         firm=firm,
+        signer=signer,
         status=invoice.get_status_display(),
         status_key=invoice.status,
         label=_stamp_label(invoice),
-        name=firm.display_name,
+        name=signer_name or firm.display_name,
         date_display=date_display,
     )
     sig_ctx = signature_render_context(
         firm=firm,
         name=signer_name or firm.display_name,
+        signer=signer,
         date_display=date_display,
     )
     return {

@@ -1,0 +1,55 @@
+{# Shared Open / Download / Rename / Activity / Delete for case & matter detail lists. #}
+{% if document.can_open %}
+{% if not task_access or task_access.allow_view %}
+<a
+  class="btn btn--docs-open btn--inline"
+  href="{{ document.tracked_open_url|default:document.open_url }}"
+  data-docs-open-track
+  data-target-url="{% if document.open_url %}{{ document.open_url }}{% elif document.local_file %}{{ document.local_file.url }}{% endif %}"
+>
+  Open
+</a>
+{% endif %}
+{% else %}
+<span class="case-doc__unavailable">Unavailable</span>
+{% endif %}
+{% if document.can_download %}
+{% if not task_access or task_access.allow_download %}
+<a
+  class="btn btn--quiet btn--inline"
+  href="{% url 'accounts:download_document' role=role_slug document_id=document.pk %}"
+>
+  Download
+</a>
+{% endif %}
+{% endif %}
+{% if not task_access or task_access.allow_edit %}
+<button
+  type="button"
+  class="btn btn--quiet btn--inline"
+  data-docs-edit
+  data-id="{{ document.pk }}"
+>
+  Rename document
+</button>
+{% endif %}
+{% if document.activity_url %}
+<a
+  class="btn btn--quiet btn--inline"
+  href="{{ document.activity_url }}"
+>
+  Activity
+</a>
+{% endif %}
+{% if not task_access or task_access.allow_delete %}
+<form
+  method="post"
+  class="docs-item__remove-form"
+  onsubmit="return confirm('Remove “{{ document.title|escapejs }}”? It will also go to Drive trash.');"
+>
+  {% csrf_token %}
+  <input type="hidden" name="document_action" value="delete">
+  <input type="hidden" name="document_id" value="{{ document.pk }}">
+  <button type="submit" class="btn btn--quiet btn--inline docs-item__remove">Delete</button>
+</form>
+{% endif %}

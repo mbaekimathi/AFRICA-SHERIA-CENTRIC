@@ -1,0 +1,63 @@
+<li class="docs-file-list__item">
+  {% include "accounts/partials/drive_file_icon.html" with kind=item.file_kind|default:"file" %}
+  <div class="docs-file-list__main">
+    <strong>{{ item.name }}</strong>
+    <span class="docs-file-list__meta">
+      <span class="template-kind-badge template-kind-badge--{{ item.document_kind|default:'office' }}">
+        {{ item.document_kind_label|default:"Office document" }}
+      </span>
+      {% if item.type_label %}<span class="docs-file-list__type">{{ item.type_label }}</span>{% endif %}
+    </span>
+  </div>
+  <div class="docs-file-list__actions">
+    {% if item.open_url %}
+    <a
+      class="btn btn--quiet btn--inline is-lead"
+      href="{{ item.open_url }}"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {% if item.can_manage %}Edit{% else %}Open{% endif %}
+    </a>
+    {% endif %}
+    <form method="post" class="docs-file-list__action-form">
+      {% csrf_token %}
+      <input type="hidden" name="template_action" value="duplicate">
+      <input type="hidden" name="scope" value="{{ active_scope }}">
+      <input type="hidden" name="category" value="{{ active_category }}">
+      <input type="hidden" name="file_id" value="{{ item.id }}">
+      <input type="hidden" name="title" value="{{ item.name }} (copy)">
+      <button type="submit" class="btn btn--quiet btn--inline">Duplicate</button>
+    </form>
+    {% if item.can_manage %}
+    <button
+      type="button"
+      class="btn btn--quiet btn--inline"
+      data-template-rename
+      data-id="{{ item.id }}"
+      data-name="{{ item.name }}"
+      data-category="{{ active_category }}"
+    >
+      Rename
+    </button>
+    <form
+      method="post"
+      class="docs-file-list__action-form"
+      onsubmit="return confirm('Delete “{{ item.name|escapejs }}”? It will move to Google Drive trash.');"
+    >
+      {% csrf_token %}
+      <input type="hidden" name="template_action" value="delete">
+      <input type="hidden" name="scope" value="mine">
+      <input type="hidden" name="category" value="{{ active_category }}">
+      <input type="hidden" name="file_id" value="{{ item.id }}">
+      <button type="submit" class="btn btn--quiet btn--inline is-danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if item.can_manage %}
+  <div hidden data-template-rename-source="{{ item.id }}">
+    <span data-field="title">{{ item.name }}</span>
+    <span data-field="category">{{ active_category }}</span>
+  </div>
+  {% endif %}
+</li>

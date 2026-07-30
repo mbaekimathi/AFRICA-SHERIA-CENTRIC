@@ -1,0 +1,58 @@
+{# Drag-to-place studio for the session user's own stamp and signature. #}
+<dialog
+  class="workspace-modal doc-marks-modal"
+  id="doc-marks-modal"
+  aria-labelledby="doc-marks-heading"
+  data-doc-marks-modal
+>
+  <div class="workspace-modal__card doc-marks-card">
+    <header class="workspace-modal__head doc-marks-head">
+      <div>
+        <p class="doc-marks-eyebrow">Sign &amp; stamp</p>
+        <h2 id="doc-marks-heading">Place your marks</h2>
+        <p class="doc-marks-sub" data-doc-marks-title>Document</p>
+      </div>
+      <button type="button" class="btn btn--quiet btn--inline" data-doc-marks-close aria-label="Close">
+        Close
+      </button>
+    </header>
+
+    <div class="doc-marks-toolbar">
+      <label class="doc-mark-check">
+        <input type="checkbox" data-doc-marks-studio-toggle="signature">
+        <span>My signature</span>
+      </label>
+      <label class="doc-mark-check">
+        <input type="checkbox" data-doc-marks-studio-toggle="stamp">
+        <span>My stamp</span>
+      </label>
+      <p class="doc-marks-hint">
+        Drag a mark to position it, drag its corner to resize. Marks are
+        transparent, so they sit on the page like real ink.
+      </p>
+    </div>
+
+    <div class="workspace-modal__body doc-marks-body">
+      <div class="doc-marks-stage" data-doc-marks-stage>
+        <div class="doc-marks-sheet" data-doc-marks-sheet>
+          <div class="doc-marks-preview" data-doc-marks-preview></div>
+          <div class="doc-marks-layer" data-doc-marks-layer></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="workspace-modal__actions doc-marks-actions">
+      <p class="doc-marks-status" data-doc-marks-status role="status"></p>
+      <button type="button" class="btn btn--quiet" data-doc-marks-cancel>Cancel</button>
+      <button type="button" class="btn btn--primary" data-doc-marks-save>Save placement</button>
+    </div>
+  </div>
+</dialog>
+
+{# Rendered once with the session user's own marks, cloned onto the sheet. #}
+<template data-doc-mark-source="signature">
+  {% include "accounts/partials/company_digital_signature.html" %}
+</template>
+<template data-doc-mark-source="stamp">
+  {% include "accounts/partials/company_digital_stamp.html" %}
+</template>

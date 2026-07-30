@@ -4,6 +4,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   initDropzone();
   initEditModal();
+  initTemplateRenameModal();
+  initTemplatesScopeSelect();
   initLetterheadToggle();
   initSubmitLocks();
   initTemplatePicker();
@@ -329,4 +331,64 @@ function initTemplatePicker() {
   });
 
   rebuild();
+}
+
+function initTemplatesScopeSelect() {
+  const select = document.querySelector("select[data-templates-scope]");
+  if (!select) return;
+  select.addEventListener("change", () => {
+    const scope = (select.value || "company").trim() || "company";
+    const params = new URLSearchParams(window.location.search);
+    params.set("scope", scope);
+    if (!params.get("category")) params.set("category", "letters");
+    window.location.search = params.toString();
+  });
+}
+
+function initTemplateRenameModal() {
+  const modal = document.getElementById("template-rename-modal");
+  if (!modal) return;
+
+  const idInput = document.getElementById("template-rename-id");
+  const categoryInput = document.getElementById("template-rename-category");
+  const nameInput = document.getElementById("template-rename-name");
+  const closeBtn = document.getElementById("template-rename-close");
+  const cancelBtn = document.getElementById("template-rename-cancel");
+
+  const openModal = () => {
+    if (typeof modal.showModal === "function") {
+      if (!modal.open) modal.showModal();
+    } else {
+      modal.setAttribute("open", "");
+    }
+  };
+
+  const closeModal = () => {
+    if (typeof modal.close === "function") {
+      modal.close();
+    } else {
+      modal.removeAttribute("open");
+    }
+  };
+
+  document.querySelectorAll("[data-template-rename]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const fileId = button.getAttribute("data-id") || "";
+      const name = button.getAttribute("data-name") || "";
+      const category = button.getAttribute("data-category") || "";
+      if (!fileId || !idInput || !nameInput) return;
+      idInput.value = fileId;
+      if (categoryInput) categoryInput.value = category;
+      nameInput.value = name;
+      openModal();
+      nameInput.focus();
+      nameInput.select();
+    });
+  });
+
+  closeBtn?.addEventListener("click", closeModal);
+  cancelBtn?.addEventListener("click", closeModal);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeModal();
+  });
 }

@@ -139,7 +139,7 @@
     {% endif %}
 
     <div class="invoice-sheet__stamps-row">
-      {% include "accounts/partials/company_digital_signature.html" with signature_name=payment.recorded_by.get_full_name signature_title=digital_signature.default_title signature_date=payment.paid_at|date:"d M Y" %}
+      {% include "accounts/partials/company_digital_signature.html" with signature_name=payment.recorded_by.get_full_name signature_title=payment.recorded_by.get_role_display|default:digital_signature.default_title signature_date=payment.paid_at|date:"d M Y" %}
       {% include "accounts/partials/company_digital_stamp.html" with stamp_status="Paid" stamp_status_key="paid" stamp_label="Issued by" stamp_name=firm.display_name stamp_date=payment.paid_at|date:"d M Y" %}
     </div>
 

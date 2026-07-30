@@ -16,13 +16,17 @@
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
         Choose your personal digital stamp. The stamp shows your signed-in name
-        (<strong>{{ signer_name }}</strong>), with optional firm name and document status.
+        (<strong>{{ signer_name }}</strong>), with optional firm name and
+        document status. Once saved, it overrides the firm default on every
+        document you sign without changing anyone else's stamp.
       </p>
     </div>
   </header>
 
   <div class="letterhead-studio__current" aria-label="Current personal digital stamp">
-    <p class="letterhead-studio__current-kicker">Active stamp</p>
+    <p class="letterhead-studio__current-kicker">
+      {% if stamp_override_active %}Active personal stamp{% else %}Personal stamp preview{% endif %}
+    </p>
     <p class="letterhead-studio__current-name" id="stamp-current-label">
       {{ current_template_label }}
     </p>
@@ -32,6 +36,14 @@
       <span id="stamp-current-accent">{{ digital_stamp.get_accent_display }}</span>
       <span aria-hidden="true">·</span>
       <span>{{ signer_name }}</span>
+    </p>
+    <p class="signature-page__scope">
+      {% if stamp_override_active %}
+      This stamp overrides the firm default on documents you sign.
+      {% else %}
+      Your documents currently carry the firm default stamp. Save here to use
+      your own.
+      {% endif %}
     </p>
   </div>
 
@@ -51,46 +63,6 @@
     {% endif %}
 
     <div class="letterhead-studio__main">
-      {% include "accounts/partials/stamp_scan_upload.html" with stamp_setting=digital_stamp_setting stamp_owner_copy="Already have a physical stamp of your own?" %}
-
-      <section class="letterhead-studio__samples" aria-labelledby="stamp-samples-title">
-        <div class="settings-panel__intro">
-          <h3 id="stamp-samples-title">Stamp samples</h3>
-          <p>Select a starting design. The live preview updates as you choose.</p>
-        </div>
-        <div class="letterhead-sample-grid" role="radiogroup" aria-label="Stamp samples">
-          {% for sample in stamp_samples %}
-          <label
-            class="letterhead-sample-card stamp-sample-card stamp-sample-card--{{ sample.value }}{% if form.template.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-sample-card--current{% endif %}"
-          >
-            <input
-              type="radio"
-              name="{{ form.template.name }}"
-              value="{{ sample.value }}"
-              {% if form.template.value == sample.value %}checked{% endif %}
-              data-stamp-template="{{ sample.value }}"
-              data-stamp-label="{{ sample.label }}"
-            >
-            {% if sample.is_current %}
-            <span class="letterhead-sample-card__badge">Active</span>
-            {% endif %}
-            <span class="letterhead-sample-card__stage" aria-hidden="true">
-              <span class="stamp-mini stamp-mini--{{ sample.value }}">
-                <span class="stamp-mini__mark"></span>
-              </span>
-            </span>
-            <span class="letterhead-sample-card__meta">
-              <span class="letterhead-sample-card__name">{{ sample.label }}</span>
-              <span class="letterhead-sample-card__blurb">{{ sample.blurb }}</span>
-            </span>
-          </label>
-          {% endfor %}
-        </div>
-        {% if form.template.errors %}
-        <p class="field-error">{{ form.template.errors.0 }}</p>
-        {% endif %}
-      </section>
-
       <section class="letterhead-studio__accents" aria-labelledby="stamp-accents-title">
         <div class="settings-panel__intro">
           <h3 id="stamp-accents-title">Accent colour</h3>
@@ -145,6 +117,46 @@
           </label>
         </div>
       </section>
+
+      {% include "accounts/partials/stamp_scan_upload.html" with stamp_setting=digital_stamp_setting stamp_owner_copy="Already have a physical stamp of your own?" %}
+
+      <section class="letterhead-studio__samples" aria-labelledby="stamp-samples-title">
+        <div class="settings-panel__intro">
+          <h3 id="stamp-samples-title">Stamp samples</h3>
+          <p>Select a starting design. The live preview updates as you choose.</p>
+        </div>
+        <div class="letterhead-sample-grid" role="radiogroup" aria-label="Stamp samples">
+          {% for sample in stamp_samples %}
+          <label
+            class="letterhead-sample-card stamp-sample-card stamp-sample-card--{{ sample.value }}{% if form.template.value == sample.value %} is-selected{% endif %}{% if sample.is_current %} letterhead-sample-card--current{% endif %}"
+          >
+            <input
+              type="radio"
+              name="{{ form.template.name }}"
+              value="{{ sample.value }}"
+              {% if form.template.value == sample.value %}checked{% endif %}
+              data-stamp-template="{{ sample.value }}"
+              data-stamp-label="{{ sample.label }}"
+            >
+            {% if sample.is_current %}
+            <span class="letterhead-sample-card__badge">Active</span>
+            {% endif %}
+            <span class="letterhead-sample-card__stage" aria-hidden="true">
+              <span class="stamp-mini stamp-mini--{{ sample.value }}">
+                <span class="stamp-mini__mark"></span>
+              </span>
+            </span>
+            <span class="letterhead-sample-card__meta">
+              <span class="letterhead-sample-card__name">{{ sample.label }}</span>
+              <span class="letterhead-sample-card__blurb">{{ sample.blurb }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% if form.template.errors %}
+        <p class="field-error">{{ form.template.errors.0 }}</p>
+        {% endif %}
+      </section>
     </div>
 
     <aside class="letterhead-studio__aside" aria-label="Live stamp preview">
@@ -159,12 +171,44 @@
           </div>
         </div>
       </div>
+
+      <div class="letterhead-preview stamp-preview stamp-preview--company">
+        <div class="letterhead-preview__head">
+          <h3>Firm default</h3>
+          <span class="settings-preview__badge">
+            {% if stamp_override_active %}Overridden{% else %}In use{% endif %}
+          </span>
+        </div>
+        <div class="letterhead-preview__stage stamp-preview__stage">
+          <div class="stamp-preview__canvas">
+            {% include "accounts/partials/company_digital_stamp.html" with digital_stamp=company_stamp_context.digital_stamp stamp_accent_hex=company_stamp_context.stamp_accent_hex stamp_status=company_stamp_context.stamp_status stamp_status_key=company_stamp_context.stamp_status_key stamp_label=company_stamp_context.stamp_label stamp_name=company_stamp_context.stamp_name stamp_date=company_stamp_context.stamp_date stamp_address=company_stamp_context.stamp_address %}
+          </div>
+        </div>
+        <p class="signature-preview__note">
+          What your documents use when you have no personal stamp saved.
+        </p>
+      </div>
     </aside>
 
     <div class="form-actions form-actions--start letterhead-studio__actions">
-      <button type="submit" class="btn btn--primary btn--inline">
+      <button
+        type="submit"
+        class="btn btn--primary btn--inline"
+        data-save-upload-label="Save uploaded stamp"
+      >
         Save my digital stamp
       </button>
+      {% if stamp_override_active %}
+      <button
+        type="submit"
+        name="use_company_stamp"
+        value="1"
+        class="btn btn--quiet btn--inline"
+        formnovalidate
+      >
+        Use the firm default instead
+      </button>
+      {% endif %}
     </div>
   </form>
 
@@ -177,5 +221,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/digital-stamp.js' %}" defer></script>
+<script src="{% static 'js/digital-stamp.js' %}?v=stamp-preview-2" defer></script>
 {% endblock %}

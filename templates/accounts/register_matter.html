@@ -49,6 +49,42 @@
     </div>
     {% endif %}
 
+    {% if is_edit and edit_mode == "active" %}
+    {% if form.status or form.assigned_to %}
+    <section class="register-section" aria-labelledby="section-matter-management">
+      <header class="register-section__head">
+        <span class="register-section__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <circle cx="9" cy="8" r="2.75" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M4.75 18.25v-.35a4.25 4.25 0 0 1 8.5 0v.35M15.5 9.25h4M17.5 7.25v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div>
+          <h3 id="section-matter-management">Status &amp; allocation</h3>
+          <p>Manage the matter lifecycle and responsible employee</p>
+        </div>
+      </header>
+      <div class="register-section__body register-grid register-grid--2">
+        {% if form.status %}
+        <div class="form-field">
+          <label for="{{ form.status.id_for_label }}">Matter status</label>
+          {{ form.status }}
+          {% if form.status.help_text %}<p class="field-hint">{{ form.status.help_text }}</p>{% endif %}
+          {% if form.status.errors %}<span class="field-error">{{ form.status.errors.0 }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% if form.assigned_to %}
+        <div class="form-field">
+          <label for="{{ form.assigned_to.id_for_label }}">Allocated to</label>
+          {{ form.assigned_to }}
+          {% if form.assigned_to.errors %}<span class="field-error">{{ form.assigned_to.errors.0 }}</span>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+    {% endif %}
+
     <section class="register-section" aria-labelledby="section-opened">
       <header class="register-section__head">
         <span class="register-section__icon" aria-hidden="true">

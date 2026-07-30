@@ -7,6 +7,7 @@
   class="page page--company-accounts"
   id="company-accounts-page"
   {% if open_register_modal %}data-open-register="1"{% endif %}
+  {% if open_edit_modal %}data-open-edit="1"{% endif %}
   {% if open_topup_modal %}data-open-topup="1"{% endif %}
   {% if open_expense_modal %}data-open-expense="1"{% endif %}
 >
@@ -59,6 +60,7 @@
               <th scope="col">Bank details</th>
               <th scope="col">Payment methods</th>
               <th scope="col">Current balance</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -96,6 +98,30 @@
               </td>
               <td>
                 <strong>KES {{ account.balance|floatformat:2 }}</strong>
+              </td>
+              <td>
+                <div class="page-intro__actions">
+                  <button
+                    type="button"
+                    class="btn btn--quiet btn--inline js-edit-company-account"
+                    data-account-id="{{ account.pk }}"
+                    data-account-name="{{ account.name }}"
+                    data-bank-name="{{ account.bank_name }}"
+                    data-bank-account-number="{{ account.bank_account_number }}"
+                    data-description="{{ account.description }}"
+                    data-payment-methods="{{ account.payment_methods|join:',' }}"
+                  >
+                    Edit
+                  </button>
+                  {% if not account.is_system_default %}
+                  <form method="post" class="js-delete-company-account-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete-company-account">
+                    <input type="hidden" name="account_id" value="{{ account.pk }}">
+                    <button type="submit" class="btn btn--danger btn--inline">Delete</button>
+                  </form>
+                  {% endif %}
+                </div>
               </td>
             </tr>
             {% endfor %}
@@ -301,6 +327,86 @@
     </div>
   </dialog>
 
+  <dialog class="workspace-modal" id="edit-expense-account-modal">
+    <div class="workspace-modal__card">
+      <header class="workspace-modal__head">
+        <h2>Edit company account</h2>
+        <p>Update this account's name, bank details, description, and payment methods.</p>
+      </header>
+      <form method="post" class="workspace-form" id="edit-company-account-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="edit-company-account">
+        <input type="hidden" name="account_id" id="edit-company-account-id" value="{% if edit_account %}{{ edit_account.pk }}{% endif %}">
+        <div class="workspace-modal__body">
+          {% if edit_form.non_field_errors %}
+          <div class="form-alert" role="alert">
+            {% for error in edit_form.non_field_errors %}{{ error }}{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="form-field">
+            <label for="{{ edit_form.name.id_for_label }}">
+              {{ edit_form.name.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ edit_form.name }}
+            {% if edit_form.name.errors %}
+            <p class="field-error">{{ edit_form.name.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ edit_form.bank_name.id_for_label }}">
+              {{ edit_form.bank_name.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ edit_form.bank_name }}
+            {% if edit_form.bank_name.errors %}
+            <p class="field-error">{{ edit_form.bank_name.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ edit_form.bank_account_number.id_for_label }}">
+              {{ edit_form.bank_account_number.label }} <span aria-hidden="true">*</span>
+            </label>
+            {{ edit_form.bank_account_number }}
+            {% if edit_form.bank_account_number.errors %}
+            <p class="field-error">{{ edit_form.bank_account_number.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="{{ edit_form.description.id_for_label }}">{{ edit_form.description.label }}</label>
+            {{ edit_form.description }}
+            {% if edit_form.description.errors %}
+            <p class="field-error">{{ edit_form.description.errors.0 }}</p>
+            {% endif %}
+          </div>
+
+          <fieldset class="form-field">
+            <legend>{{ edit_form.payment_methods.label }} <span aria-hidden="true">*</span></legend>
+            <div class="finance-method-grid company-account-method-grid" role="group" aria-label="{{ edit_form.payment_methods.label }}">
+              {% for checkbox in edit_form.payment_methods %}
+              <label class="settings-toggle" for="{{ checkbox.id_for_label }}">
+                <span class="settings-toggle__control">{{ checkbox.tag }}</span>
+                <span class="settings-toggle__copy">
+                  <strong>{{ checkbox.choice_label }}</strong>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% if edit_form.payment_methods.errors %}
+            <p class="field-error">{{ edit_form.payment_methods.errors.0 }}</p>
+            {% endif %}
+          </fieldset>
+        </div>
+        <div class="workspace-modal__actions">
+          <button type="button" class="btn btn--quiet" id="edit-account-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
   <dialog class="workspace-modal" id="topup-expense-account-modal">
     <div class="workspace-modal__card">
       <header class="workspace-modal__head">
@@ -489,6 +595,7 @@
   "use strict";
   var page = document.getElementById("company-accounts-page");
   var registerModal = document.getElementById("register-expense-account-modal");
+  var editModal = document.getElementById("edit-expense-account-modal");
   var topupModal = document.getElementById("topup-expense-account-modal");
   var expenseModal = document.getElementById("pay-company-expense-modal");
 
@@ -520,10 +627,41 @@
   bindOpeners(".js-open-pay-expense", expenseModal);
   bindOpeners('a[href="#pay-company-expense"]', expenseModal);
 
+  var editForm = document.getElementById("edit-company-account-form");
+  document.querySelectorAll(".js-edit-company-account").forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (!editForm) return;
+      document.getElementById("edit-company-account-id").value = button.dataset.accountId || "";
+      editForm.elements["edit-name"].value = button.dataset.accountName || "";
+      editForm.elements["edit-bank_name"].value = button.dataset.bankName || "";
+      editForm.elements["edit-bank_account_number"].value = button.dataset.bankAccountNumber || "";
+      editForm.elements["edit-description"].value = button.dataset.description || "";
+      var methods = (button.dataset.paymentMethods || "").split(",");
+      editForm.querySelectorAll('input[name="edit-payment_methods"]').forEach(function (checkbox) {
+        checkbox.checked = methods.indexOf(checkbox.value) !== -1;
+      });
+      openDialog(editModal);
+    });
+  });
+
+  document.querySelectorAll(".js-delete-company-account-form").forEach(function (form) {
+    form.addEventListener("submit", function (event) {
+      if (!window.confirm("Delete this account? Its topups and expense history will also be deleted. This cannot be undone.")) {
+        event.preventDefault();
+      }
+    });
+  });
+
   var registerCancel = document.getElementById("register-account-cancel");
   if (registerCancel) {
     registerCancel.addEventListener("click", function () {
       closeDialog(registerModal, "#register-expense-account");
+    });
+  }
+  var editCancel = document.getElementById("edit-account-cancel");
+  if (editCancel) {
+    editCancel.addEventListener("click", function () {
+      closeDialog(editModal);
     });
   }
   var topupCancel = document.getElementById("topup-account-cancel");
@@ -544,6 +682,11 @@
       if (event.target === registerModal) {
         closeDialog(registerModal, "#register-expense-account");
       }
+    });
+  }
+  if (editModal) {
+    editModal.addEventListener("click", function (event) {
+      if (event.target === editModal) closeDialog(editModal);
     });
   }
   if (topupModal) {
@@ -573,8 +716,21 @@
       });
     });
   }
+  if (editModal) {
+    editModal.querySelectorAll(".form-input--uppercase").forEach(function (input) {
+      input.addEventListener("input", function () {
+        var start = input.selectionStart;
+        var end = input.selectionEnd;
+        input.value = input.value.toUpperCase();
+        if (typeof start === "number" && typeof end === "number") {
+          input.setSelectionRange(start, end);
+        }
+      });
+    });
+  }
 
   if (page && page.dataset.openRegister === "1") openDialog(registerModal);
+  if (page && page.dataset.openEdit === "1") openDialog(editModal);
   if (page && page.dataset.openTopup === "1") openDialog(topupModal);
   if (page && page.dataset.openExpense === "1") openDialog(expenseModal);
   if (window.location.hash === "#register-expense-account") openDialog(registerModal);

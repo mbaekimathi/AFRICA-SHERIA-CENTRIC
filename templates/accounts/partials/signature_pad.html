@@ -1,0 +1,121 @@
+{# Sketch a signature. Expects: signature_form, signature_setting, signature_pad_copy #}
+<section
+  class="signature-pad{% if signature_setting.signature_image %} signature-pad--active{% endif %}"
+  id="signature-pad"
+  aria-labelledby="signature-pad-title"
+  data-signature-pad
+>
+  <div class="signature-pad__intro">
+    <div class="signature-pad__intro-copy">
+      <p class="signature-pad__eyebrow">Handwritten mark</p>
+      <h3 id="signature-pad-title">Sketch your signature</h3>
+      <p>
+        {{ signature_pad_copy }} Draw with a mouse, trackpad, or finger. On
+        documents this replaces the designed signature block.
+      </p>
+    </div>
+    <span
+      class="signature-pad__status{% if signature_setting.signature_image %} is-live{% endif %}"
+      data-signature-kicker
+    >
+      {% if signature_setting.signature_image %}In use{% else %}Nothing signed yet{% endif %}
+    </span>
+  </div>
+
+  <div class="signature-pad__body">
+    <div class="signature-pad__stage">
+      <div class="signature-pad__canvas-wrap">
+        <canvas
+          class="signature-pad__canvas"
+          data-signature-canvas
+          aria-label="Signature drawing area"
+          role="img"
+        ></canvas>
+        <span class="signature-pad__baseline" aria-hidden="true"></span>
+        <span class="signature-pad__cue" data-signature-cue aria-hidden="true">
+          Sign here
+        </span>
+      </div>
+
+      <div class="signature-pad__toolbar">
+        <div class="signature-pad__pens" role="group" aria-label="Pen thickness">
+          {% for pen in signature_pens %}
+          <button
+            type="button"
+            class="signature-pad__pen{% if pen.is_default %} is-active{% endif %}"
+            data-signature-width="{{ pen.width }}"
+            aria-pressed="{% if pen.is_default %}true{% else %}false{% endif %}"
+          >
+            <span class="signature-pad__pen-dot" style="--pen-size: {{ pen.width }}px;" aria-hidden="true"></span>
+            <span class="signature-pad__pen-label">{{ pen.label }}</span>
+          </button>
+          {% endfor %}
+        </div>
+        <div class="signature-pad__actions">
+          <button type="button" class="signature-pad__tool-btn" data-signature-undo>
+            Undo
+          </button>
+          <button type="button" class="signature-pad__tool-btn" data-signature-clear>
+            Clear
+          </button>
+        </div>
+      </div>
+
+      {{ signature_form.signature_drawing }}
+      {% if signature_form.signature_drawing.errors %}
+      <p class="field-error">{{ signature_form.signature_drawing.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <aside class="signature-pad__side" aria-label="Saved signature preview">
+      <p class="signature-pad__side-kicker">Saved mark</p>
+      <div class="signature-pad__paper">
+        {% if signature_setting.signature_image %}
+        <img
+          class="signature-pad__image"
+          src="{{ signature_setting.signature_image.url }}"
+          alt="Saved signature"
+          data-signature-preview
+        >
+        {% else %}
+        <img class="signature-pad__image" alt="" hidden data-signature-preview>
+        <p class="signature-pad__placeholder" data-signature-placeholder>
+          Your signature will show here
+        </p>
+        {% endif %}
+      </div>
+
+      <label class="signature-pad__drop" for="{{ signature_form.signature_image.id_for_label }}">
+        <span class="signature-pad__drop-visual" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+            <path d="M7.5 17.5a4.5 4.5 0 0 1-.35-8.98 6 6 0 0 1 11.55-1.35A4 4 0 0 1 18.5 17.5H7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M12 15.25V9.5M12 9.5 9.75 11.75M12 9.5l2.25 2.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="signature-pad__drop-copy">
+          <strong data-signature-upload-name>Upload a signature instead</strong>
+          <span>PNG or JPG, up to 5 MB</span>
+        </span>
+        {{ signature_form.signature_image }}
+      </label>
+      {% if signature_form.signature_image.errors %}
+      <p class="field-error">{{ signature_form.signature_image.errors.0 }}</p>
+      {% endif %}
+
+      {% if signature_setting.signature_image %}
+      <label class="letterhead-option letterhead-option--danger">
+        {{ signature_form.clear_signature_image }}
+        <span>
+          {{ signature_form.clear_signature_image.label }}
+          <em>Return to the designed signature block.</em>
+        </span>
+      </label>
+      {% endif %}
+
+      <p class="signature-pad__hint">
+        Sign slowly for a cleaner line. Paper background is removed so only the
+        ink appears on documents. Save with the button below.
+      </p>
+    </aside>
+  </div>
+</section>

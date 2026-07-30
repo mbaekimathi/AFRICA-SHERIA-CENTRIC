@@ -490,11 +490,63 @@ def build_invoice_pdf(invoice, firm) -> bytes:
         sig_name = marks.get("signature_name") or ""
         sig_title = marks.get("signature_title") or ""
         sig_date = marks.get("signature_date") or ""
-        left_mark = [
-            _p("SIGNATURE", label),
-            Spacer(1, 1.5 * mm),
-            _p(sig_name or "—", ParagraphStyle("SigName", parent=body, fontName="Helvetica-Oblique", fontSize=11)),
-        ]
+        sig_setting = marks.get("digital_signature")
+        left_mark = [_p("SIGNATURE", label), Spacer(1, 1.5 * mm)]
+
+        drawn_path = ""
+        if (
+            sig_setting is not None
+            and getattr(sig_setting, "has_drawing", False)
+            and getattr(sig_setting, "signature_image", None)
+        ):
+            try:
+                drawn_path = sig_setting.signature_image.path
+            except (ValueError, FileNotFoundError, OSError):
+                drawn_path = ""
+
+        if drawn_path:
+            from reportlab.platypus import Image as RLImage
+
+            try:
+                ink = RLImage(drawn_path)
+                ink.drawWidth = 48 * mm
+                ink.drawHeight = 18 * mm
+                # Keep aspect ratio within the reserved box.
+                iw, ih = ink.imageWidth, ink.imageHeight
+                if iw and ih:
+                    scale = min((48 * mm) / iw, (18 * mm) / ih)
+                    ink.drawWidth = iw * scale
+                    ink.drawHeight = ih * scale
+                ink.hAlign = "LEFT"
+                left_mark.append(ink)
+                left_mark.append(Spacer(1, 1 * mm))
+                if sig_name and getattr(sig_setting, "show_name", True):
+                    left_mark.append(_p(sig_name, muted_body))
+            except Exception:
+                left_mark.append(
+                    _p(
+                        sig_name or "—",
+                        ParagraphStyle(
+                            "SigName",
+                            parent=body,
+                            fontName="Helvetica-Oblique",
+                            fontSize=11,
+                        ),
+                    )
+                )
+        else:
+            left_mark.append(
+                _p(
+                    sig_name or "—",
+                    ParagraphStyle(
+                        "SigName",
+                        parent=body,
+                        fontName="Helvetica-Oblique",
+                        fontSize=11,
+                    ),
+                )
+            )
+
         if sig_title:
             left_mark.append(_p(sig_title, muted_body))
         if sig_date:

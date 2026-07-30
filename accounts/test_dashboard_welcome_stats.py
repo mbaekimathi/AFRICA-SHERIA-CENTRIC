@@ -6,11 +6,11 @@ from django.utils import timezone
 from accounts.models import (
     CaseTask,
     Client,
-    CourtAttendance,
     Employee,
     LitigationCase,
 )
 from accounts.workspace import (
+    firm_admin_welcome_stats,
     matter_desk_welcome_stats,
     set_employee_activity_permission,
 )
@@ -63,22 +63,6 @@ class MatterDeskWelcomeStatsTests(TestCase):
             status=LitigationCase.Status.ACTIVE,
             assigned_to=self.other,
         )
-        CourtAttendance.objects.create(
-            case=self.own_case,
-            activity_type="Mention",
-            judicial_officer="Hon. Test",
-            attendance_date=today - timedelta(days=7),
-            next_court_date=today + timedelta(days=14),
-            recorded_by=self.viewer,
-        )
-        CourtAttendance.objects.create(
-            case=self.other_case,
-            activity_type="Hearing",
-            judicial_officer="Hon. Test",
-            attendance_date=today - timedelta(days=3),
-            next_court_date=today + timedelta(days=21),
-            recorded_by=self.other,
-        )
         CaseTask.objects.create(
             case=self.own_case,
             assignee=self.viewer,
@@ -102,7 +86,7 @@ class MatterDeskWelcomeStatsTests(TestCase):
     def test_view_all_counts_every_visible_matter(self):
         stats = self._stat_map(self.viewer)
         self.assertEqual(stats["my-matters"], 2)
-        self.assertEqual(stats["upcoming-hearings"], 2)
+        self.assertEqual(stats["matters-this-week"], 2)
         # Tasks default to assignee-only (View all off).
         self.assertEqual(stats["tasks-and-progress"], 1)
 
@@ -117,7 +101,7 @@ class MatterDeskWelcomeStatsTests(TestCase):
         )
         stats = self._stat_map(self.viewer)
         self.assertEqual(stats["my-matters"], 1)
-        self.assertEqual(stats["upcoming-hearings"], 1)
+        self.assertEqual(stats["matters-this-week"], 1)
         self.assertEqual(stats["tasks-and-progress"], 1)
 
     def test_all_metric_cards_are_interactive(self):
@@ -128,9 +112,41 @@ class MatterDeskWelcomeStatsTests(TestCase):
             self.assertIn("items", card)
             self.assertTrue(card.get("view_all_url"))
 
-    def test_upcoming_hearings_dropdown_lists_visible_items(self):
+    def test_matters_this_week_dropdown_lists_visible_items(self):
         cards = {card["key"]: card for card in matter_desk_welcome_stats(self.viewer)}
-        hearings = cards["upcoming-hearings"]
-        self.assertEqual(hearings["value"], 2)
-        self.assertEqual(len(hearings["items"]), 2)
-        self.assertTrue(all(item["url"] for item in hearings["items"]))
+        matters = cards["matters-this-week"]
+        self.assertEqual(matters["value"], 2)
+        self.assertEqual(len(matters["items"]), 2)
+        self.assertTrue(all(item["url"] for item in matters["items"]))
+
+
+class FirmAdminWelcomeStatsTests(TestCase):
+    def test_pending_approvals_support_models_with_date_joined(self):
+        admin = Employee.objects.create_user(
+            login_code="555555",
+            password="test-pass-123",
+            first_name="Firm",
+            last_name="Admin",
+            personal_email="firm.admin@example.com",
+            role=Employee.Role.FIRM_ADMIN,
+            status=Employee.Status.ACTIVE,
+        )
+        Client.objects.create(
+            email="pending.client@example.com",
+            first_name="Pending",
+            last_name="Client",
+            status=Client.Status.PENDING_APPROVAL,
+        )
+        Employee.objects.create_user(
+            login_code="666666",
+            password="test-pass-123",
+            first_name="Pending",
+            last_name="Employee",
+            personal_email="pending.employee@example.com",
+            status=Employee.Status.PENDING_APPROVAL,
+        )
+
+        cards = {card["key"]: card for card in firm_admin_welcome_stats(admin)}
+
+        self.assertEqual(cards["pending-approvals"]["value"], 2)
+        self.assertEqual(len(cards["pending-approvals"]["items"]), 2)

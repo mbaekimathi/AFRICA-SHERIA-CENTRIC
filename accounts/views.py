@@ -58,6 +58,8 @@ from .forms import (
     CompanyLetterheadForm,
     CompanyDigitalStampForm,
     CompanyDigitalSignatureForm,
+    EmployeeDigitalSignatureForm,
+    SignatureCaptureForm,
     EmployeeDigitalStampForm,
     AboutCompanyForm,
     CompanyTermsForm,
@@ -70,6 +72,7 @@ from .forms import (
     EmployeeOnboardingForm,
     employees_available_for_payroll,
     EditActiveLitigationCaseForm,
+    EditActiveNonLitigationMatterForm,
     FAQForm,
     FinanceSettingsForm,
     CommunicationSettingsForm,
@@ -119,7 +122,9 @@ from .google_drive import (
     copy_drive_file,
     create_google_workspace_file,
     disconnect_google_drive,
+    employee_template_category_folder_id,
     ensure_case_drive_folder,
+    ensure_employee_templates_folder,
     ensure_matter_drive_folder,
     ensure_templates_forms_folder,
     exchange_code,
@@ -127,9 +132,11 @@ from .google_drive import (
     get_drive_file_meta,
     google_edit_url,
     google_oauth_configured,
+    invalidate_employee_templates_library_cache,
     is_loopback_host,
     is_private_lan_host,
     list_drive_children,
+    list_employee_templates_library,
     list_templates_forms_library,
     invalidate_templates_forms_library_cache,
     pop_oauth_return,
@@ -138,6 +145,13 @@ from .google_drive import (
     TEMPLATES_FORMS_CATEGORIES,
     TEMPLATES_FORMS_CATEGORY_LABELS,
     TEMPLATES_FORMS_CATEGORY_SLUGS,
+    TEMPLATES_FORMS_SCOPE_COMPANY,
+    TEMPLATES_FORMS_SCOPE_LABELS,
+    TEMPLATES_FORMS_SCOPE_MINE,
+    TEMPLATES_FORMS_SCOPE_SLUGS,
+    TEMPLATES_FORMS_SCOPES,
+    TEMPLATE_DOCUMENT_KIND_PROPERTY,
+    TEMPLATE_DOCUMENT_KINDS,
     trash_drive_file,
     upload_drive_file,
     download_drive_file,
@@ -178,6 +192,7 @@ from .models import (
     Document,
     DocumentActivity,
     DocumentContentSnapshot,
+    DocumentMark,
     DocumentOpenSession,
     Employee,
     EmployeeActivityPermission,
@@ -187,6 +202,7 @@ from .models import (
     CompanyLetterheadSetting,
     CompanyDigitalStampSetting,
     CompanyDigitalSignatureSetting,
+    EmployeeDigitalSignatureSetting,
     EmployeeDigitalStampSetting,
     CompanyThemeSetting,
     FinanceSettings,
@@ -3644,7 +3660,11 @@ class RoleWorkspaceView(View):
         elif resolved.get("is_default_signature") or resolved.get(
             "is_my_digital_signature"
         ):
-            context.update(self._default_signature_context(user))
+            context.update(
+                self._default_signature_context(
+                    user, personal=resolved.get("is_my_digital_signature", False)
+                )
+            )
             response = render(request, self.default_signature_template, context)
         elif resolved.get("is_finance_settings"):
             context.update(self._finance_settings_context(form=None))
@@ -4195,6 +4215,7 @@ class RoleWorkspaceView(View):
             "website-template",
             "company-theme",
             "letterhead",
+            "templates-and-forms",
             "digital-stamp",
             "default-signature",
             "my-digital-stamp",
@@ -4247,7 +4268,12 @@ class RoleWorkspaceView(View):
             return self._post_my_digital_stamp(request, user, resolved)
 
         if resolved["leaf"] in {"default-signature", "my-digital-signature"}:
-            return self._post_default_signature(request, user, resolved)
+            return self._post_default_signature(
+                request,
+                user,
+                resolved,
+                personal=resolved["leaf"] == "my-digital-signature",
+            )
 
         if resolved["leaf"] == "finance-settings":
             return self._post_finance_settings(request, user, resolved)
@@ -5952,8 +5978,57 @@ class RoleWorkspaceView(View):
         response = render(request, self.letterhead_template, context)
         return attach_greeting_cookie(response, request)
 
+    # Pen thicknesses offered by the signature sketch pad.
+    SIGNATURE_PENS = (
+        {"label": "Fine", "width": 2, "is_default": False},
+        {"label": "Medium", "width": 3, "is_default": True},
+        {"label": "Bold", "width": 5, "is_default": False},
+    )
+
+    SIGNATURE_ACTION_MESSAGES = {
+        "drawn": (
+            "Your sketched signature was saved and will appear on invoices "
+            "and receipts."
+        ),
+        "uploaded": (
+            "Your uploaded signature was saved and will appear on invoices "
+            "and receipts."
+        ),
+        "cleared": (
+            "Saved signature removed. Documents now use the designed "
+            "signature block."
+        ),
+    }
+
+    @classmethod
+    def _signature_pad_fields(cls, *, form=None, setting=None):
+        """Sketch pad form, current signature row, and pen choices."""
+        return {
+            "signature_form": form or SignatureCaptureForm(),
+            "signature_setting": (
+                setting
+                if setting is not None
+                else CompanyDigitalSignatureSetting.get_solo()
+            ),
+            "signature_pens": cls.SIGNATURE_PENS,
+        }
+
+    def _save_signature_capture(self, request, signature_form, user, setting=None):
+        """Apply a sketched, uploaded, or cleared signature and flash a note."""
+        if setting is None:
+            setting = CompanyDigitalSignatureSetting.get_solo()
+        action = signature_form.apply_signature(setting)
+        if not action:
+            return ""
+        if hasattr(setting, "updated_by"):
+            setting.updated_by = user
+            setting.save(update_fields=["updated_by", "updated_at"])
+        messages.success(request, self.SIGNATURE_ACTION_MESSAGES[action])
+        return action
+
     @staticmethod
-    def _digital_stamp_context(user, *, form=None):
+    def _digital_stamp_context(user, *, form=None, signature_form=None):
+        from .digital_signature import signature_render_context
         from .digital_stamp import (
             stamp_accent_samples,
             stamp_render_context,
@@ -5996,8 +6071,16 @@ class RoleWorkspaceView(View):
             name=firm.display_name,
             date_display=timezone.now().strftime("%d %b %Y"),
         )
+        signature_ctx = signature_render_context(
+            firm=firm,
+            name=user.get_full_name() or user.login_code,
+            signer=user,
+            date_display=timezone.now().strftime("%d %b %Y"),
+        )
         return {
             **ctx,
+            **signature_ctx,
+            **RoleWorkspaceView._signature_pad_fields(form=signature_form),
             "digital_stamp_setting": setting,
             "form": resolved_form,
             "stamp_samples": stamp_samples(current=template_value),
@@ -6007,6 +6090,12 @@ class RoleWorkspaceView(View):
                 "system-settings",
                 "company-information",
                 "company-profile",
+            ),
+            "default_signature_url": user.workspace_url(
+                "dashboard",
+                "system-settings",
+                "document-settings",
+                "default-signature",
             ),
             "current_template_label": dict(
                 CompanyDigitalStampSetting.Template.choices
@@ -6018,6 +6107,7 @@ class RoleWorkspaceView(View):
         form = CompanyDigitalStampForm(
             request.POST, request.FILES, instance=setting
         )
+        signature_form = SignatureCaptureForm(request.POST, request.FILES)
         context = workspace_context(
             user,
             request=request,
@@ -6025,11 +6115,16 @@ class RoleWorkspaceView(View):
             page_trail=resolved["trail"],
             active_page=resolved["leaf"],
         )
-        if form.is_valid():
+        if form.is_valid() and signature_form.is_valid():
             choice = form.save(commit=False)
             choice.updated_by = user
             choice.save()
             scan_action = form.apply_stamp_image(choice)
+            signature_action = self._save_signature_capture(
+                request, signature_form, user
+            )
+            if signature_action and not scan_action:
+                return redirect(user.workspace_url(*resolved["trail"]))
             if scan_action == "uploaded":
                 messages.success(
                     request,
@@ -6050,7 +6145,11 @@ class RoleWorkspaceView(View):
                 )
             return redirect(user.workspace_url(*resolved["trail"]))
 
-        context.update(self._digital_stamp_context(user, form=form))
+        context.update(
+            self._digital_stamp_context(
+                user, form=form, signature_form=signature_form
+            )
+        )
         response = render(request, self.digital_stamp_template, context)
         return attach_greeting_cookie(response, request)
 
@@ -6083,9 +6182,12 @@ class RoleWorkspaceView(View):
             date_display=today,
         )
 
-        signature_setting = CompanyDigitalSignatureSetting.objects.filter(
-            pk=1
+        personal_signature = EmployeeDigitalSignatureSetting.objects.filter(
+            employee=user
         ).first()
+        signature_setting = personal_signature or (
+            CompanyDigitalSignatureSetting.objects.filter(pk=1).first()
+        )
         signature_ctx = signature_render_context(
             firm=firm,
             setting=signature_setting or CompanyDigitalSignatureSetting(),
@@ -6116,6 +6218,7 @@ class RoleWorkspaceView(View):
             "my_stamp_url": tool_urls.get("my-digital-stamp") or "",
             "my_signature_setting": signature_setting,
             "my_signature_ready": signature_setting is not None,
+            "my_signature_is_personal": personal_signature is not None,
             "my_signature_url": tool_urls.get("my-digital-signature") or "",
             "templates_forms_url": tool_urls.get("templates-and-forms") or "",
             "templates_forms_connected": connection.is_connected,
@@ -6128,6 +6231,29 @@ class RoleWorkspaceView(View):
         }
 
     @staticmethod
+    def _personal_stamp_setting(user):
+        """
+        Return the employee's saved stamp, or an unsaved company-based preview.
+
+        Opening My digital stamp must not activate a personal override.
+        """
+        from .digital_stamp import employee_stamp_setting
+
+        saved = employee_stamp_setting(user)
+        if saved is not None:
+            return saved
+        company = CompanyDigitalStampSetting.get_solo()
+        return EmployeeDigitalStampSetting(
+            employee=user,
+            template=company.template,
+            accent=company.accent,
+            show_firm_name=company.show_firm_name,
+            show_status=company.show_status,
+            show_approver=company.show_approver,
+            show_date=company.show_date,
+        )
+
+    @staticmethod
     def _my_digital_stamp_context(user, *, form=None):
         from .digital_stamp import (
             stamp_accent_samples,
@@ -6135,7 +6261,8 @@ class RoleWorkspaceView(View):
             stamp_samples,
         )
 
-        setting = EmployeeDigitalStampSetting.for_employee(user)
+        setting = RoleWorkspaceView._personal_stamp_setting(user)
+        company_setting = CompanyDigitalStampSetting.get_solo()
         firm = FirmCompanyInformation.get_solo()
         resolved_form = form or EmployeeDigitalStampForm(instance=setting)
         template_value = (
@@ -6173,9 +6300,20 @@ class RoleWorkspaceView(View):
             name=signer_name,
             date_display=timezone.now().strftime("%d %b %Y"),
         )
+        company_ctx = stamp_render_context(
+            firm=firm,
+            setting=company_setting,
+            status="Approved",
+            status_key="issued",
+            label="Approved by",
+            name=signer_name,
+            date_display=timezone.now().strftime("%d %b %Y"),
+        )
         return {
             **ctx,
             "digital_stamp_setting": setting,
+            "company_stamp_context": company_ctx,
+            "stamp_override_active": setting.pk is not None,
             "form": resolved_form,
             "stamp_samples": stamp_samples(current=template_value),
             "accent_samples": stamp_accent_samples(current=accent_value),
@@ -6186,7 +6324,10 @@ class RoleWorkspaceView(View):
         }
 
     def _post_my_digital_stamp(self, request, user, resolved):
-        setting = EmployeeDigitalStampSetting.for_employee(user)
+        setting = self._personal_stamp_setting(user)
+        if request.POST.get("use_company_stamp"):
+            return self._reset_personal_stamp(request, user, resolved, setting)
+
         form = EmployeeDigitalStampForm(
             request.POST, request.FILES, instance=setting
         )
@@ -6216,7 +6357,8 @@ class RoleWorkspaceView(View):
                 messages.success(
                     request,
                     f"Your digital stamp was saved as {choice.get_template_display()} "
-                    f"({choice.get_accent_display()}).",
+                    f"({choice.get_accent_display()}). It overrides the firm "
+                    "default on documents you sign.",
                 )
             return redirect(user.workspace_url(*resolved["trail"]))
 
@@ -6224,17 +6366,63 @@ class RoleWorkspaceView(View):
         response = render(request, self.my_digital_stamp_template, context)
         return attach_greeting_cookie(response, request)
 
+    def _reset_personal_stamp(self, request, user, resolved, setting):
+        """Drop the personal stamp so the firm default is used again."""
+        if setting.pk:
+            if setting.stamp_image:
+                setting.stamp_image.delete(save=False)
+            setting.delete()
+            messages.success(
+                request,
+                "Your stamp was removed. Your documents now carry the firm "
+                "default stamp again.",
+            )
+        else:
+            messages.info(
+                request,
+                "You have no personal stamp saved — documents already use the "
+                "firm default.",
+            )
+        return redirect(user.workspace_url(*resolved["trail"]))
+
     @staticmethod
-    def _default_signature_context(user, *, form=None):
+    def _personal_signature_setting(user):
+        """
+        The employee's own signature row, unsaved until they first save it.
+
+        An unsaved row keeps the firm default in charge of their documents.
+        """
+        from .digital_signature import employee_signature_setting
+
+        return employee_signature_setting(user) or EmployeeDigitalSignatureSetting(
+            employee=user
+        )
+
+    @staticmethod
+    def _default_signature_context(
+        user, *, form=None, signature_form=None, personal=False
+    ):
         from .digital_signature import (
             signature_accent_samples,
             signature_render_context,
+            signature_role_title,
             signature_samples,
         )
 
-        setting = CompanyDigitalSignatureSetting.get_solo()
+        company_setting = CompanyDigitalSignatureSetting.get_solo()
+        if personal:
+            setting = RoleWorkspaceView._personal_signature_setting(user)
+            model = EmployeeDigitalSignatureSetting
+            form_class = EmployeeDigitalSignatureForm
+        else:
+            setting = company_setting
+            model = CompanyDigitalSignatureSetting
+            form_class = CompanyDigitalSignatureForm
         firm = FirmCompanyInformation.get_solo()
-        resolved_form = form or CompanyDigitalSignatureForm(instance=setting)
+        role_title = signature_role_title(user)
+        resolved_form = form or form_class(
+            instance=setting, role_title=role_title
+        )
         template_value = (
             resolved_form["template"].value() or setting.template
         )
@@ -6252,9 +6440,10 @@ class RoleWorkspaceView(View):
             show_name = bool(setting.show_name)
             show_title = bool(setting.show_title)
             show_date = bool(setting.show_date)
-        preview_setting = CompanyDigitalSignatureSetting(
+        preview_setting = model(
             template=template_value,
             accent=accent_value,
+            signature_image=setting.signature_image.name or "",
             default_title=default_title or "Authorized Signatory",
             show_firm_name=show_firm_name,
             show_name=show_name,
@@ -6265,12 +6454,26 @@ class RoleWorkspaceView(View):
             firm=firm,
             setting=preview_setting,
             name=user.get_full_name() or user.login_code,
-            title=preview_setting.default_title,
+            signer=user,
+            date_display=timezone.now().strftime("%d %b %Y"),
+        )
+        company_ctx = signature_render_context(
+            firm=firm,
+            setting=company_setting,
+            name=user.get_full_name() or user.login_code,
+            signer=user,
             date_display=timezone.now().strftime("%d %b %Y"),
         )
         return {
             **ctx,
+            "signature_role_title": role_title,
+            **RoleWorkspaceView._signature_pad_fields(
+                form=signature_form, setting=setting
+            ),
             "digital_signature_setting": setting,
+            "is_personal_signature": personal,
+            "company_signature_context": company_ctx,
+            "signature_override_active": personal and setting.pk is not None,
             "form": resolved_form,
             "signature_samples": signature_samples(current=template_value),
             "accent_samples": signature_accent_samples(current=accent_value),
@@ -6280,14 +6483,23 @@ class RoleWorkspaceView(View):
                 "company-information",
                 "company-profile",
             ),
-            "current_template_label": dict(
-                CompanyDigitalSignatureSetting.Template.choices
-            ).get(template_value, "Classic line"),
+            "current_template_label": dict(model.Template.choices).get(
+                template_value, "Classic line"
+            ),
         }
 
-    def _post_default_signature(self, request, user, resolved):
-        setting = CompanyDigitalSignatureSetting.get_solo()
-        form = CompanyDigitalSignatureForm(request.POST, instance=setting)
+    def _post_default_signature(self, request, user, resolved, *, personal=False):
+        from .digital_signature import signature_role_title
+
+        if personal:
+            setting = self._personal_signature_setting(user)
+            form_class = EmployeeDigitalSignatureForm
+        else:
+            setting = CompanyDigitalSignatureSetting.get_solo()
+            form_class = CompanyDigitalSignatureForm
+        if personal and request.POST.get("use_company_signature"):
+            return self._reset_personal_signature(request, user, resolved, setting)
+
         context = workspace_context(
             user,
             request=request,
@@ -6295,20 +6507,61 @@ class RoleWorkspaceView(View):
             page_trail=resolved["trail"],
             active_page=resolved["leaf"],
         )
-        if form.is_valid():
+        form = form_class(
+            request.POST, instance=setting, role_title=signature_role_title(user)
+        )
+        signature_form = SignatureCaptureForm(request.POST, request.FILES)
+        if form.is_valid() and signature_form.is_valid():
             choice = form.save(commit=False)
-            choice.updated_by = user
+            if not personal:
+                choice.updated_by = user
             choice.save()
-            messages.success(
-                request,
-                f"Default signature saved as {choice.get_template_display()} "
-                f"({choice.get_accent_display()}). It will appear on invoices and receipts.",
+            signature_action = self._save_signature_capture(
+                request, signature_form, user, setting=choice
             )
+            if not signature_action:
+                closing = (
+                    "It overrides the firm default on documents you sign."
+                    if personal
+                    else "It will appear on invoices and receipts."
+                )
+                scope = "Your signature" if personal else "Default signature"
+                messages.success(
+                    request,
+                    f"{scope} saved as {choice.get_template_display()} "
+                    f"({choice.get_accent_display()}). {closing}",
+                )
             return redirect(user.workspace_url(*resolved["trail"]))
 
-        context.update(self._default_signature_context(user, form=form))
+        context.update(
+            self._default_signature_context(
+                user,
+                form=form,
+                signature_form=signature_form,
+                personal=personal,
+            )
+        )
         response = render(request, self.default_signature_template, context)
         return attach_greeting_cookie(response, request)
+
+    def _reset_personal_signature(self, request, user, resolved, setting):
+        """Drop the personal signature so the firm default signs again."""
+        if setting.pk:
+            if setting.signature_image:
+                setting.signature_image.delete(save=False)
+            setting.delete()
+            messages.success(
+                request,
+                "Your signature was removed. Your documents now carry the "
+                "firm default signature again.",
+            )
+        else:
+            messages.info(
+                request,
+                "You have no personal signature saved — documents already use "
+                "the firm default.",
+            )
+        return redirect(user.workspace_url(*resolved["trail"]))
 
     @staticmethod
     def _finance_settings_context(*, form=None):
@@ -6532,6 +6785,64 @@ class RoleWorkspaceView(View):
             return slug
         return fallback if fallback in TEMPLATES_FORMS_CATEGORY_SLUGS else "letters"
 
+    @staticmethod
+    def _templates_forms_active_scope(request, *, fallback=TEMPLATES_FORMS_SCOPE_COMPANY) -> str:
+        raw = (
+            (request.GET.get("scope") if request.method == "GET" else None)
+            or (request.POST.get("scope") if request.method == "POST" else None)
+            or fallback
+        )
+        slug = (raw or "").strip()
+        if slug in TEMPLATES_FORMS_SCOPE_SLUGS:
+            return slug
+        return (
+            fallback
+            if fallback in TEMPLATES_FORMS_SCOPE_SLUGS
+            else TEMPLATES_FORMS_SCOPE_COMPANY
+        )
+
+    @staticmethod
+    def _templates_forms_library_groups(files, *, fallback_category, fallback_label):
+        """Group library files by document type, then by template category."""
+        groups = []
+        for kind, kind_label in TEMPLATE_DOCUMENT_KINDS.items():
+            buckets: dict[str, dict] = {}
+            for item in files:
+                slug = (item.get("category") or fallback_category or "").strip()
+                default_kind = "court" if slug == "court-forms" else "office"
+                if (item.get("document_kind") or default_kind) != kind:
+                    continue
+                bucket = buckets.get(slug)
+                if bucket is None:
+                    bucket = {
+                        "slug": slug,
+                        "label": (
+                            item.get("category_label")
+                            or TEMPLATES_FORMS_CATEGORY_LABELS.get(slug)
+                            or fallback_label
+                            or slug
+                        ),
+                        "files": [],
+                    }
+                    buckets[slug] = bucket
+                bucket["files"].append(item)
+            if not buckets:
+                continue
+            categories = sorted(
+                buckets.values(), key=lambda bucket: bucket["label"].lower()
+            )
+            for bucket in categories:
+                bucket["count"] = len(bucket["files"])
+            groups.append(
+                {
+                    "kind": kind,
+                    "label": kind_label,
+                    "categories": categories,
+                    "count": sum(bucket["count"] for bucket in categories),
+                }
+            )
+        return groups
+
     def _templates_and_forms_context(
         self,
         user,
@@ -6540,25 +6851,50 @@ class RoleWorkspaceView(View):
         create_form=None,
         drive_error="",
         active_category="",
+        active_scope="",
         request=None,
     ):
         from .letterhead import letterhead_render_context
 
         connection = GoogleDriveConnection.get_solo()
-        folder_id = (connection.templates_forms_folder_id or "").strip()
+        folder_id = ""
         folder_url = ""
         library: list[dict] = []
         error = (drive_error or "").strip()
         category = active_category or "letters"
         if category not in TEMPLATES_FORMS_CATEGORY_SLUGS:
             category = "letters"
-        if request is not None and not active_category:
-            category = self._templates_forms_active_category(request)
+        scope = active_scope or TEMPLATES_FORMS_SCOPE_COMPANY
+        if scope not in TEMPLATES_FORMS_SCOPE_SLUGS:
+            scope = TEMPLATES_FORMS_SCOPE_COMPANY
+        if request is not None:
+            if not active_category:
+                category = self._templates_forms_active_category(request)
+            if not active_scope:
+                scope = self._templates_forms_active_scope(request)
 
+        can_manage = scope == TEMPLATES_FORMS_SCOPE_MINE
         if connection.is_connected:
             try:
-                library = list_templates_forms_library(connection)
-                folder_id = (connection.templates_forms_folder_id or "").strip()
+                if scope == TEMPLATES_FORMS_SCOPE_MINE:
+                    ensure_employee_templates_folder(user)
+                    library = list_employee_templates_library(user)
+                    folder_id = (user.drive_my_templates_folder_id or "").strip()
+                else:
+                    raw_library = list_templates_forms_library(connection)
+                    folder_id = (connection.templates_forms_folder_id or "").strip()
+                    library = []
+                    for bucket in raw_library:
+                        files = []
+                        for item in bucket.get("files") or []:
+                            files.append(
+                                {
+                                    **item,
+                                    "scope": TEMPLATES_FORMS_SCOPE_COMPANY,
+                                    "can_manage": False,
+                                }
+                            )
+                        library.append({**bucket, "files": files})
             except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
                 error = error or str(exc) or (
                     "Could not prepare the Templates and Forms folder."
@@ -6581,6 +6917,27 @@ class RoleWorkspaceView(View):
                 "count": 0,
             }
 
+        scope_label = TEMPLATES_FORMS_SCOPE_LABELS.get(scope, "Company templates")
+        if scope == TEMPLATES_FORMS_SCOPE_MINE:
+            drive_path = (
+                f"Employees / {user.get_full_name()} / My Templates / "
+                f"{active_bucket['label']}"
+            )
+            library_sub = (
+                "Your personal copies in this category. Edit or delete freely — "
+                "company masters stay unchanged."
+            )
+            compose_hint = "Saved in your My Templates folder for this category."
+        else:
+            drive_path = (
+                f"Sheria-Centric / Templates and Forms / {active_bucket['label']}"
+            )
+            library_sub = (
+                "Company master files in this category. Duplicate into My templates "
+                "to edit a personal copy without changing the original."
+            )
+            compose_hint = "Saved as a company master template in this category."
+
         context = {
             "upload_form": upload_form
             or TemplatesFormsUploadForm(initial_category=category),
@@ -6592,10 +6949,22 @@ class RoleWorkspaceView(View):
             "templates_forms_folder_url": folder_url,
             "templates_forms_library": library,
             "templates_forms_categories": TEMPLATES_FORMS_CATEGORIES,
+            "templates_forms_scopes": TEMPLATES_FORMS_SCOPES,
             "active_category": category,
             "active_category_label": active_bucket["label"],
             "active_category_folder_url": active_bucket.get("folder_url") or "",
+            "active_scope": scope,
+            "active_scope_label": scope_label,
+            "templates_forms_can_manage": can_manage,
+            "templates_forms_drive_path": drive_path,
+            "templates_forms_library_sub": library_sub,
+            "templates_forms_compose_hint": compose_hint,
             "templates_forms_files": active_bucket.get("files") or [],
+            "templates_forms_groups": self._templates_forms_library_groups(
+                active_bucket.get("files") or [],
+                fallback_category=category,
+                fallback_label=active_bucket["label"],
+            ),
             "templates_forms_total_count": sum(
                 item.get("count") or 0 for item in library
             ),
@@ -6613,6 +6982,7 @@ class RoleWorkspaceView(View):
     def _post_templates_and_forms(self, request, user, resolved):
         action = (request.POST.get("template_action") or "upload").strip()
         active_category = self._templates_forms_active_category(request)
+        active_scope = self._templates_forms_active_scope(request)
         upload_form = TemplatesFormsUploadForm(initial_category=active_category)
         create_form = TemplatesFormsCreateForm(initial_category=active_category)
         context = workspace_context(
@@ -6623,8 +6993,9 @@ class RoleWorkspaceView(View):
             active_page=resolved["leaf"],
         )
 
-        def render_page(*, drive_error="", category=""):
+        def render_page(*, drive_error="", category="", scope=""):
             cat = category or active_category
+            sc = scope or active_scope
             context.update(
                 self._templates_and_forms_context(
                     user,
@@ -6632,6 +7003,7 @@ class RoleWorkspaceView(View):
                     create_form=create_form,
                     drive_error=drive_error,
                     active_category=cat,
+                    active_scope=sc,
                 )
             )
             response = render(
@@ -6639,9 +7011,45 @@ class RoleWorkspaceView(View):
             )
             return attach_greeting_cookie(response, request)
 
-        def success_redirect(category_slug: str):
+        def success_redirect(category_slug: str, scope_slug: str = ""):
+            sc = scope_slug or active_scope
             base = user.workspace_url(*resolved["trail"])
-            return redirect(f"{base}?category={category_slug}")
+            return redirect(
+                f"{base}?scope={sc}&category={category_slug}"
+                f"#templates-forms-library"
+            )
+
+        def form_error_reason(form) -> str:
+            for error in form.non_field_errors():
+                return error
+            for field in form:
+                if field.errors:
+                    return f"{field.label}: {field.errors[0]}"
+            return "Check the highlighted fields and try again."
+
+        def category_folder_for(scope_slug: str, category_slug: str) -> str:
+            if scope_slug == TEMPLATES_FORMS_SCOPE_MINE:
+                return employee_template_category_folder_id(user, category_slug)
+            return templates_forms_category_folder_id(
+                category_slug, connection=connection
+            )
+
+        def invalidate_for(scope_slug: str) -> None:
+            if scope_slug == TEMPLATES_FORMS_SCOPE_MINE:
+                invalidate_employee_templates_library_cache(user)
+            else:
+                invalidate_templates_forms_library_cache(connection)
+
+        def assert_owned_template(file_id: str, category_slug: str) -> dict:
+            meta = get_drive_file_meta(file_id)
+            if meta.get("trashed"):
+                raise GoogleDriveAPIError("That template is no longer available.")
+            folder_id = employee_template_category_folder_id(user, category_slug)
+            if folder_id not in (meta.get("parents") or []):
+                raise GoogleDriveAPIError(
+                    "That template is not one of your personal templates."
+                )
+            return meta
 
         connection = GoogleDriveConnection.get_solo()
         if not connection.is_connected:
@@ -6651,7 +7059,7 @@ class RoleWorkspaceView(View):
             )
             if action == "create_google":
                 create_form = TemplatesFormsCreateForm(request.POST)
-            else:
+            elif action == "upload":
                 upload_form = TemplatesFormsUploadForm(
                     request.POST, request.FILES
                 )
@@ -6659,39 +7067,149 @@ class RoleWorkspaceView(View):
 
         try:
             connection = ensure_templates_forms_folder(connection)
+            if active_scope == TEMPLATES_FORMS_SCOPE_MINE or action in {
+                "duplicate",
+                "rename",
+                "delete",
+            }:
+                ensure_employee_templates_folder(user)
         except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
-            messages.error(
-                request,
-                str(exc) or "Could not prepare the Templates and Forms folder.",
+            reason = str(exc) or (
+                "Could not prepare the Templates and Forms folder in Google Drive."
             )
+            messages.error(request, reason)
             if action == "create_google":
                 create_form = TemplatesFormsCreateForm(request.POST)
-            else:
+            elif action == "upload":
                 upload_form = TemplatesFormsUploadForm(
                     request.POST, request.FILES
                 )
-            return render_page(drive_error=str(exc))
+            return render_page(drive_error=reason)
+
+        if action == "duplicate":
+            file_id = (request.POST.get("file_id") or "").strip()
+            category = (
+                (request.POST.get("category") or "").strip() or active_category
+            )
+            title = (request.POST.get("title") or "").strip()
+            if category not in TEMPLATES_FORMS_CATEGORY_SLUGS:
+                messages.error(request, "Select a valid template category.")
+                return render_page()
+            if not file_id:
+                messages.error(request, "Select a template to duplicate.")
+                return render_page()
+            try:
+                if active_scope == TEMPLATES_FORMS_SCOPE_MINE:
+                    meta = assert_owned_template(file_id, category)
+                else:
+                    meta = _assert_template_in_category(file_id, category)
+                source_name = (meta.get("name") or "Untitled").strip() or "Untitled"
+                copy_name = title or f"{source_name} (copy)"
+                dest_folder = employee_template_category_folder_id(user, category)
+                created = copy_drive_file(
+                    file_id,
+                    name=copy_name,
+                    parent_id=dest_folder,
+                )
+                new_name = (created.get("name") or copy_name).strip() or copy_name
+                invalidate_employee_templates_library_cache(user)
+                messages.success(
+                    request,
+                    f"“{new_name}” saved to My templates. "
+                    "You can edit this copy without changing the original.",
+                )
+                return success_redirect(category, TEMPLATES_FORMS_SCOPE_MINE)
+            except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+                reason = str(exc) or "Could not duplicate that template."
+                messages.error(request, reason)
+                return render_page(drive_error=reason, category=category)
+
+        if action == "rename":
+            file_id = (request.POST.get("file_id") or "").strip()
+            category = (
+                (request.POST.get("category") or "").strip() or active_category
+            )
+            title = (request.POST.get("title") or "").strip()
+            if active_scope != TEMPLATES_FORMS_SCOPE_MINE:
+                messages.error(
+                    request,
+                    "Only personal templates can be renamed here. "
+                    "Duplicate a company template into My templates first.",
+                )
+                return success_redirect(category, active_scope)
+            if not title:
+                messages.error(request, "Enter a name for this template.")
+                return render_page(category=category)
+            try:
+                assert_owned_template(file_id, category)
+                rename_drive_file(file_id, title)
+                invalidate_employee_templates_library_cache(user)
+                messages.success(request, f"Template renamed to “{title}”.")
+                return success_redirect(category, TEMPLATES_FORMS_SCOPE_MINE)
+            except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+                reason = str(exc) or "Could not rename that template."
+                messages.error(request, reason)
+                return render_page(drive_error=reason, category=category)
+
+        if action == "delete":
+            file_id = (request.POST.get("file_id") or "").strip()
+            category = (
+                (request.POST.get("category") or "").strip() or active_category
+            )
+            if active_scope != TEMPLATES_FORMS_SCOPE_MINE:
+                messages.error(
+                    request,
+                    "Only personal templates can be deleted here. "
+                    "Company masters stay in Company templates.",
+                )
+                return success_redirect(category, active_scope)
+            try:
+                meta = assert_owned_template(file_id, category)
+                name = (meta.get("name") or "Template").strip() or "Template"
+                trash_drive_file(file_id)
+                invalidate_employee_templates_library_cache(user)
+                messages.success(
+                    request,
+                    f"“{name}” moved to Google Drive trash.",
+                )
+                return success_redirect(category, TEMPLATES_FORMS_SCOPE_MINE)
+            except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+                reason = str(exc) or "Could not delete that template."
+                messages.error(request, reason)
+                return render_page(drive_error=reason, category=category)
 
         if action == "create_google":
             create_form = TemplatesFormsCreateForm(request.POST)
             if not create_form.is_valid():
+                messages.error(
+                    request,
+                    "Template not created. "
+                    f"{form_error_reason(create_form)}",
+                )
                 return render_page(
                     category=create_form.data.get("category") or active_category
                 )
             title = create_form.cleaned_data["title"]
             google_type = create_form.cleaned_data["google_type"]
             category = create_form.cleaned_data["category"]
+            document_kind = create_form.cleaned_data["document_kind"]
+            document_kind_label = (
+                "Court document"
+                if document_kind == "court"
+                else "Office document"
+            )
             include_letterhead = bool(
                 create_form.cleaned_data.get("include_letterhead")
             )
             try:
-                category_folder_id = templates_forms_category_folder_id(
-                    category, connection=connection
-                )
+                category_folder_id = category_folder_for(active_scope, category)
                 created = create_google_workspace_file(
                     title,
                     type_key=google_type,
                     parent_id=category_folder_id,
+                    app_properties={
+                        TEMPLATE_DOCUMENT_KIND_PROPERTY: document_kind,
+                    },
                 )
                 file_id = (created.get("id") or "").strip()
                 if include_letterhead and google_type == "document" and file_id:
@@ -6703,44 +7221,57 @@ class RoleWorkspaceView(View):
                             f"Template created, but letterhead could not be "
                             f"applied: {exc}",
                         )
-                        return success_redirect(category)
+                        invalidate_for(active_scope)
+                        return success_redirect(category, active_scope)
                 label = created.get("_workspace_label") or "Google file"
                 category_label = TEMPLATES_FORMS_CATEGORY_LABELS.get(
                     category, category
                 )
+                scope_label = TEMPLATES_FORMS_SCOPE_LABELS.get(
+                    active_scope, "templates"
+                )
                 if include_letterhead and google_type == "document":
                     messages.success(
                         request,
-                        f"“{title}” created in {category_label} as a {label} "
-                        "template with firm letterhead.",
+                        f"“{title}” created under {scope_label} › "
+                        f"{category_label} as a {label} template "
+                        f"with firm letterhead ({document_kind_label}).",
                     )
                 else:
                     messages.success(
                         request,
-                        f"“{title}” created in {category_label} as a {label} "
-                        "template.",
+                        f"“{title}” created under {scope_label} › "
+                        f"{category_label} as a {label} template "
+                        f"({document_kind_label}).",
                     )
-                invalidate_templates_forms_library_cache(connection)
-                return success_redirect(category)
+                invalidate_for(active_scope)
+                return success_redirect(category, active_scope)
             except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+                reason = str(exc) or "Google Drive did not accept the request."
                 messages.error(
                     request,
-                    str(exc) or "Could not create the template in Google Drive.",
+                    f"“{title}” was not created in Google Drive. {reason}",
                 )
-                return render_page(drive_error=str(exc), category=category)
+                return render_page(drive_error=reason, category=category)
 
         upload_form = TemplatesFormsUploadForm(request.POST, request.FILES)
         if not upload_form.is_valid():
+            messages.error(
+                request,
+                f"Nothing was uploaded. {form_error_reason(upload_form)}",
+            )
             return render_page(
                 category=upload_form.data.get("category") or active_category
             )
+        title = upload_form.cleaned_data["title"]
+        category = upload_form.cleaned_data["category"]
+        document_kind = upload_form.cleaned_data["document_kind"]
+        document_kind_label = (
+            "Court document" if document_kind == "court" else "Office document"
+        )
         try:
             uploaded = upload_form.cleaned_data["file"]
-            title = upload_form.cleaned_data["title"]
-            category = upload_form.cleaned_data["category"]
-            category_folder_id = templates_forms_category_folder_id(
-                category, connection=connection
-            )
+            category_folder_id = category_folder_for(active_scope, category)
             content = uploaded.read()
             upload_drive_file(
                 name=title,
@@ -6748,22 +7279,30 @@ class RoleWorkspaceView(View):
                 mime_type=getattr(uploaded, "content_type", "") or "",
                 parent_id=category_folder_id,
                 original_filename=getattr(uploaded, "name", "") or title,
+                app_properties={
+                    TEMPLATE_DOCUMENT_KIND_PROPERTY: document_kind,
+                },
             )
             category_label = TEMPLATES_FORMS_CATEGORY_LABELS.get(
                 category, category
             )
+            scope_label = TEMPLATES_FORMS_SCOPE_LABELS.get(
+                active_scope, "templates"
+            )
             messages.success(
                 request,
-                f"“{title}” uploaded to {category_label}.",
+                f"“{title}” uploaded under {scope_label} › {category_label} "
+                f"as a {document_kind_label}.",
             )
-            invalidate_templates_forms_library_cache(connection)
-            return success_redirect(category)
-        except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+            invalidate_for(active_scope)
+            return success_redirect(category, active_scope)
+        except (GoogleDriveAPIError, GoogleDriveOAuthError, OSError) as exc:
+            reason = str(exc) or "Google Drive did not accept the upload."
             messages.error(
                 request,
-                str(exc) or "Could not upload to Google Drive.",
+                f"“{title}” was not uploaded to Google Drive. {reason}",
             )
-            return render_page(drive_error=str(exc), category=active_category)
+            return render_page(drive_error=reason, category=category)
 
 
     def _post_register_client(self, request, user, resolved):
@@ -7528,10 +8067,41 @@ class RoleWorkspaceView(View):
         )
         firm = FirmCompanyInformation.get_solo()
         employee = payment.payroll_run.employee
+        from .digital_signature import signature_render_context
+        from .digital_stamp import stamp_render_context
         from .letterhead import letterhead_render_context
 
+        recorder = payment.recorded_by
         return {
             **letterhead_render_context(firm=firm),
+            **stamp_render_context(
+                firm=firm,
+                signer=recorder,
+                status="Paid",
+                status_key="paid",
+                label="Issued by",
+                name=(
+                    recorder.get_full_name() if recorder else ""
+                ) or firm.display_name,
+                date_display=(
+                    payment.paid_at.strftime("%d %b %Y")
+                    if payment.paid_at
+                    else ""
+                ),
+            ),
+            # The signatory's own signature, when they saved one.
+            **signature_render_context(
+                firm=firm,
+                signer=recorder,
+                name=(
+                    recorder.get_full_name() if recorder else ""
+                ) or firm.display_name,
+                date_display=(
+                    payment.paid_at.strftime("%d %b %Y")
+                    if payment.paid_at
+                    else ""
+                ),
+            ),
             "payment": payment,
             "run": payment.payroll_run,
             "employee": employee,
@@ -8002,14 +8572,19 @@ class RoleWorkspaceView(View):
         resolved,
         *,
         form=None,
+        edit_form=None,
+        edit_account=None,
         topup_form=None,
         expense_form=None,
         open_register_modal=False,
+        open_edit_modal=False,
         open_topup_modal=False,
         open_expense_modal=False,
     ):
         if form is None:
             form = RegisterCompanyAccountForm()
+        if edit_form is None:
+            edit_form = RegisterCompanyAccountForm(prefix="edit")
         if topup_form is None:
             topup_form = TopupCompanyAccountForm()
         if expense_form is None:
@@ -8058,6 +8633,8 @@ class RoleWorkspaceView(View):
 
         return {
             "form": form,
+            "edit_form": edit_form,
+            "edit_account": edit_account,
             "topup_form": topup_form,
             "expense_form": expense_form,
             "expense_payroll_net_map_json": json.dumps(
@@ -8069,6 +8646,7 @@ class RoleWorkspaceView(View):
             "recent_account_topups": recent_topups,
             "recent_expense_payments": recent_expenses,
             "open_register_modal": open_modal,
+            "open_edit_modal": open_edit_modal,
             "open_topup_modal": open_topup,
             "open_expense_modal": open_expense,
             "company_accounts_url": cls._company_accounts_url(
@@ -8088,6 +8666,61 @@ class RoleWorkspaceView(View):
             page_trail=resolved["trail"],
             active_page=resolved["leaf"],
         )
+
+        if action == "edit-company-account":
+            account = get_object_or_404(
+                CompanyExpenseAccount,
+                pk=request.POST.get("account_id"),
+            )
+            edit_form = RegisterCompanyAccountForm(
+                request.POST,
+                instance=account,
+                prefix="edit",
+            )
+            if edit_form.is_valid():
+                account = edit_form.save()
+                messages.success(
+                    request,
+                    f"Account “{account.name}” updated.",
+                )
+                return redirect(
+                    self._company_accounts_url(user, resolved["trail"])
+                )
+
+            context.update(
+                self._company_accounts_context(
+                    request,
+                    user,
+                    resolved,
+                    edit_form=edit_form,
+                    edit_account=account,
+                    open_edit_modal=True,
+                )
+            )
+            self._company_accounts_register_nav(context)
+            response = render(request, self.company_accounts_template, context)
+            return attach_greeting_cookie(response, request)
+
+        if action == "delete-company-account":
+            account = get_object_or_404(
+                CompanyExpenseAccount,
+                pk=request.POST.get("account_id"),
+            )
+            if account.is_system_default:
+                messages.error(
+                    request,
+                    "Default company accounts cannot be deleted.",
+                )
+            else:
+                account_name = account.name
+                account.delete()
+                messages.success(
+                    request,
+                    f"Account “{account_name}” deleted.",
+                )
+            return redirect(
+                self._company_accounts_url(user, resolved["trail"])
+            )
 
         if action == "pay-company-expense":
             expense_form = PayCompanyExpenseForm(request.POST)
@@ -12269,7 +12902,10 @@ class EditActiveNonLitigationMatterView(View):
         if access_denied:
             return access_denied
 
-        form = RegisterMatterForm(instance=matter)
+        form = EditActiveNonLitigationMatterForm(
+            instance=matter,
+            **self._management_permissions(user),
+        )
         party_formset = MatterPartyEditFormSet(
             queryset=matter.parties.order_by("sort_order", "pk"),
             prefix="parties",
@@ -12292,7 +12928,11 @@ class EditActiveNonLitigationMatterView(View):
         if access_denied:
             return access_denied
 
-        form = RegisterMatterForm(request.POST, instance=matter)
+        form = EditActiveNonLitigationMatterForm(
+            request.POST,
+            instance=matter,
+            **self._management_permissions(user),
+        )
         party_formset = MatterPartyEditFormSet(
             request.POST,
             queryset=matter.parties.order_by("sort_order", "pk"),
@@ -12310,9 +12950,7 @@ class EditActiveNonLitigationMatterView(View):
                 response = render(request, self.template_name, context)
                 return attach_greeting_cookie(response, request)
 
-            previous_status = matter.status
             matter = form.save(commit=False)
-            matter.status = previous_status
             matter.save()
 
             for party_form in party_formset.deleted_forms:
@@ -12336,6 +12974,23 @@ class EditActiveNonLitigationMatterView(View):
         context = self._context(user, matter, form, party_formset)
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _management_permissions(user):
+        return {
+            "can_change_status": workspace_activity_action_permitted(
+                user,
+                "matter-management",
+                "non-litigation-matters",
+                "status",
+            ),
+            "can_change_allocation": workspace_activity_action_permitted(
+                user,
+                "matter-management",
+                "non-litigation-matters",
+                "allocate",
+            ),
+        }
 
     def _guard(self, request, role, matter):
         if matter.status == NonLitigationMatter.Status.PENDING_APPROVAL:
@@ -13097,16 +13752,12 @@ class ApproveEmployeeView(View):
 
 @method_decorator(login_required, name="dispatch")
 class ViewLitigationCaseView(View):
-    """Read-only detail page for a litigation case from the matters list."""
+    """Detail page for a litigation case from the matters list."""
 
     template_name = "accounts/view_litigation_case.html"
 
-    def get(self, request, role, case_id):
-        user, denied = _guard_litigation(request, role, action="view")
-        if denied:
-            return denied
-
-        case = get_object_or_404(
+    def get_case(self, case_id):
+        return get_object_or_404(
             LitigationCase.objects.select_related(
                 "client",
                 "registered_by",
@@ -13115,6 +13766,13 @@ class ViewLitigationCaseView(View):
             ).prefetch_related("parties"),
             pk=case_id,
         )
+
+    def get(self, request, role, case_id):
+        user, denied = _guard_litigation(request, role, action="view")
+        if denied:
+            return denied
+
+        case = self.get_case(case_id)
         if case.status == LitigationCase.Status.PENDING_APPROVAL:
             return redirect(
                 "accounts:approve_litigation_case",
@@ -13132,15 +13790,82 @@ class ViewLitigationCaseView(View):
         if access_denied:
             return access_denied
 
-        live_tasks = _live_case_tasks_for_user(
-            case, user, preferred_id=_preferred_task_id(request)
+        response = render(
+            request, self.template_name, self._context(request, user, case, role)
         )
-        documents = _documents_with_activity(
-            case.documents.all(),
-            actor=user,
-            sync_google=False,
-            role=user.role_slug,
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, case_id):
+        action = (request.POST.get("document_action") or "").strip()
+        if action not in {"rename", "delete"}:
+            messages.error(request, "Unknown document action.")
+            return redirect(
+                "accounts:view_litigation_case",
+                role=role,
+                case_id=case_id,
+            )
+
+        needed = "edit" if action == "rename" else "delete"
+        user, denied = _guard_litigation(request, role, action=needed)
+        if denied:
+            return denied
+
+        case = self.get_case(case_id)
+        if case.status == LitigationCase.Status.PENDING_APPROVAL:
+            return redirect(
+                "accounts:approve_litigation_case",
+                role=role,
+                case_id=case.pk,
+            )
+
+        scope_denied = _redirect_if_record_not_visible(
+            request, user, kind="case", record=case
         )
+        if scope_denied:
+            return scope_denied
+
+        detail_url = reverse(
+            "accounts:view_litigation_case",
+            kwargs={"role": role, "case_id": case.pk},
+        )
+        access_denied = _case_task_access_denied(
+            request, user, case, needed, redirect_to=detail_url
+        )
+        if access_denied:
+            return access_denied
+
+        docs_view = UploadCaseDocumentsView()
+        docs_view.request = request
+        try:
+            if action == "rename":
+                docs_view._rename_document(request, case)
+            else:
+                docs_view._delete_document(request, case)
+        except (GoogleDriveAPIError, GoogleDriveOAuthError) as exc:
+            messages.error(request, str(exc))
+        return redirect(detail_url)
+
+    def _context(self, request, user, case, role):
+        from .document_marks import attach_document_marks, signatory_marks_context
+
+        documents = attach_document_marks(
+            _documents_with_activity(
+                case.documents.all(),
+                actor=user,
+                sync_google=False,
+                role=user.role_slug,
+            ),
+            user,
+        )
+        task_access = CaseTask.effective_access_for(user, case)
+        if task_access is None:
+            task_access = {
+                "allow_view": True,
+                "allow_edit": True,
+                "allow_download": True,
+                "allow_delete": True,
+                "allow_upload": True,
+            }
         context = workspace_context(
             user,
             request=request,
@@ -13154,6 +13879,11 @@ class ViewLitigationCaseView(View):
                 "case": case,
                 "parties": case.parties.all(),
                 "documents": documents,
+                "edit_form": RenameDocumentForm(
+                    auto_id="edit_%s",
+                    party_type_choices=CaseParty.PartyType.choices,
+                ),
+                "task_access": task_access,
                 "documents_url": reverse(
                     "accounts:view_case_documents",
                     kwargs={"role": user.role_slug, "case_id": case.pk},
@@ -13163,16 +13893,24 @@ class ViewLitigationCaseView(View):
                     kwargs={"role": user.role_slug, "case_id": case.pk},
                 ),
                 "list_url": _active_cases_list_url(user),
+                "my_tools_stamp_url": user.workspace_url(
+                    "dashboard", "my-tools", "my-digital-stamp"
+                ),
+                "my_tools_signature_url": user.workspace_url(
+                    "dashboard", "my-tools", "my-digital-signature"
+                ),
             }
+        )
+        context.update(signatory_marks_context(user))
+        live_tasks = _live_case_tasks_for_user(
+            case, user, preferred_id=_preferred_task_id(request)
         )
         context.update(
             _entity_live_task_context(
                 request, kind="case", tasks=live_tasks, role=role
             )
         )
-        response = render(request, self.template_name, context)
-        return attach_greeting_cookie(response, request)
-
+        return context
 
 @method_decorator(login_required, name="dispatch")
 class ViewInvoiceView(View):
@@ -14458,10 +15196,11 @@ def _group_documents_by_party_type(documents, party_type_choices):
     return groups
 
 
-def _templates_library_payload():
+def _templates_library_payload(user=None):
     """
     Return template library data for Start from template pickers.
 
+    Includes company masters plus the current user's My templates when available.
     Never raises — Drive failures yield an empty library.
     """
     connection = GoogleDriveConnection.get_solo()
@@ -14479,6 +15218,7 @@ def _templates_library_payload():
         library = []
     files = []
     choices = []
+    category_counts = {slug: 0 for slug, _label in TEMPLATES_FORMS_CATEGORIES}
     for bucket in library:
         for item in bucket.get("files") or []:
             files.append(
@@ -14488,6 +15228,7 @@ def _templates_library_payload():
                     "category": bucket["slug"],
                     "category_label": bucket["label"],
                     "mime_type": item.get("mime_type") or "",
+                    "scope": TEMPLATES_FORMS_SCOPE_COMPANY,
                 }
             )
             choices.append(
@@ -14496,17 +15237,45 @@ def _templates_library_payload():
                     f"{bucket['label']} — {item['name']}",
                 )
             )
+            category_counts[bucket["slug"]] = (
+                category_counts.get(bucket["slug"]) or 0
+            ) + 1
+
+    if user is not None:
+        try:
+            personal = list_employee_templates_library(user)
+        except (GoogleDriveAPIError, GoogleDriveOAuthError):
+            personal = []
+        for bucket in personal:
+            for item in bucket.get("files") or []:
+                files.append(
+                    {
+                        "id": item["id"],
+                        "name": item["name"],
+                        "category": bucket["slug"],
+                        "category_label": bucket["label"],
+                        "mime_type": item.get("mime_type") or "",
+                        "scope": TEMPLATES_FORMS_SCOPE_MINE,
+                    }
+                )
+                choices.append(
+                    (
+                        item["id"],
+                        f"My templates · {bucket['label']} — {item['name']}",
+                    )
+                )
+                category_counts[bucket["slug"]] = (
+                    category_counts.get(bucket["slug"]) or 0
+                ) + 1
+
     return {
         "connected": True,
         "categories": [
-            {"slug": slug, "label": label, "count": bucket.get("count") or 0}
-            for (slug, label), bucket in zip(
-                TEMPLATES_FORMS_CATEGORIES, library or []
-            )
-        ]
-        if library
-        else [
-            {"slug": slug, "label": label, "count": 0}
+            {
+                "slug": slug,
+                "label": label,
+                "count": category_counts.get(slug) or 0,
+            }
             for slug, label in TEMPLATES_FORMS_CATEGORIES
         ],
         "files": files,
@@ -14515,18 +15284,27 @@ def _templates_library_payload():
     }
 
 
-def _assert_template_in_category(file_id: str, category_slug: str) -> dict:
-    """Ensure the Drive file lives in the selected Templates and Forms category."""
+def _assert_template_in_category(file_id: str, category_slug: str, user=None) -> dict:
+    """Ensure the Drive file lives in a company or personal template category."""
     meta = get_drive_file_meta(file_id)
     if meta.get("trashed"):
         raise GoogleDriveAPIError("That template is no longer available.")
-    category_folder_id = templates_forms_category_folder_id(category_slug)
     parents = meta.get("parents") or []
-    if category_folder_id not in parents:
-        raise GoogleDriveAPIError(
-            "That template is not in the selected category folder."
-        )
-    return meta
+    category_folder_id = templates_forms_category_folder_id(category_slug)
+    if category_folder_id in parents:
+        return meta
+    if user is not None:
+        try:
+            mine_folder_id = employee_template_category_folder_id(
+                user, category_slug
+            )
+        except GoogleDriveAPIError:
+            mine_folder_id = ""
+        if mine_folder_id and mine_folder_id in parents:
+            return meta
+    raise GoogleDriveAPIError(
+        "That template is not in the selected category folder."
+    )
 
 
 def _document_source_for_mime(mime_type: str) -> str:
@@ -14545,7 +15323,7 @@ class UploadCaseDocumentsView(View):
     entity_kind = "case"
     show_compose = True
     guard_action = "upload"
-    page_title_label = "Case documents"
+    page_title_label = "Upload documents"
     library_url_name = "accounts:upload_case_documents"
     upload_url_name = "accounts:upload_case_documents"
 
@@ -14608,7 +15386,7 @@ class UploadCaseDocumentsView(View):
                 return upload_denied
 
         party_type_choices = CaseParty.PartyType.choices
-        template_library = _templates_library_payload()
+        template_library = _templates_library_payload(user)
         context = self._context(
             user,
             case,
@@ -14695,7 +15473,7 @@ class UploadCaseDocumentsView(View):
             return access_denied
 
         party_type_choices = CaseParty.PartyType.choices
-        template_library = _templates_library_payload()
+        template_library = _templates_library_payload(user)
         create_form = CreateGoogleDocumentForm(
             prefix="create",
             auto_id="create_%s",
@@ -14744,8 +15522,10 @@ class UploadCaseDocumentsView(View):
                     template_choices=template_library["choices"],
                 )
                 if template_form.is_valid():
-                    self._start_from_template(user, case, template_form)
-                    return self._library_redirect(role, case.pk)
+                    document = self._start_from_template(
+                        user, case, template_form
+                    )
+                    return _document_edit_redirect(role, document)
             elif action == "rename":
                 self._rename_document(request, case)
                 return self._library_redirect(role, case.pk)
@@ -14899,7 +15679,7 @@ class UploadCaseDocumentsView(View):
         template_file_id = form.cleaned_data["template_file_id"]
         title = form.cleaned_data["title"]
         notes = (form.cleaned_data.get("notes") or "").strip()
-        meta = _assert_template_in_category(template_file_id, category)
+        meta = _assert_template_in_category(template_file_id, category, user)
         folder_id = ensure_case_drive_folder(case)
         created = copy_drive_file(
             template_file_id,
@@ -14935,7 +15715,8 @@ class UploadCaseDocumentsView(View):
         )
         messages.success(
             self.request,
-            f"“{title}” added to this case from the {category_label} template.",
+            f"Working copy “{title}” created from the {category_label} "
+            "template. Opening it for editing — the original is unchanged.",
         )
         return document
 
@@ -14997,10 +15778,10 @@ class UploadCaseDocumentsView(View):
 
     def _library_redirect(self, role, case_id):
         url = reverse(
-            self.library_url_name,
+            "accounts:view_litigation_case",
             kwargs={"role": role, "case_id": case_id},
         )
-        return redirect(f"{url}#docs-library")
+        return redirect(f"{url}#documents")
 
     def _context(
         self,
@@ -15025,7 +15806,7 @@ class UploadCaseDocumentsView(View):
             kwargs={"role": user.role_slug, "case_id": case.pk},
         )
         connection = GoogleDriveConnection.get_solo()
-        template_library = template_library or _templates_library_payload()
+        template_library = template_library or _templates_library_payload(user)
         context = workspace_context(
             user,
             request=self.request,
@@ -15112,6 +15893,45 @@ class ViewCaseDocumentsView(UploadCaseDocumentsView):
     show_compose = False
     guard_action = "view"
     page_title_label = "Case documents"
+
+    def get(self, request, role, case_id):
+        """Case documents are managed on the case detail page."""
+        user, denied = _guard_litigation(request, role, action="view")
+        if denied:
+            return denied
+        case = self.get_case(case_id)
+        if case.status == LitigationCase.Status.PENDING_APPROVAL:
+            return redirect(
+                "accounts:approve_litigation_case",
+                role=role,
+                case_id=case.pk,
+            )
+        scope_denied = _deny_if_case_not_visible(request, user, case)
+        if scope_denied:
+            return scope_denied
+        docs_denied = _deny_if_case_documents_not_visible(request, user, case)
+        if docs_denied:
+            return docs_denied
+        access_denied = _case_task_access_denied(
+            request,
+            user,
+            case,
+            "view",
+            redirect_to=reverse(
+                "accounts:view_litigation_case",
+                kwargs={"role": role, "case_id": case.pk},
+            ),
+        )
+        if access_denied:
+            return access_denied
+        url = reverse(
+            "accounts:view_litigation_case",
+            kwargs={"role": role, "case_id": case.pk},
+        )
+        return redirect(f"{url}#documents")
+
+    def post(self, request, role, case_id):
+        return self.get(request, role, case_id)
 
 
 @method_decorator(login_required, name="dispatch")
@@ -16037,7 +16857,7 @@ class UploadMatterDocumentsView(View):
                 return upload_denied
 
         party_type_choices = MatterParty.PartyType.choices
-        template_library = _templates_library_payload()
+        template_library = _templates_library_payload(user)
         context = self._context(
             user,
             matter,
@@ -16128,7 +16948,7 @@ class UploadMatterDocumentsView(View):
             return access_denied
 
         party_type_choices = MatterParty.PartyType.choices
-        template_library = _templates_library_payload()
+        template_library = _templates_library_payload(user)
         create_form = CreateGoogleDocumentForm(
             prefix="create",
             auto_id="create_%s",
@@ -16177,8 +16997,10 @@ class UploadMatterDocumentsView(View):
                     template_choices=template_library["choices"],
                 )
                 if template_form.is_valid():
-                    self._start_from_template(user, matter, template_form)
-                    return self._library_redirect(role, matter.pk)
+                    document = self._start_from_template(
+                        user, matter, template_form
+                    )
+                    return _document_edit_redirect(role, document)
             elif action == "rename":
                 self._rename_document(request, matter)
                 return self._library_redirect(role, matter.pk)
@@ -16332,7 +17154,7 @@ class UploadMatterDocumentsView(View):
         template_file_id = form.cleaned_data["template_file_id"]
         title = form.cleaned_data["title"]
         notes = (form.cleaned_data.get("notes") or "").strip()
-        meta = _assert_template_in_category(template_file_id, category)
+        meta = _assert_template_in_category(template_file_id, category, user)
         folder_id = ensure_matter_drive_folder(matter)
         created = copy_drive_file(
             template_file_id,
@@ -16368,7 +17190,8 @@ class UploadMatterDocumentsView(View):
         )
         messages.success(
             self.request,
-            f"“{title}” added to this matter from the {category_label} template.",
+            f"Working copy “{title}” created from the {category_label} "
+            "template. Opening it for editing — the original is unchanged.",
         )
         return document
 
@@ -16458,7 +17281,7 @@ class UploadMatterDocumentsView(View):
             kwargs={"role": user.role_slug, "matter_id": matter.pk},
         )
         connection = GoogleDriveConnection.get_solo()
-        template_library = template_library or _templates_library_payload()
+        template_library = template_library or _templates_library_payload(user)
         context = workspace_context(
             user,
             request=self.request,
@@ -16613,6 +17436,16 @@ def _document_library_return_url(document, role):
     return reverse(
         "accounts:upload_matter_documents",
         kwargs={"role": role, "matter_id": document.matter_id},
+    )
+
+
+def _document_edit_redirect(role, document):
+    """Open the case/matter working copy for editing (never the template master)."""
+    return redirect(
+        reverse(
+            "accounts:open_document",
+            kwargs={"role": role, "document_id": document.pk},
+        )
     )
 
 
@@ -17095,6 +17928,168 @@ class DocumentSessionPingView(View):
                 "content_changed": session.content_changed,
             }
         )
+
+
+@method_decorator(login_required, name="dispatch")
+class PlaceDocumentMarksView(View):
+    """Place marks directly over the document preview."""
+
+    template_name = "accounts/place_document_marks.html"
+
+    def get(self, request, role, document_id):
+        from .document_marks import attach_document_marks, signatory_marks_context
+
+        document = get_object_or_404(
+            Document.objects.select_related("case", "matter", "uploaded_by"),
+            pk=document_id,
+        )
+        user, denied = _guard_entity_document(
+            request, role, document, action="edit"
+        )
+        if denied:
+            return denied
+        if not employee_can_access_document(user, document):
+            return _deny_if_document_not_visible(request, user, document)
+
+        access = None
+        if document.case_id:
+            access = CaseTask.effective_access_for(user, document.case)
+        elif document.matter_id:
+            access = MatterTask.effective_access_for(user, document.matter)
+        if access is not None and not access.get("allow_edit", True):
+            messages.error(request, "You cannot sign or stamp this document.")
+            return redirect(_document_library_return_url(document, role))
+
+        document = attach_document_marks([document], user)[0]
+        if document.case_id:
+            return_url = reverse(
+                "accounts:view_litigation_case",
+                kwargs={"role": role, "case_id": document.case_id},
+            )
+            return_url = f"{return_url}#documents"
+            trail = ACTIVE_CASES_TRAIL
+        else:
+            return_url = reverse(
+                "accounts:view_non_litigation_matter",
+                kwargs={"role": role, "matter_id": document.matter_id},
+            )
+            return_url = f"{return_url}#documents"
+            trail = ACTIVE_MATTERS_TRAIL
+
+        initial_kind = (request.GET.get("mark") or "").strip()
+        if initial_kind not in DocumentMark.Kind.values:
+            initial_kind = ""
+
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=f"Sign & stamp — {document.title}",
+            page_trail=list(trail),
+            active_page="documents",
+        )
+        context.update(
+            {
+                "document": document,
+                "initial_mark_kind": initial_kind,
+                "save_marks_url": reverse(
+                    "accounts:document_marks",
+                    kwargs={"role": role, "document_id": document.pk},
+                ),
+                "return_url": return_url,
+                "open_url": document.open_url,
+            }
+        )
+        context.update(signatory_marks_context(user))
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+@method_decorator(login_required, name="dispatch")
+class DocumentMarksView(View):
+    """Save or clear the signatory's own stamp / signature placement."""
+
+    def post(self, request, role, document_id):
+        document = get_object_or_404(
+            Document.objects.select_related("case", "matter"),
+            pk=document_id,
+        )
+        user, denied = _guard_entity_document(
+            request, role, document, action="edit"
+        )
+        if denied:
+            return JsonResponse({"ok": False, "error": "unauthorized"}, status=403)
+
+        if not employee_can_access_document(user, document):
+            return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+
+        access = None
+        if document.case_id:
+            access = CaseTask.effective_access_for(user, document.case)
+        elif document.matter_id:
+            access = MatterTask.effective_access_for(user, document.matter)
+        if access is not None and not access.get("allow_edit", True):
+            return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+
+        try:
+            payload = json.loads(request.body or "{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JsonResponse({"ok": False, "error": "bad_request"}, status=400)
+
+        kind = (payload.get("kind") or "").strip()
+        if kind not in DocumentMark.Kind.values:
+            return JsonResponse({"ok": False, "error": "unknown_kind"}, status=400)
+
+        if payload.get("remove"):
+            DocumentMark.objects.filter(
+                document=document, employee=user, kind=kind
+            ).delete()
+            log_document_activity(
+                document,
+                user,
+                DocumentActivity.Action.MARK_REMOVED,
+                detail=f"Removed their {kind}",
+                metadata={"mark": kind},
+            )
+            return JsonResponse({"ok": True, "removed": True, "kind": kind})
+
+        defaults = DocumentMark.default_position(kind)
+        mark, created = DocumentMark.objects.update_or_create(
+            document=document,
+            employee=user,
+            kind=kind,
+            defaults={
+                "page": _mark_page(payload.get("page")),
+                "x_percent": _mark_percent(payload.get("x"), defaults["x"]),
+                "y_percent": _mark_percent(payload.get("y"), defaults["y"]),
+                "width_percent": _mark_percent(
+                    payload.get("width"), defaults["width"], minimum=4.0
+                ),
+            },
+        )
+        log_document_activity(
+            document,
+            user,
+            DocumentActivity.Action.MARK_PLACED,
+            detail=f"{'Placed' if created else 'Moved'} their {kind}",
+            metadata={"mark": kind, **mark.as_payload()},
+        )
+        return JsonResponse({"ok": True, "created": created, **mark.as_payload()})
+
+
+def _mark_percent(value, fallback: float, *, minimum: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(minimum, min(100.0, number))
+
+
+def _mark_page(value) -> int:
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(999, page))
 
 
 @method_decorator(login_required, name="dispatch")
