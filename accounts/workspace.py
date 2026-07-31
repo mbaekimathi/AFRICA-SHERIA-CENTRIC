@@ -626,6 +626,10 @@ EMPLOYEE_ADVANCES_PAGE_LINKS = [
 
 # Employee Communications page-only links
 EMPLOYEE_COMMUNICATIONS_PAGE_LINKS = [
+    ("Messages", "messages", ICON_MESSAGE),
+    ("Email Communications", "email-communications", ICON_MESSAGE),
+    ("WhatsApp Communications", "whatsapp-communications", ICON_MESSAGE),
+    ("SMS Communications", "sms-communications", ICON_MESSAGE),
     ("Email settings", "email-settings", ICON_SETTINGS),
 ]
 
@@ -1351,6 +1355,12 @@ def infer_activity_permission_actions(
         return ("view", "allocate", "edit")
     if activity_slug == "employee-communications":
         return ("view", "communicate", "edit")
+    if activity_slug in {
+        "email-communications",
+        "whatsapp-communications",
+        "sms-communications",
+    }:
+        return ("view",)
     if activity_slug == "email-settings":
         return ("view", "edit")
     if activity_slug == "performance-compliance":
@@ -1798,6 +1808,9 @@ PAGE_TITLES = {
     "employee-training": "Employee Training",
     "matter-allocation": "Matter Allocation & Coverage",
     "employee-communications": "Employee Communications",
+    "email-communications": "Email Communications",
+    "whatsapp-communications": "WhatsApp Communications",
+    "sms-communications": "SMS Communications",
     "email-settings": "Email settings",
     "performance-compliance": "Performance & Compliance",
     "leave-availability": "Leave & Availability",
@@ -3622,6 +3635,7 @@ def workspace_context(
         "server_now": timezone.localtime().isoformat(),
         "firm_name": get_firm_display_name(),
         "preactive_locked": False,
+        "lock_badge": "Locked",
         "notifications_url": reverse("accounts:workspace_notifications"),
         "notifications_mark_all_url": reverse(
             "accounts:workspace_notifications_mark_all_read"

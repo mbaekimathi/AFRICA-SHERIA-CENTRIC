@@ -73,6 +73,32 @@ def notify_invoice_paid_client(invoice: Invoice) -> tuple[ClientNotification, bo
     )
 
 
+def notify_staff_message_to_client(
+    client,
+    *,
+    title: str,
+    body: str,
+    channel: str,
+) -> ClientNotification:
+    """Record an outbound staff email/SMS in the client portal inbox."""
+    notification = ClientNotification.objects.create(
+        recipient=client,
+        category=ClientNotification.Category.MESSAGE,
+        title=title[:200],
+        body=body,
+        target_url=reverse("accounts:client_messages"),
+        source_key=(
+            f"staff_{channel}:{client.pk}:{int(timezone.now().timestamp())}"
+        ),
+    )
+    invalidate_client_notification_payload_cache(client.pk)
+    return notification
+
+
+def invalidate_client_notification_payload_cache(client_id: int) -> None:
+    cache.delete(f"client_notif_payload:v1:{client_id}:40")
+
+
 def serialize_client_notification(notification: ClientNotification) -> dict:
     created = timezone.localtime(notification.created_at)
     return {

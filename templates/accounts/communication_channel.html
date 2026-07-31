@@ -1,0 +1,158 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="live-list-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Open an employee to read every {{ channel.noun }} they sent to clients
+        and colleagues.
+        {% if channel.key == "email" and can_edit_work_email %}
+        Edit a work email below when an employee's mailbox address changes.
+        {% endif %}
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employees</h3>
+      <p class="panel__hint">
+        {{ channel_total }} {{ channel.noun_plural }} sent in total
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="get" class="workspace-form">
+        <div class="form-field">
+          <label for="id_channel_search">Find an employee</label>
+          <input
+            type="search"
+            name="q"
+            id="id_channel_search"
+            class="form-input"
+            value="{{ channel_search }}"
+            placeholder="Name or work email…"
+          >
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--ghost btn--inline">Search</button>
+          {% if channel_search %}
+          <a class="btn btn--ghost btn--inline" href="?">Clear</a>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if channel_employees %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Employee</th>
+              <th scope="col">Role</th>
+              <th scope="col">Work email</th>
+              <th scope="col">{{ channel.noun_plural|capfirst }}</th>
+              <th scope="col">Last sent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in channel_employees %}
+            <tr class="is-clickable-row" data-href="{{ row.url }}">
+              <td>
+                <div class="person-cell">
+                  {% if row.employee.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ row.employee.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {{ row.employee.first_name|slice:":1"|upper }}{{ row.employee.last_name|slice:":1"|upper }}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <a class="person-cell__name" href="{{ row.url }}">
+                      {{ row.employee.get_full_name|default:row.employee.login_code }}
+                    </a>
+                    <span class="person-cell__meta">{{ row.employee.login_code }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>{{ row.employee.get_role_display }}</td>
+              <td>
+                {% if channel.key == "email" and can_edit_work_email and row.work_email_editable %}
+                <form method="post" action="{{ row.work_email_update_url }}" class="work-email-editor">
+                  {% csrf_token %}
+                  <label class="visually-hidden" for="id_work_email_{{ row.employee.pk }}">
+                    Work email for {{ row.employee.get_full_name|default:row.employee.login_code }}
+                  </label>
+                  <input
+                    type="email"
+                    name="work_email"
+                    id="id_work_email_{{ row.employee.pk }}"
+                    class="form-input work-email-editor__input"
+                    value="{{ row.employee.work_email|default_if_none:'' }}"
+                    placeholder="name@company.com"
+                    autocomplete="off"
+                  >
+                  <button
+                    type="submit"
+                    name="action"
+                    value="update"
+                    class="btn btn--ghost btn--inline work-email-editor__save"
+                  >
+                    Save
+                  </button>
+                  {% if not row.employee.work_email %}
+                  <button
+                    type="submit"
+                    name="action"
+                    value="generate"
+                    class="btn btn--primary btn--inline work-email-editor__save"
+                    formnovalidate
+                    title="{% if work_email_provisioning_ready %}Create the mailbox and email login instructions to the employee{% else %}Work email provisioning must be configured in Communication Settings{% endif %}"
+                  >
+                    Generate &amp; notify
+                  </button>
+                  {% endif %}
+                </form>
+                {% else %}
+                {{ row.employee.work_email|default:"—" }}
+                {% endif %}
+              </td>
+              <td>
+                {% if row.total %}
+                <span class="status-pill status-pill--done">{{ row.total }}</span>
+                {% else %}
+                0
+                {% endif %}
+              </td>
+              <td>
+                {% if row.last_at %}
+                {{ row.last_at|date:"d M Y, H:i" }}
+                {% else %}
+                —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No employees to show</p>
+        <p class="empty-state__copy">
+          {% if channel_search %}
+          No employee matches “{{ channel_search }}”.
+          {% else %}
+          Employee accounts will appear here once they are onboarded.
+          {% endif %}
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

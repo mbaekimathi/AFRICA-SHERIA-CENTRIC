@@ -35,6 +35,31 @@ urlpatterns = [
     # Employee auth
     path("employee/login/", views.AdvocateLoginView.as_view(), name="login"),
     path("login/", views.AdvocateLoginView.as_view(), name="login-alt"),
+    path(
+        "employee/password-reset/",
+        views.EmployeePasswordResetView.as_view(),
+        name="password_reset",
+    ),
+    path(
+        "employee/password-reset/done/",
+        views.EmployeePasswordResetDoneView.as_view(),
+        name="password_reset_done",
+    ),
+    path(
+        "employee/password-reset/<uidb64>/<token>/",
+        views.EmployeePasswordResetConfirmView.as_view(),
+        name="password_reset_confirm",
+    ),
+    path(
+        "employee/password-reset/complete/",
+        views.EmployeePasswordResetCompleteView.as_view(),
+        name="password_reset_complete",
+    ),
+    path(
+        "work-email/set-password/<str:token>/",
+        views.SetWorkEmailPasswordView.as_view(),
+        name="set_work_email_password",
+    ),
     path("signup/", views.SignUpView.as_view(), name="signup"),
     path("api/check-login-code/", views.check_login_code, name="check_login_code"),
     path(
@@ -455,9 +480,47 @@ urlpatterns = [
     ),
     path(
         "<slug:role>/dashboard/user-management/employee-management/"
+        "onboarding-approvals/decline/<int:employee_id>/",
+        views.DeclinePendingEmployeeView.as_view(),
+        name="decline_pending_employee",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
+        "employee-communications/email-communications/<int:employee_id>/"
+        "work-email/",
+        views.UpdateEmployeeWorkEmailView.as_view(),
+        name="update_employee_work_email",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
+        "employee-communications/<slug:channel>/<int:employee_id>/",
+        views.EmployeeCommunicationLogView.as_view(),
+        name="employee_communication_log",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
+        "employee-communications/<slug:channel>/<int:employee_id>/"
+        "<int:message_id>/",
+        views.EmployeeCommunicationDetailView.as_view(),
+        name="employee_communication_message",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
         "performance-compliance/<int:employee_id>/",
         views.EmployeePerformanceAnalyticsView.as_view(),
         name="employee_performance_analytics",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
+        "edit/<int:employee_id>/",
+        views.EditEmployeeDetailsView.as_view(),
+        name="edit_employee_details",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
+        "toggle-suspension/<int:employee_id>/",
+        views.ToggleEmployeeSuspensionView.as_view(),
+        name="toggle_employee_suspension",
     ),
     # Case / matter review actions (before role page catch-all)
     path(

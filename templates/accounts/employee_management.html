@@ -37,6 +37,7 @@
               <th scope="col">Phone</th>
               <th scope="col">Role</th>
               <th scope="col">Status</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -65,6 +66,67 @@
                 <span class="status-pill status-pill--{{ employee.status }}">
                   {{ employee.get_status_display }}
                 </span>
+              </td>
+              <td>
+                <div class="row-actions">
+                  <a
+                    href="{% url 'accounts:edit_employee_details' role=role_slug employee_id=employee.pk %}"
+                    class="row-action row-action--edit"
+                    title="Edit {{ employee.get_full_name|default:employee.login_code }}"
+                    aria-label="Edit employee details for {{ employee.get_full_name|default:employee.login_code }}"
+                  >
+                    <span class="row-action__icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                        <path d="M12 20h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4L16.5 3.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span class="row-action__label">Edit</span>
+                  </a>
+
+                  <form
+                    method="post"
+                    action="{% url 'accounts:toggle_employee_suspension' role=role_slug employee_id=employee.pk %}"
+                    class="row-action-form"
+                    onsubmit="return confirm('{% if employee.status == "active" %}Suspend{% else %}Unsuspend{% endif %} {{ employee.get_full_name|default:employee.login_code|escapejs }}?');"
+                  >
+                    {% csrf_token %}
+                    <button
+                      type="submit"
+                      class="row-action {% if employee.status == 'active' %}row-action--suspend{% else %}row-action--unsuspend{% endif %}"
+                      title="{% if employee.status == 'active' %}Suspend{% else %}Unsuspend{% endif %} {{ employee.get_full_name|default:employee.login_code }}"
+                      aria-label="{% if employee.status == 'active' %}Suspend{% else %}Unsuspend{% endif %} {{ employee.get_full_name|default:employee.login_code }}"
+                    >
+                      <span class="row-action__icon" aria-hidden="true">
+                        {% if employee.status == "active" %}
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                          <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.7"/>
+                          <path d="m6 6 12 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                        </svg>
+                        {% else %}
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                          <path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        {% endif %}
+                      </span>
+                      <span class="row-action__label">{% if employee.status == "active" %}Suspend{% else %}Unsuspend{% endif %}</span>
+                    </button>
+                  </form>
+
+                  <a
+                    href="{{ offboarding_url }}?employee={{ employee.pk }}"
+                    class="row-action row-action--reject"
+                    title="Offboard {{ employee.get_full_name|default:employee.login_code }}"
+                    aria-label="Go to offboarding for {{ employee.get_full_name|default:employee.login_code }}"
+                  >
+                    <span class="row-action__icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                        <path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5M14 11v5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span class="row-action__label">Offboard</span>
+                  </a>
+                </div>
               </td>
             </tr>
             {% endfor %}

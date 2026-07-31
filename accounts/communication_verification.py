@@ -14,12 +14,14 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from email.utils import parseaddr
+from types import SimpleNamespace
 from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.utils import timezone
 
+from .cpanel_mail import CpanelMailError, list_mailboxes
 from .models import CommunicationSettings
 
 USER_AGENT = (
@@ -81,6 +83,13 @@ OVERRIDE_KEYS = (
     "email_host_password",
     "email_from_email",
     "email_from_name",
+    "work_email_provisioning_enabled",
+    "cpanel_host",
+    "cpanel_port",
+    "cpanel_username",
+    "cpanel_api_token",
+    "work_email_domain",
+    "work_email_quota_mb",
     "sms_enabled",
     "sms_provider",
     "sms_username",
@@ -97,6 +106,13 @@ OVERRIDE_KEYS = (
     "whatsapp_webhook_url",
     "whatsapp_webhook_verify_token",
 )
+
+SECRET_KEYS = {
+    "email_host_password",
+    "cpanel_api_token",
+    "sms_api_secret",
+    "whatsapp_api_token",
+}
 
 
 @dataclass
@@ -129,6 +145,13 @@ FIELD_LABELS = {
     "email_host_password": "SMTP password",
     "email_from_email": "From email address",
     "email_from_name": "From display name",
+    "work_email_provisioning_enabled": "Create work emails automatically",
+    "cpanel_host": "cPanel host",
+    "cpanel_port": "cPanel port",
+    "cpanel_username": "cPanel username",
+    "cpanel_api_token": "cPanel API token",
+    "work_email_domain": "Work email domain",
+    "work_email_quota_mb": "Mailbox quota",
     "sms_enabled": "Enable SMS",
     "sms_provider": "SMS provider",
     "sms_username": "API username / Account SID",
@@ -148,6 +171,7 @@ FIELD_LABELS = {
 
 CHANNEL_PANEL_IDS = {
     "email": "communication-email-panel",
+    "work_email": "communication-work-email-panel",
     "sms": "communication-sms-panel",
     "whatsapp": "communication-whatsapp-panel",
 }
@@ -282,13 +306,17 @@ def merge_overrides(
         if key not in overrides:
             continue
         raw = overrides[key]
+        # Secret inputs are deliberately blank after loading the page. Keep
+        # the persisted credential unless the user supplies a replacement.
+        if key in SECRET_KEYS and not _blank(raw):
+            continue
         if key.endswith("_enabled") or key in {
             "email_use_tls",
             "email_use_ssl",
             "whatsapp_api_enabled",
         }:
             values[key] = _as_bool(raw)
-        elif key == "email_port":
+        elif key in {"email_port", "cpanel_port", "work_email_quota_mb"}:
             try:
                 values[key] = int(_blank(raw) or 0)
             except ValueError:
@@ -512,6 +540,109 @@ def verify_email_smtp(values: dict[str, Any]) -> ChannelStatus:
                     server.close()
                 except Exception:
                     pass
+
+
+def verify_work_email_cpanel(values: dict[str, Any]) -> ChannelStatus:
+    """Verify cPanel credentials without creating or modifying a mailbox."""
+    enabled = _as_bool(values.get("work_email_provisioning_enabled"))
+    host = _blank(values.get("cpanel_host"))
+    username = _blank(values.get("cpanel_username"))
+    token = _blank(values.get("cpanel_api_token"))
+    domain = _blank(values.get("work_email_domain")).lstrip("@").lower()
+    try:
+        port = int(values.get("cpanel_port") or 0)
+    except (TypeError, ValueError):
+        port = 0
+
+    if not enabled:
+        return _result(
+            key="work_email",
+            label="Work email (cPanel)",
+            kind="email",
+            value=domain,
+            status=STATUS_DISABLED,
+            detail="Automatic work mailbox creation is turned off.",
+        )
+
+    missing = []
+    if not host:
+        missing.append("cpanel_host")
+    if port < 1 or port > 65535:
+        missing.append("cpanel_port")
+    if not username:
+        missing.append("cpanel_username")
+    if not token:
+        missing.append("cpanel_api_token")
+    if not domain:
+        missing.append("work_email_domain")
+    if missing:
+        return _result(
+            key="work_email",
+            label="Work email (cPanel)",
+            kind="email",
+            value=domain or host,
+            status=STATUS_NOT_SET,
+            detail="Complete the cPanel fields required for work mailbox creation.",
+            required=True,
+            problem_fields=missing,
+        )
+
+    if not re.fullmatch(
+        r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}",
+        domain,
+        re.IGNORECASE,
+    ):
+        return _result(
+            key="work_email",
+            label="Work email (cPanel)",
+            kind="email",
+            value=domain,
+            status=STATUS_INVALID,
+            detail="Enter a valid work email domain without http://, paths, or @.",
+            required=True,
+            problem_fields=["work_email_domain"],
+        )
+
+    setting = SimpleNamespace(
+        cpanel_host=host,
+        cpanel_port=port,
+        cpanel_username=username,
+        cpanel_api_token=token,
+    )
+    try:
+        mailbox_count = len(list_mailboxes(setting, domain))
+    except CpanelMailError as exc:
+        detail = str(exc)
+        problem_fields = ["cpanel_host", "cpanel_port"]
+        lowered = detail.lower()
+        if "token" in lowered or "rejected" in lowered:
+            problem_fields = ["cpanel_username", "cpanel_api_token"]
+        elif "domain" in lowered:
+            problem_fields = ["work_email_domain"]
+        return _result(
+            key="work_email",
+            label="Work email (cPanel)",
+            kind="email",
+            value=domain,
+            status=STATUS_UNREACHABLE,
+            detail=detail,
+            required=True,
+            problem_fields=problem_fields,
+        )
+
+    return _result(
+        key="work_email",
+        label="Work email (cPanel)",
+        kind="email",
+        value=domain,
+        status=STATUS_CONNECTED,
+        detail=(
+            "cPanel API authenticated successfully and can list "
+            f"{mailbox_count} mailbox{'es' if mailbox_count != 1 else ''} "
+            f"on {domain}."
+        ),
+        required=True,
+    )
 
 
 def verify_sms_provider(values: dict[str, Any]) -> ChannelStatus:
@@ -950,6 +1081,13 @@ def pending_connection_snapshot(setting: CommunicationSettings) -> dict[str, Any
     channels = []
     specs = (
         ("email", "Email (SMTP)", "email", setting.email_enabled, setting.email_host),
+        (
+            "work_email",
+            "Work email (cPanel)",
+            "email",
+            setting.work_email_provisioning_enabled,
+            setting.work_email_domain,
+        ),
         ("sms", "SMS", "sms", setting.sms_enabled, setting.get_sms_provider_display()),
         (
             "whatsapp",
@@ -993,7 +1131,7 @@ def pending_connection_snapshot(setting: CommunicationSettings) -> dict[str, Any
         "overall_detail": (
             "Running live checks against SMTP and provider APIs."
             if enabled_count
-            else "Enable Email, SMS, or WhatsApp, then verify."
+            else "Enable Email, work email, SMS, or WhatsApp, then verify."
         ),
         "connected_count": 0,
         "problem_count": 0,
@@ -1002,6 +1140,7 @@ def pending_connection_snapshot(setting: CommunicationSettings) -> dict[str, Any
         "problem_locations": [],
         "connection_channels": channels,
         "by_key": {c["key"]: c for c in channels},
+        "verification_passed": False,
     }
 
 
@@ -1014,9 +1153,10 @@ def verify_communication_settings(
     setting = setting or CommunicationSettings.get_solo()
     values = merge_overrides(values_from_settings(setting), overrides)
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {
             pool.submit(verify_email_smtp, values): "email",
+            pool.submit(verify_work_email_cpanel, values): "work_email",
             pool.submit(verify_sms_provider, values): "sms",
             pool.submit(verify_whatsapp, values): "whatsapp",
         }
@@ -1025,7 +1165,7 @@ def verify_communication_settings(
             result = future.result()
             by_key[result.key] = result
 
-    order = ("email", "sms", "whatsapp")
+    order = ("email", "work_email", "sms", "whatsapp")
     channels = [by_key[key] for key in order if key in by_key]
 
     connected = sum(
@@ -1106,7 +1246,9 @@ def verify_communication_settings(
         overall_status = "empty"
         overall_tone = "suspended"
         overall_label = "No channels enabled"
-        overall_detail = "Enable Email, SMS, or WhatsApp, save, then verify again."
+        overall_detail = (
+            "Enable Email, work email, SMS, or WhatsApp, then verify and save."
+        )
 
     return {
         "verified_at": timezone.now().isoformat(),
@@ -1121,4 +1263,5 @@ def verify_communication_settings(
         "problem_locations": problem_locations,
         "connection_channels": [c.to_dict() for c in channels],
         "by_key": {c.key: c.to_dict() for c in channels},
+        "verification_passed": not required_problems and connected > 0,
     }

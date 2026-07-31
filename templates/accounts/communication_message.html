@@ -1,0 +1,66 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ channel.label }}</p>
+      <h2>{{ message.subject|default:message.recipient_name|default:"Message" }}</h2>
+      <p class="page-lead">
+        Sent by {{ log_employee.get_full_name }} on
+        {{ message.sent_at|date:"d M Y, H:i" }}.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a class="btn btn--ghost btn--inline" href="{{ log_url }}">Back to log</a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Details</h3>
+      <p class="panel__hint">
+        {% if message.status == "failed" %}
+        <span class="status-pill status-pill--submitted">{{ message.status_label }}</span>
+        {% else %}
+        <span class="status-pill status-pill--done">{{ message.status_label }}</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      <dl class="settings-grid review-grid">
+        <div>
+          <dt>From</dt>
+          <dd>
+            {{ log_employee.get_full_name }}
+            {% if message.from_identity %}· {{ message.from_identity }}{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>To</dt>
+          <dd>{{ message.recipient_name|default:message.to_address }} · {{ message.to_address }}</dd>
+        </div>
+        <div><dt>Recipient type</dt><dd>{{ message.recipient_kind }}</dd></div>
+        <div><dt>Channel</dt><dd>{{ channel.label }}</dd></div>
+        {% if message.subject %}
+        <div><dt>Subject</dt><dd>{{ message.subject }}</dd></div>
+        {% endif %}
+        {% if message.error_message %}
+        <div><dt>Failure reason</dt><dd>{{ message.error_message }}</dd></div>
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Message</h3>
+    </div>
+    <div class="panel__body">
+      <p class="communication-body">{{ message.body|linebreaksbr|default:"(no content)" }}</p>
+    </div>
+  </section>
+</section>
+{% endblock %}

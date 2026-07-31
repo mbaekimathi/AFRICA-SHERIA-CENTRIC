@@ -52,10 +52,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const syncPaymentFields = () => {
     const selected = editForm?.querySelector('input[name="payment_method"]:checked');
     const method = selected?.value || "";
-    const mobile = editForm?.querySelector("[data-payment-mobile]");
-    const bank = editForm?.querySelector("[data-payment-bank]");
-    if (mobile) mobile.hidden = method !== "mobile";
-    if (bank) bank.hidden = method !== "bank";
+    editForm?.querySelectorAll("[data-payment-mobile]").forEach((el) => {
+      el.hidden = method !== "mobile";
+    });
+    editForm?.querySelectorAll("[data-payment-bank]").forEach((el) => {
+      el.hidden = method !== "bank";
+    });
   };
 
   editForm?.querySelectorAll('input[name="payment_method"]').forEach((input) => {

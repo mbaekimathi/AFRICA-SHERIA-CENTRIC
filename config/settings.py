@@ -131,6 +131,14 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 # MySQL — defaults suit local MariaDB/MySQL; override only what differs.
 DB_NAME = _env("DB_NAME") or "sheria_centric_v2"
+# cPanel shared MySQL often caps max_user_connections (~15). Persistent reuse
+# (CONN_MAX_AGE > 0) × Passenger workers × poll/thread pools exhausts that fast.
+# Production default: close after each request. Local: modest reuse is fine.
+_db_conn_max_age_raw = _env("DB_CONN_MAX_AGE")
+if _db_conn_max_age_raw:
+    _DB_CONN_MAX_AGE = int(_db_conn_max_age_raw)
+else:
+    _DB_CONN_MAX_AGE = 0 if IS_PRODUCTION else 30
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
@@ -139,9 +147,7 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
         "HOST": _env("DB_HOST") or "127.0.0.1",
         "PORT": _env("DB_PORT") or "3306",
-        # Reuse connections across requests — critical under many concurrent sessions.
-        # Keep modest: each thread/process may hold one connection while alive.
-        "CONN_MAX_AGE": int(_env("DB_CONN_MAX_AGE") or "30"),
+        "CONN_MAX_AGE": _DB_CONN_MAX_AGE,
         "CONN_HEALTH_CHECKS": True,
         "OPTIONS": {
             "charset": "utf8mb4",

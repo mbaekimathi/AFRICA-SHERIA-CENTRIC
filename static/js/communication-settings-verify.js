@@ -13,6 +13,7 @@
   var btn = page.querySelector(".js-comm-verify-btn");
   var spinner = page.querySelector(".js-comm-verify-spinner");
   var btnLabel = page.querySelector(".js-comm-verify-label");
+  var saveStatus = document.getElementById("communication-save-status");
   var verifying = false;
 
   var FIELD_KEYS = [
@@ -23,6 +24,13 @@
     "email_host_password",
     "email_from_email",
     "email_from_name",
+    "work_email_provisioning_enabled",
+    "cpanel_host",
+    "cpanel_port",
+    "cpanel_username",
+    "cpanel_api_token",
+    "work_email_domain",
+    "work_email_quota_mb",
     "sms_enabled",
     "sms_provider",
     "sms_username",
@@ -42,6 +50,7 @@
 
   var BOOL_KEYS = {
     email_enabled: true,
+    work_email_provisioning_enabled: true,
     sms_enabled: true,
     whatsapp_enabled: true,
     whatsapp_api_enabled: true,
@@ -49,8 +58,16 @@
 
   var PANEL_IDS = {
     email: "communication-email-panel",
+    work_email: "communication-work-email-panel",
     sms: "communication-sms-panel",
     whatsapp: "communication-whatsapp-panel",
+  };
+
+  var ENABLE_KEYS = {
+    email: "email_enabled",
+    work_email: "work_email_provisioning_enabled",
+    sms: "sms_enabled",
+    whatsapp: "whatsapp_enabled",
   };
 
   function csrfToken() {
@@ -94,7 +111,7 @@
     if (btn) btn.disabled = busy;
     if (spinner) spinner.hidden = !busy;
     if (btnLabel) {
-      btnLabel.textContent = busy ? "Verifying…" : "Verify configuration";
+      btnLabel.textContent = busy ? "Verifying…" : "Verify & save";
     }
   }
 
@@ -129,6 +146,12 @@
       if (apiFields && apiToggle && apiToggle.checked) {
         apiFields.hidden = false;
       }
+    }
+    if (channelKey === "work_email") {
+      var cpanelFields = document.getElementById(
+        "communication-work-email-fields"
+      );
+      if (cpanelFields) cpanelFields.hidden = false;
     }
   }
 
@@ -173,6 +196,23 @@
         }
       }, 80);
     }
+  }
+
+  function highlightFormErrors(fieldErrors) {
+    if (!fieldErrors || typeof fieldErrors !== "object") return;
+    Object.keys(fieldErrors).forEach(function (fieldKey) {
+      var wrap = fieldWrap(fieldKey);
+      if (!wrap) return;
+      wrap.classList.add("is-problem");
+      var messages = Array.isArray(fieldErrors[fieldKey])
+        ? fieldErrors[fieldKey]
+        : [fieldErrors[fieldKey]];
+      var hint = document.createElement("p");
+      hint.className = "field-error js-comm-live-error";
+      hint.setAttribute("role", "alert");
+      hint.textContent = messages.join(" ");
+      wrap.appendChild(hint);
+    });
   }
 
   function renderChannelItem(channel) {
@@ -309,7 +349,7 @@
     }
     page.querySelectorAll(".js-comm-field-status").forEach(function (pill) {
       var key = pill.getAttribute("data-channel-key");
-      var enabledKey = key + "_enabled";
+      var enabledKey = ENABLE_KEYS[key] || key + "_enabled";
       var enabledInput = fieldInput(enabledKey);
       var enabled = enabledInput ? !!enabledInput.checked : false;
       if (!enabled) {
@@ -325,7 +365,7 @@
     });
   }
 
-  function verify() {
+  function verify(saveRequested) {
     if (verifying) return Promise.resolve();
     setBusy(true);
     markChecking();
@@ -338,7 +378,10 @@
         "X-CSRFToken": csrfToken(),
         "X-Requested-With": "XMLHttpRequest",
       },
-      body: JSON.stringify({ values: collectValues() }),
+      body: JSON.stringify({
+        values: collectValues(),
+        save: !!saveRequested,
+      }),
     })
       .then(function (resp) {
         return resp.json().then(function (data) {
@@ -348,6 +391,20 @@
             );
           }
           applyResult(data);
+          highlightFormErrors(data.field_errors);
+          if (saveStatus && saveRequested) {
+            if (data.saved) {
+              saveStatus.textContent =
+                "Verified and saved just now. These settings will be reused " +
+                "for future connections.";
+              saveStatus.classList.remove("field-error");
+            } else {
+              saveStatus.textContent =
+                data.save_error ||
+                "Verification did not pass, so the settings were not saved.";
+              saveStatus.classList.add("field-error");
+            }
+          }
         });
       })
       .catch(function () {
@@ -369,10 +426,10 @@
 
   if (btn) {
     btn.addEventListener("click", function () {
-      verify();
+      verify(true);
     });
   }
 
-  // Auto-verify on load so the page always shows live configuration status.
-  verify();
+  // Check the persisted configuration on load without writing to the database.
+  verify(false);
 })();

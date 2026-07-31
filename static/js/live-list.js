@@ -30,6 +30,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return false;
       }
       if (data.revision === knownRevision) return false;
+      // An open dialog may hold one-time content (e.g. new mailbox
+      // credentials); reload only once it is dismissed.
+      if (document.querySelector("dialog[open]")) return false;
       window.location.reload();
       return true;
     },

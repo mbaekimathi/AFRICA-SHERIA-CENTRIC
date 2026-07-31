@@ -4,188 +4,808 @@
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
 {% block content %}
-<section class="page">
-  <header class="page-intro">
-    <div class="page-intro__copy">
-      <p class="page-kicker">{{ session_greeting }}</p>
-      <h2>{{ page_title }}</h2>
-      <p class="page-lead">
-        Firm notices appear below. Use the channel links to chat with clients on
-        WhatsApp, email, or SMS.
-      </p>
-    </div>
-  </header>
-
-  <section class="message-channels" aria-label="Chat channels">
-    {% if whatsapp_chat.available %}
-    <a
-      class="message-channel message-channel--whatsapp"
-      href="{{ whatsapp_chat.url }}"
-      {% if whatsapp_chat.external %}target="_blank" rel="noopener noreferrer"{% endif %}
-    >
-      <span class="message-channel__icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-          <path
-            d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.38A9.9 9.9 0 1 0 12.04 2Z"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linejoin="round"
-          />
-          <path
-            d="M9.3 8.7c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .5.4l.7 1.7c.1.2 0 .4-.1.6l-.4.5c-.1.1-.1.3 0 .4.3.5.9 1.1 1.5 1.5.1.1.3.1.4 0l.5-.4c.2-.1.4-.2.6-.1l1.7.7c.3.1.4.3.4.5v.5c0 .3 0 .5-.4.7-.4.2-1 .4-1.6.3-1.6-.2-3.3-1.2-4.6-2.5-1.3-1.3-2.2-3-2.4-4.6-.1-.6.1-1.2.3-1.6Z"
-            fill="currentColor"
-          />
-        </svg>
-      </span>
-      <span class="message-channel__copy">
-        <strong>{{ whatsapp_chat.label }}</strong>
-        <span>{{ whatsapp_chat.hint }}</span>
-      </span>
+{% if active_message_person %}
+<section class="page page--messages conversation-page" id="employee-messages-page">
+  <header class="conversation-page__head">
+    <a class="icon-action" href="{{ messages_base_url }}?view=chats" aria-label="Back to conversations" title="Back">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M19 12H5m0 0 6-6m-6 6 6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
-    {% else %}
-    <span class="message-channel message-channel--whatsapp is-disabled" title="Configure WhatsApp in Communication Settings">
-      <span class="message-channel__icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-          <path
-            d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.38A9.9 9.9 0 1 0 12.04 2Z"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </span>
-      <span class="message-channel__copy">
-        <strong>Chat on WhatsApp</strong>
-        <span>Add a WhatsApp number in Communication Settings</span>
-      </span>
+    <span class="avatar-chip avatar-chip--lg" data-tone="3" aria-hidden="true">
+      {{ active_message_person.first_name|slice:":1"|upper }}{{ active_message_person.last_name|slice:":1"|upper }}
     </span>
-    {% endif %}
-
-    {% if email_chat.available %}
-    <a
-      class="message-channel message-channel--email"
-      href="{{ email_chat.url }}"
-    >
-      <span class="message-channel__icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-          <path d="M4.5 6.75h15v10.5h-15z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="m4.5 7.5 7.5 5.25L19.5 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </span>
-      <span class="message-channel__copy">
-        <strong>{{ email_chat.label }}</strong>
-        <span>{{ email_chat.hint }}</span>
-      </span>
-    </a>
-    {% else %}
-    <span class="message-channel message-channel--email is-disabled" title="Add a firm email in Company Information">
-      <span class="message-channel__icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-          <path d="M4.5 6.75h15v10.5h-15z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="m4.5 7.5 7.5 5.25L19.5 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </span>
-      <span class="message-channel__copy">
-        <strong>Chat on Email</strong>
-        <span>Add a firm email in Company Information</span>
-      </span>
-    </span>
-    {% endif %}
-
-    {% if sms_chat.available %}
-    <a
-      class="message-channel message-channel--sms"
-      href="{{ sms_chat.url }}"
-    >
-      <span class="message-channel__icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-          <path d="M8.25 5.5h7.5v13h-7.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="M11 17.25h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-          <path d="M9.5 8.5h5M9.5 11h5M9.5 13.5h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <span class="message-channel__copy">
-        <strong>{{ sms_chat.label }}</strong>
-        <span>{{ sms_chat.hint }}</span>
-      </span>
-    </a>
-    {% else %}
-    <span class="message-channel message-channel--sms is-disabled" title="Add a firm phone in Company Information">
-      <span class="message-channel__icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-          <path d="M8.25 5.5h7.5v13h-7.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="M11 17.25h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <span class="message-channel__copy">
-        <strong>Chat on SMS</strong>
-        <span>Add a firm phone in Company Information</span>
-      </span>
-    </span>
-    {% endif %}
-  </section>
-
-  <section class="panel">
-    <div class="panel__head">
-      <h3>Inbox</h3>
-      <p class="panel__hint">
-        {{ message_count }} total
-        {% if message_unread_count %}
-        · {{ message_unread_count }} unread
+    <div class="conversation-page__who">
+      <h2>Conversation with {{ active_message_person.get_full_name }}</h2>
+      <p>
+        {% if active_message_person_email %}
+        {{ active_message_person_email }}
+        {% else %}
+        No work email on file
         {% endif %}
       </p>
     </div>
-    <div class="panel__body panel__body--table">
-      {% if message_notifications %}
-      <div class="data-table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th scope="col">When</th>
-              <th scope="col">Message</th>
-              <th scope="col">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in message_notifications %}
-            <tr class="{% if not item.is_read %}message-row--unread{% endif %}">
-              <td>
-                <span class="reminder-when">{{ item.created_at|date:"d M Y, H:i" }}</span>
-              </td>
-              <td>
-                <div class="person-cell__text">
-                  <a
-                    class="person-cell__name"
-                    href="{% url 'accounts:workspace_notification_open' item.pk %}"
-                  >{{ item.title }}</a>
-                  {% if item.body %}
-                  <span class="person-cell__meta">{{ item.body|truncatechars:140 }}</span>
-                  {% endif %}
-                </div>
-              </td>
-              <td>
-                {% if item.is_read %}
-                <span class="status-pill status-pill--done">Read</span>
-                {% else %}
-                <span class="status-pill status-pill--pending">Unread</span>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    {% if compose_work_email %}
+    <div class="mailbox__account conversation-page__account">
+      <span class="mailbox__account-dot{% if mail_connected %} is-live{% endif %}" aria-hidden="true"></span>
+      <span class="mailbox__account-text">
+        <strong>{{ compose_work_email }}</strong>
+        <small>{% if mail_connected %}Sending as you{% else %}Mailbox not connected{% endif %}</small>
+      </span>
+    </div>
+    {% endif %}
+  </header>
+
+  <div class="conversation-page__shell">
+    <div class="conversation-page__thread chat-thread" aria-label="Conversation with {{ active_message_person.get_full_name }}">
+      {% for item in active_message_thread %}
+      <article class="chat-bubble{% if item.is_from_me %} is-sent{% endif %}">
+        <p class="chat-bubble__meta">
+          <strong>{% if item.is_from_me %}You{% else %}{{ active_message_person.get_full_name }}{% endif %}</strong>
+          <span>{{ item.record.get_channel_display }} · {{ item.record.created_at|date:"d M Y, H:i" }}</span>
+        </p>
+        {% if item.record.subject %}
+        <p class="chat-bubble__subject">{{ item.record.subject }}</p>
+        {% endif %}
+        <p class="chat-bubble__body">{{ item.record.body|linebreaksbr }}</p>
+        {% if item.is_from_me and item.record.status == 'failed' %}
+        <span class="status-pill status-pill--danger">Failed</span>
+        {% endif %}
+      </article>
+      {% empty %}
+      <div class="mailbox__empty">
+        <p class="mailbox__empty-title">No messages with this person yet</p>
+        <p class="mailbox__empty-copy">Use the form below to send the first email.</p>
+      </div>
+      {% endfor %}
+    </div>
+
+    <aside class="conversation-compose" aria-label="Compose email">
+      {% if not compose_work_email %}
+      <div class="mailbox__empty">
+        <p class="mailbox__empty-title">Work email required</p>
+        <p class="mailbox__empty-copy">
+          A managing partner must create your firm mailbox before you can email from here.
+        </p>
+      </div>
+      {% elif not mail_connected %}
+      <form method="post" class="workspace-form mailbox__connect conversation-compose__connect" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="connect_mailbox">
+        <input type="hidden" name="person" value="{{ active_message_person.pk }}">
+        <h3>Connect your mailbox</h3>
+        <p class="mailbox__connect-lead">
+          Enter your work mailbox password once to send email to
+          {{ active_message_person.get_full_name }}.
+        </p>
+        <div class="form-field">
+          <label for="id_mailbox_password">Mailbox password</label>
+          <div class="password-field">
+            <input
+              type="password"
+              name="mailbox_password"
+              id="id_mailbox_password"
+              class="form-input"
+              required
+              autocomplete="current-password"
+              placeholder="Password for {{ compose_work_email }}"
+            >
+            {% include "partials/password_eye_toggle.html" with target="id_mailbox_password" %}
+          </div>
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">Connect mailbox</button>
+        </div>
+      </form>
+      {% elif not active_message_person_email %}
+      <div class="mailbox__empty">
+        <p class="mailbox__empty-title">No work email for {{ active_message_person.get_full_name }}</p>
+        <p class="mailbox__empty-copy">
+          This colleague has no work email yet, so you cannot email them from here.
+        </p>
       </div>
       {% else %}
-      <div class="empty-state">
-        <p class="empty-state__title">No messages yet</p>
-        <p class="empty-state__copy">
-          When someone accepts, rejects, or completes a task you assigned, when
-          invoices are generated, issued, or paid, or other notices arrive, they
-          will show here — newest first.
+      <form method="post" class="conversation-compose__form" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="person" value="{{ active_message_person.pk }}">
+        <input type="hidden" name="in_reply_to" value="{{ mail_compose.in_reply_to }}">
+        <input type="hidden" name="references" value="{{ mail_compose.references }}">
+
+        <div class="conversation-compose__title">
+          <h3>Compose email</h3>
+          <span>From {{ compose_work_email }}</span>
+        </div>
+
+        {% if mail_form_errors.form %}
+        <div class="form-alert" role="alert">{{ mail_form_errors.form }}</div>
+        {% endif %}
+
+        <div class="compose-field">
+          <label for="id_mail_to">To</label>
+          <input
+            type="text"
+            name="to"
+            id="id_mail_to"
+            value="{{ mail_compose.to|default:active_message_person_email }}"
+            readonly
+          >
+        </div>
+        {% if mail_form_errors.to %}<p class="field-error">{{ mail_form_errors.to }}</p>{% endif %}
+
+        <div class="compose-field">
+          <label for="id_mail_cc">Cc</label>
+          <input type="text" name="cc" id="id_mail_cc" value="{{ mail_compose.cc }}" placeholder="Optional">
+        </div>
+        <div class="compose-field">
+          <label for="id_mail_bcc">Bcc</label>
+          <input type="text" name="bcc" id="id_mail_bcc" value="{{ mail_compose.bcc }}" placeholder="Optional">
+        </div>
+        <div class="compose-field">
+          <label class="sr-only" for="id_mail_subject">Subject</label>
+          <input
+            type="text"
+            name="subject"
+            id="id_mail_subject"
+            required
+            value="{{ mail_compose.subject }}"
+            placeholder="Subject"
+          >
+        </div>
+
+        <label class="sr-only" for="id_mail_body">Message</label>
+        <textarea
+          name="body"
+          id="id_mail_body"
+          class="conversation-compose__text"
+          rows="8"
+          required
+          placeholder="Write your message…"
+        >{{ mail_compose.body }}</textarea>
+
+        {% if mail_attachable_documents %}
+        <details class="compose-docs">
+          <summary>Attach firm documents</summary>
+          <div class="compose-docs__grid">
+            {% for doc in mail_attachable_documents %}
+            <label class="compose-docs__item">
+              <input type="checkbox" name="document_ids" value="{{ doc.id }}">
+              <span>
+                <strong>{{ doc.title }}</strong>
+                {% if doc.subject %}<small>{{ doc.subject }}</small>{% endif %}
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+
+        <div class="conversation-compose__foot">
+          <button type="submit" class="btn btn--primary btn--inline" name="action" value="send_email">Send</button>
+          <label class="icon-action" title="Attach files">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M17.5 9.5 11 16a3.5 3.5 0 0 1-5-5l7-7a2.4 2.4 0 0 1 3.4 3.4l-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="sr-only">Attach files</span>
+            <input type="file" name="attachments" id="id_mail_attachments" multiple class="compose-window__file">
+          </label>
+          <button type="submit" class="link-btn" name="action" value="save_draft">Save draft</button>
+        </div>
+      </form>
+      {% endif %}
+    </aside>
+  </div>
+</section>
+{% else %}
+<section class="page page--messages mailbox" id="employee-messages-page">
+  <div class="mailbox__bar">
+    <form class="mailbox__search" method="get" role="search" action="{{ messages_base_url }}">
+      <input type="hidden" name="channel" value="email">
+      <input type="hidden" name="folder" value="{{ mail_folder|default:'inbox' }}">
+      <span class="mailbox__search-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+          <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.7"/>
+          <path d="m15.6 15.6 3.9 3.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <label class="sr-only" for="id_mail_search">Search mail</label>
+      <input
+        type="search"
+        name="q"
+        id="id_mail_search"
+        value="{{ mail_search }}"
+        placeholder="Search mail"
+        autocomplete="off"
+        {% if not mail_connected %}disabled title="Connect your work mailbox to search"{% endif %}
+      >
+      {% if mail_search %}
+      <a
+        class="mailbox__search-clear"
+        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}"
+        aria-label="Clear search"
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+          <path d="m6.5 6.5 11 11M17.5 6.5l-11 11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </a>
+      {% endif %}
+    </form>
+
+    <div class="mailbox__account">
+      {% if compose_work_email %}
+      <span class="mailbox__account-dot{% if mail_connected %} is-live{% endif %}" aria-hidden="true"></span>
+      <span class="mailbox__account-text">
+        <strong>{{ compose_work_email }}</strong>
+        <small>{% if mail_connected %}Mailbox connected{% else %}Mailbox not connected{% endif %}</small>
+      </span>
+      {% else %}
+      <span class="mailbox__account-dot" aria-hidden="true"></span>
+      <span class="mailbox__account-text">
+        <strong>No work email</strong>
+        <small>Ask a managing partner for a firm mailbox</small>
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="mailbox__shell">
+    <aside class="mailbox__rail" aria-label="Mailbox navigation">
+      {% if compose_work_email and mail_connected %}
+      <a
+        class="mailbox__compose"
+        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;compose=1"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+          <path d="M4 20h4l10-10a2.4 2.4 0 0 0-3.4-3.4L4.6 16.6V20Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+          <path d="m13.8 7.2 3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+        Compose
+      </a>
+      {% else %}
+      <span class="mailbox__compose is-disabled" aria-disabled="true" title="{{ email_chat.hint }}">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+          <path d="M4 20h4l10-10a2.4 2.4 0 0 0-3.4-3.4L4.6 16.6V20Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        </svg>
+        Compose
+      </span>
+      {% endif %}
+
+      {% if email_chat.available %}
+      <nav class="mailbox__folders" aria-label="Mail folders">
+        {% for folder in mail_folders %}
+        <a
+          class="mailbox__folder{% if active_message_channel == 'email' and not active_message_person and not active_message_view and mail_folder == folder.key %} is-active{% endif %}"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ folder.key }}"
+        >
+          <span class="mailbox__folder-icon" aria-hidden="true">
+            {% if folder.key == 'inbox' %}
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 13.5 6.2 6.2A1.6 1.6 0 0 1 7.7 5h8.6a1.6 1.6 0 0 1 1.5 1.2L20 13.5V18a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18v-4.5Zm0 0h4l1.2 2h5.6l1.2-2h4" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            {% elif folder.key == 'sent' %}
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M20 4 3.8 10.6l6.1 2.3m10.1-8.9-8.9 15.4-1.2-6.5m10.1-8.9-10.1 8.9" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            {% elif folder.key == 'drafts' %}
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 20h4L18 10a2.4 2.4 0 0 0-3.4-3.4L4.6 16.6V20Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            {% else %}
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M5 7h14M10 7V5.5h4V7m-7 0 .8 12.1a1.5 1.5 0 0 0 1.5 1.4h5.4a1.5 1.5 0 0 0 1.5-1.4L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            {% endif %}
+          </span>
+          <span class="mailbox__folder-label">{{ folder.label }}</span>
+          {% if folder.unread %}<span class="mailbox__folder-count">{{ folder.unread }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+
+      <p class="mailbox__rail-title">Channels</p>
+      <nav class="mailbox__folders" aria-label="Message channels">
+        <a
+          class="mailbox__folder{% if active_message_channel == 'sms' %} is-active{% endif %}{% if not sms_chat.available %} is-disabled{% endif %}"
+          href="{% if sms_chat.available %}{{ messages_base_url }}?channel=sms{% else %}#{% endif %}"
+          {% if not sms_chat.available %}aria-disabled="true" tabindex="-1" title="{{ sms_chat.hint }}"{% endif %}
+        >
+          <span class="mailbox__folder-icon mailbox__folder-icon--sms" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M8.25 5.5h7.5v13h-7.5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11 17.25h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+          <span class="mailbox__folder-label">Text clients</span>
+        </a>
+
+        <a
+          class="mailbox__folder{% if active_message_channel == 'whatsapp' %} is-active{% endif %}{% if not whatsapp_chat.available %} is-disabled{% endif %}"
+          href="{% if whatsapp_chat.available %}{{ whatsapp_chat.url }}{% else %}#{% endif %}"
+          {% if whatsapp_chat.available and whatsapp_chat.external %}target="_blank" rel="noopener noreferrer"{% endif %}
+          {% if not whatsapp_chat.available %}aria-disabled="true" tabindex="-1" title="Add a WhatsApp number in Communication Settings"{% endif %}
+        >
+          <span class="mailbox__folder-icon mailbox__folder-icon--whatsapp" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.38A9.9 9.9 0 1 0 12.04 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="mailbox__folder-label">WhatsApp</span>
+        </a>
+      </nav>
+
+      <p class="mailbox__rail-title">
+        Chats
+        {% if message_conversations %}
+        <a href="{{ messages_base_url }}?view=chats">All {{ message_conversation_count }}</a>
+        {% endif %}
+      </p>
+      <nav class="mailbox__chats" aria-label="Colleague conversations">
+        {% for row in message_conversations %}
+        <a
+          class="mailbox__chat{% if active_message_person and active_message_person.pk == row.person.pk %} is-active{% endif %}"
+          href="{{ row.url }}"
+        >
+          <span class="avatar-chip" data-tone="{{ row.tone }}" aria-hidden="true">
+            {{ row.person.first_name|slice:":1"|upper }}{{ row.person.last_name|slice:":1"|upper }}
+          </span>
+          <span class="mailbox__chat-text">
+            <strong>{{ row.person.get_full_name }}</strong>
+            <small>
+              {% if row.last_is_from_me %}You: {% endif %}
+              {% if row.last_record.subject %}{{ row.last_record.subject }}{% else %}{{ row.last_record.body|truncatechars:60 }}{% endif %}
+            </small>
+          </span>
+        </a>
+        {% empty %}
+        <p class="mailbox__chats-empty">No colleague conversations yet.</p>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    <div class="mailbox__panel">
+      {% if active_message_view == 'chats' %}
+      {# ---------------- All colleague conversations ---------------- #}
+      <div class="mailbox__toolbar">
+        <h3 class="mailbox__toolbar-title">Chats</h3>
+        <span class="mailbox__count">
+          {{ message_conversation_count }} conversation{{ message_conversation_count|pluralize }}
+        </span>
+      </div>
+      <div class="mailbox__scroll">
+        {% if message_conversations %}
+        <ul class="mail-list">
+          {% for row in message_conversations %}
+          <li class="mail-row">
+            <a class="mail-row__link" href="{{ row.url }}">
+              <span class="avatar-chip" data-tone="{{ row.tone }}" aria-hidden="true">
+                {{ row.person.first_name|slice:":1"|upper }}{{ row.person.last_name|slice:":1"|upper }}
+              </span>
+              <span class="mail-row__from">{{ row.person.get_full_name }}</span>
+              <span class="mail-row__subject">
+                {% if row.last_is_from_me %}You: {% endif %}{{ row.last_record.subject|default:"Message" }}
+              </span>
+              <span class="mail-row__snippet">{{ row.last_record.body|truncatechars:120 }}</span>
+              <span class="mail-row__date">{{ row.last_record.created_at|date:"d M" }}</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="mailbox__empty">
+          <p class="mailbox__empty-title">No conversations yet</p>
+          <p class="mailbox__empty-copy">
+            Messages you exchange with colleagues are grouped here by person.
+          </p>
+        </div>
+        {% endif %}
+      </div>
+
+      {% elif active_message_channel == 'email' %}
+      {# ---------------- Work mailbox ---------------- #}
+      {% if not compose_work_email %}
+      <div class="mailbox__empty mailbox__empty--tall">
+        <p class="mailbox__empty-title">Work email required</p>
+        <p class="mailbox__empty-copy">
+          A managing partner must create your firm mailbox before you can use Email here.
         </p>
+      </div>
+      {% elif not mail_connected %}
+      <div class="mailbox__scroll">
+        <form method="post" class="workspace-form mailbox__connect" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="connect_mailbox">
+          <span class="mailbox__connect-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+              <path d="M4.5 6.75h15v10.5h-15z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="m4.5 7.5 7.5 5.25L19.5 7.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <h3>Connect {{ compose_work_email }}</h3>
+          <p class="mailbox__connect-lead">
+            Enter your work mailbox password once. It is stored encrypted and used to
+            read mail over IMAP (<code>mail.…:993</code>) and send over SMTP (<code>:465</code>).
+          </p>
+          <div class="form-field">
+            <label for="id_mailbox_password">Mailbox password</label>
+            <div class="password-field">
+              <input
+                type="password"
+                name="mailbox_password"
+                id="id_mailbox_password"
+                class="form-input"
+                required
+                autocomplete="current-password"
+                placeholder="Password for {{ compose_work_email }}"
+              >
+              {% include "partials/password_eye_toggle.html" with target="id_mailbox_password" %}
+            </div>
+          </div>
+          <div class="form-actions form-actions--start">
+            <button type="submit" class="btn btn--primary btn--inline">Connect mailbox</button>
+          </div>
+        </form>
+      </div>
+      {% elif mail_active %}
+      {# ---------------- Reading a message ---------------- #}
+      <div class="mailbox__toolbar">
+        <a
+          class="icon-action"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}"
+          aria-label="Back to {{ mail_folder_label }}"
+          title="Back to {{ mail_folder_label }}"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M19 12H5m0 0 6-6m-6 6 6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <span class="mailbox__toolbar-sep" aria-hidden="true"></span>
+        <a
+          class="icon-action"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;compose=1"
+          aria-label="Reply" title="Reply"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M9.5 6.5 4 12l5.5 5.5M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a
+          class="icon-action"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;forward={{ mail_active.uid }}&amp;compose=1"
+          aria-label="Forward" title="Forward"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M14.5 6.5 20 12l-5.5 5.5M19.5 12H10a5.5 5.5 0 0 0-5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <form method="post" class="mailbox__toolbar-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_email">
+          <input type="hidden" name="folder" value="{{ mail_folder }}">
+          <input type="hidden" name="uid" value="{{ mail_active.uid }}">
+          <button type="submit" class="icon-action" aria-label="Move to Trash" title="Move to Trash">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M5 7h14M10 7V5.5h4V7m-7 0 .8 12.1a1.5 1.5 0 0 0 1.5 1.4h5.4a1.5 1.5 0 0 0 1.5-1.4L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </form>
+        <span class="mailbox__count">{{ mail_folder_label }}</span>
+      </div>
+
+      <div class="mailbox__scroll">
+        {% if mail_error %}<div class="form-alert" role="alert">{{ mail_error }}</div>{% endif %}
+        <article class="mail-read">
+          <h2 class="mail-read__subject">{{ mail_active.subject }}</h2>
+          <header class="mail-read__head">
+            <span class="avatar-chip avatar-chip--lg" data-tone="{{ mail_active.avatar_tone }}" aria-hidden="true">
+              {{ mail_active.initial }}
+            </span>
+            <div class="mail-read__who">
+              <p class="mail-read__name">
+                {{ mail_active.display_name }}
+                <span>&lt;{{ mail_active.sender_email }}&gt;</span>
+              </p>
+              <p class="mail-read__to">
+                to {{ mail_active.to_addrs|default:"me" }}{% if mail_active.cc_addrs %} · cc {{ mail_active.cc_addrs }}{% endif %}
+              </p>
+            </div>
+            <time class="mail-read__date">{{ mail_active.date_display }}</time>
+          </header>
+
+          <div class="mail-read__body">{{ mail_active.body_text|linebreaksbr }}</div>
+
+          {% if mail_active.attachments %}
+          <div class="mail-read__attachments">
+            <p class="mail-read__attachments-title">
+              {{ mail_active.attachments|length }} attachment{{ mail_active.attachments|length|pluralize }}
+            </p>
+            <ul>
+              {% for file in mail_active.attachments %}
+              <li>
+                <a class="attachment-chip" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;uid={{ mail_active.uid }}&amp;download=1&amp;part={{ file.part_index }}">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M17.5 9.5 11 16a3.5 3.5 0 0 1-5-5l7-7a2.4 2.4 0 0 1 3.4 3.4l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span>{{ file.filename }}</span>
+                  <small>{{ file.size|filesizeformat }}</small>
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          <div class="mail-read__actions">
+            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;compose=1">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M9.5 6.5 4 12l5.5 5.5M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Reply
+            </a>
+            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;reply_all=1&amp;compose=1">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M8 6.5 2.5 12 8 17.5M13 6.5 7.5 12l5.5 5.5M8 12h6a5.5 5.5 0 0 1 5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Reply all
+            </a>
+            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;forward={{ mail_active.uid }}&amp;compose=1">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M14.5 6.5 20 12l-5.5 5.5M19.5 12H10a5.5 5.5 0 0 0-5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Forward
+            </a>
+          </div>
+        </article>
+      </div>
+
+      {% else %}
+      {# ---------------- Message list ---------------- #}
+      <div class="mailbox__toolbar">
+        <a
+          class="icon-action"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}"
+          aria-label="Refresh" title="Refresh"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 5v4h-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <h3 class="mailbox__toolbar-title">
+          {% if mail_search %}Results for “{{ mail_search }}”{% else %}{{ mail_folder_label }}{% endif %}
+        </h3>
+        <span class="mailbox__count">
+          {{ mail_messages|length }} message{{ mail_messages|length|pluralize }}
+        </span>
+        <form method="post" class="mailbox__toolbar-form mailbox__toolbar-form--end">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="disconnect_mailbox">
+          <button type="submit" class="link-btn">Disconnect</button>
+        </form>
+      </div>
+
+      <div class="mailbox__scroll">
+        {% if mail_error %}<div class="form-alert" role="alert">{{ mail_error }}</div>{% endif %}
+        {% if mail_messages %}
+        <ul class="mail-list">
+          {% for item in mail_messages %}
+          <li class="mail-row{% if item.is_unread %} is-unread{% endif %}">
+            <a
+              class="mail-row__link"
+              href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;uid={{ item.uid }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}"
+            >
+              <span class="avatar-chip" data-tone="{{ item.avatar_tone }}" aria-hidden="true">{{ item.initial }}</span>
+              <span class="mail-row__from">{{ item.display_name }}</span>
+              <span class="mail-row__subject">{{ item.subject }}</span>
+              <span class="mail-row__snippet">{% if item.snippet %}— {{ item.snippet }}{% endif %}</span>
+              {% if item.has_attachments %}
+              <span class="mail-row__clip" aria-label="Has attachments">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none"><path d="M17.5 9.5 11 16a3.5 3.5 0 0 1-5-5l7-7a2.4 2.4 0 0 1 3.4 3.4l-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              {% endif %}
+              <span class="mail-row__date">{{ item.short_date }}</span>
+            </a>
+            <form method="post" class="mail-row__actions">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="delete_email">
+              <input type="hidden" name="folder" value="{{ mail_folder }}">
+              <input type="hidden" name="uid" value="{{ item.uid }}">
+              <button type="submit" class="icon-action icon-action--sm" aria-label="Move to Trash" title="Move to Trash">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M5 7h14M10 7V5.5h4V7m-7 0 .8 12.1a1.5 1.5 0 0 0 1.5 1.4h5.4a1.5 1.5 0 0 0 1.5-1.4L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="mailbox__empty mailbox__empty--tall">
+          <p class="mailbox__empty-title">
+            {% if mail_search %}Nothing matched “{{ mail_search }}”{% else %}No messages{% endif %}
+          </p>
+          <p class="mailbox__empty-copy">
+            {% if mail_search %}Try a different name, address or subject.{% else %}This folder is empty.{% endif %}
+          </p>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% elif active_message_channel == 'sms' %}
+      {# ---------------- SMS ---------------- #}
+      <div class="mailbox__toolbar">
+        <h3 class="mailbox__toolbar-title">Send an SMS</h3>
+        <span class="mailbox__count">
+          {% if compose_sms_ready %}From {{ compose_work_phone }}{% else %}Unavailable{% endif %}
+        </span>
+      </div>
+      <div class="mailbox__scroll">
+        {% if compose_errors.form %}
+        <div class="form-alert" role="alert">{{ compose_errors.form }}</div>
+        {% endif %}
+
+        {% if compose_sms_ready %}
+        <form method="post" class="workspace-form mailbox__form" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="send_sms">
+
+          <div class="form-field">
+            <label for="id_sms_recipient">Recipient <span aria-hidden="true">*</span></label>
+            <select name="recipient" id="id_sms_recipient" class="form-input" required>
+              <option value="">Select a client or colleague…</option>
+              {% for group in sms_recipient_groups %}
+              <optgroup label="{{ group.label }}">
+                {% for option in group.options %}
+                <option value="{{ option.value }}" {% if compose_data.recipient == option.value %}selected{% endif %}>
+                  {{ option.label }} — {{ option.hint }}
+                </option>
+                {% endfor %}
+              </optgroup>
+              {% empty %}
+              <option value="" disabled>No reachable clients or colleagues yet</option>
+              {% endfor %}
+            </select>
+            {% if compose_errors.recipient %}
+            <p class="field-error">{{ compose_errors.recipient }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field">
+            <label for="id_sms_body">Message <span aria-hidden="true">*</span></label>
+            <textarea
+              name="body"
+              id="id_sms_body"
+              class="form-input"
+              rows="6"
+              maxlength="640"
+              required
+              placeholder="Write a short SMS…"
+            >{{ compose_data.body }}</textarea>
+            <p class="field-hint">Up to 640 characters.</p>
+          </div>
+
+          <div class="form-actions form-actions--start">
+            <button type="submit" class="btn btn--primary btn--inline">Send SMS</button>
+          </div>
+        </form>
+        {% else %}
+        <div class="mailbox__empty mailbox__empty--tall">
+          <p class="mailbox__empty-title">Work phone required</p>
+          <p class="mailbox__empty-copy">
+            {% if not compose_work_phone %}
+            Your session account has no work phone number. Add one on the employee
+            profile before texting clients from here.
+            {% else %}
+            Firm SMS is not ready. Verify SMS under System Settings → Communication Settings.
+            {% endif %}
+          </p>
+        </div>
+        {% endif %}
+      </div>
+
+      {% else %}
+      {# ---------------- WhatsApp ---------------- #}
+      <div class="mailbox__toolbar">
+        <h3 class="mailbox__toolbar-title">WhatsApp</h3>
+      </div>
+      <div class="mailbox__scroll">
+        <div class="mailbox__empty mailbox__empty--tall">
+          <p class="mailbox__empty-title">{{ whatsapp_chat.label }}</p>
+          <p class="mailbox__empty-copy">{{ whatsapp_chat.hint }}</p>
+          {% if whatsapp_chat.available %}
+          <p>
+            <a
+              class="btn btn--primary btn--inline"
+              href="{{ whatsapp_chat.url }}"
+              {% if whatsapp_chat.external %}target="_blank" rel="noopener noreferrer"{% endif %}
+            >Open WhatsApp</a>
+          </p>
+          {% endif %}
+        </div>
       </div>
       {% endif %}
     </div>
-  </section>
+  </div>
+
+  {% if active_message_channel == 'email' and mail_connected and mail_compose_open %}
+  <form method="post" class="compose-window" enctype="multipart/form-data" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="in_reply_to" value="{{ mail_compose.in_reply_to }}">
+    <input type="hidden" name="references" value="{{ mail_compose.references }}">
+
+    <div class="compose-window__head">
+      <span>New message</span>
+      <a
+        class="compose-window__close"
+        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}"
+        aria-label="Close compose"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </a>
+    </div>
+
+    <div class="compose-window__body">
+      {% if mail_form_errors.form %}
+      <div class="form-alert" role="alert">{{ mail_form_errors.form }}</div>
+      {% endif %}
+
+      <div class="compose-field">
+        <label for="id_mail_to">To</label>
+        <input type="text" name="to" id="id_mail_to" value="{{ mail_compose.to }}" placeholder="name@example.com">
+      </div>
+      {% if mail_form_errors.to %}<p class="field-error">{{ mail_form_errors.to }}</p>{% endif %}
+      <div class="compose-field">
+        <label for="id_mail_cc">Cc</label>
+        <input type="text" name="cc" id="id_mail_cc" value="{{ mail_compose.cc }}">
+      </div>
+      <div class="compose-field">
+        <label for="id_mail_bcc">Bcc</label>
+        <input type="text" name="bcc" id="id_mail_bcc" value="{{ mail_compose.bcc }}">
+      </div>
+      <div class="compose-field">
+        <label class="sr-only" for="id_mail_subject">Subject</label>
+        <input type="text" name="subject" id="id_mail_subject" required value="{{ mail_compose.subject }}" placeholder="Subject">
+      </div>
+
+      <label class="sr-only" for="id_mail_body">Message</label>
+      <textarea name="body" id="id_mail_body" class="compose-window__text" rows="12" required placeholder="Write your message…">{{ mail_compose.body }}</textarea>
+
+      {% if mail_attachable_documents %}
+      <details class="compose-docs">
+        <summary>Attach firm documents</summary>
+        <div class="compose-docs__grid">
+          {% for doc in mail_attachable_documents %}
+          <label class="compose-docs__item">
+            <input type="checkbox" name="document_ids" value="{{ doc.id }}">
+            <span>
+              <strong>{{ doc.title }}</strong>
+              {% if doc.subject %}<small>{{ doc.subject }}</small>{% endif %}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    </div>
+
+    <div class="compose-window__foot">
+      <button type="submit" class="btn btn--primary btn--inline compose-window__send" name="action" value="send_email">
+        Send
+      </button>
+      <label class="icon-action" title="Attach files">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M17.5 9.5 11 16a3.5 3.5 0 0 1-5-5l7-7a2.4 2.4 0 0 1 3.4 3.4l-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="sr-only">Attach files</span>
+        <input type="file" name="attachments" id="id_mail_attachments" multiple class="compose-window__file">
+      </label>
+      <button type="submit" class="link-btn compose-window__draft" name="action" value="save_draft">Save draft</button>
+      <a class="icon-action compose-window__discard" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}" title="Discard draft">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M5 7h14M10 7V5.5h4V7m-7 0 .8 12.1a1.5 1.5 0 0 0 1.5 1.4h5.4a1.5 1.5 0 0 0 1.5-1.4L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="sr-only">Discard draft</span>
+      </a>
+    </div>
+  </form>
+  {% endif %}
 </section>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    document.querySelectorAll(".js-password-toggle").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var targetId = button.getAttribute("data-password-target");
+        var input = targetId ? document.getElementById(targetId) : null;
+        if (!input) return;
+        var showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        button.setAttribute("aria-pressed", showing ? "false" : "true");
+        button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+        var icon = button.querySelector(".password-eye-icon");
+        if (icon) {
+          icon.classList.toggle("password-eye-icon--hidden", !showing);
+          icon.classList.toggle("password-eye-icon--visible", showing);
+        }
+      });
+    });
+
+    var fileInput = document.getElementById("id_mail_attachments");
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        var label = fileInput.closest(".icon-action");
+        if (label) {
+          label.classList.toggle("has-files", fileInput.files.length > 0);
+          label.setAttribute(
+            "title",
+            fileInput.files.length
+              ? fileInput.files.length + " file(s) attached"
+              : "Attach files"
+          );
+        }
+      });
+    }
+  })();
+</script>
 {% endblock %}

@@ -104,6 +104,32 @@
 
   <section class="panel">
     <div class="panel__head">
+      <h3>Work email</h3>
+      <p class="panel__hint">
+        <span class="status-pill status-pill--{% if work_email_ready %}success{% else %}muted{% endif %}">
+          {% if work_email_ready %}Created on approval{% else %}Not configured{% endif %}
+        </span>
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if work_email_ready %}
+      <p class="panel__hint">
+        Approving creates <code class="mono">{{ work_email_preview }}</code> in cPanel
+        and saves it as this employee's work email. The one-time password is shown once
+        after approval.
+      </p>
+      {% else %}
+      <p class="panel__hint">
+        No cPanel mailbox will be created — this employee is approved without a work email.
+        Set it up under
+        <a href="{{ communication_settings_url }}">Communication Settings</a>.
+      </p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
       <h3>Decision</h3>
       <p class="panel__hint">Allocate a role, then approve to activate this account</p>
     </div>
@@ -156,6 +182,46 @@
     </div>
   </form>
 </dialog>
+
+{% if work_email_failure %}
+<dialog
+  class="workspace-modal"
+  id="work-email-failure-modal"
+  aria-labelledby="work-email-failure-title"
+  data-role="{{ work_email_failure.role }}"
+>
+  <div class="workspace-modal__card">
+    <header class="workspace-modal__head">
+      <h2 id="work-email-failure-title">Work email could not be created</h2>
+      <p>
+        <strong>{{ employee.get_full_name|default:employee.login_code }}</strong>
+        has not been activated. cPanel reported:
+      </p>
+    </header>
+
+    <div class="workspace-modal__body">
+      <div class="form-alert" role="alert">{{ work_email_failure.detail }}</div>
+      <p class="field-hint">
+        Fix the cPanel details under
+        <a href="{{ communication_settings_url }}">Communication Settings</a> and try
+        again, or activate this employee now and add the work email later.
+      </p>
+    </div>
+
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--quiet" id="close-work-email-failure">Try again</button>
+      <form method="post" class="workspace-modal__inline-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="approve_without_work_email">
+        <input type="hidden" name="role" value="{{ work_email_failure.role }}">
+        <button type="submit" class="btn btn--primary btn--inline">
+          Activate without work email
+        </button>
+      </form>
+    </div>
+  </div>
+</dialog>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}

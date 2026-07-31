@@ -1,0 +1,112 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="live-list-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ channel.label }}</p>
+      <h2>{{ log_employee.get_full_name }}</h2>
+      <p class="page-lead">
+        {{ channel.noun_plural|capfirst }} sent by this employee to clients and
+        colleagues. Open one to read it in full.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a class="btn btn--ghost btn--inline" href="{{ channel_list_url }}">
+        Back to employees
+      </a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Sent {{ channel.noun_plural }}</h3>
+      <p class="panel__hint">
+        {{ messages_log|length }} shown
+        {% if log_employee.work_email %}· {{ log_employee.work_email }}{% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="get" class="workspace-form">
+        <div class="form-field">
+          <label for="id_log_search">Search messages</label>
+          <input
+            type="search"
+            name="q"
+            id="id_log_search"
+            class="form-input"
+            value="{{ log_search }}"
+            placeholder="Recipient, subject or wording…"
+          >
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--ghost btn--inline">Search</button>
+          {% if log_search %}
+          <a class="btn btn--ghost btn--inline" href="?">Clear</a>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if messages_log %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Sent</th>
+              <th scope="col">Recipient</th>
+              <th scope="col">Message</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in messages_log %}
+            <tr class="is-clickable-row" data-href="{{ message_url_base }}{{ item.id }}/">
+              <td><span class="reminder-when">{{ item.sent_at|date:"d M Y, H:i" }}</span></td>
+              <td>
+                <div class="person-cell__text">
+                  <span class="person-cell__name">{{ item.recipient_name|default:item.to_address }}</span>
+                  <span class="person-cell__meta">{{ item.recipient_kind }} · {{ item.to_address }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <a class="person-cell__name" href="{{ message_url_base }}{{ item.id }}/">
+                    {{ item.subject|default:item.body|truncatechars:70|default:"(no subject)" }}
+                  </a>
+                  {% if item.subject and item.body %}
+                  <span class="person-cell__meta">{{ item.body|truncatechars:110 }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                {% if item.status == "failed" %}
+                <span class="status-pill status-pill--submitted">{{ item.status_label }}</span>
+                {% else %}
+                <span class="status-pill status-pill--done">{{ item.status_label }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">Nothing sent yet</p>
+        <p class="empty-state__copy">
+          {% if log_search %}
+          No {{ channel.noun_plural }} match “{{ log_search }}”.
+          {% else %}
+          {{ log_employee.get_full_name }} has not sent any {{ channel.noun_plural }} from
+          the workspace yet.
+          {% endif %}
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

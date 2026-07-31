@@ -4,25 +4,45 @@ document.addEventListener("DOMContentLoaded", () => {
   const closeBtn = document.getElementById("close-role-modal");
   const roleSelect = document.getElementById("id_allocate_role");
   const form = document.getElementById("role-allocate-form");
+  const failureModal = document.getElementById("work-email-failure-modal");
+  const closeFailureBtn = document.getElementById("close-work-email-failure");
 
-  if (!modal || !openBtn) return;
+  const show = (dialog) => {
+    if (!dialog) return;
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute("open", "");
+    }
+  };
+
+  const hide = (dialog) => {
+    if (!dialog) return;
+    if (typeof dialog.close === "function") {
+      dialog.close();
+    } else {
+      dialog.removeAttribute("open");
+    }
+  };
 
   const openModal = () => {
-    if (typeof modal.showModal === "function") {
-      modal.showModal();
-    } else {
-      modal.setAttribute("open", "");
-    }
+    show(modal);
     window.setTimeout(() => roleSelect?.focus(), 0);
   };
 
-  const closeModal = () => {
-    if (typeof modal.close === "function") {
-      modal.close();
-    } else {
-      modal.removeAttribute("open");
-    }
-  };
+  const closeModal = () => hide(modal);
+
+  if (failureModal) {
+    show(failureModal);
+    closeFailureBtn?.addEventListener("click", () => {
+      hide(failureModal);
+      const previousRole = failureModal.dataset.role || "";
+      if (previousRole && roleSelect) roleSelect.value = previousRole;
+      openModal();
+    });
+  }
+
+  if (!modal || !openBtn) return;
 
   openBtn.addEventListener("click", openModal);
   closeBtn?.addEventListener("click", closeModal);

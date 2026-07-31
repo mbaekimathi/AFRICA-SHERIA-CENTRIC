@@ -100,6 +100,28 @@
                     <span class="row-action__label">Approve</span>
                   </a>
                   {% endif %}
+                  <form
+                    method="post"
+                    action="{% url 'accounts:decline_pending_employee' role=role_slug employee_id=employee.pk %}"
+                    class="row-action-form"
+                    onsubmit="return confirm('Decline {{ employee.get_full_name|default:employee.login_code|escapejs }}? Their sign-up and uploaded details will be permanently deleted, freeing {{ employee.personal_email|escapejs }} to register again. This cannot be undone.');"
+                  >
+                    {% csrf_token %}
+                    <button
+                      type="submit"
+                      class="row-action row-action--reject"
+                      title="Decline and delete sign-up"
+                      aria-label="Decline and delete {{ employee.get_full_name|default:employee.login_code }}"
+                    >
+                      <span class="row-action__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                          <circle cx="12" cy="12" r="8.25" stroke="currentColor" stroke-width="1.7"/>
+                          <path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                        </svg>
+                      </span>
+                      <span class="row-action__label">Decline</span>
+                    </button>
+                  </form>
                 </div>
               </td>
             </tr>
@@ -119,4 +141,83 @@
     </div>
   </section>
 </section>
+
+{% if work_email_created %}
+<dialog class="workspace-modal" id="work-email-created-modal" aria-labelledby="work-email-created-title" open>
+  <div class="workspace-modal__card">
+    <header class="workspace-modal__head">
+      <h2 id="work-email-created-title">Work email created</h2>
+      {% if work_email_created.email_sent %}
+      <p>
+        Credentials were emailed to
+        <strong>{{ work_email_created.personal_email }}</strong>
+        for <strong>{{ work_email_created.name }}</strong>, with a link to
+        set a new password. The temporary password is also shown once below.
+      </p>
+      {% elif work_email_created.personal_email %}
+      <p>
+        Could not email
+        <strong>{{ work_email_created.personal_email }}</strong>
+        {% if work_email_created.email_error %}
+        ({{ work_email_created.email_error }})
+        {% endif %}.
+        Hand these details to <strong>{{ work_email_created.name }}</strong>.
+        The password is shown once and is not stored in the system.
+      </p>
+      {% else %}
+      <p>
+        Hand these details to <strong>{{ work_email_created.name }}</strong>.
+        The password is shown once and is not stored anywhere in the system.
+      </p>
+      {% endif %}
+    </header>
+
+    <div class="workspace-modal__body">
+      <dl class="settings-grid review-grid">
+        <div>
+          <dt>Work email</dt>
+          <dd><code class="mono">{{ work_email_created.email }}</code></dd>
+        </div>
+        <div>
+          <dt>Temporary password</dt>
+          <dd><code class="mono">{{ work_email_created.password }}</code></dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="workspace-modal__actions">
+      <button type="button" class="btn btn--primary btn--inline" id="close-work-email-created">
+        Done
+      </button>
+    </div>
+  </div>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if work_email_created %}
+<script>
+  (function () {
+    var dialog = document.getElementById("work-email-created-modal");
+    var closeBtn = document.getElementById("close-work-email-created");
+    if (!dialog) return;
+    document.addEventListener("DOMContentLoaded", function () {
+      if (typeof dialog.showModal === "function") {
+        dialog.removeAttribute("open");
+        dialog.showModal();
+      }
+    });
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function () {
+        if (typeof dialog.close === "function") {
+          dialog.close();
+        } else {
+          dialog.removeAttribute("open");
+        }
+      });
+    }
+  })();
+</script>
+{% endif %}
 {% endblock %}

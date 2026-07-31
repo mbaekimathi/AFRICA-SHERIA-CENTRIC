@@ -116,6 +116,10 @@ a:hover {
   overflow: hidden;
 }
 
+.auth-shell.auth-shell--single {
+  grid-template-columns: 1fr;
+}
+
 .auth-brand {
   position: relative;
   display: none;
@@ -407,6 +411,18 @@ a:hover {
   text-decoration: underline;
 }
 
+.password-reset-link {
+  justify-self: end;
+  color: var(--purple-700);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.password-reset-link:hover {
+  color: var(--purple-500);
+  text-decoration: underline;
+}
+
 .form-input {
   width: 100%;
   max-width: 100%;
@@ -628,6 +644,45 @@ textarea.form-input {
   100% {
     filter: none;
   }
+}
+
+.password-field {
+  position: relative;
+  display: grid;
+}
+
+.password-field .form-input {
+  padding-right: 2.9rem;
+}
+
+.password-field__toggle {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.password-field__toggle:hover,
+.password-field__toggle:focus-visible {
+  color: var(--purple-700);
+  background: rgba(121, 112, 255, 0.1);
+  outline: none;
+}
+
+.password-field__icon {
+  display: block;
 }
 
 .field-error {
@@ -1189,6 +1244,255 @@ textarea.form-input {
 .modal__card p {
   margin: 0 0 1.25rem;
   color: var(--ink-muted);
+}
+
+/* Suspended account notice */
+.suspended-modal {
+  border: 0;
+  padding: 0;
+  margin: auto;
+  max-width: calc(100vw - 2rem);
+  background: transparent;
+  color: var(--ink);
+}
+
+.suspended-modal::backdrop {
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(180, 35, 24, 0.22), transparent 55%),
+    rgba(7, 7, 26, 0.62);
+  backdrop-filter: blur(8px);
+  animation: suspended-backdrop-in 0.35s var(--ease-out);
+}
+
+.suspended-modal__panel {
+  position: relative;
+  overflow: hidden;
+  width: min(100%, 24.5rem);
+  margin: auto;
+  padding: 1.85rem 1.55rem 1.45rem;
+  border-radius: calc(var(--radius-lg) + 6px);
+  border: 1px solid rgba(180, 35, 24, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 250, 248, 0.98));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 24px 48px rgba(11, 11, 35, 0.22);
+  text-align: center;
+  animation: suspended-panel-in 0.45s var(--ease-out);
+}
+
+.suspended-modal__glow {
+  position: absolute;
+  inset: -40% -20% auto;
+  height: 10rem;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(249, 115, 22, 0.22), transparent 62%);
+  pointer-events: none;
+  animation: suspended-glow-pulse 2.8s ease-in-out infinite;
+}
+
+.suspended-modal__close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(18, 18, 46, 0.06);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: background 0.18s var(--ease), color 0.18s var(--ease), transform 0.18s var(--ease);
+}
+
+.suspended-modal__close:hover {
+  background: rgba(18, 18, 46, 0.1);
+  color: var(--ink);
+  transform: rotate(90deg);
+}
+
+.suspended-modal__orb {
+  position: relative;
+  z-index: 1;
+  width: 5.25rem;
+  height: 5.25rem;
+  margin: 0.1rem auto 1rem;
+  display: grid;
+  place-items: center;
+}
+
+.suspended-modal__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+}
+
+.suspended-modal__ring--outer {
+  border-color: rgba(180, 35, 24, 0.18);
+  background:
+    radial-gradient(circle at 50% 40%, rgba(254, 243, 242, 0.95), rgba(255, 237, 213, 0.55));
+  animation: suspended-ring-spin 10s linear infinite;
+  box-shadow: 0 10px 28px rgba(180, 35, 24, 0.16);
+}
+
+.suspended-modal__ring--inner {
+  inset: 0.55rem;
+  border-color: rgba(249, 115, 22, 0.28);
+  animation: suspended-ring-pulse 2.2s var(--ease) infinite;
+}
+
+.suspended-modal__lock {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 3.15rem;
+  height: 3.15rem;
+  border-radius: 50%;
+  color: #b42318;
+  background: linear-gradient(160deg, #fff7ed, #fee2e2);
+  box-shadow: 0 8px 18px rgba(180, 35, 24, 0.18);
+  animation: suspended-lock-bob 2.4s var(--ease) infinite;
+}
+
+.suspended-modal__kicker {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #b45309;
+  animation: suspended-fade-up 0.5s 0.08s both var(--ease-out);
+}
+
+.suspended-modal__panel h2 {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 0.65rem;
+  font-family: var(--font-serif);
+  font-size: clamp(1.35rem, 2.5vw, 1.55rem);
+  line-height: 1.2;
+  color: #7f1d1d;
+  animation: suspended-fade-up 0.5s 0.14s both var(--ease-out);
+}
+
+.suspended-modal__copy {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 1rem;
+  font-size: 0.94rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+  animation: suspended-fade-up 0.5s 0.2s both var(--ease-out);
+}
+
+.suspended-modal__hint {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 1.25rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(180, 35, 24, 0.06);
+  border: 1px solid rgba(180, 35, 24, 0.12);
+  color: #9a3412;
+  font-size: 0.78rem;
+  font-weight: 600;
+  animation: suspended-fade-up 0.5s 0.26s both var(--ease-out);
+}
+
+.suspended-modal__hint-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: #ea580c;
+  box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.45);
+  animation: suspended-dot-pulse 1.6s ease-out infinite;
+}
+
+.suspended-modal__ack {
+  position: relative;
+  z-index: 1;
+  min-width: 9.5rem;
+  animation: suspended-fade-up 0.5s 0.32s both var(--ease-out);
+}
+
+@keyframes suspended-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes suspended-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes suspended-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes suspended-glow-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes suspended-ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes suspended-ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+@keyframes suspended-lock-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes suspended-dot-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.45); }
+  70% { box-shadow: 0 0 0 8px rgba(234, 88, 12, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(234, 88, 12, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suspended-modal::backdrop,
+  .suspended-modal__panel,
+  .suspended-modal__glow,
+  .suspended-modal__ring--outer,
+  .suspended-modal__ring--inner,
+  .suspended-modal__lock,
+  .suspended-modal__kicker,
+  .suspended-modal__panel h2,
+  .suspended-modal__copy,
+  .suspended-modal__hint,
+  .suspended-modal__ack,
+  .suspended-modal__hint-dot {
+    animation: none;
+  }
 }
 
 @media (max-width: 899px) {

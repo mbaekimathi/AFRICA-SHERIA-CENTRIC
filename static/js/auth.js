@@ -11,10 +11,58 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  document.querySelectorAll(".js-password-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById(btn.dataset.target || "");
+      if (!input) return;
+      const showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      btn.setAttribute("aria-pressed", String(!showing));
+      btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+      const showIcon = btn.querySelector(".password-field__icon--show");
+      const hideIcon = btn.querySelector(".password-field__icon--hide");
+      if (showIcon) showIcon.hidden = !showing;
+      if (hideIcon) hideIcon.hidden = showing;
+    });
+  });
+
   const suspendedModal = document.getElementById("suspended-modal");
-  const closeSuspended = document.getElementById("close-suspended-modal");
-  if (suspendedModal && closeSuspended) {
-    closeSuspended.addEventListener("click", () => suspendedModal.close());
+  if (suspendedModal) {
+    const closeSuspendedModal = () => {
+      if (typeof suspendedModal.close === "function") {
+        suspendedModal.close();
+      } else {
+        suspendedModal.removeAttribute("open");
+      }
+    };
+
+    const openSuspendedModal = () => {
+      if (typeof suspendedModal.showModal === "function" && !suspendedModal.open) {
+        suspendedModal.showModal();
+      } else {
+        suspendedModal.setAttribute("open", "");
+      }
+    };
+
+    document
+      .getElementById("close-suspended-modal")
+      ?.addEventListener("click", closeSuspendedModal);
+    document
+      .getElementById("ack-suspended-modal")
+      ?.addEventListener("click", closeSuspendedModal);
+
+    suspendedModal.addEventListener("click", (event) => {
+      if (event.target === suspendedModal) closeSuspendedModal();
+    });
+
+    suspendedModal.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeSuspendedModal();
+    });
+
+    if (suspendedModal.dataset.autoOpen === "true") {
+      openSuspendedModal();
+    }
   }
 
   const signupForm = document.getElementById("signup-form");

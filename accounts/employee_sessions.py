@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from statistics import mean
 
+from django.contrib.auth import SESSION_KEY as AUTH_SESSION_KEY
+from django.contrib.sessions.models import Session
 from django.core.cache import cache
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -168,6 +170,51 @@ def end_employee_session(
             update_fields=["last_active_at", "working_seconds", "logout_at", "logout_kind"]
         )
     request.session.pop(SESSION_PK_KEY, None)
+
+
+def force_logout_employee(
+    employee: Employee,
+    *,
+    kind: str = EmployeeWorkSession.LogoutKind.SUSPENDED,
+) -> int:
+    """End every open work session and wipe Django auth sessions for an employee.
+
+    Used when an account is suspended so they are logged out immediately on every
+    device and cannot continue using an existing browser session.
+    """
+    now = timezone.now()
+    open_sessions = list(
+        EmployeeWorkSession.objects.filter(
+            employee=employee,
+            logout_at__isnull=True,
+        )
+    )
+    for work_session in open_sessions:
+        _accumulate_working_time(work_session, now)
+        work_session.logout_at = now
+        work_session.logout_kind = kind
+        work_session.save(
+            update_fields=[
+                "last_active_at",
+                "working_seconds",
+                "logout_at",
+                "logout_kind",
+            ]
+        )
+
+    employee_pk = str(employee.pk)
+    deleted = 0
+    for session in Session.objects.filter(expire_date__gte=now):
+        try:
+            data = session.get_decoded()
+        except Exception:
+            continue
+        if str(data.get(AUTH_SESSION_KEY) or "") == employee_pk:
+            session.delete()
+            deleted += 1
+
+    cache.delete(f"emp_work_touch:{employee.pk}")
+    return deleted
 
 
 def build_employee_session_analytics(employee: Employee, *, days: int = 90) -> dict:

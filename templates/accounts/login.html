@@ -87,6 +87,9 @@
           {% if form.password.errors %}
           <span class="field-error">{{ form.password.errors.0 }}</span>
           {% endif %}
+          <a class="password-reset-link" href="{% url 'accounts:password_reset' %}">
+            Forgot password?
+          </a>
         </div>
 
         <button type="submit" class="btn btn--primary">
@@ -107,14 +110,60 @@
   </section>
 </main>
 
-<dialog class="modal" id="suspended-modal" {% if show_suspended_modal %}open{% endif %}>
-  <div class="modal__card">
-    <div class="modal__icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="36" height="36"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<dialog
+  class="suspended-modal"
+  id="suspended-modal"
+  aria-labelledby="suspended-modal-title"
+  aria-describedby="suspended-modal-copy"
+  {% if show_suspended_modal %}data-auto-open="true"{% endif %}
+>
+  <div class="suspended-modal__panel" role="document">
+    <div class="suspended-modal__glow" aria-hidden="true"></div>
+    <button
+      type="button"
+      class="suspended-modal__close"
+      id="close-suspended-modal"
+      aria-label="Close"
+    >
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    </button>
+
+    <div class="suspended-modal__orb" aria-hidden="true">
+      <span class="suspended-modal__ring suspended-modal__ring--outer"></span>
+      <span class="suspended-modal__ring suspended-modal__ring--inner"></span>
+      <span class="suspended-modal__lock">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none">
+          <rect x="5.5" y="10.5" width="13" height="9.5" rx="2" stroke="currentColor" stroke-width="1.8"/>
+          <path d="M8.5 10.5V8.2a3.5 3.5 0 0 1 7 0v2.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <circle cx="12" cy="15.2" r="1.15" fill="currentColor"/>
+        </svg>
+      </span>
     </div>
-    <h2>Account suspended</h2>
-    <p>Your access has been suspended. Do not attempt to sign in until the firm administrator restores your account. Contact IT Support or Firm Administration for assistance.</p>
-    <button type="button" class="btn btn--primary" id="close-suspended-modal">Understood</button>
+
+    <p class="suspended-modal__kicker">
+      {% if suspended_modal_reason == "login" %}Sign-in blocked{% else %}Access locked{% endif %}
+    </p>
+    <h2 id="suspended-modal-title">Your account has been suspended</h2>
+    <p class="suspended-modal__copy" id="suspended-modal-copy">
+      {% if suspended_modal_reason == "login" %}
+      You cannot sign in because your account is currently suspended.
+      Please contact the Managing Partner to have your access restored.
+      {% else %}
+      You have been signed out and cannot use the workspace until access is restored.
+      Please contact the Managing Partner to resolve this.
+      {% endif %}
+    </p>
+
+    <div class="suspended-modal__hint" aria-hidden="true">
+      <span class="suspended-modal__hint-dot"></span>
+      <span>Managing Partner review required</span>
+    </div>
+
+    <button type="button" class="btn btn--primary suspended-modal__ack" id="ack-suspended-modal">
+      Understood
+    </button>
   </div>
 </dialog>
 {% endblock %}

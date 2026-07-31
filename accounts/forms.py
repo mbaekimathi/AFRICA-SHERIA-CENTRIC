@@ -1,8 +1,14 @@
 from django import forms
 from django.contrib.auth import authenticate
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import (
+    AuthenticationForm,
+    PasswordResetForm,
+    SetPasswordForm,
+    UserCreationForm,
+)
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.template.loader import render_to_string
 from django.utils.dateparse import parse_date
 from django.utils import timezone
 from decimal import Decimal
@@ -56,6 +62,7 @@ from .models import (
     PettyCashExpenseRequest,
     WebsiteTemplateSetting,
 )
+from .outbound_messaging import send_firm_email
 from .utils import (
     SIGNATURE_DATA_URL_RE,
     decode_signature_drawing,
@@ -234,6 +241,43 @@ def client_email_provider(email: str) -> str:
     return "email"
 
 
+LOOKALIKE_EMAIL_ERROR = (
+    "This address cannot be saved: the account database does not tell it apart "
+    "from an address already in use. Retype it in plain characters, without "
+    "accents or anything pasted in from another page."
+)
+
+
+def normalize_email(value: str) -> str:
+    """The trimmed, lowercased form every address is stored and compared in."""
+    return (value or "").strip().lower()
+
+
+def stored_email_match(queryset, field_name, value):
+    """
+    Whether an address is already held by a row in ``queryset``.
+
+    Returns ``("taken", row)`` when a row holds this exact address,
+    ``("lookalike", row)`` when only the database equates the two, and
+    ``("", None)`` when the address is free.
+
+    The query alone cannot decide this. The columns collate as
+    utf8mb4_unicode_ci, which reads "mrbónes@x.com" and "mrbones@x.com" as the
+    same string, so the deciding comparison is made in Python. A lookalike is
+    still reported because the unique index would refuse to store it.
+    """
+    email = normalize_email(value)
+    if not email:
+        return "", None
+
+    lookalike = None
+    for row in queryset.filter(**{f"{field_name}__iexact": email}):
+        if normalize_email(getattr(row, field_name)) == email:
+            return "taken", row
+        lookalike = row
+    return ("lookalike", lookalike) if lookalike is not None else ("", None)
+
+
 class LoginForm(AuthenticationForm):
     username = forms.CharField(
         label="6-digit login code",
@@ -303,6 +347,99 @@ class LoginForm(AuthenticationForm):
             self.confirm_login_allowed(self.user_cache)
 
         return self.cleaned_data
+
+
+class EmployeePasswordResetForm(PasswordResetForm):
+    """Find employee accounts by their registered personal email address."""
+
+    email = forms.EmailField(
+        label="Personal email",
+        widget=forms.EmailInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "you@example.com",
+                "autocomplete": "email",
+            }
+        ),
+    )
+
+    def get_users(self, email):
+        employees = Employee._default_manager.filter(
+            personal_email__iexact=email,
+            is_active=True,
+        )
+        return (
+            employee
+            for employee in employees
+            if employee.has_usable_password()
+        )
+
+    def send_mail(
+        self,
+        subject_template_name,
+        email_template_name,
+        context,
+        from_email,
+        to_email,
+        html_email_template_name=None,
+    ):
+        setting = CommunicationSettings.get_solo()
+        if not setting.email_ready:
+            return super().send_mail(
+                subject_template_name,
+                email_template_name,
+                context,
+                from_email,
+                to_email,
+                html_email_template_name,
+            )
+
+        subject = "".join(
+            render_to_string(subject_template_name, context).splitlines()
+        )
+        body = render_to_string(email_template_name, context)
+        send_firm_email(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            setting=setting,
+        )
+
+
+class EmployeeSetPasswordForm(SetPasswordForm):
+    """Keep employee passwords consistent with case-insensitive login."""
+
+    new_password1 = forms.CharField(
+        label="New password",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "New password",
+                "autocomplete": "new-password",
+            }
+        ),
+    )
+    new_password2 = forms.CharField(
+        label="Confirm new password",
+        strip=False,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Confirm new password",
+                "autocomplete": "new-password",
+            }
+        ),
+    )
+
+    def clean_new_password1(self):
+        return (self.cleaned_data.get("new_password1") or "").upper()
+
+    def clean_new_password2(self):
+        self.cleaned_data["new_password2"] = (
+            self.cleaned_data.get("new_password2") or ""
+        ).upper()
+        return super().clean_new_password2()
 
 
 class SignUpForm(UserCreationForm):
@@ -513,9 +650,23 @@ class SignUpForm(UserCreationForm):
         return code
 
     def clean_personal_email(self):
-        email = self.cleaned_data["personal_email"].lower().strip()
-        if Employee.objects.filter(personal_email__iexact=email).exists():
-            raise ValidationError("An account with this email already exists.")
+        email = normalize_email(self.cleaned_data["personal_email"])
+        match, owner = stored_email_match(
+            Employee.objects.all(), "personal_email", email
+        )
+        if match == "taken":
+            still_pending = owner.status in (
+                Employee.Status.PENDING_ONBOARDING,
+                Employee.Status.PENDING_APPROVAL,
+            )
+            raise ValidationError(
+                "This email was already used to sign up, and that account is "
+                "still waiting to be approved."
+                if still_pending
+                else "An account with this email already exists."
+            )
+        if match == "lookalike":
+            raise ValidationError(LOOKALIKE_EMAIL_ERROR)
         return email
 
     def clean_password1(self):
@@ -974,7 +1125,7 @@ class ClientSignUpForm(forms.Form):
     def clean_email(self):
         from .models import Client
 
-        email = self.cleaned_data["email"].lower().strip()
+        email = normalize_email(self.cleaned_data["email"])
         client_type = self.data.get("client_type")
         domain = email.rsplit("@", 1)[-1] if "@" in email else ""
         if client_type == "individual":
@@ -985,8 +1136,11 @@ class ClientSignUpForm(forms.Form):
                 raise ValidationError(
                     "Use a common personal email (Google, Yahoo, Outlook, iCloud, or Proton)."
                 )
-        if Client.objects.filter(email__iexact=email).exists():
+        match, _owner = stored_email_match(Client.objects.all(), "email", email)
+        if match == "taken":
             raise ValidationError("An account with this email already exists.")
+        if match == "lookalike":
+            raise ValidationError(LOOKALIKE_EMAIL_ERROR)
         return email
 
     def clean_phone(self):
@@ -1319,12 +1473,15 @@ class ClientOnboardingForm(forms.Form):
     def clean_email(self):
         from .models import Client
 
-        email = self.cleaned_data["email"].lower().strip()
-        qs = Client.objects.filter(email__iexact=email)
+        email = normalize_email(self.cleaned_data["email"])
+        others = Client.objects.all()
         if self.client:
-            qs = qs.exclude(pk=self.client.pk)
-        if qs.exists():
+            others = others.exclude(pk=self.client.pk)
+        match, _owner = stored_email_match(others, "email", email)
+        if match == "taken":
             raise ValidationError("Another account already uses this email.")
+        if match == "lookalike":
+            raise ValidationError(LOOKALIKE_EMAIL_ERROR)
         return email
 
     def clean_phone(self):
@@ -1712,16 +1869,6 @@ class EmployeeOnboardingForm(forms.Form):
             cleaned["bank_name"] = ""
             cleaned["bank_account_number"] = ""
 
-        for field_name, label in (
-            ("employment_contract", "employment contract"),
-            ("national_id_or_passport", "national ID or passport"),
-            ("kra_pin_certificate", "KRA PIN certificate"),
-        ):
-            uploaded = cleaned.get(field_name)
-            existing = getattr(self.employee, field_name, None) if self.employee else None
-            if not uploaded and not existing:
-                self.add_error(field_name, f"Upload your {label}.")
-
         return cleaned
 
     def save(self, commit=True):
@@ -1792,6 +1939,109 @@ class EmployeeOnboardingForm(forms.Form):
                 )
         except (GoogleDriveAPIError, GoogleDriveOAuthError):
             pass
+
+
+class StaffEmployeeDetailsForm(forms.ModelForm):
+    """Edit an active/suspended employee without changing account status."""
+
+    class Meta:
+        model = Employee
+        fields = (
+            "courtesy_title",
+            "first_name",
+            "last_name",
+            "personal_email",
+            "personal_phone",
+            "login_code",
+            "role",
+            "id_type",
+            "id_country",
+            "alien_number",
+            "payment_method",
+            "mobile_money_company",
+            "mobile_money_number",
+            "bank_name",
+            "bank_account_number",
+            "monthly_salary",
+            "profile_photo",
+        )
+        widgets = {
+            "courtesy_title": forms.Select(
+                attrs={
+                    "class": "form-input form-input--title",
+                    "aria-label": "Title",
+                    "title": "Courtesy title",
+                }
+            ),
+            "first_name": forms.TextInput(attrs={"class": "form-input"}),
+            "last_name": forms.TextInput(attrs={"class": "form-input"}),
+            "personal_email": forms.EmailInput(attrs={"class": "form-input"}),
+            "personal_phone": forms.TextInput(attrs={"class": "form-input"}),
+            "login_code": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "inputmode": "numeric",
+                    "pattern": r"\d{6}",
+                    "maxlength": "6",
+                }
+            ),
+            "role": forms.Select(attrs={"class": "form-input"}),
+            "id_type": forms.RadioSelect(attrs={"class": "radio-group"}),
+            "id_country": forms.Select(
+                attrs={"class": "form-input"}, choices=nationality_choices()
+            ),
+            "alien_number": forms.TextInput(attrs={"class": "form-input"}),
+            "payment_method": forms.RadioSelect(attrs={"class": "radio-group"}),
+            "mobile_money_company": forms.TextInput(attrs={"class": "form-input"}),
+            "mobile_money_number": forms.TextInput(attrs={"class": "form-input"}),
+            "bank_name": forms.TextInput(attrs={"class": "form-input"}),
+            "bank_account_number": forms.TextInput(attrs={"class": "form-input"}),
+            "monthly_salary": forms.NumberInput(
+                attrs={"class": "form-input", "min": "0", "step": "0.01"}
+            ),
+            "profile_photo": forms.FileInput(
+                attrs={"class": "form-input form-input--file", "accept": "image/*"}
+            ),
+        }
+
+    def clean_login_code(self):
+        code = (self.cleaned_data.get("login_code") or "").strip()
+        if len(code) != 6 or not code.isdigit():
+            raise ValidationError("Login code must be exactly 6 digits.")
+        return code
+
+    def clean_personal_email(self):
+        return (self.cleaned_data.get("personal_email") or "").strip().lower()
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("id_type") == Employee.IdType.CITIZEN:
+            cleaned["alien_number"] = ""
+        elif not (cleaned.get("alien_number") or "").strip():
+            self.add_error("alien_number", "Alien number is required.")
+
+        method = cleaned.get("payment_method")
+        if method == Employee.PaymentMethod.MOBILE:
+            cleaned["bank_name"] = ""
+            cleaned["bank_account_number"] = ""
+        elif method == Employee.PaymentMethod.BANK:
+            cleaned["mobile_money_company"] = ""
+            cleaned["mobile_money_number"] = ""
+        elif method == Employee.PaymentMethod.CASH:
+            cleaned["mobile_money_company"] = ""
+            cleaned["mobile_money_number"] = ""
+            cleaned["bank_name"] = ""
+            cleaned["bank_account_number"] = ""
+        return cleaned
+
+    def save(self, commit=True):
+        employee = super().save(commit=False)
+        photo = self.cleaned_data.get("profile_photo")
+        if "profile_photo" in self.changed_data and photo:
+            employee.profile_photo = optimize_profile_photo(photo)
+        if commit:
+            employee.save()
+        return employee
 
 
 class RegisterCaseForm(forms.ModelForm):
@@ -3285,14 +3535,22 @@ class RejectTaskForm(forms.Form):
 
 class ProfileSettingsForm(forms.ModelForm):
     """
-    Edit the signed-in employee's full session profile.
+    Edit the signed-in employee's own session profile.
 
     Prefills every editable field from the current user. Passwords are hashed
     and never displayed — change with current / new / confirm fields.
-    Optional re-uploads replace profile photo and compliance documents.
+    Name, emails, and file uploads are administration-managed and stay
+    out of this form.
     """
 
-    PERSONAL_DETAIL_UPLOAD_FIELDS = (
+    # Administration owns these on an employee record — an employee cannot
+    # change them from their own profile.
+    LOCKED_FIELDS = (
+        "courtesy_title",
+        "first_name",
+        "last_name",
+        "personal_email",
+        "work_email",
         "profile_photo",
         "employment_contract",
         "national_id_or_passport",
@@ -3557,15 +3815,12 @@ class ProfileSettingsForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        for name in self.LOCKED_FIELDS:
+            self.fields.pop(name, None)
+
         optional = [
             "identification_number",
             "alien_number",
-            "profile_photo",
-            "employment_contract",
-            "national_id_or_passport",
-            "kra_pin_certificate",
-            "courtesy_title",
-            "work_email",
             "work_phone",
             "about_me",
             "payment_method",
@@ -3586,12 +3841,7 @@ class ProfileSettingsForm(forms.ModelForm):
         if self.instance and self.instance.pk and not self.is_bound:
             self.initial.update(
                 {
-                    "courtesy_title": self.instance.courtesy_title or "",
-                    "first_name": self.instance.first_name or "",
-                    "last_name": self.instance.last_name or "",
-                    "personal_email": self.instance.personal_email or "",
                     "personal_phone": self.instance.personal_phone or "",
-                    "work_email": self.instance.work_email or "",
                     "work_phone": self.instance.work_phone or "",
                     "id_type": self.instance.id_type or "",
                     "id_country": self.instance.id_country or DEFAULT_COUNTRY,
@@ -3609,19 +3859,6 @@ class ProfileSettingsForm(forms.ModelForm):
                     "status_display": self.instance.get_status_display(),
                 }
             )
-
-    def clean_personal_email(self):
-        email = (self.cleaned_data.get("personal_email") or "").strip().lower()
-        qs = Employee.objects.filter(personal_email__iexact=email)
-        if self.instance and self.instance.pk:
-            qs = qs.exclude(pk=self.instance.pk)
-        if qs.exists():
-            raise ValidationError("This email is already in use.")
-        return email
-
-    def clean_work_email(self):
-        email = (self.cleaned_data.get("work_email") or "").strip().lower()
-        return email or None
 
     def clean_work_phone(self):
         phone = (self.cleaned_data.get("work_phone") or "").strip()
@@ -3728,35 +3965,12 @@ class ProfileSettingsForm(forms.ModelForm):
         return cleaned
 
     def save(self, commit=True):
-        from django.core.files.uploadedfile import UploadedFile
-
         user = super().save(commit=False)
-        uploaded_fields: list[str] = []
-
-        photo = self.cleaned_data.get("profile_photo")
-        if isinstance(photo, UploadedFile):
-            user.profile_photo = optimize_profile_photo(photo)
-            uploaded_fields.append("profile_photo")
-
-        for name in (
-            "employment_contract",
-            "national_id_or_passport",
-            "kra_pin_certificate",
-        ):
-            value = self.cleaned_data.get(name)
-            if isinstance(value, UploadedFile):
-                setattr(user, name, value)
-                uploaded_fields.append(name)
-
         new_password = self.cleaned_data.get("new_password") or ""
         if new_password:
             user.set_password(new_password)
         if commit:
             user.save()
-            if uploaded_fields:
-                EmployeeOnboardingForm._sync_onboarding_drive_uploads(
-                    user, uploaded_fields
-                )
         return user
 
     def save_with_request(self, request, commit=True):
@@ -5709,6 +5923,13 @@ class CommunicationSettingsForm(forms.ModelForm):
             "email_host_password",
             "email_from_email",
             "email_from_name",
+            "work_email_provisioning_enabled",
+            "cpanel_host",
+            "cpanel_port",
+            "cpanel_username",
+            "cpanel_api_token",
+            "work_email_domain",
+            "work_email_quota_mb",
             "sms_enabled",
             "sms_provider",
             "sms_username",
@@ -5733,6 +5954,13 @@ class CommunicationSettingsForm(forms.ModelForm):
             "email_host_password": "SMTP password",
             "email_from_email": "From email address",
             "email_from_name": "From display name",
+            "work_email_provisioning_enabled": "Create work emails automatically",
+            "cpanel_host": "cPanel host",
+            "cpanel_port": "cPanel port",
+            "cpanel_username": "cPanel username",
+            "cpanel_api_token": "cPanel API token",
+            "work_email_domain": "Work email domain",
+            "work_email_quota_mb": "Mailbox quota (MB)",
             "sms_enabled": "Enable SMS",
             "sms_provider": "SMS provider",
             "sms_username": "API username / Account SID",
@@ -5752,6 +5980,19 @@ class CommunicationSettingsForm(forms.ModelForm):
         help_texts = {
             "email_port": "465 uses SSL automatically; 587 uses TLS automatically.",
             "email_from_email": "Address clients and staff see as the sender.",
+            "work_email_provisioning_enabled": (
+                "On approval, create first.last@your-domain in cPanel and save "
+                "it as the employee's work email."
+            ),
+            "cpanel_host": "Server hostname from cPanel, e.g. server.yourhost.com.",
+            "cpanel_port": "Use 2083 for the cPanel UAPI.",
+            "cpanel_username": "Your cPanel account username — not the email address.",
+            "cpanel_api_token": (
+                "Create under cPanel → Manage API Tokens. The SMTP password "
+                "cannot create mailboxes."
+            ),
+            "work_email_domain": "Domain new addresses are created on.",
+            "work_email_quota_mb": "Mailbox size in MB. Use 0 for unlimited.",
             "sms_username": "Africa's Talking username, or Twilio Account SID.",
             "sms_api_secret": "Required for Twilio (Auth Token).",
             "sms_sender_id": "Alphanumeric sender ID or E.164 from-number.",
@@ -5793,10 +6034,10 @@ class CommunicationSettingsForm(forms.ModelForm):
             "email_host_password": forms.PasswordInput(
                 attrs={
                     "class": "form-input",
-                    "placeholder": "SMTP password or app password",
+                    "placeholder": "Leave blank to keep the saved password",
                     "autocomplete": "new-password",
                 },
-                render_value=True,
+                render_value=False,
             ),
             "email_from_email": forms.EmailInput(
                 attrs={
@@ -5810,6 +6051,51 @@ class CommunicationSettingsForm(forms.ModelForm):
                     "class": "form-input",
                     "placeholder": "Bauni Law Group",
                     "autocomplete": "off",
+                }
+            ),
+            "work_email_provisioning_enabled": forms.CheckboxInput(),
+            "cpanel_host": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "server.yourhost.com",
+                    "autocomplete": "off",
+                }
+            ),
+            "cpanel_port": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "2083",
+                    "min": "1",
+                    "max": "65535",
+                }
+            ),
+            "cpanel_username": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "cpaneluser",
+                    "autocomplete": "off",
+                }
+            ),
+            "cpanel_api_token": forms.PasswordInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Leave blank to keep the saved API token",
+                    "autocomplete": "new-password",
+                },
+                render_value=False,
+            ),
+            "work_email_domain": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "yourfirm.com",
+                    "autocomplete": "off",
+                }
+            ),
+            "work_email_quota_mb": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "1024",
+                    "min": "0",
                 }
             ),
             "sms_provider": forms.Select(attrs={"class": "form-input"}),
@@ -5830,10 +6116,10 @@ class CommunicationSettingsForm(forms.ModelForm):
             "sms_api_secret": forms.PasswordInput(
                 attrs={
                     "class": "form-input",
-                    "placeholder": "Auth token (Twilio)",
+                    "placeholder": "Leave blank to keep the saved auth token",
                     "autocomplete": "new-password",
                 },
-                render_value=True,
+                render_value=False,
             ),
             "sms_sender_id": forms.TextInput(
                 attrs={
@@ -5861,10 +6147,10 @@ class CommunicationSettingsForm(forms.ModelForm):
             "whatsapp_api_token": forms.PasswordInput(
                 attrs={
                     "class": "form-input",
-                    "placeholder": "Access token",
+                    "placeholder": "Leave blank to keep the saved access token",
                     "autocomplete": "new-password",
                 },
-                render_value=True,
+                render_value=False,
             ),
             "whatsapp_phone_number_id": forms.TextInput(
                 attrs={
@@ -5889,6 +6175,42 @@ class CommunicationSettingsForm(forms.ModelForm):
             ),
         }
 
+    _SECRET_FIELDS = (
+        "email_host_password",
+        "cpanel_api_token",
+        "sms_api_secret",
+        "whatsapp_api_token",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Never render stored credentials back into the page. A blank submitted
+        # secret means "keep the saved value", preventing accidental
+        # disconnection when another communication field is edited.
+        for field_name in self._SECRET_FIELDS:
+            self.fields[field_name].required = False
+            self.initial[field_name] = ""
+
+    def _preserved_secret(self, field_name):
+        value = (self.cleaned_data.get(field_name) or "").strip()
+        if value:
+            return value
+        if self.instance and self.instance.pk:
+            return getattr(self.instance, field_name, "") or ""
+        return ""
+
+    def clean_email_host_password(self):
+        return self._preserved_secret("email_host_password")
+
+    def clean_cpanel_api_token(self):
+        return self._preserved_secret("cpanel_api_token")
+
+    def clean_sms_api_secret(self):
+        return self._preserved_secret("sms_api_secret")
+
+    def clean_whatsapp_api_token(self):
+        return self._preserved_secret("whatsapp_api_token")
+
     def clean_email_port(self):
         port = self.cleaned_data.get("email_port")
         if port is None:
@@ -5904,6 +6226,26 @@ class CommunicationSettingsForm(forms.ModelForm):
         if not url.lower().startswith("https://"):
             raise ValidationError("Use a public HTTPS webhook URL.")
         return url
+
+    def clean_cpanel_port(self):
+        port = self.cleaned_data.get("cpanel_port")
+        if port is None:
+            return 2083
+        if port < 1 or port > 65535:
+            raise ValidationError("Enter a valid port between 1 and 65535.")
+        return port
+
+    def clean_cpanel_host(self):
+        host = (self.cleaned_data.get("cpanel_host") or "").strip()
+        return host.rstrip("/")
+
+    def clean_work_email_domain(self):
+        domain = (self.cleaned_data.get("work_email_domain") or "").strip()
+        domain = domain.lstrip("@").lower()
+        for prefix in ("https://", "http://"):
+            if domain.startswith(prefix):
+                domain = domain[len(prefix) :]
+        return domain.strip("/")
 
     def clean(self):
         cleaned = super().clean()
@@ -5980,6 +6322,18 @@ class CommunicationSettingsForm(forms.ModelForm):
             cleaned["whatsapp_api_enabled"] = False
             cleaned["whatsapp_provider"] = CommunicationSettings.WhatsAppProvider.NONE
 
+        if cleaned.get("work_email_provisioning_enabled"):
+            if not (cleaned.get("cpanel_host") or "").strip():
+                self.add_error("cpanel_host", "Enter the cPanel host.")
+            if not (cleaned.get("cpanel_username") or "").strip():
+                self.add_error("cpanel_username", "Enter the cPanel username.")
+            if not (cleaned.get("cpanel_api_token") or "").strip():
+                self.add_error("cpanel_api_token", "Enter the cPanel API token.")
+            if not (cleaned.get("work_email_domain") or "").strip():
+                self.add_error("work_email_domain", "Enter the work email domain.")
+        else:
+            cleaned["work_email_provisioning_enabled"] = False
+
         return cleaned
 
     def save(self, commit=True):
@@ -5993,6 +6347,47 @@ class CommunicationSettingsForm(forms.ModelForm):
             instance.save()
             self.save_m2m()
         return instance
+
+
+class SetWorkEmailPasswordForm(forms.Form):
+    """Public form for an employee to choose a new firm mailbox password."""
+
+    password1 = forms.CharField(
+        label="New password",
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "autocomplete": "new-password",
+                "placeholder": "Choose a strong password",
+            }
+        ),
+    )
+    password2 = forms.CharField(
+        label="Confirm password",
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "form-input",
+                "autocomplete": "new-password",
+                "placeholder": "Repeat the password",
+            }
+        ),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        password1 = cleaned.get("password1") or ""
+        password2 = cleaned.get("password2") or ""
+        if password1 != password2:
+            self.add_error("password2", "The passwords do not match.")
+            return cleaned
+        from .work_email_notify import validate_work_email_password
+        from .cpanel_mail import CpanelMailError
+
+        try:
+            cleaned["password1"] = validate_work_email_password(password1)
+        except CpanelMailError as exc:
+            self.add_error("password1", str(exc))
+        return cleaned
 
 
 class DocumentPartyTypeMixin:

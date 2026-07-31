@@ -237,7 +237,12 @@ class Employee(AbstractUser):
     work_email = models.EmailField(
         blank=True,
         null=True,
-        help_text="Coming soon — auto-generated from personal email.",
+        help_text="Firm mailbox created on approval, e.g. first.last@firm.com.",
+    )
+    work_email_password_encrypted = models.TextField(
+        blank=True,
+        default="",
+        help_text="Encrypted cPanel mailbox password for IMAP/SMTP in Messages.",
     )
     personal_phone = models.CharField(max_length=32)
     work_phone = models.CharField(
@@ -394,6 +399,7 @@ class Employee(AbstractUser):
     )
 
     USERNAME_FIELD = "login_code"
+    EMAIL_FIELD = "personal_email"
     REQUIRED_FIELDS = ["personal_email", "first_name", "last_name"]
 
     objects = EmployeeManager()
@@ -411,6 +417,30 @@ class Employee(AbstractUser):
         if self.courtesy_title and name:
             return f"{self.get_courtesy_title_display()} {name}"
         return name
+
+    @property
+    def mailbox_connected(self) -> bool:
+        return bool(
+            (self.work_email or "").strip()
+            and (self.work_email_password_encrypted or "").strip()
+        )
+
+    def set_work_mailbox_password(self, password: str, *, save: bool = True) -> None:
+        from .mail_crypto import encrypt_mailbox_password
+
+        self.work_email_password_encrypted = encrypt_mailbox_password(password)
+        if save:
+            self.save(update_fields=["work_email_password_encrypted"])
+
+    def clear_work_mailbox_password(self, *, save: bool = True) -> None:
+        self.work_email_password_encrypted = ""
+        if save:
+            self.save(update_fields=["work_email_password_encrypted"])
+
+    def get_work_mailbox_password(self) -> str:
+        from .mail_crypto import decrypt_mailbox_password
+
+        return decrypt_mailbox_password(self.work_email_password_encrypted)
 
     def _titled_name(self, part: str) -> str:
         part = (part or "").strip()
@@ -5487,6 +5517,28 @@ class CommunicationSettings(models.Model):
     email_from_email = models.EmailField(blank=True, default="")
     email_from_name = models.CharField(max_length=120, blank=True, default="")
 
+    # --- Work email provisioning (cPanel) ---
+    work_email_provisioning_enabled = models.BooleanField(default=False)
+    cpanel_host = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="cPanel server hostname, e.g. server.yourhost.com.",
+    )
+    cpanel_port = models.PositiveIntegerField(default=2083)
+    cpanel_username = models.CharField(max_length=120, blank=True, default="")
+    cpanel_api_token = models.CharField(max_length=255, blank=True, default="")
+    work_email_domain = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Domain new work addresses are created on, e.g. yourfirm.com.",
+    )
+    work_email_quota_mb = models.PositiveIntegerField(
+        default=1024,
+        help_text="Mailbox size in MB. Use 0 for unlimited.",
+    )
+
     @staticmethod
     def smtp_security_for_port(port: int | None) -> tuple[bool, bool]:
         """
@@ -5585,6 +5637,14 @@ class CommunicationSettings(models.Model):
         blank=True,
         related_name="communication_settings_updates",
     )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="communication_settings_verifications",
+    )
 
     class Meta:
         verbose_name = "Communication settings"
@@ -5649,6 +5709,16 @@ class CommunicationSettings(models.Model):
             and self.email_host.strip()
             and self.email_from_email.strip()
             and self.email_port
+        )
+
+    @property
+    def work_email_provisioning_ready(self) -> bool:
+        return bool(
+            self.work_email_provisioning_enabled
+            and self.cpanel_host.strip()
+            and self.cpanel_username.strip()
+            and self.cpanel_api_token.strip()
+            and self.work_email_domain.strip()
         )
 
     @property
@@ -5783,6 +5853,87 @@ class WhatsAppMessage(models.Model):
         return f"{self.get_direction_display()}: {preview}"
 
 
+class EmployeeCommunication(models.Model):
+    """
+    An email or SMS an employee sent to a client or colleague.
+
+    Written whenever staff send from Messages so Employee Communications can
+    show a per-employee, per-channel record that supervisors can read back.
+    """
+
+    class Channel(models.TextChoices):
+        EMAIL = "email", "Email"
+        SMS = "sms", "SMS"
+
+    class Status(models.TextChoices):
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Failed"
+
+    sender = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="communications_sent",
+    )
+    channel = models.CharField(max_length=16, choices=Channel.choices)
+    from_identity = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Work email or work phone the message was sent from.",
+    )
+    to_client = models.ForeignKey(
+        Client,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="staff_communications",
+    )
+    to_employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="communications_received",
+    )
+    to_address = models.CharField(max_length=255)
+    subject = models.CharField(max_length=255, blank=True, default="")
+    body = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.SENT,
+    )
+    error_message = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Employee communication"
+        verbose_name_plural = "Employee communications"
+        indexes = [
+            models.Index(fields=["sender", "channel", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_channel_display()} to {self.recipient_display}"
+
+    @property
+    def recipient_display(self) -> str:
+        if self.to_client_id:
+            return self.to_client.get_full_name()
+        if self.to_employee_id:
+            return self.to_employee.get_full_name()
+        return self.to_address
+
+    @property
+    def recipient_kind(self) -> str:
+        if self.to_client_id:
+            return "Client"
+        if self.to_employee_id:
+            return "Employee"
+        return "Contact"
+
+
 class RoleActivityPermission(models.Model):
     """Per-role lock for a system-module activity (default allow when no row)."""
 
@@ -5862,6 +6013,7 @@ class EmployeeWorkSession(models.Model):
         MANUAL = "manual", "Signed out"
         EXPIRED = "expired", "Session expired"
         REPLACED = "replaced", "New login"
+        SUSPENDED = "suspended", "Account suspended"
 
     employee = models.ForeignKey(
         Employee,
