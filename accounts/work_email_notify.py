@@ -275,17 +275,25 @@ def build_credentials_email(
     set_password_url: str,
     domain: str = "",
     reused: bool = False,
+    reset: bool = False,
     firm_name: str = "",
 ) -> tuple[str, str, str]:
     name = employee.get_full_name() or "there"
     domain = (domain or work_email.partition("@")[2]).strip().lower()
     webmail = webmail_url_for_domain(domain)
-    subject = f"Your Sheria Centric work email — {work_email}"
-    intro = (
-        "Your firm work email has been allocated to you."
-        if reused
-        else "Your firm work email has been created."
-    )
+    if reset:
+        subject = f"Your work email password was reset — {work_email}"
+        intro = (
+            "Your firm work email password has been reset by your managing "
+            "partner. Use the temporary password below, then choose a new one."
+        )
+    else:
+        subject = f"Your Sheria Centric work email — {work_email}"
+        intro = (
+            "Your firm work email has been allocated to you."
+            if reused
+            else "Your firm work email has been created."
+        )
     brand = (firm_name or "").strip() or get_firm_display_name() or "Your firm"
     body = _credentials_plain_body(
         name=name,
@@ -317,6 +325,7 @@ def notify_work_email_created(
     password: str,
     setting: CommunicationSettings | None = None,
     reused: bool = False,
+    reset: bool = False,
 ) -> dict:
     """
     Email credentials to the employee's personal address.
@@ -349,6 +358,7 @@ def notify_work_email_created(
         set_password_url=set_password_url,
         domain=domain,
         reused=reused,
+        reset=reset,
         firm_name=firm_name,
     )
     try:
@@ -578,6 +588,112 @@ def notify_work_email_restored(
     return result
 
 
+def notify_work_email_reset_link(
+    request,
+    employee: Employee,
+    *,
+    work_email: str,
+    setting: CommunicationSettings | None = None,
+) -> dict:
+    """
+    Email a password-reset link to the employee's personal address.
+
+    Does not change the mailbox password — the employee chooses a new one
+    on the signed link page.
+    """
+    setting = setting or CommunicationSettings.get_solo()
+    personal = (employee.personal_email or "").strip().lower()
+    address = (work_email or "").strip().lower()
+    result = {
+        "personal_email": personal,
+        "email_sent": False,
+        "email_error": "",
+        "set_password_url": "",
+    }
+    if not personal:
+        result["email_error"] = "No personal email on the employee record."
+        return result
+    if not address:
+        result["email_error"] = "No work email on the employee record."
+        return result
+
+    token = make_set_password_token(employee_id=employee.pk, work_email=address)
+    set_password_url = request.build_absolute_uri(set_password_path(token))
+    result["set_password_url"] = set_password_url
+    domain = (setting.work_email_domain or address.partition("@")[2]).strip()
+    webmail = webmail_url_for_domain(domain)
+    name = employee.get_full_name() or "there"
+    firm_name = (setting.email_from_name or "").strip() or get_firm_display_name()
+    brand = firm_name or "Your firm"
+    subject = f"Reset your work email password — {address}"
+    paragraphs = [
+        (
+            f"Your managing partner requested a password reset for your firm "
+            f"work email ({address})."
+        ),
+        (
+            "Use this secure link to choose a new mailbox password "
+            "(valid for 7 days):"
+        ),
+        set_password_url,
+        (
+            "After you set the password you can sign into webmail or any mail "
+            f"app as {address}"
+            + (f" using mail.{domain}." if domain else ".")
+        ),
+    ]
+    if webmail:
+        paragraphs.append(f"Webmail: {webmail}")
+
+    body = _status_plain_body(name=name, paragraphs=paragraphs)
+    # Make the link stand out in HTML.
+    html_paragraphs = [
+        paragraphs[0],
+        paragraphs[1],
+        paragraphs[3],
+    ]
+    if webmail:
+        html_paragraphs.append(paragraphs[4])
+    html_body = _status_html_body(
+        name=name, paragraphs=html_paragraphs, firm_name=brand
+    )
+    # Insert CTA button after intro paragraphs for HTML only.
+    safe_url = html.escape(set_password_url, quote=True)
+    cta = (
+        f'<p style="margin:0 0 18px;"><a href="{safe_url}" '
+        f'style="display:inline-block;padding:12px 18px;background:#1a1d26;'
+        f'color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">'
+        f"Reset work email password</a></p>"
+        f'<p style="margin:0 0 14px;font-size:13px;line-height:1.55;color:#8a9099;'
+        f'word-break:break-all;">{html.escape(set_password_url)}</p>'
+    )
+    html_body = html_body.replace(
+        f"{html.escape(paragraphs[1])}</p>",
+        f"{html.escape(paragraphs[1])}</p>{cta}",
+        1,
+    )
+
+    try:
+        send_firm_email(
+            to_email=personal,
+            subject=subject,
+            body=body,
+            html_body=html_body,
+            setting=setting,
+        )
+    except OutboundMessageError as exc:
+        logger.warning(
+            "Could not email work-email reset link to %s: %s",
+            personal,
+            exc,
+        )
+        result["email_error"] = str(exc)
+        return result
+
+    result["email_sent"] = True
+    return result
+
+
 __all__ = [
     "MIN_PASSWORD_LENGTH",
     "SET_PASSWORD_MAX_AGE_SECONDS",
@@ -586,6 +702,7 @@ __all__ = [
     "load_set_password_token",
     "make_set_password_token",
     "notify_work_email_created",
+    "notify_work_email_reset_link",
     "notify_work_email_restored",
     "notify_work_email_suspended",
     "set_password_path",

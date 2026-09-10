@@ -9,8 +9,13 @@
       <p class="page-kicker">{{ channel.label }}</p>
       <h2>{{ log_employee.get_full_name }}</h2>
       <p class="page-lead">
+        {% if channel.key == "email" %}
+        Emails this employee has been dealing with — sent to clients and
+        colleagues, and received from colleagues. Open one to read it in full.
+        {% else %}
         {{ channel.noun_plural|capfirst }} sent by this employee to clients and
         colleagues. Open one to read it in full.
+        {% endif %}
       </p>
     </div>
     <div class="page-intro__actions">
@@ -22,7 +27,9 @@
 
   <section class="panel">
     <div class="panel__head">
-      <h3>Sent {{ channel.noun_plural }}</h3>
+      <h3>
+        {% if channel.key == "email" %}Email activity{% else %}Sent {{ channel.noun_plural }}{% endif %}
+      </h3>
       <p class="panel__hint">
         {{ messages_log|length }} shown
         {% if log_employee.work_email %}· {{ log_employee.work_email }}{% endif %}
@@ -38,7 +45,7 @@
             id="id_log_search"
             class="form-input"
             value="{{ log_search }}"
-            placeholder="Recipient, subject or wording…"
+            placeholder="Person, subject or wording…"
           >
         </div>
         <div class="form-actions form-actions--start">
@@ -55,8 +62,11 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Sent</th>
-              <th scope="col">Recipient</th>
+              <th scope="col">When</th>
+              {% if channel.key == "email" %}
+              <th scope="col">Direction</th>
+              {% endif %}
+              <th scope="col">{% if channel.key == "email" %}With{% else %}Recipient{% endif %}</th>
               <th scope="col">Message</th>
               <th scope="col">Status</th>
             </tr>
@@ -65,10 +75,19 @@
             {% for item in messages_log %}
             <tr class="is-clickable-row" data-href="{{ message_url_base }}{{ item.id }}/">
               <td><span class="reminder-when">{{ item.sent_at|date:"d M Y, H:i" }}</span></td>
+              {% if channel.key == "email" %}
+              <td>
+                {% if item.direction == "received" %}
+                <span class="status-pill status-pill--submitted">{{ item.direction_label }}</span>
+                {% else %}
+                <span class="status-pill status-pill--done">{{ item.direction_label }}</span>
+                {% endif %}
+              </td>
+              {% endif %}
               <td>
                 <div class="person-cell__text">
-                  <span class="person-cell__name">{{ item.recipient_name|default:item.to_address }}</span>
-                  <span class="person-cell__meta">{{ item.recipient_kind }} · {{ item.to_address }}</span>
+                  <span class="person-cell__name">{{ item.counterpart_name|default:item.recipient_name|default:item.to_address }}</span>
+                  <span class="person-cell__meta">{{ item.counterpart_kind|default:item.recipient_kind }} · {{ item.to_address }}</span>
                 </div>
               </td>
               <td>
@@ -95,10 +114,15 @@
       </div>
       {% else %}
       <div class="empty-state">
-        <p class="empty-state__title">Nothing sent yet</p>
+        <p class="empty-state__title">
+          {% if channel.key == "email" %}No email activity yet{% else %}Nothing sent yet{% endif %}
+        </p>
         <p class="empty-state__copy">
           {% if log_search %}
           No {{ channel.noun_plural }} match “{{ log_search }}”.
+          {% elif channel.key == "email" %}
+          {{ log_employee.get_full_name }} has not sent or received any emails
+          through the workspace yet.
           {% else %}
           {{ log_employee.get_full_name }} has not sent any {{ channel.noun_plural }} from
           the workspace yet.

@@ -1,0 +1,69 @@
+<form method="post" action="{{ work_email_update_url }}" class="work-email-editor">
+  {% csrf_token %}
+  {% if return_to %}
+  <input type="hidden" name="return_to" value="{{ return_to }}">
+  {% endif %}
+  <label class="visually-hidden" for="{{ input_id }}">
+    Work email for {{ employee_label }}
+  </label>
+  <input
+    type="email"
+    name="work_email"
+    id="{{ input_id }}"
+    class="form-input work-email-editor__input"
+    value="{{ work_email_value }}"
+    placeholder="name@company.com"
+    autocomplete="off"
+  >
+  <button
+    type="submit"
+    name="action"
+    value="update"
+    class="btn btn--ghost btn--inline work-email-editor__save"
+  >
+    Save
+  </button>
+  {% if has_work_email %}
+    {% if work_email_provisioning_ready and email_smtp_ready %}
+    <button
+      type="submit"
+      name="action"
+      value="reset_password"
+      class="btn btn--ghost btn--inline work-email-editor__save"
+      formnovalidate
+      title="Email a password-reset link to the employee's personal address"
+    >
+      Send reset link
+    </button>
+    {% elif work_email_provisioning_ready %}
+    <a
+      class="btn btn--ghost btn--inline work-email-editor__save"
+      href="{{ communication_settings_url }}"
+      title="Configure firm email (SMTP) to send reset links"
+    >
+      Set up SMTP to reset
+    </a>
+    {% endif %}
+  {% else %}
+    {% if work_email_provisioning_ready %}
+    <button
+      type="submit"
+      name="action"
+      value="generate"
+      class="btn btn--primary btn--inline work-email-editor__save"
+      formnovalidate
+      title="Create the mailbox and email login instructions to the employee"
+    >
+      Generate &amp; notify
+    </button>
+    {% else %}
+    <a
+      class="btn btn--ghost btn--inline work-email-editor__save"
+      href="{{ communication_settings_url }}#communication-work-email-panel"
+      title="Configure Work emails (cPanel) before generating mailboxes"
+    >
+      Set up creation
+    </a>
+    {% endif %}
+  {% endif %}
+</form>

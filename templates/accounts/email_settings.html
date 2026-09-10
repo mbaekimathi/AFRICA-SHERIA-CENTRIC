@@ -1,0 +1,194 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page" id="live-list-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        List every employee and manage their work mailbox.
+        {% if can_edit_work_email %}
+        Assign an existing address with Save, use Generate &amp; notify to create
+        one, or Send reset link so the employee can set a new work-email password
+        from their personal inbox.
+        {% endif %}
+      </p>
+    </div>
+  </header>
+
+  {% if can_edit_work_email and work_email_reuse_candidate %}
+  <section class="panel" id="work-email-reuse-confirm">
+    <div class="panel__body">
+      <div class="empty-state">
+        <p class="empty-state__title">Existing mailbox found</p>
+        <p class="empty-state__copy">
+          <strong>{{ work_email_reuse_candidate.email }}</strong> already exists
+          on the firm mail account for
+          <strong>{{ work_email_reuse_candidate.name }}</strong>.
+          Use it, or create a different address? Continuing with the existing
+          mailbox will reset its password and email login instructions to the
+          employee's personal address.
+        </p>
+        {% for row in email_settings_employees %}
+          {% if row.employee.pk == work_email_reuse_candidate.employee_id %}
+          <form method="post" action="{{ row.work_email_update_url }}" class="form-actions form-actions--start">
+            {% csrf_token %}
+            <input type="hidden" name="return_to" value="email-settings">
+            <button
+              type="submit"
+              name="action"
+              value="adopt_existing"
+              class="btn btn--primary btn--inline"
+            >
+              Use existing &amp; notify
+            </button>
+            <button
+              type="submit"
+              name="action"
+              value="generate_new"
+              class="btn btn--ghost btn--inline"
+            >
+              Create a different address
+            </button>
+            <button
+              type="submit"
+              name="action"
+              value="dismiss_reuse"
+              class="btn btn--ghost btn--inline"
+            >
+              Cancel
+            </button>
+          </form>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if can_edit_work_email and not work_email_provisioning_ready %}
+  <section class="panel">
+    <div class="panel__body">
+      <div class="empty-state">
+        <p class="empty-state__title">Work email creation is not ready</p>
+        <p class="empty-state__copy">
+          {% if email_smtp_ready %}
+          Email (SMTP) is connected for sending mail, but creating employee
+          mailboxes needs the separate
+          <strong>Work emails (cPanel)</strong> settings.
+          {% else %}
+          Automatic mailbox creation needs
+          <strong>Work emails (cPanel)</strong> under Communication Settings.
+          {% endif %}
+          {% if work_email_provisioning_gaps %}
+          Still needed:
+          {{ work_email_provisioning_gaps|join:", " }}.
+          {% endif %}
+          You can still type an existing address and click Save.
+        </p>
+        <p class="empty-state__copy">
+          <a class="btn btn--primary btn--inline" href="{{ communication_settings_url }}#communication-work-email-panel">
+            Open Work emails (cPanel)
+          </a>
+        </p>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employee work emails</h3>
+      <p class="panel__hint">
+        {{ email_settings_employee_count }} employee{{ email_settings_employee_count|pluralize }}
+        {% if can_edit_work_email and work_email_provisioning_ready %}
+        · Generate &amp; notify creates the mailbox and emails login instructions
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="get" class="workspace-form">
+        <div class="form-field">
+          <label for="id_email_settings_search">Find an employee</label>
+          <input
+            type="search"
+            name="q"
+            id="id_email_settings_search"
+            class="form-input"
+            value="{{ email_settings_search }}"
+            placeholder="Name, login code, or work email…"
+          >
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--ghost btn--inline">Search</button>
+          {% if email_settings_search %}
+          <a class="btn btn--ghost btn--inline" href="?">Clear</a>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+    <div class="panel__body panel__body--table">
+      {% if email_settings_employees %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Employee</th>
+              <th scope="col">Role</th>
+              <th scope="col">Status</th>
+              <th scope="col">Work email</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in email_settings_employees %}
+            <tr>
+              <td>
+                <div class="person-cell">
+                  {% if row.employee.profile_photo %}
+                  <img class="avatar avatar--xs" src="{{ row.employee.profile_photo.url }}" alt="">
+                  {% else %}
+                  <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
+                    {{ row.employee.first_name|slice:":1"|upper }}{{ row.employee.last_name|slice:":1"|upper }}
+                  </div>
+                  {% endif %}
+                  <div class="person-cell__text">
+                    <span class="person-cell__name">
+                      {{ row.employee.get_full_name|default:row.employee.login_code }}
+                    </span>
+                    <span class="person-cell__meta">{{ row.employee.login_code }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>{{ row.employee.get_role_display }}</td>
+              <td>{{ row.employee.get_status_display }}</td>
+              <td>
+                {% if can_edit_work_email and row.work_email_editable %}
+                {% include "accounts/partials/work_email_editor.html" with work_email_update_url=row.work_email_update_url return_to="email-settings" input_id=row.work_email_input_id employee_label=row.employee_label work_email_value=row.work_email_value has_work_email=row.has_work_email %}
+                {% else %}
+                {{ row.employee.work_email|default:"—" }}
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No employees to show</p>
+        <p class="empty-state__copy">
+          {% if email_settings_search %}
+          No employee matches “{{ email_settings_search }}”.
+          {% else %}
+          Employee accounts will appear here once they are onboarded.
+          {% endif %}
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

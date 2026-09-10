@@ -193,7 +193,7 @@ def _whatsapp_sent_messages():
 
 
 def employee_channel_summaries(channel_key: str) -> list[dict]:
-    """Every employee with their message count and last send on this channel."""
+    """Every employee with their message count and last activity on this channel."""
     if channel_key == "whatsapp":
         counts = {
             row["sent_by"]: row
@@ -201,6 +201,36 @@ def employee_channel_summaries(channel_key: str) -> list[dict]:
             .values("sent_by")
             .annotate(total=Count("id"), last_at=Max("created_at"))
         }
+    elif channel_key == "email":
+        # Emails they sent or received (colleague mail) both count as dealing with.
+        sent = {
+            row["sender"]: row
+            for row in EmployeeCommunication.objects.filter(channel=channel_key)
+            .values("sender")
+            .annotate(total=Count("id"), last_at=Max("created_at"))
+        }
+        received = {
+            row["to_employee"]: row
+            for row in EmployeeCommunication.objects.filter(
+                channel=channel_key, to_employee__isnull=False
+            )
+            .values("to_employee")
+            .annotate(total=Count("id"), last_at=Max("created_at"))
+        }
+        employee_ids = set(sent) | set(received)
+        counts = {}
+        for employee_id in employee_ids:
+            sent_row = sent.get(employee_id) or {}
+            received_row = received.get(employee_id) or {}
+            last_candidates = [
+                value
+                for value in (sent_row.get("last_at"), received_row.get("last_at"))
+                if value is not None
+            ]
+            counts[employee_id] = {
+                "total": (sent_row.get("total") or 0) + (received_row.get("total") or 0),
+                "last_at": max(last_candidates) if last_candidates else None,
+            }
     else:
         counts = {
             row["sender"]: row
@@ -232,6 +262,10 @@ def _whatsapp_row(message) -> dict:
     return {
         "id": message.pk,
         "sent_at": message.created_at,
+        "direction": "sent",
+        "direction_label": "Sent",
+        "counterpart_name": conversation.title,
+        "counterpart_kind": "Client" if client else "Contact",
         "recipient_name": conversation.title,
         "recipient_kind": "Client" if client else "Contact",
         "to_address": conversation.msisdn,
@@ -244,13 +278,34 @@ def _whatsapp_row(message) -> dict:
     }
 
 
-def _communication_row(record) -> dict:
+def _communication_row(record, *, viewer=None) -> dict:
+    is_received = (
+        viewer is not None
+        and record.to_employee_id == viewer.pk
+        and record.sender_id != viewer.pk
+    )
+    if is_received:
+        counterpart_name = record.sender.get_full_name() if record.sender_id else ""
+        counterpart_kind = "Employee"
+        counterpart_address = record.from_identity or ""
+        direction = "received"
+        direction_label = "Received"
+    else:
+        counterpart_name = record.recipient_display
+        counterpart_kind = record.recipient_kind
+        counterpart_address = record.to_address
+        direction = "sent"
+        direction_label = "Sent"
     return {
         "id": record.pk,
         "sent_at": record.created_at,
-        "recipient_name": record.recipient_display,
-        "recipient_kind": record.recipient_kind,
-        "to_address": record.to_address,
+        "direction": direction,
+        "direction_label": direction_label,
+        "counterpart_name": counterpart_name,
+        "counterpart_kind": counterpart_kind,
+        "recipient_name": counterpart_name,
+        "recipient_kind": counterpart_kind,
+        "to_address": counterpart_address or record.to_address,
         "subject": record.subject,
         "body": record.body,
         "status": record.status,
@@ -261,7 +316,7 @@ def _communication_row(record) -> dict:
 
 
 def employee_messages(channel_key: str, employee, *, search: str = "") -> list[dict]:
-    """Messages this employee sent on a channel, newest first."""
+    """Messages this employee dealt with on a channel, newest first."""
     term = (search or "").strip()
     if channel_key == "whatsapp":
         queryset = (
@@ -278,21 +333,29 @@ def employee_messages(channel_key: str, employee, *, search: str = "") -> list[d
             )
         return [_whatsapp_row(message) for message in queryset]
 
-    queryset = EmployeeCommunication.objects.filter(
-        sender=employee, channel=channel_key
-    ).select_related("to_client", "to_employee")
+    queryset = EmployeeCommunication.objects.filter(channel=channel_key)
+    if channel_key == "email":
+        queryset = queryset.filter(Q(sender=employee) | Q(to_employee=employee))
+    else:
+        queryset = queryset.filter(sender=employee)
+    queryset = queryset.select_related("sender", "to_client", "to_employee").order_by(
+        "-created_at", "-id"
+    )
     if term:
         queryset = queryset.filter(
             Q(subject__icontains=term)
             | Q(body__icontains=term)
             | Q(to_address__icontains=term)
+            | Q(from_identity__icontains=term)
             | Q(to_client__first_name__icontains=term)
             | Q(to_client__last_name__icontains=term)
             | Q(to_client__company_name__icontains=term)
             | Q(to_employee__first_name__icontains=term)
             | Q(to_employee__last_name__icontains=term)
+            | Q(sender__first_name__icontains=term)
+            | Q(sender__last_name__icontains=term)
         )
-    return [_communication_row(record) for record in queryset]
+    return [_communication_row(record, viewer=employee) for record in queryset]
 
 
 def employee_message(channel_key: str, employee, message_id: int) -> dict | None:
@@ -306,11 +369,10 @@ def employee_message(channel_key: str, employee, message_id: int) -> dict | None
         )
         return _whatsapp_row(message) if message else None
 
-    record = (
-        EmployeeCommunication.objects.filter(
-            pk=message_id, sender=employee, channel=channel_key
-        )
-        .select_related("to_client", "to_employee")
-        .first()
-    )
-    return _communication_row(record) if record else None
+    queryset = EmployeeCommunication.objects.filter(pk=message_id, channel=channel_key)
+    if channel_key == "email":
+        queryset = queryset.filter(Q(sender=employee) | Q(to_employee=employee))
+    else:
+        queryset = queryset.filter(sender=employee)
+    record = queryset.select_related("sender", "to_client", "to_employee").first()
+    return _communication_row(record, viewer=employee) if record else None

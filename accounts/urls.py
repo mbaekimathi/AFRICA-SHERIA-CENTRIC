@@ -486,7 +486,7 @@ urlpatterns = [
     ),
     path(
         "<slug:role>/dashboard/user-management/employee-management/"
-        "employee-communications/email-communications/<int:employee_id>/"
+        "employee-communications/email-settings/<int:employee_id>/"
         "work-email/",
         views.UpdateEmployeeWorkEmailView.as_view(),
         name="update_employee_work_email",

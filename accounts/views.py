@@ -3774,6 +3774,7 @@ class RoleWorkspaceView(View):
     roles_activity_permission_template = "accounts/roles_activity_permission.html"
     performance_compliance_template = "accounts/performance_compliance.html"
     communication_channel_template = "accounts/communication_channel.html"
+    email_settings_template = "accounts/email_settings.html"
     page_template = "accounts/workspace_page.html"
 
     def get(self, request, role, pages="dashboard"):
@@ -4377,6 +4378,9 @@ class RoleWorkspaceView(View):
             response = render(
                 request, self.communication_channel_template, context
             )
+        elif resolved["leaf"] == "email-settings":
+            context.update(self._email_settings_context(user, request))
+            response = render(request, self.email_settings_template, context)
         elif resolved["leaf"] == "calendar":
             context.update(self._calendar_context(user, request))
             apply_notification_badges(context, user)
@@ -10623,7 +10627,6 @@ class RoleWorkspaceView(View):
     def _communication_channel_context(user, request, resolved):
         """Employee roster for one Employee Communications channel."""
         channel = channel_page(resolved["leaf"])
-        communication_setting = CommunicationSettings.get_solo()
         search = (request.GET.get("q") or "").strip()
         summaries = employee_channel_summaries(channel["key"])
         if search:
@@ -10640,15 +10643,6 @@ class RoleWorkspaceView(View):
             {
                 **row,
                 "url": user.workspace_url(*base_trail, str(row["employee"].pk)),
-                "work_email_update_url": reverse(
-                    "accounts:update_employee_work_email",
-                    kwargs={
-                        "role": user.role_slug,
-                        "employee_id": row["employee"].pk,
-                    },
-                ),
-                "work_email_editable": row["employee"].status
-                in {Employee.Status.ACTIVE, Employee.Status.SUSPENDED},
             }
             for row in summaries
         ]
@@ -10657,9 +10651,65 @@ class RoleWorkspaceView(View):
             "channel_employees": rows,
             "channel_search": search,
             "channel_total": sum(row["total"] for row in rows),
-            "can_edit_work_email": channel["key"] == "email"
-            and workspace_activity_action_permitted(
+        }
+        if channel["key"] == "email":
+            context["email_settings_url"] = user.workspace_url(
+                *EMPLOYEE_MANAGEMENT_TRAIL,
+                "employee-communications",
+                "email-settings",
+            )
+        return context
+
+    @staticmethod
+    def _email_settings_context(user, request):
+        """Employee roster dedicated to assigning and editing work emails."""
+        communication_setting = CommunicationSettings.get_solo()
+        search = (request.GET.get("q") or "").strip()
+        employees = Employee.objects.exclude(
+            status=Employee.Status.PENDING_ONBOARDING
+        ).order_by("first_name", "last_name", "login_code")
+        if search:
+            term = search.lower()
+            employees = [
+                employee
+                for employee in employees
+                if term in employee.get_full_name().lower()
+                or term in (employee.work_email or "").lower()
+                or term in (employee.login_code or "").lower()
+            ]
+        else:
+            employees = list(employees)
+
+        rows = []
+        for employee in employees:
+            label = employee.get_full_name() or employee.login_code
+            rows.append(
+                {
+                    "employee": employee,
+                    "work_email_update_url": reverse(
+                        "accounts:update_employee_work_email",
+                        kwargs={
+                            "role": user.role_slug,
+                            "employee_id": employee.pk,
+                        },
+                    ),
+                    "work_email_editable": employee.status
+                    in {Employee.Status.ACTIVE, Employee.Status.SUSPENDED},
+                    "work_email_input_id": f"id_work_email_{employee.pk}",
+                    "employee_label": label,
+                    "work_email_value": employee.work_email or "",
+                    "has_work_email": bool((employee.work_email or "").strip()),
+                }
+            )
+        context = {
+            "email_settings_employees": rows,
+            "email_settings_employee_count": len(rows),
+            "email_settings_search": search,
+            "can_edit_work_email": workspace_activity_action_permitted(
                 user, _USER_MODULE, "employee-management", "edit"
+            )
+            or workspace_activity_action_permitted(
+                user, _USER_MODULE, "email-settings", "edit"
             ),
             "work_email_provisioning_ready": (
                 communication_setting.work_email_provisioning_ready
@@ -12797,16 +12847,24 @@ class DeclinePendingClientView(View):
 
 @method_decorator(login_required, name="dispatch")
 class UpdateEmployeeWorkEmailView(View):
-    """Update an employee's work address from Email Communications."""
+    """Update an employee's work address from Email settings."""
 
     managed_statuses = {Employee.Status.ACTIVE, Employee.Status.SUSPENDED}
+    allowed_return_pages = frozenset(
+        {"email-communications", "email-settings"}
+    )
 
-    @staticmethod
-    def _list_url(user):
+    @classmethod
+    def _list_url(cls, user, request=None):
+        return_to = "email-settings"
+        if request is not None:
+            candidate = (request.POST.get("return_to") or "").strip()
+            if candidate in cls.allowed_return_pages:
+                return_to = candidate
         return user.workspace_url(
             *EMPLOYEE_MANAGEMENT_TRAIL,
             "employee-communications",
-            "email-communications",
+            return_to,
         )
 
     @staticmethod
@@ -12860,7 +12918,7 @@ class UpdateEmployeeWorkEmailView(View):
                 f"{verb} {work_email}, but the notification could not be "
                 f"emailed: {detail}",
             )
-        return redirect(cls._list_url(user))
+        return redirect(cls._list_url(user, request))
 
     def post(self, request, role, employee_id):
         user, denied = _guard_employee_management(
@@ -12872,7 +12930,7 @@ class UpdateEmployeeWorkEmailView(View):
         if denied:
             return denied
 
-        list_url = self._list_url(user)
+        list_url = self._list_url(user, request)
         employee = get_object_or_404(Employee, pk=employee_id)
         if employee.status not in self.managed_statuses:
             messages.error(
@@ -13017,6 +13075,54 @@ class UpdateEmployeeWorkEmailView(View):
                 password=password,
                 reused=False,
             )
+
+        if action == "reset_password":
+            work_email = (employee.work_email or "").strip().lower()
+            if not work_email:
+                messages.error(
+                    request,
+                    f"{employee.get_full_name()} does not have a work email yet.",
+                )
+                return redirect(list_url)
+
+            setting = CommunicationSettings.get_solo()
+            if not setting.email_ready:
+                messages.error(
+                    request,
+                    "Firm email (SMTP) is not configured, so the reset link "
+                    "cannot be sent to the employee's personal address.",
+                )
+                return redirect(list_url)
+            if not setting.work_email_provisioning_ready:
+                messages.error(
+                    request,
+                    "Work email (cPanel) is not ready, so the employee would "
+                    f"not be able to finish the reset: "
+                    f"{setting.work_email_provisioning_block_reason()}",
+                )
+                return redirect(list_url)
+
+            from .work_email_notify import notify_work_email_reset_link
+
+            notification = notify_work_email_reset_link(
+                request,
+                employee,
+                work_email=work_email,
+                setting=setting,
+            )
+            if notification.get("email_sent"):
+                messages.success(
+                    request,
+                    f"A work-email password reset link for {work_email} was "
+                    f"sent to {notification['personal_email']}.",
+                )
+            else:
+                detail = notification.get("email_error") or "Unknown email error."
+                messages.error(
+                    request,
+                    f"Could not send the password reset link: {detail}",
+                )
+            return redirect(list_url)
 
         if action != "update":
             messages.error(request, "Unknown work email action.")

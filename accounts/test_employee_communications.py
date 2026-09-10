@@ -63,6 +63,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
             "email-communications",
             "whatsapp-communications",
             "sms-communications",
+            "email-settings",
         ):
             self.assertContains(response, f"{slug}/")
 
@@ -82,28 +83,46 @@ class EmployeeCommunicationsPagesTests(TestCase):
         self.assertContains(
             response, self.channel_url("email-communications", str(self.colleague.pk))
         )
-        self.assertContains(
+        self.assertContains(response, "View emails")
+        self.assertContains(response, "Email settings")
+        self.assertNotContains(
             response,
             f'id="id_work_email_{self.colleague.pk}"',
             html=False,
         )
 
-    def test_manager_can_change_employee_work_email_from_email_channel(self):
+    def test_email_settings_lists_employees_for_work_email_editing(self):
+        response = self.http.get(self.channel_url("email-settings"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Peter Associate")
+        self.assertContains(response, "Mary Partner")
+        self.assertContains(response, "Employee work emails")
+        self.assertContains(
+            response,
+            f'id="id_work_email_{self.colleague.pk}"',
+            html=False,
+        )
+        self.assertNotContains(response, "not commissioned yet")
+
+    def test_manager_can_change_employee_work_email_from_email_settings(self):
         self.colleague.work_email_password_encrypted = "saved-mailbox-credential"
         self.colleague.save(update_fields=["work_email_password_encrypted"])
         update_url = (
-            self.channel_url("email-communications", str(self.colleague.pk))
+            self.channel_url("email-settings", str(self.colleague.pk))
             + "work-email/"
         )
 
         response = self.http.post(
             update_url,
-            {"work_email": "new.address@sheriacentric.com"},
+            {
+                "work_email": "new.address@sheriacentric.com",
+                "return_to": "email-settings",
+            },
         )
 
         self.assertRedirects(
             response,
-            self.channel_url("email-communications"),
+            self.channel_url("email-settings"),
             fetch_redirect_response=False,
         )
         self.colleague.refresh_from_db()
@@ -112,15 +131,63 @@ class EmployeeCommunicationsPagesTests(TestCase):
         )
         self.assertEqual(self.colleague.work_email_password_encrypted, "")
 
+    def test_manager_can_send_work_email_password_reset_link(self):
+        setting = CommunicationSettings.get_solo()
+        setting.work_email_provisioning_enabled = True
+        setting.cpanel_host = "server.example.com"
+        setting.cpanel_username = "sheria"
+        setting.cpanel_api_token = "token"
+        setting.work_email_domain = "sheriacentric.com"
+        setting.email_enabled = True
+        setting.email_host = "mail.example.com"
+        setting.email_port = 465
+        setting.email_from_email = "noreply@example.com"
+        setting.save()
+        update_url = (
+            self.channel_url("email-settings", str(self.colleague.pk))
+            + "work-email/"
+        )
+
+        with (
+            patch("accounts.views.change_mailbox_password") as change_password,
+            patch(
+                "accounts.work_email_notify.send_firm_email",
+                return_value="noreply@example.com",
+            ) as send_mail,
+        ):
+            response = self.http.post(
+                update_url,
+                {
+                    "action": "reset_password",
+                    "return_to": "email-settings",
+                },
+                follow=True,
+            )
+
+        change_password.assert_not_called()
+        send_mail.assert_called_once()
+        self.assertEqual(
+            send_mail.call_args.kwargs["to_email"],
+            self.colleague.personal_email,
+        )
+        self.assertIn("reset", send_mail.call_args.kwargs["subject"].lower())
+        self.assertIn("/work-email/set-password/", send_mail.call_args.kwargs["body"])
+        self.assertNotIn("Temporary password", send_mail.call_args.kwargs["body"])
+        self.assertContains(response, "password reset link")
+        self.assertContains(response, self.colleague.personal_email)
+
     def test_work_email_change_rejects_an_address_used_by_another_employee(self):
         update_url = (
-            self.channel_url("email-communications", str(self.colleague.pk))
+            self.channel_url("email-settings", str(self.colleague.pk))
             + "work-email/"
         )
 
         response = self.http.post(
             update_url,
-            {"work_email": self.user.work_email.upper()},
+            {
+                "work_email": self.user.work_email.upper(),
+                "return_to": "email-settings",
+            },
             follow=True,
         )
 
@@ -144,7 +211,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
         setting.work_email_domain = "sheriacentric.com"
         setting.save()
         update_url = (
-            self.channel_url("email-communications", str(self.colleague.pk))
+            self.channel_url("email-settings", str(self.colleague.pk))
             + "work-email/"
         )
 
@@ -164,7 +231,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
         ):
             response = self.http.post(
                 update_url,
-                {"action": "generate"},
+                {"action": "generate", "return_to": "email-settings"},
                 follow=True,
             )
 
@@ -192,7 +259,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
         setting.work_email_domain = "sheriacentric.com"
         setting.save()
         update_url = (
-            self.channel_url("email-communications", str(self.colleague.pk))
+            self.channel_url("email-settings", str(self.colleague.pk))
             + "work-email/"
         )
 
@@ -206,7 +273,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
         ):
             response = self.http.post(
                 update_url,
-                {"action": "generate"},
+                {"action": "generate", "return_to": "email-settings"},
                 follow=True,
             )
 
@@ -229,7 +296,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
         setting.work_email_domain = "sheriacentric.com"
         setting.save()
         update_url = (
-            self.channel_url("email-communications", str(self.colleague.pk))
+            self.channel_url("email-settings", str(self.colleague.pk))
             + "work-email/"
         )
         session = self.http.session
@@ -252,7 +319,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
         ):
             response = self.http.post(
                 update_url,
-                {"action": "adopt_existing"},
+                {"action": "adopt_existing", "return_to": "email-settings"},
                 follow=True,
             )
 
@@ -277,14 +344,14 @@ class EmployeeCommunicationsPagesTests(TestCase):
         setting.work_email_provisioning_enabled = False
         setting.save()
         update_url = (
-            self.channel_url("email-communications", str(self.colleague.pk))
+            self.channel_url("email-settings", str(self.colleague.pk))
             + "work-email/"
         )
 
         with patch("accounts.views.provision_work_email") as provision:
             response = self.http.post(
                 update_url,
-                {"action": "generate"},
+                {"action": "generate", "return_to": "email-settings"},
                 follow=True,
             )
 
@@ -294,7 +361,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
         self.assertContains(response, "Work emails (cPanel)")
         self.assertContains(response, "only sends mail")
 
-    def test_email_channel_offers_setup_when_provisioning_is_incomplete(self):
+    def test_email_settings_offers_setup_when_provisioning_is_incomplete(self):
         self.colleague.work_email = None
         self.colleague.save(update_fields=["work_email"])
         setting = CommunicationSettings.get_solo()
@@ -304,7 +371,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
         setting.work_email_provisioning_enabled = False
         setting.save()
 
-        response = self.http.get(self.channel_url("email-communications"))
+        response = self.http.get(self.channel_url("email-settings"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Work email creation is not ready")
         self.assertContains(response, "Set up creation")
@@ -330,7 +397,16 @@ class EmployeeCommunicationsPagesTests(TestCase):
         log = self.http.get(log_url)
         self.assertEqual(log.status_code, 200)
         self.assertContains(log, "Weekly report")
+        self.assertContains(log, "Sent")
         self.assertContains(log, "Employee")
+
+        received_log = self.http.get(
+            self.channel_url("email-communications", str(self.user.pk))
+        )
+        self.assertEqual(received_log.status_code, 200)
+        self.assertContains(received_log, "Weekly report")
+        self.assertContains(received_log, "Received")
+        self.assertContains(received_log, "Peter Associate")
 
         detail = self.http.get(f"{log_url}{record.pk}/")
         self.assertEqual(detail.status_code, 200)

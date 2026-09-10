@@ -9,8 +9,13 @@
       <p class="page-kicker">{{ channel.label }}</p>
       <h2>{{ message.subject|default:message.recipient_name|default:"Message" }}</h2>
       <p class="page-lead">
+        {% if message.direction == "received" %}
+        Received by {{ log_employee.get_full_name }} on
+        {{ message.sent_at|date:"d M Y, H:i" }}.
+        {% else %}
         Sent by {{ log_employee.get_full_name }} on
         {{ message.sent_at|date:"d M Y, H:i" }}.
+        {% endif %}
       </p>
     </div>
     <div class="page-intro__actions">
@@ -31,6 +36,22 @@
     </div>
     <div class="panel__body">
       <dl class="settings-grid review-grid">
+        {% if message.direction == "received" %}
+        <div>
+          <dt>From</dt>
+          <dd>
+            {{ message.counterpart_name|default:message.from_identity }}
+            {% if message.from_identity %}· {{ message.from_identity }}{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>To</dt>
+          <dd>
+            {{ log_employee.get_full_name }}
+            {% if log_employee.work_email %}· {{ log_employee.work_email }}{% endif %}
+          </dd>
+        </div>
+        {% else %}
         <div>
           <dt>From</dt>
           <dd>
@@ -42,7 +63,8 @@
           <dt>To</dt>
           <dd>{{ message.recipient_name|default:message.to_address }} · {{ message.to_address }}</dd>
         </div>
-        <div><dt>Recipient type</dt><dd>{{ message.recipient_kind }}</dd></div>
+        {% endif %}
+        <div><dt>With</dt><dd>{{ message.counterpart_kind|default:message.recipient_kind }}</dd></div>
         <div><dt>Channel</dt><dd>{{ channel.label }}</dd></div>
         {% if message.subject %}
         <div><dt>Subject</dt><dd>{{ message.subject }}</dd></div>
