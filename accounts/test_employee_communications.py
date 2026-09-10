@@ -150,6 +150,10 @@ class EmployeeCommunicationsPagesTests(TestCase):
 
         with (
             patch(
+                "accounts.views.find_reusable_mailbox",
+                return_value="",
+            ),
+            patch(
                 "accounts.views.provision_work_email",
                 return_value=("peter.associate@sheriacentric.com", "one-time-pass"),
             ) as provision,
@@ -176,6 +180,141 @@ class EmployeeCommunicationsPagesTests(TestCase):
         )
         self.assertIn("one-time-pass", send_mail.call_args.kwargs["body"])
         self.assertContains(response, "Login instructions were sent")
+
+    def test_generate_asks_before_reusing_an_existing_cpanel_mailbox(self):
+        self.colleague.work_email = None
+        self.colleague.save(update_fields=["work_email"])
+        setting = CommunicationSettings.get_solo()
+        setting.work_email_provisioning_enabled = True
+        setting.cpanel_host = "server.example.com"
+        setting.cpanel_username = "sheria"
+        setting.cpanel_api_token = "token"
+        setting.work_email_domain = "sheriacentric.com"
+        setting.save()
+        update_url = (
+            self.channel_url("email-communications", str(self.colleague.pk))
+            + "work-email/"
+        )
+
+        with (
+            patch(
+                "accounts.views.find_reusable_mailbox",
+                return_value="peter.associate@sheriacentric.com",
+            ),
+            patch("accounts.views.provision_work_email") as provision,
+            patch("accounts.views.adopt_existing_mailbox") as adopt,
+        ):
+            response = self.http.post(
+                update_url,
+                {"action": "generate"},
+                follow=True,
+            )
+
+        provision.assert_not_called()
+        adopt.assert_not_called()
+        self.colleague.refresh_from_db()
+        self.assertFalse(self.colleague.work_email)
+        self.assertContains(response, "Existing mailbox found")
+        self.assertContains(response, "peter.associate@sheriacentric.com")
+        self.assertContains(response, "Use existing")
+
+    def test_manager_can_adopt_existing_mailbox_after_confirming(self):
+        self.colleague.work_email = None
+        self.colleague.save(update_fields=["work_email"])
+        setting = CommunicationSettings.get_solo()
+        setting.work_email_provisioning_enabled = True
+        setting.cpanel_host = "server.example.com"
+        setting.cpanel_username = "sheria"
+        setting.cpanel_api_token = "token"
+        setting.work_email_domain = "sheriacentric.com"
+        setting.save()
+        update_url = (
+            self.channel_url("email-communications", str(self.colleague.pk))
+            + "work-email/"
+        )
+        session = self.http.session
+        session["work_email_reuse_candidate"] = {
+            "employee_id": self.colleague.pk,
+            "email": "peter.associate@sheriacentric.com",
+            "name": "Peter Associate",
+        }
+        session.save()
+
+        with (
+            patch(
+                "accounts.views.adopt_existing_mailbox",
+                return_value=("peter.associate@sheriacentric.com", "rotated-pass"),
+            ) as adopt,
+            patch(
+                "accounts.work_email_notify.send_firm_email",
+                return_value="noreply@sheriacentric.com",
+            ) as send_mail,
+        ):
+            response = self.http.post(
+                update_url,
+                {"action": "adopt_existing"},
+                follow=True,
+            )
+
+        adopt.assert_called_once()
+        send_mail.assert_called_once()
+        self.assertIn("allocated to you", send_mail.call_args.kwargs["body"])
+        self.colleague.refresh_from_db()
+        self.assertEqual(
+            self.colleague.work_email, "peter.associate@sheriacentric.com"
+        )
+        self.assertContains(response, "Allocated existing")
+        self.assertContains(response, "Login instructions were sent")
+
+    def test_generate_explains_smtp_is_not_enough_when_cpanel_is_missing(self):
+        self.colleague.work_email = None
+        self.colleague.save(update_fields=["work_email"])
+        setting = CommunicationSettings.get_solo()
+        setting.email_enabled = True
+        setting.email_host = "mail.example.com"
+        setting.email_port = 465
+        setting.email_from_email = "noreply@example.com"
+        setting.work_email_provisioning_enabled = False
+        setting.save()
+        update_url = (
+            self.channel_url("email-communications", str(self.colleague.pk))
+            + "work-email/"
+        )
+
+        with patch("accounts.views.provision_work_email") as provision:
+            response = self.http.post(
+                update_url,
+                {"action": "generate"},
+                follow=True,
+            )
+
+        provision.assert_not_called()
+        self.colleague.refresh_from_db()
+        self.assertFalse(self.colleague.work_email)
+        self.assertContains(response, "Work emails (cPanel)")
+        self.assertContains(response, "only sends mail")
+
+    def test_email_channel_offers_setup_when_provisioning_is_incomplete(self):
+        self.colleague.work_email = None
+        self.colleague.save(update_fields=["work_email"])
+        setting = CommunicationSettings.get_solo()
+        setting.email_enabled = True
+        setting.email_host = "mail.example.com"
+        setting.email_from_email = "noreply@example.com"
+        setting.work_email_provisioning_enabled = False
+        setting.save()
+
+        response = self.http.get(self.channel_url("email-communications"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Work email creation is not ready")
+        self.assertContains(response, "Set up creation")
+        self.assertContains(response, "#communication-work-email-panel")
+        self.assertNotContains(
+            response,
+            'name="action"\n                      value="generate"',
+            html=False,
+        )
+        self.assertNotContains(response, 'value="generate"')
 
     def test_log_and_detail_show_the_full_message(self):
         record = EmployeeCommunication.objects.create(

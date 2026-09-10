@@ -40,6 +40,97 @@ class SuggestWorkEmailTests(TestCase):
             suggest_work_email("", "", "sheriacentric.com")
 
 
+class ReusableMailboxTests(TestCase):
+    def setUp(self):
+        self.employee = Employee.objects.create_user(
+            login_code="909091",
+            password="test-pass-123",
+            first_name="John",
+            last_name="Doe",
+            personal_email="john.personal@example.com",
+            role=Employee.Role.EMPLOYEE,
+            status=Employee.Status.ACTIVE,
+        )
+        self.setting = CommunicationSettings.get_solo()
+        self.setting.work_email_provisioning_enabled = True
+        self.setting.cpanel_host = "server.example.com"
+        self.setting.cpanel_username = "sheria"
+        self.setting.cpanel_api_token = "token"
+        self.setting.work_email_domain = "sheriacentric.com"
+        self.setting.save()
+
+    @patch(
+        "accounts.cpanel_mail.list_mailboxes",
+        return_value={"john.doe@sheriacentric.com", "noreply@sheriacentric.com"},
+    )
+    def test_finds_preferred_mailbox_already_on_cpanel(self, _list):
+        from accounts.cpanel_mail import find_reusable_mailbox
+
+        self.assertEqual(
+            find_reusable_mailbox(self.setting, self.employee),
+            "john.doe@sheriacentric.com",
+        )
+
+    @patch(
+        "accounts.cpanel_mail.list_mailboxes",
+        return_value={"john.doe@sheriacentric.com"},
+    )
+    def test_skips_mailbox_already_assigned_to_another_employee(self, _list):
+        from accounts.cpanel_mail import find_reusable_mailbox
+
+        self.assertEqual(
+            find_reusable_mailbox(
+                self.setting,
+                self.employee,
+                reserved={"john.doe@sheriacentric.com"},
+            ),
+            "",
+        )
+
+    @patch("accounts.cpanel_mail.change_mailbox_password")
+    @patch(
+        "accounts.cpanel_mail.list_mailboxes",
+        return_value={"john.doe@sheriacentric.com"},
+    )
+    def test_adopt_resets_password_on_existing_mailbox(self, _list, change_password):
+        from accounts.cpanel_mail import adopt_existing_mailbox
+
+        email, password = adopt_existing_mailbox(
+            self.setting, "john.doe@sheriacentric.com"
+        )
+        self.assertEqual(email, "john.doe@sheriacentric.com")
+        self.assertTrue(password)
+        change_password.assert_called_once()
+        self.assertEqual(
+            change_password.call_args.args[1], "john.doe@sheriacentric.com"
+        )
+
+
+class WorkEmailProvisioningReadinessTests(TestCase):
+    def test_gaps_and_block_reason_distinguish_smtp_from_cpanel(self):
+        setting = CommunicationSettings.get_solo()
+        setting.email_enabled = True
+        setting.email_host = "mail.example.com"
+        setting.email_from_email = "noreply@baunilawgroup.com"
+        setting.work_email_provisioning_enabled = False
+        setting.save()
+
+        self.assertFalse(setting.work_email_provisioning_ready)
+        self.assertIn(
+            'turn on “Create work emails automatically”',
+            setting.work_email_provisioning_gaps,
+        )
+        reason = setting.work_email_provisioning_block_reason()
+        self.assertIn("Work emails (cPanel)", reason)
+        self.assertIn("only sends mail", reason)
+        self.assertEqual(
+            CommunicationSettings.domain_from_email_address(
+                "sheria-centric-bauni@baunilawgroup.com"
+            ),
+            "baunilawgroup.com",
+        )
+
+
 class ApproveEmployeeWorkEmailTests(TestCase):
     def setUp(self):
         self.partner = Employee.objects.create_user(

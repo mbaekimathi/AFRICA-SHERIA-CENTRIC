@@ -12,17 +12,100 @@
         Open an employee to read every {{ channel.noun }} they sent to clients
         and colleagues.
         {% if channel.key == "email" and can_edit_work_email %}
-        Edit a work email below when an employee's mailbox address changes.
+        Assign an existing mailbox with Save, or use Generate &amp; notify to
+        create one on the firm domain.
         {% endif %}
       </p>
     </div>
   </header>
+
+  {% if channel.key == "email" and can_edit_work_email and work_email_reuse_candidate %}
+  <section class="panel" id="work-email-reuse-confirm">
+    <div class="panel__body">
+      <div class="empty-state">
+        <p class="empty-state__title">Existing mailbox found</p>
+        <p class="empty-state__copy">
+          <strong>{{ work_email_reuse_candidate.email }}</strong> already exists
+          on the firm mail account for
+          <strong>{{ work_email_reuse_candidate.name }}</strong>.
+          Use it, or create a different address? Continuing with the existing
+          mailbox will reset its password and email login instructions to the
+          employee's personal address.
+        </p>
+        {% for row in channel_employees %}
+          {% if row.employee.pk == work_email_reuse_candidate.employee_id %}
+          <form method="post" action="{{ row.work_email_update_url }}" class="form-actions form-actions--start">
+            {% csrf_token %}
+            <button
+              type="submit"
+              name="action"
+              value="adopt_existing"
+              class="btn btn--primary btn--inline"
+            >
+              Use existing &amp; notify
+            </button>
+            <button
+              type="submit"
+              name="action"
+              value="generate_new"
+              class="btn btn--ghost btn--inline"
+            >
+              Create a different address
+            </button>
+            <button
+              type="submit"
+              name="action"
+              value="dismiss_reuse"
+              class="btn btn--ghost btn--inline"
+            >
+              Cancel
+            </button>
+          </form>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if channel.key == "email" and can_edit_work_email and not work_email_provisioning_ready %}
+  <section class="panel">
+    <div class="panel__body">
+      <div class="empty-state">
+        <p class="empty-state__title">Work email creation is not ready</p>
+        <p class="empty-state__copy">
+          {% if email_smtp_ready %}
+          Email (SMTP) is connected for sending mail, but creating employee
+          mailboxes needs the separate
+          <strong>Work emails (cPanel)</strong> settings.
+          {% else %}
+          Automatic mailbox creation needs
+          <strong>Work emails (cPanel)</strong> under Communication Settings.
+          {% endif %}
+          {% if work_email_provisioning_gaps %}
+          Still needed:
+          {{ work_email_provisioning_gaps|join:", " }}.
+          {% endif %}
+          You can still type an existing address and click Save.
+        </p>
+        <p class="empty-state__copy">
+          <a class="btn btn--primary btn--inline" href="{{ communication_settings_url }}#communication-work-email-panel">
+            Open Work emails (cPanel)
+          </a>
+        </p>
+      </div>
+    </div>
+  </section>
+  {% endif %}
 
   <section class="panel">
     <div class="panel__head">
       <h3>Employees</h3>
       <p class="panel__hint">
         {{ channel_total }} {{ channel.noun_plural }} sent in total
+        {% if channel.key == "email" and can_edit_work_email and work_email_provisioning_ready %}
+        · Generate &amp; notify creates the mailbox and emails login instructions
+        {% endif %}
       </p>
     </div>
     <div class="panel__body">
@@ -105,16 +188,26 @@
                     Save
                   </button>
                   {% if not row.employee.work_email %}
-                  <button
-                    type="submit"
-                    name="action"
-                    value="generate"
-                    class="btn btn--primary btn--inline work-email-editor__save"
-                    formnovalidate
-                    title="{% if work_email_provisioning_ready %}Create the mailbox and email login instructions to the employee{% else %}Work email provisioning must be configured in Communication Settings{% endif %}"
-                  >
-                    Generate &amp; notify
-                  </button>
+                    {% if work_email_provisioning_ready %}
+                    <button
+                      type="submit"
+                      name="action"
+                      value="generate"
+                      class="btn btn--primary btn--inline work-email-editor__save"
+                      formnovalidate
+                      title="Create the mailbox and email login instructions to the employee"
+                    >
+                      Generate &amp; notify
+                    </button>
+                    {% else %}
+                    <a
+                      class="btn btn--ghost btn--inline work-email-editor__save"
+                      href="{{ communication_settings_url }}#communication-work-email-panel"
+                      title="Configure Work emails (cPanel) before generating mailboxes"
+                    >
+                      Set up creation
+                    </a>
+                    {% endif %}
                   {% endif %}
                 </form>
                 {% else %}

@@ -48,7 +48,9 @@ from .client_portal import client_home_url, client_portal_context
 from .country_codes import country_name
 from .cpanel_mail import (
     CpanelMailError,
+    adopt_existing_mailbox,
     change_mailbox_password,
+    find_reusable_mailbox,
     provision_work_email,
     suggest_work_email,
 )
@@ -10648,7 +10650,7 @@ class RoleWorkspaceView(View):
             }
             for row in summaries
         ]
-        return {
+        context = {
             "channel": channel,
             "channel_employees": rows,
             "channel_search": search,
@@ -10660,10 +10662,23 @@ class RoleWorkspaceView(View):
             "work_email_provisioning_ready": (
                 communication_setting.work_email_provisioning_ready
             ),
+            "work_email_provisioning_gaps": (
+                communication_setting.work_email_provisioning_gaps
+            ),
+            "email_smtp_ready": communication_setting.email_ready,
+            "work_email_reuse_candidate": None,
             "communication_settings_url": user.workspace_url(
                 "dashboard", "system-settings", "communication-settings"
             ),
         }
+        pending = request.session.get(WORK_EMAIL_REUSE_SESSION_KEY)
+        if isinstance(pending, dict) and pending.get("employee_id"):
+            employee_ids = {row["employee"].pk for row in rows}
+            if pending["employee_id"] in employee_ids:
+                context["work_email_reuse_candidate"] = pending
+            else:
+                request.session.pop(WORK_EMAIL_REUSE_SESSION_KEY, None)
+        return context
 
     @staticmethod
     def _messages_context(
@@ -10995,6 +11010,7 @@ PENDING_EMPLOYEES_TRAIL = (
 # following page render — credentials are never stored on the employee row.
 WORK_EMAIL_FAILURE_SESSION_KEY = "work_email_failure"
 WORK_EMAIL_CREATED_SESSION_KEY = "work_email_created"
+WORK_EMAIL_REUSE_SESSION_KEY = "work_email_reuse_candidate"
 
 PENDING_CASES_TRAIL = (
     "dashboard",
@@ -12791,6 +12807,59 @@ class UpdateEmployeeWorkEmailView(View):
             "email-communications",
         )
 
+    @staticmethod
+    def _reserved_work_emails(*, exclude_employee_id=None):
+        queryset = Employee.objects.exclude(work_email__isnull=True).exclude(
+            work_email=""
+        )
+        if exclude_employee_id is not None:
+            queryset = queryset.exclude(pk=exclude_employee_id)
+        return set(queryset.values_list("work_email", flat=True))
+
+    @classmethod
+    def _allocate_and_notify(
+        cls,
+        request,
+        *,
+        user,
+        employee,
+        setting,
+        work_email,
+        password,
+        reused,
+    ):
+        employee.work_email = work_email
+        employee.clear_work_mailbox_password(save=False)
+        employee.save(
+            update_fields=["work_email", "work_email_password_encrypted"]
+        )
+
+        from .work_email_notify import notify_work_email_created
+
+        notification = notify_work_email_created(
+            request,
+            employee,
+            work_email=work_email,
+            password=password,
+            setting=setting,
+            reused=reused,
+        )
+        verb = "Allocated existing" if reused else "Created and allocated"
+        if notification.get("email_sent"):
+            messages.success(
+                request,
+                f"{verb} {work_email} to {employee.get_full_name()}. "
+                f"Login instructions were sent to {notification['personal_email']}.",
+            )
+        else:
+            detail = notification.get("email_error") or "Unknown email error."
+            messages.warning(
+                request,
+                f"{verb} {work_email}, but the notification could not be "
+                f"emailed: {detail}",
+            )
+        return redirect(cls._list_url(user))
+
     def post(self, request, role, employee_id):
         user, denied = _guard_employee_management(
             request,
@@ -12811,21 +12880,120 @@ class UpdateEmployeeWorkEmailView(View):
             return redirect(list_url)
 
         action = (request.POST.get("action") or "update").strip()
-        if action == "generate":
-            if (employee.work_email or "").strip():
+        if action in {"generate", "adopt_existing", "generate_new", "dismiss_reuse"}:
+            if (employee.work_email or "").strip() and action != "dismiss_reuse":
                 messages.info(
                     request,
                     f"{employee.get_full_name()} already has a work email.",
                 )
+                request.session.pop(WORK_EMAIL_REUSE_SESSION_KEY, None)
+                return redirect(list_url)
+
+            if action == "dismiss_reuse":
+                pending = request.session.get(WORK_EMAIL_REUSE_SESSION_KEY) or {}
+                if pending.get("employee_id") == employee.pk:
+                    request.session.pop(WORK_EMAIL_REUSE_SESSION_KEY, None)
+                messages.info(request, "Existing mailbox allocation cancelled.")
                 return redirect(list_url)
 
             setting = CommunicationSettings.get_solo()
-            try:
-                reserved = set(
-                    Employee.objects.exclude(work_email__isnull=True)
-                    .exclude(work_email="")
-                    .values_list("work_email", flat=True)
+            if not setting.work_email_provisioning_ready:
+                messages.error(
+                    request,
+                    f"Work email could not be created: "
+                    f"{setting.work_email_provisioning_block_reason()}",
                 )
+                return redirect(list_url)
+
+            reserved = self._reserved_work_emails(
+                exclude_employee_id=employee.pk
+            )
+
+            if action == "generate":
+                try:
+                    existing = find_reusable_mailbox(
+                        setting, employee, reserved=reserved
+                    )
+                except CpanelMailError as exc:
+                    messages.error(
+                        request,
+                        f"Work email could not be created: {exc}",
+                    )
+                    return redirect(list_url)
+                if existing:
+                    request.session[WORK_EMAIL_REUSE_SESSION_KEY] = {
+                        "employee_id": employee.pk,
+                        "email": existing,
+                        "name": employee.get_full_name(),
+                    }
+                    return redirect(list_url)
+                try:
+                    work_email, password = provision_work_email(
+                        setting,
+                        employee,
+                        reserved=reserved,
+                    )
+                except CpanelMailError as exc:
+                    messages.error(
+                        request,
+                        f"Work email could not be created: {exc}",
+                    )
+                    return redirect(list_url)
+                request.session.pop(WORK_EMAIL_REUSE_SESSION_KEY, None)
+                return self._allocate_and_notify(
+                    request,
+                    user=user,
+                    employee=employee,
+                    setting=setting,
+                    work_email=work_email,
+                    password=password,
+                    reused=False,
+                )
+
+            pending = request.session.get(WORK_EMAIL_REUSE_SESSION_KEY) or {}
+            if (
+                not isinstance(pending, dict)
+                or pending.get("employee_id") != employee.pk
+            ):
+                messages.error(
+                    request,
+                    "That existing-mailbox confirmation expired. "
+                    "Click Generate & notify again.",
+                )
+                return redirect(list_url)
+
+            if action == "adopt_existing":
+                try:
+                    work_email, password = adopt_existing_mailbox(
+                        setting, pending.get("email") or ""
+                    )
+                except CpanelMailError as exc:
+                    messages.error(
+                        request,
+                        f"Existing mailbox could not be allocated: {exc}",
+                    )
+                    return redirect(list_url)
+                if work_email.lower() in {
+                    str(value).strip().lower() for value in reserved if value
+                }:
+                    messages.error(
+                        request,
+                        "That work email is already assigned to another employee.",
+                    )
+                    return redirect(list_url)
+                request.session.pop(WORK_EMAIL_REUSE_SESSION_KEY, None)
+                return self._allocate_and_notify(
+                    request,
+                    user=user,
+                    employee=employee,
+                    setting=setting,
+                    work_email=work_email,
+                    password=password,
+                    reused=True,
+                )
+
+            # generate_new — skip the existing preferred address
+            try:
                 work_email, password = provision_work_email(
                     setting,
                     employee,
@@ -12837,37 +13005,16 @@ class UpdateEmployeeWorkEmailView(View):
                     f"Work email could not be created: {exc}",
                 )
                 return redirect(list_url)
-
-            employee.work_email = work_email
-            employee.clear_work_mailbox_password(save=False)
-            employee.save(
-                update_fields=["work_email", "work_email_password_encrypted"]
-            )
-
-            from .work_email_notify import notify_work_email_created
-
-            notification = notify_work_email_created(
+            request.session.pop(WORK_EMAIL_REUSE_SESSION_KEY, None)
+            return self._allocate_and_notify(
                 request,
-                employee,
+                user=user,
+                employee=employee,
+                setting=setting,
                 work_email=work_email,
                 password=password,
-                setting=setting,
+                reused=False,
             )
-            if notification.get("email_sent"):
-                messages.success(
-                    request,
-                    f"Created and allocated {work_email} to "
-                    f"{employee.get_full_name()}. Login instructions were sent "
-                    f"to {notification['personal_email']}.",
-                )
-            else:
-                detail = notification.get("email_error") or "Unknown email error."
-                messages.warning(
-                    request,
-                    f"Created and allocated {work_email}, but the notification "
-                    f"could not be emailed: {detail}",
-                )
-            return redirect(list_url)
 
         if action != "update":
             messages.error(request, "Unknown work email action.")

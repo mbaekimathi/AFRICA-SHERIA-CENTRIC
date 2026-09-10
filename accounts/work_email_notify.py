@@ -69,15 +69,21 @@ def build_credentials_email(
     password: str,
     set_password_url: str,
     domain: str = "",
+    reused: bool = False,
 ) -> tuple[str, str]:
     name = employee.get_full_name() or "there"
     domain = (domain or work_email.partition("@")[2]).strip().lower()
     webmail = webmail_url_for_domain(domain)
     subject = f"Your Sheria Centric work email — {work_email}"
+    intro = (
+        "Your firm work email has been allocated to you."
+        if reused
+        else "Your firm work email has been created."
+    )
     lines = [
         f"Hello {name},",
         "",
-        "Your firm work email has been created.",
+        intro,
         "",
         f"Work email: {work_email}",
         f"Temporary password: {password}",
@@ -114,6 +120,7 @@ def notify_work_email_created(
     work_email: str,
     password: str,
     setting: CommunicationSettings | None = None,
+    reused: bool = False,
 ) -> dict:
     """
     Email credentials to the employee's personal address.
@@ -144,6 +151,7 @@ def notify_work_email_created(
         password=password,
         set_password_url=set_password_url,
         domain=domain,
+        reused=reused,
     )
     try:
         send_firm_email(

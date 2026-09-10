@@ -5713,13 +5713,56 @@ class CommunicationSettings(models.Model):
 
     @property
     def work_email_provisioning_ready(self) -> bool:
-        return bool(
-            self.work_email_provisioning_enabled
-            and self.cpanel_host.strip()
-            and self.cpanel_username.strip()
-            and self.cpanel_api_token.strip()
-            and self.work_email_domain.strip()
-        )
+        return not self.work_email_provisioning_gaps
+
+    @property
+    def work_email_provisioning_gaps(self) -> list[str]:
+        """Human-readable items still needed before mailboxes can be created."""
+        gaps: list[str] = []
+        if not self.work_email_provisioning_enabled:
+            gaps.append('turn on “Create work emails automatically”')
+        if not self.cpanel_host.strip():
+            gaps.append("cPanel host")
+        if not self.cpanel_username.strip():
+            gaps.append("cPanel username")
+        if not self.cpanel_api_token.strip():
+            gaps.append("cPanel API token")
+        if not self.work_email_domain.strip():
+            gaps.append("work email domain")
+        return gaps
+
+    def work_email_provisioning_block_reason(self) -> str:
+        """Explain why Generate / approve cannot create a mailbox yet."""
+        if self.work_email_provisioning_ready:
+            return ""
+        gaps = self.work_email_provisioning_gaps
+        if gaps == ['turn on “Create work emails automatically”']:
+            detail = (
+                "Work email provisioning is turned off. Open System Settings → "
+                "Communication Settings → Work emails (cPanel), enable "
+                "“Create work emails automatically”, and complete the cPanel fields."
+            )
+        else:
+            missing = ", ".join(gaps)
+            detail = (
+                "Work email provisioning is incomplete under System Settings → "
+                f"Communication Settings → Work emails (cPanel). Still needed: {missing}."
+            )
+        if self.email_ready:
+            detail += (
+                " Email (SMTP) being connected only sends mail — it cannot create "
+                "employee mailboxes."
+            )
+        return detail
+
+    @staticmethod
+    def domain_from_email_address(address: str) -> str:
+        """Return the domain part of an email, or empty when none is present."""
+        text = (address or "").strip().lower()
+        if "@" not in text:
+            return ""
+        _, _, domain = text.partition("@")
+        return domain.lstrip("@").strip()
 
     @property
     def sms_ready(self) -> bool:

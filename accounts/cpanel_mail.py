@@ -92,6 +92,71 @@ def suggest_work_email(
     return candidate
 
 
+def preferred_work_email(first_name: str, last_name: str, domain: str) -> str:
+    """The natural `first.last@domain` address before any suffix is applied."""
+    return suggest_work_email(first_name, last_name, domain, taken=set())
+
+
+def _require_provisioning_ready(setting) -> str:
+    if not setting.work_email_provisioning_ready:
+        reason = setting.work_email_provisioning_block_reason()
+        raise CpanelMailError(
+            reason
+            or (
+                "Work email provisioning is not configured under System Settings "
+                "→ Communication Settings → Work emails (cPanel)."
+            )
+        )
+    return (setting.work_email_domain or "").strip().lstrip("@").lower()
+
+
+def find_reusable_mailbox(setting, employee, *, reserved=None) -> str:
+    """
+    Return the preferred work address when it already exists on cPanel and is
+    not assigned to another employee in Sheria Centric.
+    """
+    domain = _require_provisioning_ready(setting)
+    preferred = preferred_work_email(
+        employee.first_name, employee.last_name, domain
+    )
+    reserved_set = {
+        str(value).strip().lower() for value in (reserved or set()) if value
+    }
+    if preferred in reserved_set:
+        return ""
+    existing = list_mailboxes(setting, domain)
+    if preferred in existing:
+        return preferred
+    return ""
+
+
+def adopt_existing_mailbox(setting, email: str) -> tuple[str, str]:
+    """
+    Reuse an existing cPanel mailbox by rotating its password.
+
+    Returns the address and the new one-time password for notification.
+    """
+    _require_provisioning_ready(setting)
+    address = (email or "").strip().lower()
+    if "@" not in address:
+        raise CpanelMailError("A full work email address is required.")
+    domain = (setting.work_email_domain or "").strip().lstrip("@").lower()
+    _, _, mailbox_domain = address.partition("@")
+    if domain and mailbox_domain != domain:
+        raise CpanelMailError(
+            f"Only mailboxes on @{domain} can be allocated as work email."
+        )
+    existing = list_mailboxes(setting, mailbox_domain)
+    if address not in existing:
+        raise CpanelMailError(
+            f"{address} is no longer on the mail server. Create a new mailbox instead."
+        )
+    password = generate_password()
+    change_mailbox_password(setting, address, password)
+    logger.info("Adopted existing cPanel mailbox %s", address)
+    return address, password
+
+
 def api_base_url(host: str, port: int | None) -> str:
     """Normalise a stored cPanel host into an `https://host:port` base URL."""
     raw = (host or "").strip()
@@ -228,14 +293,12 @@ def provision_work_email(setting, employee, *, reserved=None) -> tuple[str, str]
 
     Returns the new address and its one-time password. Raises
     `CpanelMailError` with a message meant for the approving user.
-    """
-    if not setting.work_email_provisioning_ready:
-        raise CpanelMailError(
-            "Work email provisioning is not configured under System Settings "
-            "→ Communication Settings."
-        )
 
-    domain = (setting.work_email_domain or "").strip().lstrip("@").lower()
+    Existing cPanel addresses are skipped (a numeric suffix is used). Call
+    :func:`find_reusable_mailbox` / :func:`adopt_existing_mailbox` when the
+    manager should be offered the natural matching mailbox first.
+    """
+    domain = _require_provisioning_ready(setting)
     taken = set(reserved or set()) | list_mailboxes(setting, domain)
     email = suggest_work_email(
         employee.first_name, employee.last_name, domain, taken=taken

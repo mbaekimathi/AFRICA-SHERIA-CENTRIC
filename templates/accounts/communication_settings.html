@@ -239,6 +239,11 @@
         </p>
       </div>
       <div class="panel__body">
+        <p class="field-hint">
+          Separate from Email (SMTP) above. SMTP sends firm mail; this panel
+          creates employee mailboxes such as
+          <code>first.last@yourfirm.com</code> on approval or from Email Communications.
+        </p>
         <div class="finance-mpesa-block">
           <label class="settings-toggle" for="{{ form.work_email_provisioning_enabled.id_for_label }}">
             <span class="settings-toggle__control">{{ form.work_email_provisioning_enabled }}</span>
@@ -671,8 +676,11 @@
         <li>Click <strong>Verify &amp; save</strong> at the top of this page.</li>
       </ol>
       <p class="setup-guide__note">
-        The SMTP password cannot create mailboxes — an API token is required. New staff then get
-        <code>first.last@yourfirm.com</code> emailed to their personal address on approval.
+        Email (SMTP) being <strong>Connected</strong> is not enough. The SMTP
+        password cannot create mailboxes — a cPanel API token is required. New
+        staff then get <code>first.last@yourfirm.com</code> emailed to their
+        personal address on approval, or from Email Communications →
+        Generate &amp; notify.
       </p>
     </div>
 
@@ -760,10 +768,30 @@
       workEmailDomainPreview.textContent = value || "yourfirm.com";
     }
 
+    function domainFromEmail(value) {
+      var text = String(value || "").trim().toLowerCase();
+      var at = text.lastIndexOf("@");
+      if (at < 0) return "";
+      return text.slice(at + 1).replace(/^@+/, "").trim();
+    }
+
+    function suggestWorkEmailDomain() {
+      if (!workEmailDomain || String(workEmailDomain.value || "").trim()) return;
+      var fromEmail = form.querySelector("#id_email_from_email");
+      var hostUser = form.querySelector("#id_email_host_user");
+      var suggested =
+        domainFromEmail(fromEmail && fromEmail.value) ||
+        domainFromEmail(hostUser && hostUser.value);
+      if (!suggested) return;
+      workEmailDomain.value = suggested;
+      syncWorkEmailDomain();
+    }
+
     function sync() {
       var emailOn = !!(email && email.checked);
       var smsOn = !!(sms && sms.checked);
       var waOn = !!(whatsapp && whatsapp.checked);
+      var workOn = !!(workEmail && workEmail.checked);
       if (emailPanel) emailPanel.hidden = !emailOn;
       if (smsPanel) smsPanel.hidden = !smsOn;
       if (whatsappPanel) whatsappPanel.hidden = !waOn;
@@ -772,8 +800,9 @@
         whatsappApiFields.hidden = !(waOn && whatsappApi && whatsappApi.checked);
       }
       if (workEmailFields) {
-        workEmailFields.hidden = !(workEmail && workEmail.checked);
+        workEmailFields.hidden = !workOn;
       }
+      if (workOn) suggestWorkEmailDomain();
     }
 
     [email, sms, whatsapp, whatsappApi, workEmail].forEach(function (el) {

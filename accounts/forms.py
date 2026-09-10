@@ -6329,8 +6329,28 @@ class CommunicationSettingsForm(forms.ModelForm):
                 self.add_error("cpanel_username", "Enter the cPanel username.")
             if not (cleaned.get("cpanel_api_token") or "").strip():
                 self.add_error("cpanel_api_token", "Enter the cPanel API token.")
+            domain = (cleaned.get("work_email_domain") or "").strip().lstrip("@")
+            if not domain:
+                for source in (
+                    cleaned.get("email_from_email"),
+                    cleaned.get("email_host_user"),
+                ):
+                    domain = CommunicationSettings.domain_from_email_address(
+                        source or ""
+                    )
+                    if domain:
+                        cleaned["work_email_domain"] = domain
+                        break
             if not (cleaned.get("work_email_domain") or "").strip():
-                self.add_error("work_email_domain", "Enter the work email domain.")
+                self.add_error(
+                    "work_email_domain",
+                    "Enter the work email domain (or set From email first so it "
+                    "can be suggested).",
+                )
+            else:
+                cleaned["work_email_domain"] = (
+                    cleaned.get("work_email_domain") or ""
+                ).strip().lstrip("@").lower()
         else:
             cleaned["work_email_provisioning_enabled"] = False
 
