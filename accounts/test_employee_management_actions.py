@@ -1,8 +1,11 @@
+from unittest.mock import patch
+
 from django.contrib.sessions.models import Session
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from accounts.models import Employee, EmployeeWorkSession
+from accounts.cpanel_mail import CpanelMailError
+from accounts.models import CommunicationSettings, Employee, EmployeeWorkSession
 
 
 class EmployeeManagementActionTests(TestCase):
@@ -26,7 +29,19 @@ class EmployeeManagementActionTests(TestCase):
             personal_phone="+254700000002",
             role=Employee.Role.EMPLOYEE,
             status=Employee.Status.ACTIVE,
+            work_email="action.employee@sheriacentric.com",
+            work_email_password_encrypted="saved-mailbox-credential",
         )
+        setting = CommunicationSettings.get_solo()
+        setting.cpanel_host = "server.example.com"
+        setting.cpanel_username = "sheria"
+        setting.cpanel_api_token = "token"
+        setting.work_email_domain = "sheriacentric.com"
+        setting.email_enabled = True
+        setting.email_host = "mail.example.com"
+        setting.email_port = 465
+        setting.email_from_email = "noreply@example.com"
+        setting.save()
         self.client.force_login(self.manager)
         self.list_url = self.manager.workspace_url(
             "dashboard",
@@ -87,14 +102,90 @@ class EmployeeManagementActionTests(TestCase):
             },
         )
 
-        response = self.client.post(url)
-        self.assertRedirects(response, self.list_url)
+        with (
+            patch("accounts.views.suspend_mailbox") as suspend,
+            patch("accounts.views.unsuspend_mailbox") as unsuspend,
+            patch(
+                "accounts.work_email_notify.send_firm_email",
+                return_value="noreply@example.com",
+            ),
+        ):
+            response = self.client.post(url)
+            self.assertRedirects(response, self.list_url)
+            self.employee.refresh_from_db()
+            self.assertEqual(self.employee.status, Employee.Status.SUSPENDED)
+            suspend.assert_called_once()
+
+            self.client.post(url)
+            self.employee.refresh_from_db()
+            self.assertEqual(self.employee.status, Employee.Status.ACTIVE)
+            unsuspend.assert_called_once()
+
+    def test_suspension_suspends_work_email_and_notifies_personal_inbox(self):
+        url = reverse(
+            "accounts:toggle_employee_suspension",
+            kwargs={
+                "role": self.manager.role_slug,
+                "employee_id": self.employee.pk,
+            },
+        )
+
+        with (
+            patch("accounts.views.suspend_mailbox") as suspend,
+            patch(
+                "accounts.work_email_notify.send_firm_email",
+                return_value="noreply@example.com",
+            ) as send_mail,
+        ):
+            response = self.client.post(url, follow=True)
+
+        suspend.assert_called_once()
+        self.assertEqual(
+            suspend.call_args.args[1],
+            "action.employee@sheriacentric.com",
+        )
+        send_mail.assert_called_once()
+        self.assertEqual(
+            send_mail.call_args.kwargs["to_email"],
+            self.employee.personal_email,
+        )
+        self.assertIn("suspended", send_mail.call_args.kwargs["subject"].lower())
+        self.assertIn(
+            "action.employee@sheriacentric.com",
+            send_mail.call_args.kwargs["body"],
+        )
         self.employee.refresh_from_db()
         self.assertEqual(self.employee.status, Employee.Status.SUSPENDED)
+        self.assertEqual(self.employee.work_email_password_encrypted, "")
+        self.assertContains(response, "Work email")
+        self.assertContains(response, "notice was sent")
 
-        self.client.post(url)
+    def test_suspension_still_succeeds_when_mailbox_api_fails(self):
+        url = reverse(
+            "accounts:toggle_employee_suspension",
+            kwargs={
+                "role": self.manager.role_slug,
+                "employee_id": self.employee.pk,
+            },
+        )
+
+        with (
+            patch(
+                "accounts.views.suspend_mailbox",
+                side_effect=CpanelMailError("cPanel unavailable"),
+            ),
+            patch(
+                "accounts.work_email_notify.send_firm_email",
+                return_value="noreply@example.com",
+            ) as send_mail,
+        ):
+            response = self.client.post(url, follow=True)
+
         self.employee.refresh_from_db()
-        self.assertEqual(self.employee.status, Employee.Status.ACTIVE)
+        self.assertEqual(self.employee.status, Employee.Status.SUSPENDED)
+        send_mail.assert_called_once()
+        self.assertContains(response, "could not be suspended")
+        self.assertContains(response, "notice was sent")
 
     def test_manager_cannot_suspend_own_account(self):
         url = reverse(
@@ -127,7 +218,14 @@ class EmployeeManagementActionTests(TestCase):
                 "employee_id": self.employee.pk,
             },
         )
-        self.client.post(url)
+        with (
+            patch("accounts.views.suspend_mailbox"),
+            patch(
+                "accounts.work_email_notify.send_firm_email",
+                return_value="noreply@example.com",
+            ),
+        ):
+            self.client.post(url)
 
         self.employee.refresh_from_db()
         self.assertEqual(self.employee.status, Employee.Status.SUSPENDED)

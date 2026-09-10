@@ -415,7 +415,10 @@ class SetWorkEmailPasswordTests(TestCase):
 
         self.assertTrue(result["email_sent"])
         body = send_mail.call_args.kwargs["body"]
+        html_body = send_mail.call_args.kwargs["html_body"]
         self.assertIn("http://testserver/work-email/set-password/", body)
+        self.assertIn("Set your password", html_body)
+        self.assertIn('href="http://testserver/work-email/set-password/', html_body)
         token = (
             body.split("/work-email/set-password/")[1]
             .splitlines()[0]

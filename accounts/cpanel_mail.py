@@ -287,6 +287,62 @@ def change_mailbox_password(setting, email: str, password: str) -> None:
     )
 
 
+def _require_cpanel_api(setting) -> None:
+    """Ensure host credentials exist for mailbox login suspend/restore."""
+    if not (setting.cpanel_host or "").strip():
+        raise CpanelMailError("cPanel host is not configured.")
+    if not (setting.cpanel_username or "").strip() or not (
+        setting.cpanel_api_token or ""
+    ).strip():
+        raise CpanelMailError(
+            "cPanel username and API token are required for work email."
+        )
+
+
+def _full_mailbox_address(email: str) -> str:
+    address = (email or "").strip().lower()
+    local_part, sep, domain = address.partition("@")
+    if not sep or not local_part or not domain:
+        raise CpanelMailError("A full work email address is required.")
+    return address
+
+
+def suspend_mailbox(setting, email: str) -> None:
+    """
+    Block login and outgoing mail for a firm mailbox (Email::suspend_login +
+    Email::hold_outgoing). Incoming mail still arrives so nothing is lost.
+    """
+    _require_cpanel_api(setting)
+    address = _full_mailbox_address(email)
+    _uapi(setting, "Email", "suspend_login", {"email": address})
+    try:
+        _uapi(setting, "Email", "hold_outgoing", {"email": address})
+    except CpanelMailError as exc:
+        # Login is already blocked; outgoing hold is best-effort.
+        logger.warning(
+            "Suspended login for %s but could not hold outgoing mail: %s",
+            address,
+            exc,
+        )
+    logger.info("Suspended cPanel mailbox %s", address)
+
+
+def unsuspend_mailbox(setting, email: str) -> None:
+    """Restore mailbox login and release any held outgoing mail."""
+    _require_cpanel_api(setting)
+    address = _full_mailbox_address(email)
+    _uapi(setting, "Email", "unsuspend_login", {"email": address})
+    try:
+        _uapi(setting, "Email", "release_outgoing", {"email": address})
+    except CpanelMailError as exc:
+        logger.warning(
+            "Restored login for %s but could not release outgoing mail: %s",
+            address,
+            exc,
+        )
+    logger.info("Unsuspended cPanel mailbox %s", address)
+
+
 def provision_work_email(setting, employee, *, reserved=None) -> tuple[str, str]:
     """
     Create the firm mailbox for an employee.

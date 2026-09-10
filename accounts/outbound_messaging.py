@@ -89,12 +89,14 @@ def send_firm_email(
     to_email: str,
     subject: str,
     body: str,
+    html_body: str = "",
     setting: CommunicationSettings | None = None,
 ) -> str:
     """
     Send email from the firm SMTP identity in Communication Settings.
 
     Returns the From address used. Raises OutboundMessageError on failure.
+    When html_body is provided, sends multipart/alternative (plain + HTML).
     """
     setting = setting or CommunicationSettings.get_solo()
     if not setting.email_ready:
@@ -109,6 +111,7 @@ def send_firm_email(
 
     subject_text = _blank(subject)
     body_text = _blank(body)
+    html_text = _blank(html_body)
     if not subject_text:
         raise OutboundMessageError("Enter a subject.")
     if not body_text:
@@ -124,6 +127,8 @@ def send_firm_email(
     message["To"] = recipient
     message["Reply-To"] = from_email
     message.set_content(body_text)
+    if html_text:
+        message.add_alternative(html_text, subtype="html")
 
     server = None
     try:

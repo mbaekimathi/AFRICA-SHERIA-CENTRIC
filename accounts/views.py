@@ -53,6 +53,8 @@ from .cpanel_mail import (
     find_reusable_mailbox,
     provision_work_email,
     suggest_work_email,
+    suspend_mailbox,
+    unsuspend_mailbox,
 )
 from .employee_communications import (
     CHANNEL_PAGE_SLUGS,
@@ -13154,6 +13156,28 @@ class EditEmployeeDetailsView(View):
 class ToggleEmployeeSuspensionView(View):
     """Suspend an active employee or restore a suspended employee."""
 
+    @staticmethod
+    def _sync_work_mailbox(employee, *, suspend: bool):
+        """
+        Suspend or restore the employee's cPanel mailbox when one is assigned.
+
+        Returns (mailbox_ok, mailbox_error, work_email).
+        """
+        work_email = (employee.work_email or "").strip().lower()
+        if not work_email:
+            return None, "", ""
+
+        setting = CommunicationSettings.get_solo()
+        try:
+            if suspend:
+                suspend_mailbox(setting, work_email)
+                employee.clear_work_mailbox_password(save=True)
+            else:
+                unsuspend_mailbox(setting, work_email)
+        except CpanelMailError as exc:
+            return False, str(exc), work_email
+        return True, "", work_email
+
     def post(self, request, role, employee_id):
         user, denied = _guard_employee_management(request, role, action="edit")
         if denied:
@@ -13169,17 +13193,89 @@ class ToggleEmployeeSuspensionView(View):
                 employee,
                 kind=EmployeeWorkSession.LogoutKind.SUSPENDED,
             )
-            messages.success(
-                request,
-                f"{employee.get_full_name()} has been suspended and logged out.",
+            mailbox_ok, mailbox_error, work_email = self._sync_work_mailbox(
+                employee, suspend=True
             )
+            from .work_email_notify import notify_work_email_suspended
+
+            notification = notify_work_email_suspended(
+                employee,
+                work_email=work_email,
+                mailbox_suspended=mailbox_ok is True,
+            )
+            parts = [
+                f"{employee.get_full_name()} has been suspended and logged out."
+            ]
+            if work_email:
+                if mailbox_ok:
+                    parts.append(f"Work email {work_email} was suspended.")
+                else:
+                    parts.append(
+                        f"Work email {work_email} could not be suspended: "
+                        f"{mailbox_error}"
+                    )
+            if notification.get("email_sent"):
+                parts.append(
+                    f"A notice was sent to {notification['personal_email']}."
+                )
+            elif notification.get("email_error"):
+                parts.append(
+                    f"Personal-email notice could not be sent: "
+                    f"{notification['email_error']}"
+                )
+            message = " ".join(parts)
+            if work_email and not mailbox_ok:
+                messages.warning(request, message)
+            elif notification.get("email_error") and not notification.get(
+                "email_sent"
+            ):
+                messages.warning(request, message)
+            else:
+                messages.success(request, message)
         elif employee.status == Employee.Status.SUSPENDED:
             employee.status = Employee.Status.ACTIVE
             employee.save(update_fields=["status"])
-            messages.success(
-                request,
-                f"{employee.get_full_name()} has been unsuspended and is active again.",
+            mailbox_ok, mailbox_error, work_email = self._sync_work_mailbox(
+                employee, suspend=False
             )
+            notification = {"email_sent": False, "email_error": "", "personal_email": ""}
+            if work_email:
+                from .work_email_notify import notify_work_email_restored
+
+                notification = notify_work_email_restored(
+                    employee,
+                    work_email=work_email,
+                    mailbox_restored=mailbox_ok is True,
+                )
+            parts = [
+                f"{employee.get_full_name()} has been unsuspended and is active again."
+            ]
+            if work_email:
+                if mailbox_ok:
+                    parts.append(f"Work email {work_email} was restored.")
+                else:
+                    parts.append(
+                        f"Work email {work_email} could not be restored: "
+                        f"{mailbox_error}"
+                    )
+            if notification.get("email_sent"):
+                parts.append(
+                    f"A notice was sent to {notification['personal_email']}."
+                )
+            elif work_email and notification.get("email_error"):
+                parts.append(
+                    f"Personal-email notice could not be sent: "
+                    f"{notification['email_error']}"
+                )
+            message = " ".join(parts)
+            if work_email and not mailbox_ok:
+                messages.warning(request, message)
+            elif work_email and notification.get("email_error") and not notification.get(
+                "email_sent"
+            ):
+                messages.warning(request, message)
+            else:
+                messages.success(request, message)
         else:
             messages.info(
                 request,
