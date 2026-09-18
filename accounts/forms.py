@@ -3216,17 +3216,20 @@ class CreateMatterTaskForm(forms.Form):
 
 
 class ApproveCaseForm(forms.Form):
-    """Allocate an employee and create their case task on approval."""
+    """Allocate one, several, or all active employees and create their tasks."""
 
     ALL_EMPLOYEES = "__all__"
 
-    assigned_to = forms.ChoiceField(
+    assigned_to = forms.MultipleChoiceField(
         choices=(),
         required=True,
-        widget=forms.Select(
-            attrs={"class": "form-input", "id": "id_assigned_to"}
+        widget=forms.CheckboxSelectMultiple(
+            attrs={
+                "class": "allocate-employee-checks",
+                "id": "id_assigned_to",
+            }
         ),
-        error_messages={"required": "Allocate to an employee."},
+        error_messages={"required": "Allocate to at least one employee."},
     )
     instructions = forms.CharField(
         required=False,
@@ -3260,10 +3263,7 @@ class ApproveCaseForm(forms.Form):
                 "first_name", "last_name", "login_code"
             )
         )
-        choices = [
-            ("", "Select employee"),
-            (self.ALL_EMPLOYEES, "All active employees"),
-        ]
+        choices = [(self.ALL_EMPLOYEES, "All active employees")]
         for employee in self._active_employees:
             label = (
                 f"{employee.get_full_name() or employee.login_code} "
@@ -3274,40 +3274,53 @@ class ApproveCaseForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
-        value = (cleaned.get("assigned_to") or "").strip()
+        values = [str(value).strip() for value in (cleaned.get("assigned_to") or [])]
         active_employees = list(self._active_employees)
+        by_id = {str(row.pk): row for row in active_employees}
 
-        if value == self.ALL_EMPLOYEES:
+        if self.ALL_EMPLOYEES in values:
             if not active_employees:
                 raise ValidationError(
                     "There are no active employees to allocate to."
                 )
             cleaned["allocate_to_all"] = True
             cleaned["assignees"] = active_employees
-            # Keep a primary assignee for list/calendar display.
             cleaned["assigned_to"] = active_employees[0]
             return cleaned
 
-        employee = next(
-            (row for row in active_employees if str(row.pk) == value),
-            None,
-        )
-        if employee is None:
-            if value:
-                self.add_error(
-                    "assigned_to",
-                    "Only active employees can be allocated.",
-                )
-            else:
-                self.add_error("assigned_to", "Allocate to an employee.")
+        selected = []
+        invalid = False
+        for value in values:
+            employee = by_id.get(value)
+            if employee is None:
+                invalid = True
+                continue
+            if employee not in selected:
+                selected.append(employee)
+
+        if invalid and not selected:
+            self.add_error(
+                "assigned_to",
+                "Only active employees can be allocated.",
+            )
+            cleaned["allocate_to_all"] = False
+            cleaned["assignees"] = []
+            cleaned["assigned_to"] = None
+            return cleaned
+
+        if not selected:
+            self.add_error(
+                "assigned_to",
+                "Allocate to at least one employee.",
+            )
             cleaned["allocate_to_all"] = False
             cleaned["assignees"] = []
             cleaned["assigned_to"] = None
             return cleaned
 
         cleaned["allocate_to_all"] = False
-        cleaned["assignees"] = [employee]
-        cleaned["assigned_to"] = employee
+        cleaned["assignees"] = selected
+        cleaned["assigned_to"] = selected[0]
         return cleaned
 
 

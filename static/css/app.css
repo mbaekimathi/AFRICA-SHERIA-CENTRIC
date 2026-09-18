@@ -10647,6 +10647,66 @@ dialog.workspace-modal[open] {
   color: var(--ink);
 }
 
+.allocate-employee-list {
+  margin-top: 0.45rem;
+  max-height: 14rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--page-bg) 55%, var(--surface));
+}
+
+.allocate-employee-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.allocate-employee-list li {
+  margin: 0;
+}
+
+.allocate-employee-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.allocate-employee-list label:hover {
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+}
+
+.allocate-employee-list input[type="checkbox"] {
+  margin-top: 0.15rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+.allocate-employee-list li:first-child label {
+  font-weight: 650;
+  border-bottom: 1px solid var(--line);
+  border-radius: 8px 8px 0 0;
+  margin-bottom: 0.2rem;
+  padding-bottom: 0.7rem;
+}
+
+.allocate-employee-list input[type="checkbox"]:disabled + * ,
+.allocate-employee-list label:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .workspace-modal__body .form-row--name {
   grid-template-columns: 1fr;
 }

@@ -159,7 +159,7 @@
     <header class="workspace-modal__head">
       <h2 id="case-allocate-title">Allocate &amp; task employee</h2>
       <p>
-        Choose one active employee, or all active employees, from the list.
+        Tick one or more employees, or choose all active employees.
         Each assignee is notified and can accept or reject their task.
       </p>
     </header>
@@ -172,9 +172,17 @@
       {% endif %}
 
       <div class="form-field" id="allocate-employee-field">
-        <label for="id_assigned_to">Allocate to employee <span aria-hidden="true">*</span></label>
-        {{ form.assigned_to }}
-        <p class="field-hint">Pick a person, or choose “All active employees”.</p>
+        <span class="form-label" id="allocate-employee-label">
+          Allocate to employee <span aria-hidden="true">*</span>
+        </span>
+        <div
+          class="allocate-employee-list"
+          role="group"
+          aria-labelledby="allocate-employee-label"
+        >
+          {{ form.assigned_to }}
+        </div>
+        <p class="field-hint">Select multiple people, or “All active employees”.</p>
         {% if form.assigned_to.errors %}<span class="field-error">{{ form.assigned_to.errors.0 }}</span>{% endif %}
       </div>
 

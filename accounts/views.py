@@ -14593,6 +14593,12 @@ class ApproveLitigationCaseView(View):
                 "employees. Each can view, access, and accept or reject "
                 "their task.",
             )
+        elif len(assignees) > 1:
+            messages.success(
+                request,
+                f"Case approved and tasked to {len(assignees)} employees. "
+                "Each can view and accept or reject their task.",
+            )
         else:
             messages.success(
                 request,
@@ -15064,6 +15070,12 @@ class ApproveNonLitigationMatterView(View):
                 f"Matter approved and tasked to all {len(assignees)} active "
                 "employees. Each can view, access, and accept or reject "
                 "their task.",
+            )
+        elif len(assignees) > 1:
+            messages.success(
+                request,
+                f"Matter approved and tasked to {len(assignees)} employees. "
+                "Each can view and accept or reject their task.",
             )
         else:
             messages.success(
