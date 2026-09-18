@@ -3218,20 +3218,11 @@ class CreateMatterTaskForm(forms.Form):
 class ApproveCaseForm(forms.Form):
     """Allocate an employee and create their case task on approval."""
 
-    allocate_to_all = forms.BooleanField(
-        required=False,
-        label="Allocate to all active employees",
-        widget=forms.CheckboxInput(
-            attrs={
-                "class": "form-checkbox",
-                "id": "id_allocate_to_all",
-            }
-        ),
-    )
-    assigned_to = forms.ModelChoiceField(
-        queryset=Employee.objects.none(),
-        empty_label="Select employee",
-        required=False,
+    ALL_EMPLOYEES = "__all__"
+
+    assigned_to = forms.ChoiceField(
+        choices=(),
+        required=True,
         widget=forms.Select(
             attrs={"class": "form-input", "id": "id_assigned_to"}
         ),
@@ -3264,43 +3255,59 @@ class ApproveCaseForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._active_employees = Employee.objects.filter(
-            status=Employee.Status.ACTIVE
-        ).order_by("first_name", "last_name", "login_code")
-        self.fields["assigned_to"].queryset = self._active_employees
-        self.fields["assigned_to"].label_from_instance = (
-            lambda employee: (
+        self._active_employees = list(
+            Employee.objects.filter(status=Employee.Status.ACTIVE).order_by(
+                "first_name", "last_name", "login_code"
+            )
+        )
+        choices = [
+            ("", "Select employee"),
+            (self.ALL_EMPLOYEES, "All active employees"),
+        ]
+        for employee in self._active_employees:
+            label = (
                 f"{employee.get_full_name() or employee.login_code} "
                 f"({employee.get_role_display()})"
             )
-        )
-
-    def clean_assigned_to(self):
-        employee = self.cleaned_data.get("assigned_to")
-        if employee and employee.status != Employee.Status.ACTIVE:
-            raise ValidationError("Only active employees can be allocated.")
-        return employee
+            choices.append((str(employee.pk), label))
+        self.fields["assigned_to"].choices = choices
 
     def clean(self):
         cleaned = super().clean()
-        allocate_to_all = cleaned.get("allocate_to_all")
-        assignee = cleaned.get("assigned_to")
+        value = (cleaned.get("assigned_to") or "").strip()
         active_employees = list(self._active_employees)
 
-        if allocate_to_all:
+        if value == self.ALL_EMPLOYEES:
             if not active_employees:
                 raise ValidationError(
                     "There are no active employees to allocate to."
                 )
+            cleaned["allocate_to_all"] = True
             cleaned["assignees"] = active_employees
             # Keep a primary assignee for list/calendar display.
             cleaned["assigned_to"] = active_employees[0]
-        else:
-            if not assignee:
+            return cleaned
+
+        employee = next(
+            (row for row in active_employees if str(row.pk) == value),
+            None,
+        )
+        if employee is None:
+            if value:
                 self.add_error(
-                    "assigned_to", "Allocate to an employee."
+                    "assigned_to",
+                    "Only active employees can be allocated.",
                 )
-            cleaned["assignees"] = [assignee] if assignee else []
+            else:
+                self.add_error("assigned_to", "Allocate to an employee.")
+            cleaned["allocate_to_all"] = False
+            cleaned["assignees"] = []
+            cleaned["assigned_to"] = None
+            return cleaned
+
+        cleaned["allocate_to_all"] = False
+        cleaned["assignees"] = [employee]
+        cleaned["assigned_to"] = employee
         return cleaned
 
 
