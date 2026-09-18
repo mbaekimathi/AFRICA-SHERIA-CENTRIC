@@ -9,8 +9,9 @@
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Main petty cash ledger for daily unplanned expenses. Approve employee claims
-        submitted from Employee Petty Cashbook; approved amounts debit this book.
+        Main petty cash ledger for daily unplanned expenses. Approve reimbursement
+        claims from Employee Petty Cashbook here. Claims that request money to a
+        Paybill, Till, or phone are approved from General Accounts instead.
       </p>
     </div>
     <div class="page-intro__actions">
@@ -115,7 +116,8 @@
         <div class="empty-state__rule" aria-hidden="true"></div>
         <p class="empty-state__title">No pending claims</p>
         <p class="empty-state__copy">
-          Employee petty cash claims awaiting approval will appear here.
+          Reimbursement claims awaiting approval will appear here.
+          Money requests (Paybill / Till / phone) go to General Accounts.
         </p>
       </div>
       {% endif %}

@@ -81,6 +81,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const checkUrl = signupForm.dataset.checkCodeUrl;
   const emailInput = signupForm.querySelector('input[type="email"], #id_personal_email');
 
+  if (emailInput) {
+    emailInput.classList.add("input-lowercase");
+    emailInput.setAttribute("autocapitalize", "off");
+    emailInput.setAttribute("spellcheck", "false");
+    const forceLower = () => {
+      const start = emailInput.selectionStart;
+      const end = emailInput.selectionEnd;
+      const lower = emailInput.value.toLowerCase();
+      if (emailInput.value !== lower) {
+        emailInput.value = lower;
+        if (typeof start === "number" && typeof end === "number") {
+          emailInput.setSelectionRange(start, end);
+        }
+      }
+    };
+    emailInput.addEventListener("input", forceLower);
+    forceLower();
+  }
+
   signupForm.querySelectorAll("input").forEach((input) => {
     if (
       input.type === "email" ||

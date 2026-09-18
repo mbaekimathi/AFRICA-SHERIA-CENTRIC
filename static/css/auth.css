@@ -448,6 +448,10 @@ textarea.form-input {
   text-transform: uppercase;
 }
 
+.input-lowercase {
+  text-transform: lowercase;
+}
+
 .phone-field {
   position: relative;
   display: grid;

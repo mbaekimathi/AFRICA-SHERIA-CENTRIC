@@ -16,10 +16,14 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 MPESA_CALLBACK_PATH = "/integrations/mpesa/callback/"
+MPESA_B2B_RESULT_PATH = "/integrations/mpesa/b2b/result/"
+MPESA_B2B_TIMEOUT_PATH = "/integrations/mpesa/b2b/timeout/"
+MPESA_BALANCE_RESULT_PATH = "/integrations/mpesa/balance/result/"
+MPESA_BALANCE_TIMEOUT_PATH = "/integrations/mpesa/balance/timeout/"
 
 
 class MpesaError(Exception):
-    """Raised when an STK push cannot be started."""
+    """Raised when an STK push or B2B transfer cannot be started."""
 
 
 def _finance_settings():
@@ -138,6 +142,92 @@ def mpesa_configured() -> bool:
         and cfg["consumer_secret"]
         and cfg["shortcode"]
         and cfg["passkey"]
+    )
+
+
+def get_mpesa_b2b_runtime_config() -> dict:
+    """
+    Resolve outbound B2B / B2C transfer credentials from Finance Settings.
+    OAuth keys fall back to STK Push keys when B2B-specific fields are blank.
+    """
+    firm = _finance_settings()
+    if firm is None:
+        return {
+            "source": "none",
+            "enabled": False,
+            "consumer_key": "",
+            "consumer_secret": "",
+            "shortcode": "",
+            "initiator_name": "",
+            "security_credential": "",
+            "result_url": "",
+            "timeout_url": "",
+            "env": "sandbox",
+            "to_paybill": False,
+            "to_till": False,
+            "to_phone": False,
+            "b2b_ready": False,
+        }
+
+    if not firm.allow_mpesa or not firm.mpesa_b2b_enabled:
+        return {
+            "source": "finance_settings",
+            "enabled": False,
+            "consumer_key": "",
+            "consumer_secret": "",
+            "shortcode": "",
+            "initiator_name": "",
+            "security_credential": "",
+            "result_url": "",
+            "timeout_url": "",
+            "env": (firm.mpesa_env or "sandbox").lower(),
+            "to_paybill": False,
+            "to_till": False,
+            "to_phone": False,
+            "b2b_ready": False,
+        }
+
+    return {
+        "source": "finance_settings",
+        "enabled": True,
+        "consumer_key": firm.b2b_consumer_key,
+        "consumer_secret": firm.b2b_consumer_secret,
+        "shortcode": firm.b2b_source_shortcode,
+        "initiator_name": (firm.mpesa_b2b_initiator_name or "").strip(),
+        "security_credential": (firm.mpesa_b2b_security_credential or "").strip(),
+        "result_url": (firm.mpesa_b2b_result_url or "").strip(),
+        "timeout_url": (firm.mpesa_b2b_timeout_url or "").strip(),
+        "env": (firm.mpesa_env or "sandbox").lower(),
+        "to_paybill": bool(firm.mpesa_b2b_to_paybill),
+        "to_till": bool(firm.mpesa_b2b_to_till),
+        "to_phone": bool(firm.mpesa_b2b_to_phone),
+        "b2b_ready": firm.b2b_ready,
+    }
+
+
+def mpesa_b2b_allowed() -> bool:
+    """Whether the firm allows outbound M-Pesa B2B / B2C transfers."""
+    firm = _finance_settings()
+    if firm is None:
+        return False
+    if not firm.allow_mpesa:
+        return False
+    return bool(firm.mpesa_b2b_enabled)
+
+
+def mpesa_b2b_configured() -> bool:
+    cfg = get_mpesa_b2b_runtime_config()
+    if not cfg["enabled"]:
+        return False
+    return bool(
+        cfg["consumer_key"]
+        and cfg["consumer_secret"]
+        and cfg["shortcode"]
+        and cfg["initiator_name"]
+        and cfg["security_credential"]
+        and cfg["result_url"]
+        and cfg["timeout_url"]
+        and (cfg["to_paybill"] or cfg["to_till"] or cfg["to_phone"])
     )
 
 
@@ -748,3 +838,496 @@ def process_stk_callback(payload: dict) -> dict | None:
             pass
 
     return apply_stk_outcome(stk, parsed)
+
+
+def _post_daraja_json(cfg: dict, path: str, payload: dict) -> dict:
+    token = _access_token(cfg)
+    url = f"{_daraja_base(cfg['env'])}{path}"
+    body = json.dumps(payload).encode()
+    req = request.Request(
+        url,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=45) as resp:
+            return json.loads(resp.read().decode())
+    except error.HTTPError as exc:
+        raw = exc.read().decode(errors="replace")
+        logger.warning("Daraja HTTP %s %s: %s", exc.code, path, raw)
+        try:
+            detail = json.loads(raw)
+            message = (
+                detail.get("errorMessage")
+                or detail.get("ResponseDescription")
+                or detail.get("requestId")
+                or raw
+            )
+        except Exception:
+            message = raw or str(exc)
+        raise MpesaError(f"M-Pesa request failed: {message}") from exc
+    except error.URLError as exc:
+        raise MpesaError("Could not reach M-Pesa. Try again shortly.") from exc
+
+
+def _resolve_b2b_callback_urls(cfg: dict) -> tuple[str, str]:
+    result = (cfg.get("result_url") or "").strip()
+    timeout = (cfg.get("timeout_url") or "").strip()
+    if not is_valid_mpesa_callback_url(result):
+        raise MpesaError(
+            "Set a public HTTPS B2B result URL in Finance Settings "
+            f"(e.g. https://yourdomain.com{MPESA_B2B_RESULT_PATH})."
+        )
+    if not is_valid_mpesa_callback_url(timeout):
+        raise MpesaError(
+            "Set a public HTTPS B2B timeout URL in Finance Settings "
+            f"(e.g. https://yourdomain.com{MPESA_B2B_TIMEOUT_PATH})."
+        )
+    return result, timeout
+
+
+def initiate_b2b_transfer(
+    *,
+    destination_type: str,
+    party_b: str,
+    amount: Decimal,
+    account_reference: str = "",
+    remarks: str = "",
+) -> dict:
+    """
+    Start an outbound B2B (Paybill/Till) or B2C (phone) transfer.
+
+    Returns Daraja acknowledgement fields, with simulated=True when credentials
+    are incomplete.
+    """
+    from .models import MpesaB2bTransfer
+
+    if not mpesa_b2b_allowed():
+        raise MpesaError(
+            "M-Pesa B2B transfers are not enabled. Turn them on in Finance Settings."
+        )
+
+    cfg = get_mpesa_b2b_runtime_config()
+    dest = (destination_type or "").strip().lower()
+    if dest == MpesaB2bTransfer.DestinationType.PAYBILL and not cfg["to_paybill"]:
+        raise MpesaError("Transfers to Paybill are disabled in Finance Settings.")
+    if dest == MpesaB2bTransfer.DestinationType.TILL and not cfg["to_till"]:
+        raise MpesaError("Transfers to Buy Goods Till are disabled in Finance Settings.")
+    if dest == MpesaB2bTransfer.DestinationType.PHONE and not cfg["to_phone"]:
+        raise MpesaError("Transfers to phone numbers are disabled in Finance Settings.")
+
+    amount_int = int(Decimal(amount).quantize(Decimal("1")))
+    if amount_int < 1:
+        raise MpesaError("Transfer amount must be at least KES 1.")
+
+    party = "".join(ch for ch in (party_b or "") if ch.isdigit())
+    if dest == MpesaB2bTransfer.DestinationType.PHONE:
+        party = normalize_msisdn(party_b)
+    elif not party:
+        raise MpesaError("Enter the destination Paybill or Till number.")
+
+    reference = (account_reference or "").strip()[:13]
+    note = (remarks or "Transfer").strip()[:100] or "Transfer"
+
+    if not mpesa_b2b_configured():
+        return {
+            "simulated": True,
+            "destination_type": dest,
+            "party_b": party,
+            "amount": amount_int,
+            "account_reference": reference,
+            "conversation_id": f"sim_b2b_{uuid.uuid4().hex[:14]}",
+            "originator_conversation_id": f"sim_orig_{uuid.uuid4().hex[:12]}",
+            "response_code": "0",
+            "response_description": "Simulated B2B transfer accepted.",
+            "transaction_id": f"SIM{uuid.uuid4().hex[:8].upper()}",
+        }
+
+    result_url, timeout_url = _resolve_b2b_callback_urls(cfg)
+    shortcode = cfg["shortcode"]
+
+    if dest == MpesaB2bTransfer.DestinationType.PHONE:
+        payload = {
+            "InitiatorName": cfg["initiator_name"],
+            "SecurityCredential": cfg["security_credential"],
+            "CommandID": "BusinessPayment",
+            "Amount": amount_int,
+            "PartyA": shortcode,
+            "PartyB": party,
+            "Remarks": note,
+            "QueueTimeOutURL": timeout_url,
+            "ResultURL": result_url,
+            "Occasion": "Payment",
+        }
+        path = "/mpesa/b2c/v1/paymentrequest"
+    else:
+        command = (
+            "BusinessBuyGoods"
+            if dest == MpesaB2bTransfer.DestinationType.TILL
+            else "BusinessPayBill"
+        )
+        payload = {
+            "Initiator": cfg["initiator_name"],
+            "SecurityCredential": cfg["security_credential"],
+            "CommandID": command,
+            "SenderIdentifierType": "4",
+            "RecieverIdentifierType": "4",
+            "Amount": amount_int,
+            "PartyA": shortcode,
+            "PartyB": party,
+            "AccountReference": reference or "TRANSFER",
+            "Remarks": note,
+            "QueueTimeOutURL": timeout_url,
+            "ResultURL": result_url,
+        }
+        path = "/mpesa/b2b/v1/paymentrequest"
+
+    response = _post_daraja_json(cfg, path, payload)
+    response_code = str(response.get("ResponseCode") or "")
+    if response_code not in {"0", "00"}:
+        raise MpesaError(
+            response.get("ResponseDescription")
+            or response.get("errorMessage")
+            or "M-Pesa rejected the transfer request."
+        )
+
+    return {
+        "simulated": False,
+        "destination_type": dest,
+        "party_b": party,
+        "amount": amount_int,
+        "account_reference": reference,
+        "conversation_id": response.get("ConversationID") or "",
+        "originator_conversation_id": response.get("OriginatorConversationID") or "",
+        "response_code": response_code,
+        "response_description": response.get("ResponseDescription") or "",
+        "transaction_id": "",
+    }
+
+
+def request_account_balance() -> dict:
+    """
+    Ask Safaricom for the paybill / shortcode float balance (async).
+    Updates FinanceSettings with the pending conversation id.
+    """
+    if not mpesa_b2b_configured():
+        raise MpesaError(
+            "Configure B2B credentials in Finance Settings before querying the paybill balance."
+        )
+
+    cfg = get_mpesa_b2b_runtime_config()
+    from .models import FinanceSettings
+
+    # Prefer dedicated balance URLs derived from result URL host when possible.
+    result_url = (cfg.get("result_url") or "").strip()
+    timeout_url = (cfg.get("timeout_url") or "").strip()
+    try:
+        parts = parse.urlparse(result_url)
+        balance_result = f"{parts.scheme}://{parts.netloc}{MPESA_BALANCE_RESULT_PATH}"
+        balance_timeout = f"{parts.scheme}://{parts.netloc}{MPESA_BALANCE_TIMEOUT_PATH}"
+        if not is_valid_mpesa_callback_url(balance_result):
+            balance_result = result_url
+            balance_timeout = timeout_url
+    except Exception:
+        balance_result = result_url
+        balance_timeout = timeout_url
+
+    payload = {
+        "Initiator": cfg["initiator_name"],
+        "SecurityCredential": cfg["security_credential"],
+        "CommandID": "AccountBalance",
+        "PartyA": cfg["shortcode"],
+        "IdentifierType": "4",
+        "Remarks": "Paybill balance",
+        "QueueTimeOutURL": balance_timeout,
+        "ResultURL": balance_result,
+    }
+    response = _post_daraja_json(cfg, "/mpesa/accountbalance/v1/query", payload)
+    response_code = str(response.get("ResponseCode") or "")
+    if response_code not in {"0", "00"}:
+        raise MpesaError(
+            response.get("ResponseDescription")
+            or "M-Pesa rejected the balance query."
+        )
+
+    conversation_id = response.get("ConversationID") or ""
+    originator_id = response.get("OriginatorConversationID") or ""
+    firm = FinanceSettings.get_solo()
+    firm.mpesa_float_conversation_id = conversation_id or originator_id
+    firm.save(update_fields=["mpesa_float_conversation_id", "updated_at"])
+
+    return {
+        "conversation_id": conversation_id,
+        "originator_conversation_id": originator_id,
+        "response_description": response.get("ResponseDescription") or "",
+    }
+
+
+def _parse_account_balance_string(raw: str) -> dict[str, Decimal]:
+    """
+    Parse Safaricom AccountBalance ResultParameter string, e.g.
+    Working Account|KES|460.00&Utility Account|KES|...
+    """
+    mapping = {
+        "working": Decimal("0.00"),
+        "utility": Decimal("0.00"),
+        "charges": Decimal("0.00"),
+    }
+    text = (raw or "").strip()
+    if not text:
+        return mapping
+
+    for chunk in text.replace(";", "&").split("&"):
+        parts = [p.strip() for p in chunk.split("|") if p.strip()]
+        if len(parts) < 2:
+            continue
+        label = parts[0].lower()
+        amount_raw = parts[-1].replace(",", "")
+        try:
+            amount = Decimal(amount_raw).quantize(Decimal("0.01"))
+        except Exception:
+            continue
+        if "working" in label:
+            mapping["working"] = amount
+        elif "utility" in label:
+            mapping["utility"] = amount
+        elif "charge" in label:
+            mapping["charges"] = amount
+    return mapping
+
+
+def process_account_balance_result(payload: dict) -> dict | None:
+    """Apply an AccountBalance ResultURL callback onto FinanceSettings."""
+    from .models import FinanceSettings
+
+    result = (payload or {}).get("Result") or payload or {}
+    result_code = str(result.get("ResultCode") if result.get("ResultCode") is not None else "")
+    params = result.get("ResultParameters") or {}
+    param_list = params.get("ResultParameter") or []
+    if isinstance(param_list, dict):
+        param_list = [param_list]
+
+    balance_raw = ""
+    for item in param_list:
+        key = (item or {}).get("Key") or ""
+        if key in {"AccountBalance", "BOCompletedTime"}:
+            if key == "AccountBalance":
+                balance_raw = str((item or {}).get("Value") or "")
+                break
+
+    parsed = _parse_account_balance_string(balance_raw)
+    firm = FinanceSettings.get_solo()
+    update_fields = [
+        "mpesa_float_raw",
+        "mpesa_float_checked_at",
+        "updated_at",
+    ]
+    firm.mpesa_float_raw = json.dumps(payload)[:8000]
+    firm.mpesa_float_checked_at = timezone.now()
+    if result_code in {"0", "00"}:
+        firm.mpesa_float_working = parsed["working"]
+        firm.mpesa_float_utility = parsed["utility"]
+        firm.mpesa_float_charges = parsed["charges"]
+        update_fields.extend(
+            ["mpesa_float_working", "mpesa_float_utility", "mpesa_float_charges"]
+        )
+    firm.save(update_fields=update_fields)
+    return {
+        "result_code": result_code,
+        "working": str(parsed["working"]),
+        "utility": str(parsed["utility"]),
+        "charges": str(parsed["charges"]),
+    }
+
+
+def apply_paybill_float_debit(amount) -> None:
+    """Reduce cached Safaricom float after a Paybill-funded payout."""
+    from .models import FinanceSettings
+
+    amount = Decimal(amount).quantize(Decimal("0.01"))
+    if amount <= 0:
+        return
+    finance = FinanceSettings.get_solo()
+    working = finance.mpesa_float_working
+    utility = finance.mpesa_float_utility
+    if working is None and utility is None:
+        return
+    remaining = amount
+    update_fields = ["updated_at", "mpesa_float_checked_at"]
+    finance.mpesa_float_checked_at = timezone.now()
+    if working is not None:
+        take = min(working, remaining)
+        finance.mpesa_float_working = (working - take).quantize(Decimal("0.01"))
+        remaining = (remaining - take).quantize(Decimal("0.01"))
+        update_fields.append("mpesa_float_working")
+    if remaining > 0 and utility is not None:
+        take = min(utility, remaining)
+        finance.mpesa_float_utility = (utility - take).quantize(Decimal("0.01"))
+        update_fields.append("mpesa_float_utility")
+    finance.save(update_fields=update_fields)
+
+
+def _debit_company_account_for_transfer(transfer) -> None:
+    """Debit the linked company ledger when a transfer completes."""
+    from django.db import transaction
+    from django.db.models import F
+
+    from .models import CompanyExpenseAccount, CompanyExpensePayment
+
+    if transfer.expense_payment_id or not transfer.company_account_id:
+        return
+
+    with transaction.atomic():
+        locked = CompanyExpenseAccount.objects.select_for_update().get(
+            pk=transfer.company_account_id
+        )
+        amount = Decimal(transfer.amount).quantize(Decimal("0.01"))
+        if locked.balance < amount:
+            raise MpesaError(
+                f"Account “{locked.name}” has insufficient balance for this transfer."
+            )
+        CompanyExpenseAccount.objects.filter(pk=locked.pk).update(
+            balance=F("balance") - amount
+        )
+        locked.refresh_from_db(fields=["balance"])
+        payment = CompanyExpensePayment.objects.create(
+            account=locked,
+            expense_type=CompanyExpensePayment.ExpenseType.MPESA_TRANSFER,
+            description=(
+                f"M-Pesa transfer to {transfer.destination_display}"
+                + (f" — {transfer.remarks}" if transfer.remarks else "")
+            ),
+            amount=amount,
+            balance_after=locked.balance,
+            created_by=transfer.created_by,
+        )
+        transfer.expense_payment = payment
+        transfer.save(update_fields=["expense_payment"])
+
+
+def process_b2b_result(payload: dict) -> dict | None:
+    """Apply a B2B / B2C ResultURL callback onto MpesaB2bTransfer."""
+    from .models import MpesaB2bTransfer
+
+    result = (payload or {}).get("Result") or payload or {}
+    originator_id = (result.get("OriginatorConversationID") or "").strip()
+    conversation_id = (result.get("ConversationID") or "").strip()
+    transfer = None
+    if originator_id:
+        transfer = (
+            MpesaB2bTransfer.objects.filter(
+                originator_conversation_id=originator_id
+            )
+            .order_by("-id")
+            .first()
+        )
+    if transfer is None and conversation_id:
+        transfer = (
+            MpesaB2bTransfer.objects.filter(conversation_id=conversation_id)
+            .order_by("-id")
+            .first()
+        )
+    if transfer is None:
+        logger.warning(
+            "B2B result for unknown conversation originator=%s conversation=%s",
+            originator_id,
+            conversation_id,
+        )
+        return None
+
+    if transfer.status == MpesaB2bTransfer.Status.COMPLETED:
+        return {"status": transfer.status, "id": transfer.pk}
+
+    result_code = str(result.get("ResultCode") if result.get("ResultCode") is not None else "")
+    result_desc = (result.get("ResultDesc") or "")[:255]
+    transaction_id = (result.get("TransactionID") or "")[:64]
+    transfer.result_code = result_code
+    transfer.result_desc = result_desc
+    transfer.transaction_id = transaction_id or transfer.transaction_id
+    transfer.raw_result = json.dumps(payload)[:8000]
+    transfer.completed_at = timezone.now()
+
+    if result_code in {"0", "00"}:
+        transfer.status = MpesaB2bTransfer.Status.COMPLETED
+        transfer.save(
+            update_fields=[
+                "status",
+                "result_code",
+                "result_desc",
+                "transaction_id",
+                "raw_result",
+                "completed_at",
+            ]
+        )
+        try:
+            _debit_company_account_for_transfer(transfer)
+            transfer.refresh_from_db()
+            from .models import PettyCashExpenseRequest
+
+            if transfer.expense_payment_id:
+                PettyCashExpenseRequest.objects.filter(
+                    mpesa_transfer=transfer,
+                    expense_payment__isnull=True,
+                ).update(expense_payment=transfer.expense_payment)
+            elif not transfer.company_account_id:
+                apply_paybill_float_debit(transfer.amount)
+        except Exception:
+            logger.exception("Failed to debit ledger for B2B transfer %s", transfer.pk)
+    else:
+        transfer.status = MpesaB2bTransfer.Status.FAILED
+        transfer.save(
+            update_fields=[
+                "status",
+                "result_code",
+                "result_desc",
+                "transaction_id",
+                "raw_result",
+                "completed_at",
+            ]
+        )
+
+    return {"status": transfer.status, "id": transfer.pk}
+
+
+def process_b2b_timeout(payload: dict) -> dict | None:
+    """Mark a pending B2B transfer as timed out."""
+    from .models import MpesaB2bTransfer
+
+    result = (payload or {}).get("Result") or payload or {}
+    originator_id = (result.get("OriginatorConversationID") or "").strip()
+    conversation_id = (result.get("ConversationID") or "").strip()
+    transfer = None
+    if originator_id:
+        transfer = (
+            MpesaB2bTransfer.objects.filter(
+                originator_conversation_id=originator_id
+            )
+            .order_by("-id")
+            .first()
+        )
+    if transfer is None and conversation_id:
+        transfer = (
+            MpesaB2bTransfer.objects.filter(conversation_id=conversation_id)
+            .order_by("-id")
+            .first()
+        )
+    if transfer is None:
+        return None
+    if transfer.status in {
+        MpesaB2bTransfer.Status.COMPLETED,
+        MpesaB2bTransfer.Status.FAILED,
+    }:
+        return {"status": transfer.status, "id": transfer.pk}
+
+    transfer.status = MpesaB2bTransfer.Status.TIMED_OUT
+    transfer.result_desc = "Transfer timed out waiting for Safaricom."
+    transfer.raw_result = json.dumps(payload)[:8000]
+    transfer.completed_at = timezone.now()
+    transfer.save(
+        update_fields=["status", "result_desc", "raw_result", "completed_at"]
+    )
+    return {"status": transfer.status, "id": transfer.pk}

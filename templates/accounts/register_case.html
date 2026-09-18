@@ -119,17 +119,18 @@
             </span>
             <input
               type="text"
-              class="form-input"
+              class="form-input input-uppercase"
               id="id_client_search"
               name="client_search"
               placeholder="Search by name or phone…"
               autocomplete="off"
+              autocapitalize="characters"
               spellcheck="false"
               aria-autocomplete="list"
               aria-controls="client-search-results"
               aria-expanded="false"
               role="combobox"
-              {% if selected_client %}value="{{ selected_client.get_full_name }}"{% endif %}
+              {% if selected_client %}value="{{ selected_client.get_full_name|upper }}"{% endif %}
             >
             <ul class="client-search__results" id="client-search-results" role="listbox" hidden></ul>
           </div>
@@ -341,7 +342,7 @@
             <div class="register-grid register-grid--2">
               <div class="form-field">
                 <label for="id_parties-__prefix__-party_name">Party Name <span aria-hidden="true">*</span></label>
-                <input type="text" name="parties-__prefix__-party_name" class="form-input" placeholder="Party name" autocomplete="off" id="id_parties-__prefix__-party_name">
+                <input type="text" name="parties-__prefix__-party_name" class="form-input input-uppercase" placeholder="Party name" autocomplete="off" autocapitalize="characters" id="id_parties-__prefix__-party_name">
               </div>
               <div class="form-field">
                 <label for="id_parties-__prefix__-party_type">Party Type <span aria-hidden="true">*</span></label>
@@ -362,15 +363,15 @@
               </div>
               <div class="form-field">
                 <label for="id_parties-__prefix__-firm_agent">Firm/Agent</label>
-                <input type="text" name="parties-__prefix__-firm_agent" class="form-input" placeholder="Firm or agent" autocomplete="off" id="id_parties-__prefix__-firm_agent">
+                <input type="text" name="parties-__prefix__-firm_agent" class="form-input input-uppercase" placeholder="Firm or agent" autocomplete="off" autocapitalize="characters" id="id_parties-__prefix__-firm_agent">
               </div>
               <div class="form-field">
                 <label for="id_parties-__prefix__-phone">Party Phone</label>
-                <input type="text" name="parties-__prefix__-phone" class="form-input" placeholder="Phone" autocomplete="off" id="id_parties-__prefix__-phone">
+                <input type="text" name="parties-__prefix__-phone" class="form-input input-uppercase" placeholder="Phone" autocomplete="off" autocapitalize="characters" id="id_parties-__prefix__-phone">
               </div>
               <div class="form-field">
                 <label for="id_parties-__prefix__-email">Party Email</label>
-                <input type="email" name="parties-__prefix__-email" class="form-input" placeholder="Email" autocomplete="off" id="id_parties-__prefix__-email">
+                <input type="email" name="parties-__prefix__-email" class="form-input input-lowercase" placeholder="Email" autocomplete="off" autocapitalize="off" spellcheck="false" id="id_parties-__prefix__-email">
               </div>
             </div>
           </div>
@@ -426,5 +427,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/register-case.js' %}" defer></script>
+<script src="{% static 'js/register-case.js' %}?v=party-ordinal-1" defer></script>
 {% endblock %}

@@ -1,0 +1,454 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section
+  class="page page--general-accounts"
+  id="general-accounts-page"
+  {% if open_transfer_modal %}data-open-transfer="1"{% endif %}
+>
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Track paybill float, send M-Pesa transfers, approve manual expense claims
+        against company ledgers or Paybill payout requests, and follow money in
+        from clients or out through employees in one place.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      {% if b2b_enabled %}
+      <button type="button" class="btn btn--primary btn--inline js-open-mpesa-transfer">
+        Transfer money
+      </button>
+      {% endif %}
+      {% if company_accounts_url %}
+      <a href="{{ company_accounts_url }}" class="btn btn--quiet btn--inline">Company accounts</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="metrics metrics--dash general-accounts-metrics">
+    <div class="metric metric--glass">
+      <p class="metric__label">Paybill{% if paybill_number %} {{ paybill_number }}{% endif %}</p>
+      <p class="metric__value">
+        {% if mpesa_float_total is not None %}
+        KES {{ mpesa_float_total|floatformat:2 }}
+        {% else %}
+        —
+        {% endif %}
+      </p>
+      <p class="metric__hint">
+        {% if mpesa_float_checked_at %}
+        Safaricom float · checked {{ mpesa_float_checked_at|date:"j M Y, H:i" }}
+        {% elif b2b_configured %}
+        Safaricom float · not refreshed yet
+        {% else %}
+        Configure B2B credentials to query float
+        {% endif %}
+      </p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Main Client Accounts</p>
+      <p class="metric__value">KES {{ main_client_account.balance|floatformat:2 }}</p>
+      <p class="metric__hint">Invoice &amp; client payments ledger</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">Petty Cash Book</p>
+      <p class="metric__value">KES {{ petty_cash_account.balance|floatformat:2 }}</p>
+      <p class="metric__hint">Employee claims &amp; small expenses</p>
+    </div>
+    <div class="metric metric--glass">
+      <p class="metric__label">All company ledgers</p>
+      <p class="metric__value">KES {{ total_account_balance|floatformat:2 }}</p>
+      <p class="metric__hint">{{ expense_accounts|length }} account(s)</p>
+    </div>
+  </div>
+
+  <div class="general-accounts-grid general-accounts-pending-grid">
+    <section class="panel general-accounts-money-requests">
+      <div class="panel__head">
+        <h3>Manual approval</h3>
+        <p class="panel__hint">
+          {% if pending_manual_count %}
+          {{ pending_manual_count }} claim(s) · KES {{ pending_manual_total|floatformat:2 }}
+          {% else %}
+          Debit a company account
+          {% endif %}
+        </p>
+      </div>
+      <div class="panel__body">
+        {% if pending_manual_requests %}
+        <ul class="general-accounts-pending-list" aria-label="Manual approval claims">
+          {% for row in pending_manual_requests %}
+          <li class="general-accounts-pending-item">
+            <div class="general-accounts-pending-item__main">
+              <strong>{{ row.employee.get_full_name|default:row.employee.login_code }}</strong>
+              <span class="general-accounts-pending-item__detail">
+                {{ row.get_expense_type_display }}
+                {% if row.description %} · {{ row.description|truncatechars:64 }}{% endif %}
+              </span>
+              <span class="general-accounts-pending-item__meta">
+                {{ row.created_at|date:"j M Y, H:i" }}
+              </span>
+            </div>
+            <div class="general-accounts-pending-item__aside">
+              <strong class="mono">KES {{ row.amount|floatformat:2 }}</strong>
+              <form method="post" class="general-accounts-approve-form" id="approve-manual-{{ row.pk }}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="approve-manual-expense">
+                <input type="hidden" name="request_id" value="{{ row.pk }}">
+                <select name="company_account" class="form-input" aria-label="Debit account for claim {{ row.pk }}">
+                  {% for account in expense_accounts %}
+                  <option value="{{ account.pk }}"{% if account.pk == petty_cash_account.pk %} selected{% endif %}>
+                    {{ account.name }} (KES {{ account.balance|floatformat:2 }})
+                  </option>
+                  {% endfor %}
+                </select>
+              </form>
+              <div class="page-intro__actions">
+                <button type="submit" form="approve-manual-{{ row.pk }}" class="btn btn--primary btn--inline">
+                  Approve
+                </button>
+                <form method="post" class="js-reject-money-request">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="reject-manual-expense">
+                  <input type="hidden" name="request_id" value="{{ row.pk }}">
+                  <input type="hidden" name="rejection_reason" value="">
+                  <button type="submit" class="btn btn--danger btn--inline">Reject</button>
+                </form>
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="empty-state">
+          <p class="empty-state__title">No pending manual claims</p>
+          <p class="empty-state__copy">
+            Reimbursement claims appear here. Choose which company account to debit when you approve.
+          </p>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel general-accounts-money-requests">
+      <div class="panel__head">
+        <h3>Paybill request approval</h3>
+        <p class="panel__hint">
+          {% if pending_money_count %}
+          {{ pending_money_count }} request(s) · KES {{ pending_money_total|floatformat:2 }}
+          {% else %}
+          Send from firm Paybill
+          {% endif %}
+        </p>
+      </div>
+      <div class="panel__body">
+        {% if pending_money_requests %}
+        <ul class="general-accounts-pending-list" aria-label="Paybill money requests">
+          {% for row in pending_money_requests %}
+          <li class="general-accounts-pending-item general-accounts-pending-item--paybill">
+            <div class="general-accounts-pending-item__main">
+              <strong>{{ row.employee.get_full_name|default:row.employee.login_code }}</strong>
+              <span class="general-accounts-pending-item__detail">
+                {{ row.get_expense_type_display }}
+                {% if row.description %} · {{ row.description|truncatechars:56 }}{% endif %}
+              </span>
+              <span class="general-accounts-pending-item__meta">
+                {{ row.payout_display }}
+                · {{ row.created_at|date:"j M Y, H:i" }}
+              </span>
+            </div>
+            <div class="general-accounts-pending-item__aside">
+              <strong class="mono">KES {{ row.amount|floatformat:2 }}</strong>
+              <span class="general-accounts-pending-item__source">From firm Paybill</span>
+              <div class="page-intro__actions">
+                <form method="post" class="general-accounts-approve-form" id="approve-money-{{ row.pk }}">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="approve-money-request">
+                  <input type="hidden" name="request_id" value="{{ row.pk }}">
+                  <button
+                    type="submit"
+                    class="btn btn--primary btn--inline"
+                    {% if not b2b_enabled %}disabled title="Enable B2B transfers first"{% endif %}
+                  >
+                    Approve &amp; send
+                  </button>
+                </form>
+                <form method="post" class="js-reject-money-request">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="reject-money-request">
+                  <input type="hidden" name="request_id" value="{{ row.pk }}">
+                  <input type="hidden" name="rejection_reason" value="">
+                  <button type="submit" class="btn btn--danger btn--inline">Reject</button>
+                </form>
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="empty-state">
+          <p class="empty-state__title">No pending Paybill requests</p>
+          <p class="empty-state__copy">
+            Employee money requests to a Paybill, Till, or phone appear here for M-Pesa send.
+          </p>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="general-accounts-grid">
+    <section class="panel general-accounts-transfer-panel">
+      <div class="panel__head">
+        <h3>M-Pesa transfers</h3>
+        <p class="panel__hint">
+          {% if b2b_ready %}
+          Live Daraja · {{ b2b_env }}
+          {% elif b2b_enabled %}
+          Simulation until credentials are complete
+          {% else %}
+          Disabled
+          {% endif %}
+        </p>
+      </div>
+      <div class="panel__body">
+        {% if not b2b_enabled %}
+        <div class="empty-state">
+          <p class="empty-state__title">B2B transfers are off</p>
+          <p class="empty-state__copy">
+            Enable M-Pesa B2B transfers in
+            <a href="{{ finance_settings_url }}">Finance Settings</a>
+            to send money from the firm Paybill.
+          </p>
+        </div>
+        {% else %}
+        <p class="field-hint">
+          Send to
+          {% if b2b_destinations %}
+          {{ b2b_destinations|join:", " }}.
+          {% else %}
+          destinations allowed in Finance Settings.
+          {% endif %}
+          Each completed transfer also posts to the activity feed and debits the chosen company account.
+        </p>
+        {% if mpesa_float_working is not None or mpesa_float_utility is not None %}
+        <dl class="general-accounts-float-breakdown">
+          {% if mpesa_float_working is not None %}
+          <div>
+            <dt>Working</dt>
+            <dd>KES {{ mpesa_float_working|floatformat:2 }}</dd>
+          </div>
+          {% endif %}
+          {% if mpesa_float_utility is not None %}
+          <div>
+            <dt>Utility</dt>
+            <dd>KES {{ mpesa_float_utility|floatformat:2 }}</dd>
+          </div>
+          {% endif %}
+          {% if mpesa_float_charges is not None %}
+          <div>
+            <dt>Charges</dt>
+            <dd>KES {{ mpesa_float_charges|floatformat:2 }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+        {% endif %}
+        <div class="page-intro__actions">
+          <button type="button" class="btn btn--primary btn--inline js-open-mpesa-transfer">
+            Transfer money
+          </button>
+          <form method="post" class="js-refresh-balance-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="refresh-paybill-balance">
+            <button type="submit" class="btn btn--quiet btn--inline"{% if not b2b_configured %} disabled title="Complete B2B credentials first"{% endif %}>
+              Refresh paybill balance
+            </button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel general-accounts-feed-panel">
+      <div class="panel__head">
+        <h3>Activity feed</h3>
+        <p class="panel__hint">{{ activity_feed|length }} recent movement(s)</p>
+      </div>
+      <div class="panel__body">
+        {% if activity_feed %}
+        <ul class="general-accounts-feed" aria-label="Account activity">
+          {% for row in activity_feed %}
+          <li class="general-accounts-feed__item general-accounts-feed__item--{{ row.direction }} general-accounts-feed__item--{{ row.category }}">
+            <div class="general-accounts-feed__main">
+              <strong>{{ row.title }}</strong>
+              {% if row.detail %}
+              <span class="general-accounts-feed__detail">{{ row.detail }}</span>
+              {% endif %}
+              <span class="general-accounts-feed__meta">
+                {% if row.party %}
+                <span class="general-accounts-feed__party general-accounts-feed__party--{{ row.party_kind }}">
+                  {% if row.party_kind == "client" %}Client{% elif row.party_kind == "employee" %}Employee{% else %}Staff{% endif %}:
+                  {{ row.party }}
+                </span>
+                {% endif %}
+                <span>{{ row.account }}</span>
+                <span>{{ row.at|date:"j M Y, H:i" }}</span>
+              </span>
+            </div>
+            <div class="general-accounts-feed__amount">
+              <strong>
+                {% if row.direction == "in" %}+{% else %}−{% endif %}
+                KES {{ row.amount|floatformat:2 }}
+              </strong>
+              <span class="status-pill status-pill--{% if row.status == 'completed' or row.status == 'accepted' %}active{% elif row.status == 'failed' or row.status == 'timed_out' %}rejected{% else %}pending{% endif %}">
+                {{ row.status_label }}
+              </span>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="empty-state">
+          <p class="empty-state__title">No movements yet</p>
+          <p class="empty-state__copy">
+            Client invoice payments and employee payroll / expense payouts will appear here automatically.
+          </p>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</section>
+
+<dialog class="workspace-dialog" id="mpesa-transfer-dialog" aria-labelledby="mpesa-transfer-title">
+  <form method="post" class="workspace-form" id="mpesa-transfer-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="action" value="mpesa-transfer">
+    <header class="workspace-dialog__head">
+      <h3 id="mpesa-transfer-title">Transfer money</h3>
+      <button type="button" class="btn btn--quiet btn--inline js-close-mpesa-transfer" aria-label="Close">Close</button>
+    </header>
+    <div class="workspace-dialog__body">
+      {% if transfer_form.non_field_errors %}
+      <div class="form-alert" role="alert">
+        {% for error in transfer_form.non_field_errors %}{{ error }}{% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="form-field">
+        <label for="{{ transfer_form.company_account.id_for_label }}">{{ transfer_form.company_account.label }}</label>
+        {{ transfer_form.company_account }}
+        <p class="field-hint">{{ transfer_form.company_account.help_text }}</p>
+        {% if transfer_form.company_account.errors %}
+        <p class="field-error">{{ transfer_form.company_account.errors.0 }}</p>
+        {% endif %}
+      </div>
+
+      <fieldset class="form-fieldset">
+        <legend>{{ transfer_form.destination_type.label }}</legend>
+        <div class="id-type-options">
+          {% for radio in transfer_form.destination_type %}
+          <label class="choice-chip">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>
+          {% endfor %}
+        </div>
+        {% if transfer_form.destination_type.errors %}
+        <p class="field-error">{{ transfer_form.destination_type.errors.0 }}</p>
+        {% endif %}
+      </fieldset>
+
+      <div class="form-row">
+        <div class="form-field">
+          <label for="{{ transfer_form.party_b.id_for_label }}">{{ transfer_form.party_b.label }}</label>
+          {{ transfer_form.party_b }}
+          {% if transfer_form.party_b.errors %}
+          <p class="field-error">{{ transfer_form.party_b.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div class="form-field" id="mpesa-transfer-reference-field">
+          <label for="{{ transfer_form.account_reference.id_for_label }}">{{ transfer_form.account_reference.label }}</label>
+          {{ transfer_form.account_reference }}
+          {% if transfer_form.account_reference.errors %}
+          <p class="field-error">{{ transfer_form.account_reference.errors.0 }}</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-field">
+          <label for="{{ transfer_form.amount.id_for_label }}">{{ transfer_form.amount.label }}</label>
+          {{ transfer_form.amount }}
+          {% if transfer_form.amount.errors %}
+          <p class="field-error">{{ transfer_form.amount.errors.0 }}</p>
+          {% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ transfer_form.remarks.id_for_label }}">{{ transfer_form.remarks.label }}</label>
+          {{ transfer_form.remarks }}
+          {% if transfer_form.remarks.errors %}
+          <p class="field-error">{{ transfer_form.remarks.errors.0 }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <footer class="workspace-dialog__foot">
+      <button type="button" class="btn btn--quiet btn--inline js-close-mpesa-transfer">Cancel</button>
+      <button type="submit" class="btn btn--primary btn--inline">Send transfer</button>
+    </footer>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    var page = document.getElementById("general-accounts-page");
+    var dialog = document.getElementById("mpesa-transfer-dialog");
+    if (!dialog) return;
+
+    function openTransfer() {
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "open");
+    }
+    function closeTransfer() {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+
+    document.querySelectorAll(".js-open-mpesa-transfer").forEach(function (btn) {
+      btn.addEventListener("click", openTransfer);
+    });
+    document.querySelectorAll(".js-close-mpesa-transfer").forEach(function (btn) {
+      btn.addEventListener("click", closeTransfer);
+    });
+    if (page && page.getAttribute("data-open-transfer") === "1") openTransfer();
+
+    function syncReference() {
+      var checked = dialog.querySelector('input[name="destination_type"]:checked');
+      var field = document.getElementById("mpesa-transfer-reference-field");
+      if (!field) return;
+      var isPaybill = checked && checked.value === "paybill";
+      field.hidden = !isPaybill;
+    }
+    dialog.querySelectorAll('input[name="destination_type"]').forEach(function (el) {
+      el.addEventListener("change", syncReference);
+    });
+    syncReference();
+
+    document.querySelectorAll(".js-reject-money-request").forEach(function (form) {
+      form.addEventListener("submit", function (event) {
+        var reason = window.prompt("Optional rejection reason:", "") || "";
+        var input = form.querySelector('input[name="rejection_reason"]');
+        if (input) input.value = reason;
+        if (!window.confirm("Reject this request?")) {
+          event.preventDefault();
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}

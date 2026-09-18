@@ -75,9 +75,9 @@
         </div>
 
         <div class="form-field">
-          <label for="{{ form.personal_email.id_for_label }}">Personal email</label>
+          <label for="{{ form.personal_email.id_for_label }}">Personal email <span class="field-optional">(optional)</span></label>
           {{ form.personal_email }}
-          <span class="field-hint">Work email will be auto-generated later (coming soon).</span>
+          <span class="field-hint">Optional. Work email will be auto-generated later (coming soon).</span>
           {% if form.personal_email.errors %}<span class="field-error">{{ form.personal_email.errors.0 }}</span>{% endif %}
         </div>
 
@@ -246,5 +246,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/auth.js' %}" defer></script>
+<script src="{% static 'js/auth.js' %}?v=case-name-email-1" defer></script>
 {% endblock %}

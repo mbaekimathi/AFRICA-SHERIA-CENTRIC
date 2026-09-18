@@ -254,6 +254,26 @@ urlpatterns = [
         name="mpesa_stk_callback",
     ),
     path(
+        "integrations/mpesa/b2b/result/",
+        views.mpesa_b2b_result,
+        name="mpesa_b2b_result",
+    ),
+    path(
+        "integrations/mpesa/b2b/timeout/",
+        views.mpesa_b2b_timeout,
+        name="mpesa_b2b_timeout",
+    ),
+    path(
+        "integrations/mpesa/balance/result/",
+        views.mpesa_balance_result,
+        name="mpesa_balance_result",
+    ),
+    path(
+        "integrations/mpesa/balance/timeout/",
+        views.mpesa_balance_timeout,
+        name="mpesa_balance_timeout",
+    ),
+    path(
         "integrations/whatsapp/webhook/",
         views.whatsapp_webhook,
         name="whatsapp_webhook",

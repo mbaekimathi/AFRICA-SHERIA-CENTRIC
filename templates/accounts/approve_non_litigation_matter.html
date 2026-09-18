@@ -16,8 +16,9 @@
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>Approve matter</h2>
       <p class="page-lead">
-        Review matter details, allocate an employee, set their task, then approve.
-        Only the assigned employee is notified and can accept or reject the task.
+        Review matter details, allocate an employee or all active employees,
+        set the task brief, then approve. Assignees are notified and can
+        accept or reject their task.
       </p>
     </div>
   </header>
@@ -115,7 +116,7 @@
   <section class="panel">
     <div class="panel__head">
       <h3>Decision</h3>
-      <p class="panel__hint">Allocate an employee and task them before approving</p>
+      <p class="panel__hint">Allocate an employee (or all) and task them before approving</p>
     </div>
     <div class="panel__body">
       <div class="form-actions form-actions--start">
@@ -158,8 +159,8 @@
     <header class="workspace-modal__head">
       <h2 id="case-allocate-title">Allocate &amp; task employee</h2>
       <p>
-        Assign this matter to an active employee and create their task brief.
-        Only that employee will be notified and can accept or reject the task.
+        Assign this matter to one active employee, or to all active employees.
+        Each assignee is notified and can accept or reject their task.
       </p>
     </header>
 
@@ -171,7 +172,18 @@
       {% endif %}
 
       <div class="form-field">
-        <label for="id_assigned_to">Allocate to employee <span aria-hidden="true">*</span></label>
+        <label class="settings-toggle" for="{{ form.allocate_to_all.id_for_label }}">
+          <span class="settings-toggle__control">{{ form.allocate_to_all }}</span>
+          <span class="settings-toggle__copy">
+            <strong>{{ form.allocate_to_all.label }}</strong>
+            <span>Every active employee can view and access this matter via their task.</span>
+          </span>
+        </label>
+        {% if form.allocate_to_all.errors %}<span class="field-error">{{ form.allocate_to_all.errors.0 }}</span>{% endif %}
+      </div>
+
+      <div class="form-field" id="allocate-employee-field">
+        <label for="id_assigned_to">Allocate to employee <span aria-hidden="true" id="allocate-employee-required">*</span></label>
         {{ form.assigned_to }}
         {% if form.assigned_to.errors %}<span class="field-error">{{ form.assigned_to.errors.0 }}</span>{% endif %}
       </div>

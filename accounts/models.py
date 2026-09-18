@@ -233,7 +233,7 @@ class Employee(AbstractUser):
         ],
         help_text="6-digit code used to sign in.",
     )
-    personal_email = models.EmailField(unique=True)
+    personal_email = models.EmailField(blank=True, null=True, unique=True)
     work_email = models.EmailField(
         blank=True,
         null=True,
@@ -400,7 +400,7 @@ class Employee(AbstractUser):
 
     USERNAME_FIELD = "login_code"
     EMAIL_FIELD = "personal_email"
-    REQUIRED_FIELDS = ["personal_email", "first_name", "last_name"]
+    REQUIRED_FIELDS = ["first_name", "last_name"]
 
     objects = EmployeeManager()
 
@@ -5009,6 +5009,90 @@ class FinanceSettings(models.Model):
         default=MpesaEnv.SANDBOX,
     )
 
+    # Outbound B2B / B2C transfers (paybill → paybill, till, or phone)
+    mpesa_b2b_enabled = models.BooleanField(default=False)
+    mpesa_b2b_to_paybill = models.BooleanField(
+        default=True,
+        help_text="Allow transfers to another Paybill number.",
+    )
+    mpesa_b2b_to_till = models.BooleanField(
+        default=True,
+        help_text="Allow transfers to a Buy Goods Till.",
+    )
+    mpesa_b2b_to_phone = models.BooleanField(
+        default=True,
+        help_text="Allow transfers to a Safaricom phone number (B2C).",
+    )
+    mpesa_b2b_consumer_key = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Leave blank to reuse the STK Push consumer key.",
+    )
+    mpesa_b2b_consumer_secret = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Leave blank to reuse the STK Push consumer secret.",
+    )
+    mpesa_b2b_shortcode = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Source shortcode (PartyA). Defaults to Paybill when blank.",
+    )
+    mpesa_b2b_initiator_name = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="M-Pesa API operator username from the Org Portal.",
+    )
+    mpesa_b2b_security_credential = models.TextField(
+        blank=True,
+        default="",
+        help_text="RSA-encrypted initiator password from the Daraja Security Credential tool.",
+    )
+    mpesa_b2b_result_url = models.URLField(
+        blank=True,
+        default="",
+        help_text="HTTPS URL Safaricom POSTs the transfer result to.",
+    )
+    mpesa_b2b_timeout_url = models.URLField(
+        blank=True,
+        default="",
+        help_text="HTTPS URL Safaricom POSTs to when the transfer times out.",
+    )
+
+    # Cached Safaricom paybill / shortcode float (from AccountBalance API)
+    mpesa_float_working = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Last known Working Account balance from Safaricom.",
+    )
+    mpesa_float_utility = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Last known Utility Account balance from Safaricom.",
+    )
+    mpesa_float_charges = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Last known Charges Paid Account balance from Safaricom.",
+    )
+    mpesa_float_checked_at = models.DateTimeField(null=True, blank=True)
+    mpesa_float_conversation_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+    )
+    mpesa_float_raw = models.TextField(blank=True, default="")
+
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         Employee,
@@ -5100,6 +5184,147 @@ class FinanceSettings(models.Model):
             and self.mpesa_passkey.strip()
             and self.stk_business_shortcode
         )
+
+    @property
+    def b2b_source_shortcode(self) -> str:
+        if self.mpesa_b2b_shortcode.strip():
+            return self.mpesa_b2b_shortcode.strip()
+        return self.mpesa_paybill_number.strip()
+
+    @property
+    def b2b_consumer_key(self) -> str:
+        return (
+            self.mpesa_b2b_consumer_key.strip()
+            or self.mpesa_consumer_key.strip()
+        )
+
+    @property
+    def b2b_consumer_secret(self) -> str:
+        return (
+            self.mpesa_b2b_consumer_secret.strip()
+            or self.mpesa_consumer_secret.strip()
+        )
+
+    @property
+    def b2b_destinations_enabled(self) -> list[str]:
+        labels = []
+        if self.mpesa_b2b_to_paybill:
+            labels.append("Paybill")
+        if self.mpesa_b2b_to_till:
+            labels.append("Buy Goods Till")
+        if self.mpesa_b2b_to_phone:
+            labels.append("Phone number")
+        return labels
+
+    @property
+    def b2b_ready(self) -> bool:
+        return bool(
+            self.allow_mpesa
+            and self.mpesa_b2b_enabled
+            and self.b2b_consumer_key
+            and self.b2b_consumer_secret
+            and self.mpesa_b2b_initiator_name.strip()
+            and self.mpesa_b2b_security_credential.strip()
+            and self.b2b_source_shortcode
+            and self.b2b_destinations_enabled
+            and self.mpesa_b2b_result_url.strip()
+            and self.mpesa_b2b_timeout_url.strip()
+        )
+
+
+class MpesaB2bTransfer(models.Model):
+    """Outbound M-Pesa transfer from the firm Paybill (B2B / B2C)."""
+
+    class DestinationType(models.TextChoices):
+        PAYBILL = "paybill", "Paybill"
+        TILL = "till", "Buy Goods Till"
+        PHONE = "phone", "Phone number"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ACCEPTED = "accepted", "Accepted"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+        TIMED_OUT = "timed_out", "Timed out"
+
+    destination_type = models.CharField(
+        max_length=16,
+        choices=DestinationType.choices,
+    )
+    party_b = models.CharField(
+        max_length=20,
+        help_text="Destination Paybill, Till, or MSISDN.",
+    )
+    account_reference = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Account reference for Paybill destinations.",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    remarks = models.CharField(max_length=100, blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    conversation_id = models.CharField(max_length=64, blank=True, default="")
+    originator_conversation_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+    transaction_id = models.CharField(max_length=64, blank=True, default="")
+    result_code = models.CharField(max_length=16, blank=True, default="")
+    result_desc = models.CharField(max_length=255, blank=True, default="")
+    simulated = models.BooleanField(default=False)
+    company_account = models.ForeignKey(
+        "CompanyExpenseAccount",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="mpesa_b2b_transfers",
+    )
+    expense_payment = models.ForeignKey(
+        "CompanyExpensePayment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="mpesa_b2b_transfers",
+    )
+    created_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="mpesa_b2b_transfers_created",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    raw_result = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "M-Pesa B2B transfer"
+        verbose_name_plural = "M-Pesa B2B transfers"
+
+    def __str__(self):
+        return (
+            f"{self.get_destination_type_display()} {self.party_b}: "
+            f"KES {self.amount} ({self.status})"
+        )
+
+    @property
+    def destination_display(self) -> str:
+        label = self.get_destination_type_display()
+        if (
+            self.destination_type == self.DestinationType.PAYBILL
+            and (self.account_reference or "").strip()
+        ):
+            return f"{label} {self.party_b} / {self.account_reference.strip()}"
+        return f"{label} {self.party_b}"
 
 
 class CompanyExpenseAccount(models.Model):
@@ -5358,6 +5583,7 @@ class CompanyExpensePayment(models.Model):
         MAINTENANCE = "maintenance", "Maintenance / repairs"
         BANK_CHARGES = "bank_charges", "Bank charges"
         RENT = "rent", "Rent"
+        MPESA_TRANSFER = "mpesa_transfer", "M-Pesa transfer"
         OTHER = "other", "Other"
 
     account = models.ForeignKey(
@@ -5412,8 +5638,11 @@ class PettyCashExpenseRequest(models.Model):
     """
     Employee petty-cash expense claim.
 
-    Submitted from Employee Petty Cashbook as pending; approved from the
-    company Petty Cash Book page (debits the system Petty Cash Book ledger).
+    Submitted from Employee Petty Cashbook as pending.
+    - Reimbursement claims (no payout destination) are approved from
+      Company Accounts → Petty Cash Book (debits the Petty Cash Book ledger).
+    - Money requests (Paybill / Till / phone) are approved from
+      General Accounts and paid via M-Pesa B2B / B2C transfer.
     """
 
     class Status(models.TextChoices):
@@ -5441,6 +5670,29 @@ class PettyCashExpenseRequest(models.Model):
         blank=True,
         null=True,
         help_text="Optional proof of payment (receipt, M-Pesa message, invoice).",
+    )
+    request_money = models.BooleanField(
+        default=False,
+        help_text="When true, finance should send money to the payout destination.",
+    )
+    payout_destination_type = models.CharField(
+        max_length=16,
+        choices=MpesaB2bTransfer.DestinationType.choices,
+        blank=True,
+        default="",
+        help_text="Paybill, Till, or phone when requesting money.",
+    )
+    payout_party_b = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Destination Paybill, Till, or MSISDN.",
+    )
+    payout_account_reference = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Account reference for Paybill destinations.",
     )
     status = models.CharField(
         max_length=16,
@@ -5472,6 +5724,14 @@ class PettyCashExpenseRequest(models.Model):
         related_name="petty_cash_request",
         help_text="Ledger payment created when this request is approved.",
     )
+    mpesa_transfer = models.ForeignKey(
+        MpesaB2bTransfer,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="petty_cash_requests",
+        help_text="Outbound M-Pesa transfer created when a money request is approved.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -5486,9 +5746,45 @@ class PettyCashExpenseRequest(models.Model):
             f"({self.get_status_display()})"
         )
 
+    @property
+    def needs_mpesa_payout(self) -> bool:
+        return bool(
+            self.request_money
+            and (self.payout_destination_type or "").strip()
+            and (self.payout_party_b or "").strip()
+        )
+
+    @property
+    def payout_display(self) -> str:
+        dest = (self.payout_destination_type or "").strip()
+        party = (self.payout_party_b or "").strip()
+        if not dest or not party:
+            return ""
+        labels = dict(MpesaB2bTransfer.DestinationType.choices)
+        label = labels.get(dest, dest)
+        reference = (self.payout_account_reference or "").strip()
+        if dest == MpesaB2bTransfer.DestinationType.PAYBILL and reference:
+            return f"{label} {party} / {reference}"
+        return f"{label} {party}"
+
     @classmethod
     def pending_count(cls) -> int:
         return cls.objects.filter(status=cls.Status.PENDING).count()
+
+    @classmethod
+    def pending_reimbursement_queryset(cls):
+        return cls.objects.filter(status=cls.Status.PENDING).filter(
+            models.Q(request_money=False)
+            | models.Q(payout_destination_type="")
+            | models.Q(payout_party_b="")
+        )
+
+    @classmethod
+    def pending_money_request_queryset(cls):
+        return cls.objects.filter(
+            status=cls.Status.PENDING,
+            request_money=True,
+        ).exclude(payout_destination_type="").exclude(payout_party_b="")
 
 
 class CommunicationSettings(models.Model):

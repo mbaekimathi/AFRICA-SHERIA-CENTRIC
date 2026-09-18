@@ -2,6 +2,58 @@
   const form = document.getElementById("register-case-form");
   if (!form) return;
 
+  const MIXED_CASE_IDS = new Set(["id_description", "id_client_instructions"]);
+
+  function forceCaseValue(input, transform) {
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const next = transform(input.value);
+    if (input.value !== next) {
+      input.value = next;
+      if (typeof start === "number" && typeof end === "number") {
+        input.setSelectionRange(start, end);
+      }
+    }
+  }
+
+  function wireFieldCasing(root = form) {
+    root.querySelectorAll("input, textarea").forEach((input) => {
+      if (input.dataset.caseWired === "1") return;
+      if (
+        input.type === "hidden" ||
+        input.type === "checkbox" ||
+        input.type === "radio" ||
+        input.type === "file" ||
+        input.type === "date" ||
+        input.type === "number" ||
+        input.type === "button" ||
+        input.type === "submit"
+      ) {
+        return;
+      }
+      if (MIXED_CASE_IDS.has(input.id)) return;
+
+      input.dataset.caseWired = "1";
+      if (input.type === "email") {
+        input.classList.add("input-lowercase");
+        input.setAttribute("autocapitalize", "off");
+        input.setAttribute("spellcheck", "false");
+        const forceLower = () => forceCaseValue(input, (v) => v.toLowerCase());
+        input.addEventListener("input", forceLower);
+        forceLower();
+        return;
+      }
+
+      input.classList.add("input-uppercase");
+      input.setAttribute("autocapitalize", "characters");
+      const forceUpper = () => forceCaseValue(input, (v) => v.toUpperCase());
+      input.addEventListener("input", forceUpper);
+      forceUpper();
+    });
+  }
+
+  wireFieldCasing();
+
   const searchUrl = form.dataset.clientSearchUrl;
   const suggestionsUrl = form.dataset.fieldSuggestionsUrl;
   const clientIdInput = document.getElementById("id_client");
@@ -36,21 +88,22 @@
     const email = card.querySelector('[name$="-email"]');
     const category = card.querySelector('[name$="-category"]');
     const isClient = card.querySelector('[name$="-is_client_party"]');
-    if (name) name.value = client.name || "";
-    if (phone) phone.value = client.phone || "";
-    if (email) email.value = client.email || "";
+    if (name) name.value = (client.name || "").toUpperCase();
+    if (phone) phone.value = (client.phone || "").toUpperCase();
+    if (email) email.value = (client.email || "").toLowerCase();
     if (category && client.category) category.value = client.category;
     const partyType = card.querySelector('[name$="-party_type"]');
     if (partyType && [...partyType.options].some((o) => o.value === "client")) {
       partyType.value = "client";
     }
     if (isClient) isClient.value = "True";
+    renumberParties();
   }
 
   function setSelectedClient(client) {
     if (!clientIdInput || !searchInput) return;
     clientIdInput.value = client.id;
-    searchInput.value = client.name;
+    searchInput.value = (client.name || "").toUpperCase();
     if (selectedHint) {
       selectedHint.hidden = false;
       selectedHint.textContent = `Selected: ${client.label || client.name}${
@@ -232,7 +285,8 @@
       return;
     }
 
-    control.value = item.value;
+    control.value = String(item.value || "").toUpperCase();
+    control.dispatchEvent(new Event("input", { bubbles: true }));
     control.dispatchEvent(new Event("change", { bubbles: true }));
     hideFieldSuggest(wrap);
   }
@@ -358,18 +412,83 @@
 
   form.querySelectorAll(".field-suggest[data-suggest-field]").forEach(wireFieldSuggest);
 
+  function ordinalPrefix(n) {
+    if (n <= 1) return "";
+    const mod100 = n % 100;
+    const mod10 = n % 10;
+    let suffix = "th";
+    if (mod100 < 11 || mod100 > 13) {
+      if (mod10 === 1) suffix = "st";
+      else if (mod10 === 2) suffix = "nd";
+      else if (mod10 === 3) suffix = "rd";
+    }
+    return `${n}${suffix} `;
+  }
+
+  function numberedPartyLabel(baseLabel, occurrence) {
+    if (!baseLabel) return "";
+    return `${ordinalPrefix(occurrence)}${baseLabel}`;
+  }
+
+  function ensureBaseOptionLabels(select) {
+    [...select.options].forEach((opt) => {
+      if (!opt.dataset.baseLabel) {
+        opt.dataset.baseLabel = opt.textContent;
+      }
+    });
+  }
+
+  function countPriorType(cards, card, typeValue) {
+    let prior = 0;
+    for (const earlier of cards) {
+      if (earlier === card) break;
+      const earlierSelect = earlier.querySelector('[name$="-party_type"]');
+      if (earlierSelect?.value === typeValue) prior += 1;
+    }
+    return prior;
+  }
+
   function renumberParties() {
     if (!partiesList) return;
-    const cards = partiesList.querySelectorAll(".party-card:not([hidden])");
+    const cards = [...partiesList.querySelectorAll(".party-card:not([hidden])")];
+    const typeCounts = {};
+
     cards.forEach((card, index) => {
+      const select = card.querySelector('[name$="-party_type"]');
       const title = card.querySelector(".party-card__title");
+      if (select) {
+        ensureBaseOptionLabels(select);
+        [...select.options].forEach((opt) => {
+          const base = opt.dataset.baseLabel || opt.textContent;
+          if (!opt.value) {
+            opt.textContent = base;
+            return;
+          }
+          opt.textContent = numberedPartyLabel(base, countPriorType(cards, card, opt.value) + 1);
+        });
+      }
+
       if (!title) return;
-      if (card.dataset.clientParty === "true") {
+      const value = select?.value || "";
+      if (value) {
+        typeCounts[value] = (typeCounts[value] || 0) + 1;
+        const selectedOpt = select?.selectedOptions?.[0];
+        const base = selectedOpt?.dataset.baseLabel || selectedOpt?.textContent || value;
+        title.textContent = numberedPartyLabel(base, typeCounts[value]);
+      } else if (card.dataset.clientParty === "true") {
         title.textContent = "Client party";
       } else {
         title.textContent = `Party ${index + 1}`;
       }
     });
+  }
+
+  function wirePartyType(card) {
+    const select = card.querySelector('[name$="-party_type"]');
+    if (!select || select.dataset.partyTypeWired === "1") return;
+    select.dataset.partyTypeWired = "1";
+    ensureBaseOptionLabels(select);
+    select.addEventListener("change", renumberParties);
   }
 
   function wireRemove(card) {
@@ -395,7 +514,9 @@
 
   partiesList?.querySelectorAll(".party-card").forEach((card) => {
     if (card.dataset.clientParty !== "true") wireRemove(card);
+    wirePartyType(card);
   });
+  renumberParties();
 
   addPartyBtn?.addEventListener("click", () => {
     if (!emptyTemplate || !totalFormsInput || !partiesList) return;
@@ -410,7 +531,9 @@
     partiesList.appendChild(card);
     totalFormsInput.value = String(index + 1);
     wireRemove(card);
+    wirePartyType(card);
     renumberParties();
+    wireFieldCasing(card);
     card.querySelector("input, select")?.focus();
   });
 })();

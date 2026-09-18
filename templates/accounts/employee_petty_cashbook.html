@@ -13,8 +13,9 @@
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Register your petty cash expenses. Submitted claims stay pending until
-        they are approved from Company Accounts → Petty Cash Book.
+        Register your petty cash expenses. Reimbursement claims are approved from
+        Company Accounts → Petty Cash Book. Tick <strong>request money</strong> to
+        have General Accounts send the amount to a Paybill, Till, or phone.
       </p>
     </div>
     <div class="page-intro__actions">
@@ -57,6 +58,7 @@
               <th scope="col">Type</th>
               <th scope="col">Description</th>
               <th scope="col">Amount</th>
+              <th scope="col">Payout</th>
               <th scope="col">Attachment</th>
               <th scope="col">Status</th>
               <th scope="col">Submitted</th>
@@ -68,6 +70,16 @@
               <td>{{ row.get_expense_type_display }}</td>
               <td>{{ row.description|truncatechars:80 }}</td>
               <td class="mono">KES {{ row.amount|floatformat:2 }}</td>
+              <td>
+                {% if row.needs_mpesa_payout %}
+                <div class="person-cell__text">
+                  <strong>Send money</strong>
+                  <span class="person-cell__meta">{{ row.payout_display }}</span>
+                </div>
+                {% else %}
+                <span class="muted">Reimburse</span>
+                {% endif %}
+              </td>
               <td>
                 {% if row.payment_attachment %}
                 <a href="{{ row.payment_attachment.url }}" target="_blank" rel="noopener noreferrer">
@@ -90,8 +102,10 @@
                     {{ row.rejection_reason|truncatechars:48 }}
                     {% elif row.reviewed_by %}
                     {{ row.get_status_display|lower }} by {{ row.reviewed_by.get_full_name|default:row.reviewed_by.login_code }}
+                    {% elif row.needs_mpesa_payout %}
+                    Awaiting General Accounts
                     {% else %}
-                    Awaiting approval
+                    Awaiting Petty Cash Book
                     {% endif %}
                   </span>
                 </div>
@@ -121,8 +135,8 @@
       <header class="workspace-modal__head">
         <h2>Register expense</h2>
         <p>
-          Submit your petty cash claim. It will remain pending until approved from
-          the company Petty Cash Book.
+          Submit a reimbursement claim for Petty Cash Book, or request money to be
+          sent to a Paybill, Till, or phone via General Accounts.
         </p>
       </header>
       <form method="post" class="workspace-form" id="register-petty-cash-expense-form" enctype="multipart/form-data" novalidate>
@@ -178,6 +192,49 @@
             <p class="field-error">{{ form.payment_attachment.errors.0 }}</p>
             {% endif %}
           </div>
+
+          <label class="settings-toggle" for="{{ form.request_money.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.request_money }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.request_money.label }}</strong>
+              <span>{{ form.request_money.help_text }}</span>
+            </span>
+          </label>
+          {% if form.request_money.errors %}
+          <p class="field-error">{{ form.request_money.errors.0 }}</p>
+          {% endif %}
+
+          <div class="finance-mpesa-fields" id="petty-cash-payout-fields" {% if not form.request_money.value %}hidden{% endif %}>
+            <div class="form-field">
+              <label for="{{ form.payout_destination_type.id_for_label }}">
+                {{ form.payout_destination_type.label }}
+              </label>
+              {{ form.payout_destination_type }}
+              {% if form.payout_destination_type.errors %}
+              <p class="field-error">{{ form.payout_destination_type.errors.0 }}</p>
+              {% endif %}
+            </div>
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.payout_party_b.id_for_label }}">
+                  {{ form.payout_party_b.label }}
+                </label>
+                {{ form.payout_party_b }}
+                {% if form.payout_party_b.errors %}
+                <p class="field-error">{{ form.payout_party_b.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field" id="petty-cash-payout-reference-field">
+                <label for="{{ form.payout_account_reference.id_for_label }}">
+                  {{ form.payout_account_reference.label }}
+                </label>
+                {{ form.payout_account_reference }}
+                {% if form.payout_account_reference.errors %}
+                <p class="field-error">{{ form.payout_account_reference.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
         </div>
         <div class="workspace-modal__actions">
           <button type="button" class="btn btn--quiet" id="register-petty-cash-cancel">Cancel</button>
@@ -231,6 +288,22 @@
 
   if (page && page.getAttribute("data-open-register") === "1") openDialog();
   if (window.location.hash === "#register-petty-cash-expense") openDialog();
+
+  var requestMoney = document.getElementById("id_petty_cash_request_money");
+  var payoutFields = document.getElementById("petty-cash-payout-fields");
+  var destType = document.getElementById("id_petty_cash_payout_destination_type");
+  var refField = document.getElementById("petty-cash-payout-reference-field");
+
+  function syncPayout() {
+    var on = !!(requestMoney && requestMoney.checked);
+    if (payoutFields) payoutFields.hidden = !on;
+    if (refField && destType) {
+      refField.hidden = destType.value !== "paybill";
+    }
+  }
+  if (requestMoney) requestMoney.addEventListener("change", syncPayout);
+  if (destType) destType.addEventListener("change", syncPayout);
+  syncPayout();
 })();
 </script>
 {% endblock %}

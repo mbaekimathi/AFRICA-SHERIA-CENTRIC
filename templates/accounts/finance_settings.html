@@ -10,7 +10,7 @@
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
         Choose which payment methods the firm accepts, then configure M-Pesa Paybill,
-        Buy Goods, and STK Push for invoice collections.
+        Buy Goods, STK Push collections, and B2B transfers out of the firm Paybill.
       </p>
     </div>
   </header>
@@ -220,6 +220,141 @@
             </div>
           </div>
         </div>
+
+        <div class="finance-mpesa-block finance-b2b-block">
+          <label class="settings-toggle" for="{{ form.mpesa_b2b_enabled.id_for_label }}">
+            <span class="settings-toggle__control">{{ form.mpesa_b2b_enabled }}</span>
+            <span class="settings-toggle__copy">
+              <strong>{{ form.mpesa_b2b_enabled.label }}</strong>
+              <span>{{ form.mpesa_b2b_enabled.help_text }}</span>
+            </span>
+          </label>
+          {% if form.mpesa_b2b_enabled.errors %}
+          <p class="field-error">{{ form.mpesa_b2b_enabled.errors.0 }}</p>
+          {% endif %}
+
+          <div class="finance-mpesa-fields" id="finance-b2b-fields" {% if not form.mpesa_b2b_enabled.value %}hidden{% endif %}>
+            <p class="field-hint finance-stk-status">
+              {% if b2b_ready %}
+              <span class="status-pill status-pill--active">Live B2B credentials set</span>
+              {% else %}
+              <span class="status-pill status-pill--pending">Incomplete until initiator and URLs are set</span>
+              {% endif %}
+            </p>
+
+            <fieldset class="form-fieldset">
+              <legend>Allowed destinations</legend>
+              <p class="field-hint">Choose where money can be sent from the firm Paybill.</p>
+              <div class="finance-method-grid" role="group" aria-label="B2B transfer destinations">
+                <label class="settings-toggle" for="{{ form.mpesa_b2b_to_paybill.id_for_label }}">
+                  <span class="settings-toggle__control">{{ form.mpesa_b2b_to_paybill }}</span>
+                  <span class="settings-toggle__copy">
+                    <strong>{{ form.mpesa_b2b_to_paybill.label }}</strong>
+                    <span>BusinessPayBill — pay another Paybill / account.</span>
+                  </span>
+                </label>
+                <label class="settings-toggle" for="{{ form.mpesa_b2b_to_till.id_for_label }}">
+                  <span class="settings-toggle__control">{{ form.mpesa_b2b_to_till }}</span>
+                  <span class="settings-toggle__copy">
+                    <strong>{{ form.mpesa_b2b_to_till.label }}</strong>
+                    <span>BusinessBuyGoods — pay a Till number.</span>
+                  </span>
+                </label>
+                <label class="settings-toggle" for="{{ form.mpesa_b2b_to_phone.id_for_label }}">
+                  <span class="settings-toggle__control">{{ form.mpesa_b2b_to_phone }}</span>
+                  <span class="settings-toggle__copy">
+                    <strong>{{ form.mpesa_b2b_to_phone.label }}</strong>
+                    <span>B2C — send to a Safaricom mobile number.</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.mpesa_b2b_consumer_key.id_for_label }}">{{ form.mpesa_b2b_consumer_key.label }}</label>
+                {{ form.mpesa_b2b_consumer_key }}
+                <p class="field-hint">{{ form.mpesa_b2b_consumer_key.help_text }}</p>
+                {% if form.mpesa_b2b_consumer_key.errors %}
+                <p class="field-error">{{ form.mpesa_b2b_consumer_key.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.mpesa_b2b_consumer_secret.id_for_label }}">{{ form.mpesa_b2b_consumer_secret.label }}</label>
+                {{ form.mpesa_b2b_consumer_secret }}
+                <p class="field-hint">{{ form.mpesa_b2b_consumer_secret.help_text }}</p>
+                {% if form.mpesa_b2b_consumer_secret.errors %}
+                <p class="field-error">{{ form.mpesa_b2b_consumer_secret.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.mpesa_b2b_shortcode.id_for_label }}">{{ form.mpesa_b2b_shortcode.label }}</label>
+                {{ form.mpesa_b2b_shortcode }}
+                <p class="field-hint">{{ form.mpesa_b2b_shortcode.help_text }}</p>
+                {% if form.mpesa_b2b_shortcode.errors %}
+                <p class="field-error">{{ form.mpesa_b2b_shortcode.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.mpesa_b2b_initiator_name.id_for_label }}">{{ form.mpesa_b2b_initiator_name.label }}</label>
+                {{ form.mpesa_b2b_initiator_name }}
+                <p class="field-hint">{{ form.mpesa_b2b_initiator_name.help_text }}</p>
+                {% if form.mpesa_b2b_initiator_name.errors %}
+                <p class="field-error">{{ form.mpesa_b2b_initiator_name.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label for="{{ form.mpesa_b2b_security_credential.id_for_label }}">{{ form.mpesa_b2b_security_credential.label }}</label>
+              {{ form.mpesa_b2b_security_credential }}
+              <p class="field-hint">{{ form.mpesa_b2b_security_credential.help_text }}</p>
+              {% if form.mpesa_b2b_security_credential.errors %}
+              <p class="field-error">{{ form.mpesa_b2b_security_credential.errors.0 }}</p>
+              {% endif %}
+            </div>
+
+            <div class="form-row">
+              <div class="form-field">
+                <label for="{{ form.mpesa_b2b_result_url.id_for_label }}">{{ form.mpesa_b2b_result_url.label }}</label>
+                {{ form.mpesa_b2b_result_url }}
+                <p class="field-hint">
+                  {{ form.mpesa_b2b_result_url.help_text }}
+                  Use <code>https://your-public-domain{{ mpesa_b2b_result_path }}</code>.
+                  Localhost will not work.
+                </p>
+                {% if form.mpesa_b2b_result_url.value and not mpesa_b2b_result_valid and not form.mpesa_b2b_result_url.errors %}
+                <p class="field-error">
+                  Current value is not accepted by Safaricom — replace it with a public HTTPS URL.
+                </p>
+                {% endif %}
+                {% if form.mpesa_b2b_result_url.errors %}
+                <p class="field-error">{{ form.mpesa_b2b_result_url.errors.0 }}</p>
+                {% endif %}
+              </div>
+              <div class="form-field">
+                <label for="{{ form.mpesa_b2b_timeout_url.id_for_label }}">{{ form.mpesa_b2b_timeout_url.label }}</label>
+                {{ form.mpesa_b2b_timeout_url }}
+                <p class="field-hint">
+                  {{ form.mpesa_b2b_timeout_url.help_text }}
+                  Use <code>https://your-public-domain{{ mpesa_b2b_timeout_path }}</code>.
+                  Localhost will not work.
+                </p>
+                {% if form.mpesa_b2b_timeout_url.value and not mpesa_b2b_timeout_valid and not form.mpesa_b2b_timeout_url.errors %}
+                <p class="field-error">
+                  Current value is not accepted by Safaricom — replace it with a public HTTPS URL.
+                </p>
+                {% endif %}
+                {% if form.mpesa_b2b_timeout_url.errors %}
+                <p class="field-error">{{ form.mpesa_b2b_timeout_url.errors.0 }}</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -249,10 +384,12 @@
     var paybill = form.querySelector("#id_mpesa_paybill_enabled");
     var buyGoods = form.querySelector("#id_mpesa_buy_goods_enabled");
     var stk = form.querySelector("#id_mpesa_stk_enabled");
+    var b2b = form.querySelector("#id_mpesa_b2b_enabled");
     var mpesaPanel = document.getElementById("finance-mpesa-panel");
     var paybillFields = document.getElementById("finance-paybill-fields");
     var tillFields = document.getElementById("finance-till-fields");
     var stkFields = document.getElementById("finance-stk-fields");
+    var b2bFields = document.getElementById("finance-b2b-fields");
 
     function sync() {
       var mpesaOn = !!(mpesa && mpesa.checked);
@@ -261,13 +398,15 @@
         if (paybill) paybill.checked = false;
         if (buyGoods) buyGoods.checked = false;
         if (stk) stk.checked = false;
+        if (b2b) b2b.checked = false;
       }
       if (paybillFields) paybillFields.hidden = !(mpesaOn && paybill && paybill.checked);
       if (tillFields) tillFields.hidden = !(mpesaOn && buyGoods && buyGoods.checked);
       if (stkFields) stkFields.hidden = !(mpesaOn && stk && stk.checked);
+      if (b2bFields) b2bFields.hidden = !(mpesaOn && b2b && b2b.checked);
     }
 
-    [mpesa, paybill, buyGoods, stk].forEach(function (el) {
+    [mpesa, paybill, buyGoods, stk, b2b].forEach(function (el) {
       if (el) el.addEventListener("change", sync);
     });
     sync();

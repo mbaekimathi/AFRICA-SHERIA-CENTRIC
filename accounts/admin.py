@@ -20,6 +20,7 @@ from .models import (
     CompanyAccountTopup,
     CompanyExpensePayment,
     ClientAccountTopup,
+    MpesaB2bTransfer,
     FirmCompanyInformation,
     FirmCompanyProfileImage,
     FirmFAQ,
@@ -972,6 +973,7 @@ class FinanceSettingsAdmin(admin.ModelAdmin):
         "allow_mpesa",
         "allow_bank_transfer",
         "mpesa_stk_enabled",
+        "mpesa_b2b_enabled",
         "updated_at",
         "updated_by",
     )
@@ -1015,8 +1017,61 @@ class FinanceSettingsAdmin(admin.ModelAdmin):
                 )
             },
         ),
+        (
+            "M-Pesa B2B transfers",
+            {
+                "fields": (
+                    "mpesa_b2b_enabled",
+                    "mpesa_b2b_to_paybill",
+                    "mpesa_b2b_to_till",
+                    "mpesa_b2b_to_phone",
+                    "mpesa_b2b_consumer_key",
+                    "mpesa_b2b_consumer_secret",
+                    "mpesa_b2b_shortcode",
+                    "mpesa_b2b_initiator_name",
+                    "mpesa_b2b_security_credential",
+                    "mpesa_b2b_result_url",
+                    "mpesa_b2b_timeout_url",
+                )
+            },
+        ),
+        (
+            "M-Pesa paybill float cache",
+            {
+                "fields": (
+                    "mpesa_float_working",
+                    "mpesa_float_utility",
+                    "mpesa_float_charges",
+                    "mpesa_float_checked_at",
+                    "mpesa_float_conversation_id",
+                    "mpesa_float_raw",
+                )
+            },
+        ),
         ("Meta", {"fields": ("updated_at", "updated_by")}),
     )
+
+
+@admin.register(MpesaB2bTransfer)
+class MpesaB2bTransferAdmin(admin.ModelAdmin):
+    list_display = (
+        "destination_type",
+        "party_b",
+        "amount",
+        "status",
+        "simulated",
+        "created_at",
+        "created_by",
+    )
+    list_filter = ("destination_type", "status", "simulated")
+    search_fields = (
+        "party_b",
+        "account_reference",
+        "conversation_id",
+        "originator_conversation_id",
+        "transaction_id",
+    )
+    readonly_fields = ("created_at", "completed_at", "raw_result")
 
 
 @admin.register(CommunicationSettings)
@@ -1423,19 +1478,28 @@ class PettyCashExpenseRequestAdmin(admin.ModelAdmin):
         "employee",
         "expense_type",
         "amount",
+        "request_money",
+        "payout_destination_type",
         "status",
         "submitted_by",
         "reviewed_by",
         "created_at",
         "reviewed_at",
     )
-    list_filter = ("status", "expense_type", "created_at")
+    list_filter = (
+        "status",
+        "expense_type",
+        "request_money",
+        "payout_destination_type",
+        "created_at",
+    )
     search_fields = (
         "employee__first_name",
         "employee__last_name",
         "employee__login_code",
         "description",
         "rejection_reason",
+        "payout_party_b",
     )
     readonly_fields = ("created_at", "updated_at", "reviewed_at")
     raw_id_fields = (
@@ -1443,6 +1507,7 @@ class PettyCashExpenseRequestAdmin(admin.ModelAdmin):
         "submitted_by",
         "reviewed_by",
         "expense_payment",
+        "mpesa_transfer",
     )
     fields = (
         "employee",
@@ -1450,12 +1515,17 @@ class PettyCashExpenseRequestAdmin(admin.ModelAdmin):
         "description",
         "amount",
         "payment_attachment",
+        "request_money",
+        "payout_destination_type",
+        "payout_party_b",
+        "payout_account_reference",
         "status",
         "submitted_by",
         "reviewed_by",
         "reviewed_at",
         "rejection_reason",
         "expense_payment",
+        "mpesa_transfer",
         "created_at",
         "updated_at",
     )

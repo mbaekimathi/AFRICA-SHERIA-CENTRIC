@@ -122,6 +122,7 @@ from .forms import (
     TopupClientAccountForm,
     TopupCompanyAccountForm,
     PayCompanyExpenseForm,
+    MpesaTransferForm,
     RegisterMatterForm,
     RegisterPayrollForm,
     RegisterEmployeeAdvanceForm,
@@ -250,6 +251,7 @@ from .models import (
     CompanyAccountTopup,
     CompanyExpensePayment,
     ClientAccountTopup,
+    MpesaB2bTransfer,
     LitigationCase,
     MatterAttendance,
     MatterAttendanceBringUpItem,
@@ -1576,6 +1578,104 @@ def mpesa_stk_callback(request):
             stk.get("CheckoutRequestID") or "",
         )
 
+    return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+@csrf_exempt
+@require_POST
+def mpesa_b2b_result(request):
+    """Safaricom Daraja B2B / B2C result webhook."""
+    from .mpesa import process_b2b_result
+
+    raw = request.body.decode("utf-8", errors="replace") if request.body else ""
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+
+    try:
+        outcome = process_b2b_result(payload)
+    except Exception:
+        logger.exception("M-Pesa B2B result processing failed")
+        outcome = None
+
+    result = (payload or {}).get("Result") or payload or {}
+    logger.info(
+        "M-Pesa B2B result ResultCode=%s ConversationID=%s TransactionID=%s outcome=%s",
+        result.get("ResultCode"),
+        result.get("ConversationID") or "",
+        result.get("TransactionID") or "",
+        (outcome or {}).get("status") if outcome else None,
+    )
+    return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+@csrf_exempt
+@require_POST
+def mpesa_b2b_timeout(request):
+    """Safaricom Daraja B2B / B2C timeout webhook."""
+    from .mpesa import process_b2b_timeout
+
+    raw = request.body.decode("utf-8", errors="replace") if request.body else ""
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+
+    try:
+        outcome = process_b2b_timeout(payload)
+    except Exception:
+        logger.exception("M-Pesa B2B timeout processing failed")
+        outcome = None
+
+    result = (payload or {}).get("Result") or payload or {}
+    logger.info(
+        "M-Pesa B2B timeout ResultCode=%s ConversationID=%s outcome=%s",
+        result.get("ResultCode"),
+        result.get("ConversationID") or "",
+        (outcome or {}).get("status") if outcome else None,
+    )
+    return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+@csrf_exempt
+@require_POST
+def mpesa_balance_result(request):
+    """Safaricom Daraja AccountBalance result webhook."""
+    from .mpesa import process_account_balance_result
+
+    raw = request.body.decode("utf-8", errors="replace") if request.body else ""
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+
+    try:
+        outcome = process_account_balance_result(payload)
+    except Exception:
+        logger.exception("M-Pesa balance result processing failed")
+        outcome = None
+
+    logger.info("M-Pesa balance result applied=%s", bool(outcome))
+    return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
+
+
+@csrf_exempt
+@require_POST
+def mpesa_balance_timeout(request):
+    """Safaricom Daraja AccountBalance timeout webhook."""
+    raw = request.body.decode("utf-8", errors="replace") if request.body else ""
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+
+    result = (payload or {}).get("Result") or payload or {}
+    logger.info(
+        "M-Pesa balance timeout ResultCode=%s ConversationID=%s",
+        result.get("ResultCode"),
+        result.get("ConversationID") or "",
+    )
     return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted"})
 
 
@@ -3766,6 +3866,7 @@ class RoleWorkspaceView(View):
     employee_advances_template = "accounts/employee_advances.html"
     employee_petty_cashbook_template = "accounts/employee_petty_cashbook.html"
     company_accounts_template = "accounts/company_accounts.html"
+    general_accounts_template = "accounts/general_accounts.html"
     petty_cash_book_template = "accounts/petty_cash_book.html"
     accounting_template = "accounts/accounting.html"
     accounting_book_template = "accounts/accounting_book.html"
@@ -4119,6 +4220,11 @@ class RoleWorkspaceView(View):
             )
             self._company_accounts_register_nav(context)
             response = render(request, self.company_accounts_template, context)
+        elif resolved["leaf"] == "general-accounts":
+            context.update(
+                self._general_accounts_context(request, user, resolved)
+            )
+            response = render(request, self.general_accounts_template, context)
         elif resolved["leaf"] == "register-account":
             return redirect(self._company_accounts_url(user, resolved["trail"]))
         elif resolved["leaf"] == "topup-account":
@@ -4517,6 +4623,7 @@ class RoleWorkspaceView(View):
             "employee-advances",
             "employee-petty-cashbook",
             "company-accounts",
+            "general-accounts",
             "petty-cash-book",
             "client-accounts",
             "whatsapp-inbox",
@@ -4617,6 +4724,9 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "company-accounts":
             return self._post_company_accounts(request, user, resolved)
+
+        if resolved["leaf"] == "general-accounts":
+            return self._post_general_accounts(request, user, resolved)
 
         if resolved["leaf"] == "petty-cash-book":
             return self._post_petty_cash_book(request, user, resolved)
@@ -6869,15 +6979,29 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _finance_settings_context(*, form=None):
         setting = FinanceSettings.get_solo()
-        from .mpesa import MPESA_CALLBACK_PATH, is_valid_mpesa_callback_url
+        from .mpesa import (
+            MPESA_B2B_RESULT_PATH,
+            MPESA_B2B_TIMEOUT_PATH,
+            MPESA_CALLBACK_PATH,
+            is_valid_mpesa_callback_url,
+        )
 
         return {
             "finance_setting": setting,
             "form": form or FinanceSettingsForm(instance=setting),
             "stk_ready": setting.stk_ready,
+            "b2b_ready": setting.b2b_ready,
             "mpesa_callback_path": MPESA_CALLBACK_PATH,
             "mpesa_callback_valid": is_valid_mpesa_callback_url(
                 setting.mpesa_callback_url or ""
+            ),
+            "mpesa_b2b_result_path": MPESA_B2B_RESULT_PATH,
+            "mpesa_b2b_timeout_path": MPESA_B2B_TIMEOUT_PATH,
+            "mpesa_b2b_result_valid": is_valid_mpesa_callback_url(
+                setting.mpesa_b2b_result_url or ""
+            ),
+            "mpesa_b2b_timeout_valid": is_valid_mpesa_callback_url(
+                setting.mpesa_b2b_timeout_url or ""
             ),
         }
 
@@ -9106,11 +9230,19 @@ class RoleWorkspaceView(View):
 
         if form.is_valid():
             expense = form.save(submitted_by=user)
-            messages.success(
-                request,
-                f"Expense of KES {expense.amount:,.2f} submitted. "
-                "It is pending approval in the Petty Cash Book.",
-            )
+            if expense.needs_mpesa_payout:
+                messages.success(
+                    request,
+                    f"Expense of KES {expense.amount:,.2f} submitted with a money "
+                    f"request to {expense.payout_display}. "
+                    "General Accounts will approve and send the transfer.",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Expense of KES {expense.amount:,.2f} submitted. "
+                    "It is pending approval in the Petty Cash Book.",
+                )
             return redirect(page_url)
 
         context.update(
@@ -9251,6 +9383,775 @@ class RoleWorkspaceView(View):
                 user, resolved["trail"]
             ),
         }
+
+    @staticmethod
+    def _general_accounts_url(user, trail):
+        clean = [part for part in trail if part]
+        if not clean or clean[-1] != "general-accounts":
+            clean = extend_page_trail(clean, "general-accounts")
+        return user.workspace_url(*clean)
+
+    @classmethod
+    def _build_general_accounts_feed(cls, *, limit=40):
+        """Unified activity feed for client inflows and employee/company outflows."""
+        feed = []
+
+        for topup in (
+            CompanyAccountTopup.objects.select_related(
+                "account",
+                "source_client",
+                "source_company_account",
+                "created_by",
+            ).order_by("-created_at", "-id")[:limit]
+        ):
+            is_client = topup.source_type == CompanyAccountTopup.SourceType.CLIENT
+            party = ""
+            if is_client and topup.source_client_id:
+                party = str(topup.source_client)
+            elif topup.created_by_id:
+                party = topup.created_by.get_full_name() or topup.created_by.login_code
+            feed.append(
+                {
+                    "id": f"topup-{topup.pk}",
+                    "at": topup.created_at,
+                    "direction": "in",
+                    "category": "client" if is_client else "topup",
+                    "title": (
+                        "Client payment received"
+                        if is_client
+                        else f"Account top-up — {topup.account.name}"
+                    ),
+                    "detail": topup.source_display,
+                    "party": party,
+                    "party_kind": "client" if is_client else "staff",
+                    "amount": topup.amount,
+                    "account": topup.account.name,
+                    "balance_after": topup.balance_after,
+                    "status": "completed",
+                    "status_label": "Received",
+                }
+            )
+
+        for payment in (
+            CompanyExpensePayment.objects.select_related(
+                "account",
+                "created_by",
+                "employee",
+                "payroll_payment",
+            ).order_by("-created_at", "-id")[:limit]
+        ):
+            through_employee = bool(payment.employee_id)
+            is_payroll = (
+                payment.expense_type == CompanyExpensePayment.ExpenseType.PAYROLL
+            )
+            is_transfer = (
+                payment.expense_type
+                == CompanyExpensePayment.ExpenseType.MPESA_TRANSFER
+            )
+            if through_employee:
+                party = (
+                    payment.employee.get_full_name()
+                    or payment.employee.login_code
+                )
+                party_kind = "employee"
+            elif payment.created_by_id:
+                party = (
+                    payment.created_by.get_full_name()
+                    or payment.created_by.login_code
+                )
+                party_kind = "staff"
+            else:
+                party = ""
+                party_kind = "staff"
+
+            if is_payroll:
+                title = "Payroll paid"
+                category = "employee"
+            elif is_transfer:
+                title = "M-Pesa transfer"
+                category = "transfer"
+            elif through_employee:
+                title = "Payment via employee"
+                category = "employee"
+            else:
+                title = payment.get_expense_type_display()
+                category = "expense"
+
+            feed.append(
+                {
+                    "id": f"expense-{payment.pk}",
+                    "at": payment.created_at,
+                    "direction": "out",
+                    "category": category,
+                    "title": title,
+                    "detail": (payment.description or "")[:160],
+                    "party": party,
+                    "party_kind": party_kind,
+                    "amount": payment.amount,
+                    "account": payment.account.name,
+                    "balance_after": payment.balance_after,
+                    "status": "completed",
+                    "status_label": "Paid",
+                }
+            )
+
+        for transfer in (
+            MpesaB2bTransfer.objects.select_related(
+                "company_account",
+                "created_by",
+            )
+            .prefetch_related("petty_cash_requests__employee")
+            .order_by("-created_at", "-id")[:limit]
+        ):
+            # Completed ledger-backed transfers already appear via CompanyExpensePayment.
+            if (
+                transfer.status == MpesaB2bTransfer.Status.COMPLETED
+                and transfer.expense_payment_id
+            ):
+                continue
+
+            money_request = next(iter(transfer.petty_cash_requests.all()), None)
+            party = ""
+            party_kind = "staff"
+            if money_request is not None and money_request.employee_id:
+                party = (
+                    money_request.employee.get_full_name()
+                    or money_request.employee.login_code
+                )
+                party_kind = "employee"
+            elif transfer.created_by_id:
+                party = (
+                    transfer.created_by.get_full_name()
+                    or transfer.created_by.login_code
+                )
+
+            if money_request is not None:
+                title = (
+                    f"Expense payout — {money_request.get_expense_type_display()}"
+                )
+                detail = transfer.destination_display
+                if money_request.description:
+                    detail = (
+                        f"{transfer.destination_display} · "
+                        f"{money_request.description[:80]}"
+                    )
+                category = "employee"
+            else:
+                title = f"M-Pesa transfer — {transfer.get_status_display()}"
+                detail = transfer.destination_display
+                category = "transfer"
+
+            if transfer.status == MpesaB2bTransfer.Status.COMPLETED:
+                status_label = "Sent"
+            else:
+                status_label = transfer.get_status_display()
+
+            feed.append(
+                {
+                    "id": f"b2b-{transfer.pk}",
+                    "at": transfer.completed_at or transfer.created_at,
+                    "direction": "out",
+                    "category": category,
+                    "title": title,
+                    "detail": detail,
+                    "party": party,
+                    "party_kind": party_kind,
+                    "amount": transfer.amount,
+                    "account": (
+                        transfer.company_account.name
+                        if transfer.company_account_id
+                        else "Paybill"
+                    ),
+                    "balance_after": None,
+                    "status": transfer.status,
+                    "status_label": status_label,
+                }
+            )
+
+        linked_payroll_ids = set(
+            CompanyExpensePayment.objects.exclude(payroll_payment_id=None).values_list(
+                "payroll_payment_id", flat=True
+            )
+        )
+        for payroll in (
+            PayrollPayment.objects.select_related(
+                "payroll_run__employee",
+                "recorded_by",
+            )
+            .exclude(pk__in=linked_payroll_ids)
+            .order_by("-paid_at", "-id")[:limit]
+        ):
+            employee = getattr(payroll.payroll_run, "employee", None)
+            party = ""
+            if employee is not None:
+                party = employee.get_full_name() or employee.login_code
+            feed.append(
+                {
+                    "id": f"payroll-{payroll.pk}",
+                    "at": payroll.paid_at or getattr(payroll.payroll_run, "updated_at", None),
+                    "direction": "out",
+                    "category": "employee",
+                    "title": "Payroll paid",
+                    "detail": payroll.receipt_number or payroll.reference_code or "",
+                    "party": party,
+                    "party_kind": "employee",
+                    "amount": payroll.amount_paid,
+                    "account": "Payroll",
+                    "balance_after": None,
+                    "status": "completed",
+                    "status_label": "Paid",
+                }
+            )
+
+        feed.sort(
+            key=lambda row: (row["at"] or timezone.now(), row["id"]),
+            reverse=True,
+        )
+        return feed[:limit]
+
+    @classmethod
+    def _general_accounts_context(
+        cls,
+        request,
+        user,
+        resolved,
+        *,
+        transfer_form=None,
+        open_transfer=False,
+    ):
+        from .mpesa import (
+            get_mpesa_b2b_runtime_config,
+            mpesa_b2b_allowed,
+            mpesa_b2b_configured,
+        )
+
+        CompanyExpenseAccount.ensure_default_accounts()
+        finance = FinanceSettings.get_solo()
+        main_client = CompanyExpenseAccount.get_main_client_accounts()
+        petty = CompanyExpenseAccount.get_petty_cash_book()
+        accounts = list(CompanyExpenseAccount.objects.order_by("name", "id"))
+        total_balance = sum(
+            (account.balance for account in accounts),
+            Decimal("0.00"),
+        )
+        cfg = get_mpesa_b2b_runtime_config()
+        b2b_ready = bool(finance.b2b_ready)
+        transfer_enabled = mpesa_b2b_allowed()
+        if transfer_form is None:
+            transfer_form = MpesaTransferForm(
+                initial={"company_account": main_client.pk}
+            )
+
+        paybill_number = (
+            finance.b2b_source_shortcode
+            or finance.mpesa_paybill_number
+            or finance.mpesa_shortcode
+            or ""
+        ).strip()
+
+        float_working = finance.mpesa_float_working
+        float_utility = finance.mpesa_float_utility
+        float_total = None
+        if float_working is not None or float_utility is not None:
+            float_total = (float_working or Decimal("0.00")) + (
+                float_utility or Decimal("0.00")
+            )
+
+        open_transfer_modal = open_transfer or (
+            (request.GET.get("transfer") or "").strip() in {"1", "true", "yes"}
+        )
+
+        pending_manual_requests = list(
+            PettyCashExpenseRequest.pending_reimbursement_queryset()
+            .select_related("employee", "submitted_by")
+            .order_by("created_at", "id")
+        )
+        pending_manual_total = sum(
+            (row.amount for row in pending_manual_requests),
+            Decimal("0.00"),
+        )
+        pending_money_requests = list(
+            PettyCashExpenseRequest.pending_money_request_queryset()
+            .select_related("employee", "submitted_by")
+            .order_by("created_at", "id")
+        )
+        pending_money_total = sum(
+            (row.amount for row in pending_money_requests),
+            Decimal("0.00"),
+        )
+
+        return {
+            "transfer_form": transfer_form,
+            "finance_setting": finance,
+            "main_client_account": main_client,
+            "petty_cash_account": petty,
+            "expense_accounts": accounts,
+            "total_account_balance": total_balance,
+            "paybill_number": paybill_number,
+            "mpesa_float_working": float_working,
+            "mpesa_float_utility": float_utility,
+            "mpesa_float_charges": finance.mpesa_float_charges,
+            "mpesa_float_total": float_total,
+            "mpesa_float_checked_at": finance.mpesa_float_checked_at,
+            "b2b_enabled": transfer_enabled,
+            "b2b_ready": b2b_ready,
+            "b2b_configured": mpesa_b2b_configured(),
+            "b2b_destinations": finance.b2b_destinations_enabled,
+            "b2b_env": cfg.get("env") or finance.mpesa_env,
+            "activity_feed": cls._build_general_accounts_feed(limit=50),
+            "pending_manual_requests": pending_manual_requests,
+            "pending_manual_count": len(pending_manual_requests),
+            "pending_manual_total": pending_manual_total,
+            "pending_money_requests": pending_money_requests,
+            "pending_money_count": len(pending_money_requests),
+            "pending_money_total": pending_money_total,
+            "open_transfer_modal": open_transfer_modal,
+            "general_accounts_url": cls._general_accounts_url(
+                user, resolved["trail"]
+            ),
+            "company_accounts_url": cls._company_accounts_url(
+                user, resolved["trail"]
+            ),
+            "finance_settings_url": user.workspace_url(
+                "dashboard",
+                "finance-billing",
+                "system-settings",
+                "finance-settings",
+            ),
+        }
+
+    def _post_general_accounts(self, request, user, resolved):
+        action = (request.POST.get("action") or "").strip()
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        redirect_url = self._general_accounts_url(user, resolved["trail"])
+
+        if action == "refresh-paybill-balance":
+            from .mpesa import MpesaError, request_account_balance
+
+            try:
+                request_account_balance()
+                messages.success(
+                    request,
+                    "Paybill balance requested from Safaricom. "
+                    "Refresh this page in a few seconds to see the updated float.",
+                )
+            except MpesaError as exc:
+                messages.error(request, str(exc))
+            return redirect(redirect_url)
+
+        if action in {"approve-manual-expense", "reject-manual-expense"}:
+            request_id = (request.POST.get("request_id") or "").strip()
+            if not request_id.isdigit():
+                messages.error(request, "Select a valid expense claim.")
+                return redirect(redirect_url)
+
+            expense_request = (
+                PettyCashExpenseRequest.objects.select_related("employee")
+                .filter(pk=int(request_id))
+                .first()
+            )
+            if expense_request is None:
+                messages.error(request, "That expense claim was not found.")
+                return redirect(redirect_url)
+            if expense_request.status != PettyCashExpenseRequest.Status.PENDING:
+                messages.error(
+                    request,
+                    "That expense claim has already been reviewed.",
+                )
+                return redirect(redirect_url)
+            if expense_request.needs_mpesa_payout:
+                messages.error(
+                    request,
+                    "That claim requests an M-Pesa payout — approve it from the "
+                    "Paybill requests section.",
+                )
+                return redirect(redirect_url)
+
+            if action == "reject-manual-expense":
+                reason = (request.POST.get("rejection_reason") or "").strip()
+                expense_request.status = PettyCashExpenseRequest.Status.REJECTED
+                expense_request.rejection_reason = reason
+                expense_request.reviewed_by = user
+                expense_request.reviewed_at = timezone.now()
+                expense_request.save(
+                    update_fields=[
+                        "status",
+                        "rejection_reason",
+                        "reviewed_by",
+                        "reviewed_at",
+                        "updated_at",
+                    ]
+                )
+                messages.success(
+                    request,
+                    f"Rejected expense of KES {expense_request.amount:,.2f} for "
+                    f"{expense_request.employee.get_full_name() or expense_request.employee.login_code}.",
+                )
+                return redirect(redirect_url)
+
+            account_id = (request.POST.get("company_account") or "").strip()
+            account = None
+            if account_id.isdigit():
+                account = CompanyExpenseAccount.objects.filter(
+                    pk=int(account_id)
+                ).first()
+            if account is None:
+                account = CompanyExpenseAccount.get_petty_cash_book()
+
+            try:
+                with transaction.atomic():
+                    locked_request = (
+                        PettyCashExpenseRequest.objects.select_for_update()
+                        .select_related("employee")
+                        .get(pk=expense_request.pk)
+                    )
+                    if locked_request.status != PettyCashExpenseRequest.Status.PENDING:
+                        raise ValidationError(
+                            "That expense claim has already been reviewed."
+                        )
+                    if locked_request.needs_mpesa_payout:
+                        raise ValidationError(
+                            "That claim requests an M-Pesa payout."
+                        )
+
+                    locked_account = (
+                        CompanyExpenseAccount.objects.select_for_update().get(
+                            pk=account.pk
+                        )
+                    )
+                    balance = (locked_account.balance or Decimal("0.00")).quantize(
+                        Decimal("0.01")
+                    )
+                    amount = locked_request.amount.quantize(Decimal("0.01"))
+                    if amount > balance:
+                        raise ValidationError(
+                            f"Account “{locked_account.name}” only has "
+                            f"KES {balance:,.2f}."
+                        )
+
+                    CompanyExpenseAccount.objects.filter(pk=locked_account.pk).update(
+                        balance=F("balance") - amount
+                    )
+                    locked_account.refresh_from_db(fields=["balance"])
+                    payment = CompanyExpensePayment.objects.create(
+                        account=locked_account,
+                        expense_type=locked_request.expense_type,
+                        description=locked_request.description,
+                        amount=amount,
+                        balance_after=locked_account.balance,
+                        employee=locked_request.employee,
+                        created_by=user,
+                    )
+                    locked_request.status = PettyCashExpenseRequest.Status.APPROVED
+                    locked_request.reviewed_by = user
+                    locked_request.reviewed_at = timezone.now()
+                    locked_request.rejection_reason = ""
+                    locked_request.expense_payment = payment
+                    locked_request.save(
+                        update_fields=[
+                            "status",
+                            "reviewed_by",
+                            "reviewed_at",
+                            "rejection_reason",
+                            "expense_payment",
+                            "updated_at",
+                        ]
+                    )
+            except ValidationError as exc:
+                message = (
+                    "; ".join(exc.messages)
+                    if hasattr(exc, "messages")
+                    else str(exc)
+                )
+                messages.error(request, message)
+                return redirect(redirect_url)
+
+            messages.success(
+                request,
+                f"Approved KES {amount:,.2f} for "
+                f"{locked_request.employee.get_full_name() or locked_request.employee.login_code}. "
+                f"Debited {locked_account.name}; balance is now "
+                f"KES {locked_account.balance:,.2f}.",
+            )
+            return redirect(redirect_url)
+
+        if action in {"approve-money-request", "reject-money-request"}:
+            request_id = (request.POST.get("request_id") or "").strip()
+            if not request_id.isdigit():
+                messages.error(request, "Select a valid money request.")
+                return redirect(redirect_url)
+
+            expense_request = (
+                PettyCashExpenseRequest.objects.select_related("employee")
+                .filter(pk=int(request_id))
+                .first()
+            )
+            if expense_request is None:
+                messages.error(request, "That money request was not found.")
+                return redirect(redirect_url)
+            if expense_request.status != PettyCashExpenseRequest.Status.PENDING:
+                messages.error(
+                    request,
+                    "That money request has already been reviewed.",
+                )
+                return redirect(redirect_url)
+            if not expense_request.needs_mpesa_payout:
+                messages.error(
+                    request,
+                    "That claim is a reimbursement — approve it from Petty Cash Book.",
+                )
+                return redirect(redirect_url)
+
+            if action == "reject-money-request":
+                reason = (request.POST.get("rejection_reason") or "").strip()
+                expense_request.status = PettyCashExpenseRequest.Status.REJECTED
+                expense_request.rejection_reason = reason
+                expense_request.reviewed_by = user
+                expense_request.reviewed_at = timezone.now()
+                expense_request.save(
+                    update_fields=[
+                        "status",
+                        "rejection_reason",
+                        "reviewed_by",
+                        "reviewed_at",
+                        "updated_at",
+                    ]
+                )
+                messages.success(
+                    request,
+                    f"Rejected money request of KES {expense_request.amount:,.2f} for "
+                    f"{expense_request.employee.get_full_name() or expense_request.employee.login_code}.",
+                )
+                return redirect(redirect_url)
+
+            # approve-money-request → send from firm Paybill to requested destination
+            from .mpesa import (
+                MpesaError,
+                apply_paybill_float_debit,
+                initiate_b2b_transfer,
+                mpesa_b2b_allowed,
+                mpesa_b2b_configured,
+            )
+
+            if not mpesa_b2b_allowed():
+                messages.error(
+                    request,
+                    "Enable M-Pesa B2B transfers in Finance Settings before approving "
+                    "money requests.",
+                )
+                return redirect(redirect_url)
+
+            finance = FinanceSettings.get_solo()
+            if mpesa_b2b_configured():
+                float_working = finance.mpesa_float_working
+                float_utility = finance.mpesa_float_utility
+                if float_working is not None or float_utility is not None:
+                    float_total = (float_working or Decimal("0.00")) + (
+                        float_utility or Decimal("0.00")
+                    )
+                    if expense_request.amount > float_total:
+                        messages.error(
+                            request,
+                            f"Paybill float is only KES {float_total:,.2f}. "
+                            "Refresh the balance or top up before approving.",
+                        )
+                        return redirect(redirect_url)
+
+            try:
+                with transaction.atomic():
+                    locked_request = (
+                        PettyCashExpenseRequest.objects.select_for_update()
+                        .select_related("employee")
+                        .get(pk=expense_request.pk)
+                    )
+                    if locked_request.status != PettyCashExpenseRequest.Status.PENDING:
+                        raise ValidationError(
+                            "That money request has already been reviewed."
+                        )
+                    if not locked_request.needs_mpesa_payout:
+                        raise ValidationError(
+                            "That claim is not a money request."
+                        )
+
+                    result = initiate_b2b_transfer(
+                        destination_type=locked_request.payout_destination_type,
+                        party_b=locked_request.payout_party_b,
+                        amount=locked_request.amount,
+                        account_reference=locked_request.payout_account_reference
+                        or "",
+                        remarks=(locked_request.description or "Expense payout")[
+                            :100
+                        ],
+                    )
+                    transfer = MpesaB2bTransfer.objects.create(
+                        destination_type=locked_request.payout_destination_type,
+                        party_b=result["party_b"],
+                        account_reference=result.get("account_reference")
+                        or locked_request.payout_account_reference
+                        or "",
+                        amount=Decimal(result["amount"]).quantize(Decimal("0.01")),
+                        remarks=(locked_request.description or "Expense payout")[
+                            :100
+                        ],
+                        status=(
+                            MpesaB2bTransfer.Status.COMPLETED
+                            if result.get("simulated")
+                            else MpesaB2bTransfer.Status.ACCEPTED
+                        ),
+                        conversation_id=result.get("conversation_id") or "",
+                        originator_conversation_id=result.get(
+                            "originator_conversation_id"
+                        )
+                        or "",
+                        transaction_id=result.get("transaction_id") or "",
+                        simulated=bool(result.get("simulated")),
+                        company_account=None,
+                        created_by=user,
+                        completed_at=(
+                            timezone.now() if result.get("simulated") else None
+                        ),
+                        result_desc=result.get("response_description") or "",
+                    )
+                    locked_request.status = PettyCashExpenseRequest.Status.APPROVED
+                    locked_request.reviewed_by = user
+                    locked_request.reviewed_at = timezone.now()
+                    locked_request.rejection_reason = ""
+                    locked_request.mpesa_transfer = transfer
+                    locked_request.save(
+                        update_fields=[
+                            "status",
+                            "reviewed_by",
+                            "reviewed_at",
+                            "rejection_reason",
+                            "mpesa_transfer",
+                            "updated_at",
+                        ]
+                    )
+                    if result.get("simulated"):
+                        apply_paybill_float_debit(transfer.amount)
+            except (MpesaError, ValidationError) as exc:
+                message = (
+                    "; ".join(exc.messages)
+                    if hasattr(exc, "messages")
+                    else str(exc)
+                )
+                messages.error(request, message)
+                return redirect(redirect_url)
+
+            employee_name = (
+                locked_request.employee.get_full_name()
+                or locked_request.employee.login_code
+            )
+            if result.get("simulated"):
+                messages.success(
+                    request,
+                    f"Approved and sent KES {locked_request.amount:,.2f} to "
+                    f"{locked_request.payout_display} for {employee_name}. "
+                    "Shown in the activity feed.",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Approved and submitted KES {locked_request.amount:,.2f} to "
+                    f"{locked_request.payout_display} for {employee_name}. "
+                    "The activity feed will update when Safaricom confirms.",
+                )
+            return redirect(redirect_url)
+
+        if action == "mpesa-transfer":
+            from .mpesa import (
+                MpesaError,
+                _debit_company_account_for_transfer,
+                initiate_b2b_transfer,
+            )
+
+            form = MpesaTransferForm(request.POST)
+            if form.is_valid():
+                account = form.cleaned_data["company_account"]
+                amount = form.cleaned_data["amount"]
+                try:
+                    result = initiate_b2b_transfer(
+                        destination_type=form.cleaned_data["destination_type"],
+                        party_b=form.cleaned_data["party_b"],
+                        amount=amount,
+                        account_reference=form.cleaned_data.get("account_reference")
+                        or "",
+                        remarks=form.cleaned_data.get("remarks") or "",
+                    )
+                    transfer = MpesaB2bTransfer.objects.create(
+                        destination_type=form.cleaned_data["destination_type"],
+                        party_b=result["party_b"],
+                        account_reference=result.get("account_reference") or "",
+                        amount=Decimal(result["amount"]).quantize(Decimal("0.01")),
+                        remarks=form.cleaned_data.get("remarks") or "",
+                        status=(
+                            MpesaB2bTransfer.Status.COMPLETED
+                            if result.get("simulated")
+                            else MpesaB2bTransfer.Status.ACCEPTED
+                        ),
+                        conversation_id=result.get("conversation_id") or "",
+                        originator_conversation_id=result.get(
+                            "originator_conversation_id"
+                        )
+                        or "",
+                        transaction_id=result.get("transaction_id") or "",
+                        simulated=bool(result.get("simulated")),
+                        company_account=account,
+                        created_by=user,
+                        completed_at=timezone.now() if result.get("simulated") else None,
+                        result_desc=result.get("response_description") or "",
+                    )
+                    if result.get("simulated"):
+                        _debit_company_account_for_transfer(transfer)
+                        messages.success(
+                            request,
+                            f"Simulated transfer of KES {amount:,.2f} to "
+                            f"{transfer.destination_display} recorded. "
+                            "Configure B2B credentials in Finance Settings for live transfers.",
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f"Transfer of KES {amount:,.2f} submitted to Safaricom. "
+                            "The activity feed will update when the result arrives.",
+                        )
+                    return redirect(redirect_url)
+                except MpesaError as exc:
+                    messages.error(request, str(exc))
+                    context.update(
+                        self._general_accounts_context(
+                            request,
+                            user,
+                            resolved,
+                            transfer_form=form,
+                            open_transfer=True,
+                        )
+                    )
+                    response = render(
+                        request, self.general_accounts_template, context
+                    )
+                    return attach_greeting_cookie(response, request)
+
+            context.update(
+                self._general_accounts_context(
+                    request,
+                    user,
+                    resolved,
+                    transfer_form=form,
+                    open_transfer=True,
+                )
+            )
+            response = render(request, self.general_accounts_template, context)
+            return attach_greeting_cookie(response, request)
+
+        messages.error(request, "Unknown action.")
+        return redirect(redirect_url)
 
     def _post_company_accounts(self, request, user, resolved):
         action = (request.POST.get("action") or "").strip()
@@ -9604,15 +10505,18 @@ class RoleWorkspaceView(View):
         CompanyExpenseAccount.ensure_default_accounts()
         petty_book = CompanyExpenseAccount.get_petty_cash_book()
         pending_requests = list(
-            PettyCashExpenseRequest.objects.filter(
-                status=PettyCashExpenseRequest.Status.PENDING
-            )
+            PettyCashExpenseRequest.pending_reimbursement_queryset()
             .select_related("employee", "submitted_by")
             .order_by("created_at", "id")
         )
         recent_requests = list(
             PettyCashExpenseRequest.objects.exclude(
                 status=PettyCashExpenseRequest.Status.PENDING
+            )
+            .filter(
+                Q(request_money=False)
+                | Q(payout_destination_type="")
+                | Q(payout_party_b="")
             )
             .select_related("employee", "submitted_by", "reviewed_by")
             .order_by("-reviewed_at", "-updated_at", "-id")[:40]
@@ -9666,6 +10570,14 @@ class RoleWorkspaceView(View):
             messages.error(
                 request,
                 "That expense request has already been reviewed.",
+            )
+            return redirect(page_url)
+
+        if expense_request.needs_mpesa_payout:
+            messages.error(
+                request,
+                "This claim requests an M-Pesa payout. Approve or reject it from "
+                "General Accounts so the money can be sent to the destination.",
             )
             return redirect(page_url)
 
@@ -13644,8 +14556,13 @@ class ApproveLitigationCaseView(View):
             response = render(request, self.template_name, context)
             return attach_greeting_cookie(response, request)
 
-        assignee = form.cleaned_data["assigned_to"]
-        case.assigned_to = assignee
+        assignees = form.cleaned_data["assignees"]
+        primary = form.cleaned_data["assigned_to"]
+        allocate_to_all = form.cleaned_data.get("allocate_to_all")
+        instructions = form.cleaned_data.get("instructions") or ""
+        due_date = form.cleaned_data["due_date"]
+
+        case.assigned_to = primary
         case.approved_by = user
         case.approved_at = timezone.now()
         case.status = LitigationCase.Status.ACTIVE
@@ -13659,20 +14576,29 @@ class ApproveLitigationCaseView(View):
             ]
         )
 
-        task = CaseTask.objects.create(
-            case=case,
-            assignee=assignee,
-            instructions=form.cleaned_data.get("instructions") or "",
-            due_date=form.cleaned_data["due_date"],
-            created_by=user,
-        )
-        notify_case_task(task)
+        for assignee in assignees:
+            task = CaseTask.objects.create(
+                case=case,
+                assignee=assignee,
+                instructions=instructions,
+                due_date=due_date,
+                created_by=user,
+            )
+            notify_case_task(task)
 
-        messages.success(
-            request,
-            f"Case approved and tasked to {assignee.get_full_name()}. "
-            "Only they can view and accept or reject the task.",
-        )
+        if allocate_to_all:
+            messages.success(
+                request,
+                f"Case approved and tasked to all {len(assignees)} active "
+                "employees. Each can view, access, and accept or reject "
+                "their task.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Case approved and tasked to {primary.get_full_name()}. "
+                "Only they can view and accept or reject the task.",
+            )
         return redirect(_pending_cases_list_url(user))
 
     def _context(self, user, case, form, open_modal=False):
@@ -14102,8 +15028,13 @@ class ApproveNonLitigationMatterView(View):
             response = render(request, self.template_name, context)
             return attach_greeting_cookie(response, request)
 
-        assignee = form.cleaned_data["assigned_to"]
-        matter.assigned_to = assignee
+        assignees = form.cleaned_data["assignees"]
+        primary = form.cleaned_data["assigned_to"]
+        allocate_to_all = form.cleaned_data.get("allocate_to_all")
+        instructions = form.cleaned_data.get("instructions") or ""
+        due_date = form.cleaned_data["due_date"]
+
+        matter.assigned_to = primary
         matter.approved_by = user
         matter.approved_at = timezone.now()
         matter.status = NonLitigationMatter.Status.ACTIVE
@@ -14117,20 +15048,29 @@ class ApproveNonLitigationMatterView(View):
             ]
         )
 
-        task = MatterTask.objects.create(
-            matter=matter,
-            assignee=assignee,
-            instructions=form.cleaned_data.get("instructions") or "",
-            due_date=form.cleaned_data["due_date"],
-            created_by=user,
-        )
-        notify_matter_task(task)
+        for assignee in assignees:
+            task = MatterTask.objects.create(
+                matter=matter,
+                assignee=assignee,
+                instructions=instructions,
+                due_date=due_date,
+                created_by=user,
+            )
+            notify_matter_task(task)
 
-        messages.success(
-            request,
-            f"Matter approved and tasked to {assignee.get_full_name()}. "
-            "Only they can view and accept or reject the task.",
-        )
+        if allocate_to_all:
+            messages.success(
+                request,
+                f"Matter approved and tasked to all {len(assignees)} active "
+                "employees. Each can view, access, and accept or reject "
+                "their task.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Matter approved and tasked to {primary.get_full_name()}. "
+                "Only they can view and accept or reject the task.",
+            )
         return redirect(_pending_matters_list_url(user))
 
     def _context(self, user, matter, form, open_modal=False):

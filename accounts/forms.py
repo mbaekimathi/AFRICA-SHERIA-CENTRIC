@@ -55,6 +55,7 @@ from .models import (
     MatterAttendanceQuorumMember,
     MatterParty,
     MatterTask,
+    MpesaB2bTransfer,
     NonLitigationMatter,
     PayrollDeduction,
     PayrollRun,
@@ -460,9 +461,10 @@ class SignUpForm(UserCreationForm):
         max_length=150,
         widget=forms.TextInput(
             attrs={
-                "class": "form-input",
+                "class": "form-input input-uppercase",
                 "placeholder": "First name",
                 "autocomplete": "given-name",
+                "autocapitalize": "characters",
             }
         ),
     )
@@ -470,18 +472,22 @@ class SignUpForm(UserCreationForm):
         max_length=150,
         widget=forms.TextInput(
             attrs={
-                "class": "form-input",
+                "class": "form-input input-uppercase",
                 "placeholder": "Last name",
                 "autocomplete": "family-name",
+                "autocapitalize": "characters",
             }
         ),
     )
     personal_email = forms.EmailField(
+        required=False,
         widget=forms.EmailInput(
             attrs={
-                "class": "form-input",
-                "placeholder": "Personal email",
+                "class": "form-input input-lowercase",
+                "placeholder": "Personal email (optional)",
                 "autocomplete": "email",
+                "autocapitalize": "off",
+                "spellcheck": "false",
             }
         ),
     )
@@ -611,8 +617,16 @@ class SignUpForm(UserCreationForm):
         for name in self.UPPERCASE_FIELDS:
             if name in self.fields:
                 attrs = self.fields[name].widget.attrs
-                attrs["class"] = f"{attrs.get('class', '')} input-uppercase".strip()
+                classes = attrs.get("class", "")
+                if "input-uppercase" not in classes.split():
+                    attrs["class"] = f"{classes} input-uppercase".strip()
                 attrs["autocapitalize"] = "characters"
+        email_attrs = self.fields["personal_email"].widget.attrs
+        email_classes = email_attrs.get("class", "")
+        if "input-lowercase" not in email_classes.split():
+            email_attrs["class"] = f"{email_classes} input-lowercase".strip()
+        email_attrs["autocapitalize"] = "off"
+        email_attrs["spellcheck"] = "false"
 
     def clean_first_name(self):
         return self.cleaned_data["first_name"].strip().upper()
@@ -650,7 +664,9 @@ class SignUpForm(UserCreationForm):
         return code
 
     def clean_personal_email(self):
-        email = normalize_email(self.cleaned_data["personal_email"])
+        email = normalize_email(self.cleaned_data.get("personal_email"))
+        if not email:
+            return None
         match, owner = stored_email_match(
             Employee.objects.all(), "personal_email", email
         )
@@ -713,7 +729,7 @@ class SignUpForm(UserCreationForm):
         user.courtesy_title = self.cleaned_data.get("courtesy_title", "")
         user.first_name = self.cleaned_data["first_name"]
         user.last_name = self.cleaned_data["last_name"]
-        user.personal_email = self.cleaned_data["personal_email"]
+        user.personal_email = self.cleaned_data.get("personal_email") or None
         user.personal_phone = self.cleaned_data.get(
             "full_personal_phone", self.cleaned_data["personal_phone"]
         )
@@ -2011,7 +2027,8 @@ class StaffEmployeeDetailsForm(forms.ModelForm):
         return code
 
     def clean_personal_email(self):
-        return (self.cleaned_data.get("personal_email") or "").strip().lower()
+        email = normalize_email(self.cleaned_data.get("personal_email"))
+        return email or None
 
     def clean(self):
         cleaned = super().clean()
@@ -2036,6 +2053,7 @@ class StaffEmployeeDetailsForm(forms.ModelForm):
 
     def save(self, commit=True):
         employee = super().save(commit=False)
+        employee.personal_email = self.cleaned_data.get("personal_email") or None
         photo = self.cleaned_data.get("profile_photo")
         if "profile_photo" in self.changed_data and photo:
             employee.profile_photo = optimize_profile_photo(photo)
@@ -2076,42 +2094,47 @@ class RegisterCaseForm(forms.ModelForm):
             ),
             "court_rank": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "id": "id_court_rank",
                     "placeholder": "Select or type a court rank",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "case_category": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "id": "id_case_category",
                     "placeholder": "Select or type a case category",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "case_type": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "id": "id_case_type",
                     "placeholder": "Select or type a case type",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "court_case_number": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "id": "id_court_case_number",
                     "placeholder": "e.g. HCCC E001 of 2026",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "station": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "id": "id_station",
                     "placeholder": "Select or type a station",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "description": forms.Textarea(
@@ -2152,8 +2175,8 @@ class RegisterCaseForm(forms.ModelForm):
             return raw
         for key, label in choices:
             if raw == key or raw.lower() == label.lower():
-                return label
-        return raw
+                return label.upper()
+        return raw.upper()
 
     def clean_court_rank(self):
         return self._normalize_lookup(
@@ -2178,6 +2201,12 @@ class RegisterCaseForm(forms.ModelForm):
             self.cleaned_data.get("station", ""),
             LitigationCase.Station.choices,
         )
+
+    def clean_court_case_number(self):
+        return (self.cleaned_data.get("court_case_number") or "").strip().upper()
+
+    def clean_description(self):
+        return (self.cleaned_data.get("description") or "").strip()
 
     def clean_client(self):
         client = self.cleaned_data.get("client")
@@ -2260,32 +2289,37 @@ class CasePartyForm(forms.ModelForm):
         widgets = {
             "party_name": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "placeholder": "Party name",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "party_type": forms.Select(attrs={"class": "form-input"}),
             "category": forms.Select(attrs={"class": "form-input"}),
             "firm_agent": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "placeholder": "Firm or agent",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "phone": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "placeholder": "Phone",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "email": forms.EmailInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-lowercase",
                     "placeholder": "Email",
                     "autocomplete": "off",
+                    "autocapitalize": "off",
+                    "spellcheck": "false",
                 }
             ),
             "is_client_party": forms.HiddenInput(),
@@ -2307,6 +2341,19 @@ class CasePartyForm(forms.ModelForm):
             ("", "Select category"),
             *CaseParty.Category.choices,
         ]
+
+    def clean_party_name(self):
+        return (self.cleaned_data.get("party_name") or "").strip().upper()
+
+    def clean_firm_agent(self):
+        return (self.cleaned_data.get("firm_agent") or "").strip().upper()
+
+    def clean_phone(self):
+        return (self.cleaned_data.get("phone") or "").strip().upper()
+
+    def clean_email(self):
+        email = normalize_email(self.cleaned_data.get("email"))
+        return email or ""
 
 
 CasePartyFormSet = forms.formset_factory(
@@ -3171,13 +3218,24 @@ class CreateMatterTaskForm(forms.Form):
 class ApproveCaseForm(forms.Form):
     """Allocate an employee and create their case task on approval."""
 
+    allocate_to_all = forms.BooleanField(
+        required=False,
+        label="Allocate to all active employees",
+        widget=forms.CheckboxInput(
+            attrs={
+                "class": "form-checkbox",
+                "id": "id_allocate_to_all",
+            }
+        ),
+    )
     assigned_to = forms.ModelChoiceField(
         queryset=Employee.objects.none(),
         empty_label="Select employee",
+        required=False,
         widget=forms.Select(
             attrs={"class": "form-input", "id": "id_assigned_to"}
         ),
-        error_messages={"required": "Allocate the case to an employee."},
+        error_messages={"required": "Allocate to an employee."},
     )
     instructions = forms.CharField(
         required=False,
@@ -3206,9 +3264,10 @@ class ApproveCaseForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["assigned_to"].queryset = Employee.objects.filter(
+        self._active_employees = Employee.objects.filter(
             status=Employee.Status.ACTIVE
         ).order_by("first_name", "last_name", "login_code")
+        self.fields["assigned_to"].queryset = self._active_employees
         self.fields["assigned_to"].label_from_instance = (
             lambda employee: (
                 f"{employee.get_full_name() or employee.login_code} "
@@ -3221,6 +3280,28 @@ class ApproveCaseForm(forms.Form):
         if employee and employee.status != Employee.Status.ACTIVE:
             raise ValidationError("Only active employees can be allocated.")
         return employee
+
+    def clean(self):
+        cleaned = super().clean()
+        allocate_to_all = cleaned.get("allocate_to_all")
+        assignee = cleaned.get("assigned_to")
+        active_employees = list(self._active_employees)
+
+        if allocate_to_all:
+            if not active_employees:
+                raise ValidationError(
+                    "There are no active employees to allocate to."
+                )
+            cleaned["assignees"] = active_employees
+            # Keep a primary assignee for list/calendar display.
+            cleaned["assigned_to"] = active_employees[0]
+        else:
+            if not assignee:
+                self.add_error(
+                    "assigned_to", "Allocate to an employee."
+                )
+            cleaned["assignees"] = [assignee] if assignee else []
+        return cleaned
 
 
 class RegisterMatterForm(forms.ModelForm):
@@ -3252,18 +3333,20 @@ class RegisterMatterForm(forms.ModelForm):
             ),
             "matter_category": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "id": "id_matter_category",
                     "placeholder": "Select or type a matter category",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "matter_title": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "id": "id_matter_title",
                     "placeholder": "Matter title",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "client_instructions": forms.Textarea(
@@ -3292,11 +3375,14 @@ class RegisterMatterForm(forms.ModelForm):
             return raw
         for key, label in NonLitigationMatter.MatterCategory.choices:
             if raw == key or raw.lower() == label.lower():
-                return label
-        return raw
+                return label.upper()
+        return raw.upper()
 
     def clean_matter_title(self):
-        return (self.cleaned_data.get("matter_title") or "").strip()
+        return (self.cleaned_data.get("matter_title") or "").strip().upper()
+
+    def clean_client_instructions(self):
+        return (self.cleaned_data.get("client_instructions") or "").strip()
 
     def clean_client(self):
         client = self.cleaned_data.get("client")
@@ -3377,32 +3463,37 @@ class MatterPartyForm(forms.ModelForm):
         widgets = {
             "party_name": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "placeholder": "Party name",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "party_type": forms.Select(attrs={"class": "form-input"}),
             "category": forms.Select(attrs={"class": "form-input"}),
             "firm_agent": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "placeholder": "Firm or agent",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "phone": forms.TextInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-uppercase",
                     "placeholder": "Phone",
                     "autocomplete": "off",
+                    "autocapitalize": "characters",
                 }
             ),
             "email": forms.EmailInput(
                 attrs={
-                    "class": "form-input",
+                    "class": "form-input input-lowercase",
                     "placeholder": "Email",
                     "autocomplete": "off",
+                    "autocapitalize": "off",
+                    "spellcheck": "false",
                 }
             ),
             "is_client_party": forms.HiddenInput(),
@@ -3424,6 +3515,19 @@ class MatterPartyForm(forms.ModelForm):
             ("", "Select category"),
             *MatterParty.Category.choices,
         ]
+
+    def clean_party_name(self):
+        return (self.cleaned_data.get("party_name") or "").strip().upper()
+
+    def clean_firm_agent(self):
+        return (self.cleaned_data.get("firm_agent") or "").strip().upper()
+
+    def clean_phone(self):
+        return (self.cleaned_data.get("phone") or "").strip().upper()
+
+    def clean_email(self):
+        email = normalize_email(self.cleaned_data.get("email"))
+        return email or ""
 
 
 MatterPartyFormSet = forms.formset_factory(
@@ -5711,7 +5815,7 @@ class WebsiteTemplateForm(forms.ModelForm):
 
 
 class FinanceSettingsForm(forms.ModelForm):
-    """Firm payment methods and M-Pesa / STK configuration."""
+    """Firm payment methods and M-Pesa / STK / B2B configuration."""
 
     class Meta:
         model = FinanceSettings
@@ -5733,6 +5837,17 @@ class FinanceSettingsForm(forms.ModelForm):
             "mpesa_shortcode",
             "mpesa_callback_url",
             "mpesa_env",
+            "mpesa_b2b_enabled",
+            "mpesa_b2b_to_paybill",
+            "mpesa_b2b_to_till",
+            "mpesa_b2b_to_phone",
+            "mpesa_b2b_consumer_key",
+            "mpesa_b2b_consumer_secret",
+            "mpesa_b2b_shortcode",
+            "mpesa_b2b_initiator_name",
+            "mpesa_b2b_security_credential",
+            "mpesa_b2b_result_url",
+            "mpesa_b2b_timeout_url",
         ]
         labels = {
             "allow_mpesa": "M-Pesa",
@@ -5752,12 +5867,37 @@ class FinanceSettingsForm(forms.ModelForm):
             "mpesa_shortcode": "Business shortcode (optional)",
             "mpesa_callback_url": "Callback URL",
             "mpesa_env": "Daraja environment",
+            "mpesa_b2b_enabled": "Enable M-Pesa B2B transfers",
+            "mpesa_b2b_to_paybill": "Transfer to another Paybill",
+            "mpesa_b2b_to_till": "Transfer to Buy Goods Till",
+            "mpesa_b2b_to_phone": "Transfer to phone number",
+            "mpesa_b2b_consumer_key": "B2B consumer key (optional)",
+            "mpesa_b2b_consumer_secret": "B2B consumer secret (optional)",
+            "mpesa_b2b_shortcode": "Source shortcode (optional)",
+            "mpesa_b2b_initiator_name": "Initiator name",
+            "mpesa_b2b_security_credential": "Security credential",
+            "mpesa_b2b_result_url": "Result URL",
+            "mpesa_b2b_timeout_url": "Timeout URL",
         }
         help_texts = {
             "mpesa_paybill_account_label": "Shown to clients — usually invoice number.",
             "mpesa_shortcode": "Leave blank to use the Paybill or Till number above.",
             "mpesa_callback_url": "HTTPS URL Safaricom will POST to after payment (not localhost).",
             "mpesa_stk_enabled": "Lets staff and clients send Lipa Na M-Pesa prompts from invoices.",
+            "mpesa_b2b_enabled": (
+                "Lets staff send money from the firm Paybill to another Paybill, "
+                "Buy Goods Till, or phone number."
+            ),
+            "mpesa_b2b_consumer_key": "Leave blank to reuse the STK Push consumer key.",
+            "mpesa_b2b_consumer_secret": "Leave blank to reuse the STK Push consumer secret.",
+            "mpesa_b2b_shortcode": "PartyA shortcode money is sent from. Defaults to Paybill above.",
+            "mpesa_b2b_initiator_name": "API operator username from the M-Pesa Org Portal.",
+            "mpesa_b2b_security_credential": (
+                "Paste the encrypted credential from Daraja → Generate Security Credential "
+                "(not the plain initiator password)."
+            ),
+            "mpesa_b2b_result_url": "Public HTTPS URL for transfer results (not localhost).",
+            "mpesa_b2b_timeout_url": "Public HTTPS URL for transfer timeouts (not localhost).",
         }
         widgets = {
             "allow_mpesa": forms.CheckboxInput(),
@@ -5767,6 +5907,10 @@ class FinanceSettingsForm(forms.ModelForm):
             "mpesa_paybill_enabled": forms.CheckboxInput(),
             "mpesa_buy_goods_enabled": forms.CheckboxInput(),
             "mpesa_stk_enabled": forms.CheckboxInput(),
+            "mpesa_b2b_enabled": forms.CheckboxInput(),
+            "mpesa_b2b_to_paybill": forms.CheckboxInput(),
+            "mpesa_b2b_to_till": forms.CheckboxInput(),
+            "mpesa_b2b_to_phone": forms.CheckboxInput(),
             "mpesa_paybill_number": forms.TextInput(
                 attrs={
                     "class": "form-input",
@@ -5828,6 +5972,57 @@ class FinanceSettingsForm(forms.ModelForm):
                 }
             ),
             "mpesa_env": forms.Select(attrs={"class": "form-input"}),
+            "mpesa_b2b_consumer_key": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Reuse STK key if blank",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_b2b_consumer_secret": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Reuse STK secret if blank",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_b2b_shortcode": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Defaults to Paybill number",
+                    "autocomplete": "off",
+                    "inputmode": "numeric",
+                }
+            ),
+            "mpesa_b2b_initiator_name": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. apioperator",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_b2b_security_credential": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Encrypted SecurityCredential from Daraja",
+                    "autocomplete": "off",
+                    "rows": 3,
+                }
+            ),
+            "mpesa_b2b_result_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://yourdomain.com/integrations/mpesa/b2b/result/",
+                    "autocomplete": "off",
+                }
+            ),
+            "mpesa_b2b_timeout_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://yourdomain.com/integrations/mpesa/b2b/timeout/",
+                    "autocomplete": "off",
+                }
+            ),
         }
 
     def clean_mpesa_callback_url(self):
@@ -5844,12 +6039,41 @@ class FinanceSettingsForm(forms.ModelForm):
             )
         return url
 
+    def clean_mpesa_b2b_result_url(self):
+        from .mpesa import is_valid_mpesa_callback_url
+
+        url = (self.cleaned_data.get("mpesa_b2b_result_url") or "").strip()
+        if not url:
+            return ""
+        if not is_valid_mpesa_callback_url(url):
+            raise ValidationError(
+                "Use a public HTTPS URL with a path, e.g. "
+                "https://yourdomain.com/integrations/mpesa/b2b/result/. "
+                "localhost and http:// are rejected by Safaricom."
+            )
+        return url
+
+    def clean_mpesa_b2b_timeout_url(self):
+        from .mpesa import is_valid_mpesa_callback_url
+
+        url = (self.cleaned_data.get("mpesa_b2b_timeout_url") or "").strip()
+        if not url:
+            return ""
+        if not is_valid_mpesa_callback_url(url):
+            raise ValidationError(
+                "Use a public HTTPS URL with a path, e.g. "
+                "https://yourdomain.com/integrations/mpesa/b2b/timeout/. "
+                "localhost and http:// are rejected by Safaricom."
+            )
+        return url
+
     def clean(self):
         cleaned = super().clean()
         allow_mpesa = cleaned.get("allow_mpesa")
         paybill_on = cleaned.get("mpesa_paybill_enabled")
         buy_goods_on = cleaned.get("mpesa_buy_goods_enabled")
         stk_on = cleaned.get("mpesa_stk_enabled")
+        b2b_on = cleaned.get("mpesa_b2b_enabled")
         channel = cleaned.get("mpesa_stk_channel")
         paybill = (cleaned.get("mpesa_paybill_number") or "").strip()
         till = (cleaned.get("mpesa_till_number") or "").strip()
@@ -5858,6 +6082,7 @@ class FinanceSettingsForm(forms.ModelForm):
             cleaned["mpesa_paybill_enabled"] = False
             cleaned["mpesa_buy_goods_enabled"] = False
             cleaned["mpesa_stk_enabled"] = False
+            cleaned["mpesa_b2b_enabled"] = False
             return cleaned
 
         if paybill_on and not paybill:
@@ -5905,6 +6130,68 @@ class FinanceSettingsForm(forms.ModelForm):
                 self.add_error(
                     "mpesa_callback_url",
                     "Required for live STK Push — use your public HTTPS callback URL.",
+                )
+
+        if b2b_on:
+            to_paybill = cleaned.get("mpesa_b2b_to_paybill")
+            to_till = cleaned.get("mpesa_b2b_to_till")
+            to_phone = cleaned.get("mpesa_b2b_to_phone")
+            if not (to_paybill or to_till or to_phone):
+                self.add_error(
+                    None,
+                    "Select at least one B2B destination: Paybill, Buy Goods Till, or phone.",
+                )
+
+            b2b_shortcode = (cleaned.get("mpesa_b2b_shortcode") or "").strip()
+            source = b2b_shortcode or paybill
+            consumer_key = (
+                (cleaned.get("mpesa_b2b_consumer_key") or "").strip()
+                or (cleaned.get("mpesa_consumer_key") or "").strip()
+            )
+            consumer_secret = (
+                (cleaned.get("mpesa_b2b_consumer_secret") or "").strip()
+                or (cleaned.get("mpesa_consumer_secret") or "").strip()
+            )
+            initiator = (cleaned.get("mpesa_b2b_initiator_name") or "").strip()
+            security = (cleaned.get("mpesa_b2b_security_credential") or "").strip()
+            result_url = (cleaned.get("mpesa_b2b_result_url") or "").strip()
+            timeout_url = (cleaned.get("mpesa_b2b_timeout_url") or "").strip()
+
+            has_core = bool(initiator and security)
+            if has_core and not source:
+                self.add_error(
+                    "mpesa_b2b_shortcode",
+                    "Set a source shortcode, or enter the Paybill number above.",
+                )
+            if has_core and not consumer_key:
+                self.add_error(
+                    "mpesa_b2b_consumer_key",
+                    "Enter a B2B consumer key, or set the STK Push consumer key above.",
+                )
+            if has_core and not consumer_secret:
+                self.add_error(
+                    "mpesa_b2b_consumer_secret",
+                    "Enter a B2B consumer secret, or set the STK Push consumer secret above.",
+                )
+            if has_core and not result_url:
+                self.add_error(
+                    "mpesa_b2b_result_url",
+                    "Required for live B2B transfers — use your public HTTPS result URL.",
+                )
+            if has_core and not timeout_url:
+                self.add_error(
+                    "mpesa_b2b_timeout_url",
+                    "Required for live B2B transfers — use your public HTTPS timeout URL.",
+                )
+            if (consumer_key or consumer_secret or result_url or timeout_url) and not initiator:
+                self.add_error(
+                    "mpesa_b2b_initiator_name",
+                    "Enter the M-Pesa API initiator name.",
+                )
+            if (consumer_key or consumer_secret or result_url or timeout_url) and not security:
+                self.add_error(
+                    "mpesa_b2b_security_credential",
+                    "Paste the encrypted Security Credential from Daraja.",
                 )
 
         return cleaned
@@ -8565,9 +8852,69 @@ class RegisterPettyCashExpenseForm(forms.ModelForm):
         ".heic",
     }
 
+    request_money = forms.BooleanField(
+        required=False,
+        label="Also request money to be sent",
+        help_text=(
+            "Ask General Accounts to send this amount to a Paybill, Till, or phone. "
+            "Leave off to claim reimbursement from the Petty Cash Book instead."
+        ),
+        widget=forms.CheckboxInput(
+            attrs={"id": "id_petty_cash_request_money"}
+        ),
+    )
+    payout_destination_type = forms.ChoiceField(
+        required=False,
+        choices=[("", "Select destination")]
+        + list(MpesaB2bTransfer.DestinationType.choices),
+        label="Send money to",
+        widget=forms.Select(
+            attrs={
+                "class": "form-input",
+                "id": "id_petty_cash_payout_destination_type",
+            }
+        ),
+    )
+    payout_party_b = forms.CharField(
+        required=False,
+        max_length=20,
+        label="Destination number",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_petty_cash_payout_party_b",
+                "placeholder": "Paybill, Till, or 07XX…",
+                "autocomplete": "off",
+                "inputmode": "numeric",
+            }
+        ),
+    )
+    payout_account_reference = forms.CharField(
+        required=False,
+        max_length=13,
+        label="Account reference",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "id": "id_petty_cash_payout_account_reference",
+                "placeholder": "Required for Paybill",
+                "autocomplete": "off",
+            }
+        ),
+    )
+
     class Meta:
         model = PettyCashExpenseRequest
-        fields = ["expense_type", "description", "amount", "payment_attachment"]
+        fields = [
+            "expense_type",
+            "description",
+            "amount",
+            "payment_attachment",
+            "request_money",
+            "payout_destination_type",
+            "payout_party_b",
+            "payout_account_reference",
+        ]
         widgets = {
             "expense_type": forms.Select(
                 attrs={"class": "form-input", "id": "id_petty_cash_expense_type"}
@@ -8612,6 +8959,17 @@ class RegisterPettyCashExpenseForm(forms.ModelForm):
         self.fields["payment_attachment"].help_text = (
             "Optional. Upload a receipt, M-Pesa confirmation, or invoice (PDF or image)."
         )
+        if (
+            not self.is_bound
+            and submitted_by is not None
+            and not self.initial.get("payout_party_b")
+        ):
+            mobile = (getattr(submitted_by, "mobile_money_number", "") or "").strip()
+            if mobile:
+                self.fields["payout_party_b"].initial = mobile
+                self.fields["payout_destination_type"].initial = (
+                    MpesaB2bTransfer.DestinationType.PHONE
+                )
 
     def clean_expense_type(self):
         expense_type = (self.cleaned_data.get("expense_type") or "").strip()
@@ -8655,6 +9013,52 @@ class RegisterPettyCashExpenseForm(forms.ModelForm):
         cleaned = super().clean()
         if self.submitted_by is None:
             raise ValidationError("You must be signed in to register an expense.")
+
+        request_money = bool(cleaned.get("request_money"))
+        dest = (cleaned.get("payout_destination_type") or "").strip()
+        party = (cleaned.get("payout_party_b") or "").strip()
+        reference = (cleaned.get("payout_account_reference") or "").strip()
+
+        if not request_money:
+            cleaned["request_money"] = False
+            cleaned["payout_destination_type"] = ""
+            cleaned["payout_party_b"] = ""
+            cleaned["payout_account_reference"] = ""
+            return cleaned
+
+        if not dest:
+            self.add_error(
+                "payout_destination_type",
+                "Choose Paybill, Buy Goods Till, or phone number.",
+            )
+        if not party:
+            self.add_error("payout_party_b", "Enter the destination number.")
+        elif dest == MpesaB2bTransfer.DestinationType.PHONE:
+            from .mpesa import MpesaError, normalize_msisdn
+
+            try:
+                cleaned["payout_party_b"] = normalize_msisdn(party)
+            except MpesaError as exc:
+                self.add_error("payout_party_b", str(exc))
+        else:
+            digits = "".join(ch for ch in party if ch.isdigit())
+            if len(digits) < 5:
+                self.add_error(
+                    "payout_party_b",
+                    "Enter a valid Paybill or Till number.",
+                )
+            else:
+                cleaned["payout_party_b"] = digits
+
+        if dest == MpesaB2bTransfer.DestinationType.PAYBILL and not reference:
+            self.add_error(
+                "payout_account_reference",
+                "Enter the account reference for this Paybill.",
+            )
+
+        cleaned["payout_destination_type"] = dest
+        cleaned["payout_account_reference"] = reference
+        cleaned["request_money"] = True
         return cleaned
 
     def save(self, commit=True, *, submitted_by=None):
@@ -8668,7 +9072,159 @@ class RegisterPettyCashExpenseForm(forms.ModelForm):
         request_row.reviewed_by = None
         request_row.reviewed_at = None
         request_row.expense_payment = None
+        request_row.mpesa_transfer = None
         request_row.submitted_by = actor
+        if not request_row.request_money:
+            request_row.payout_destination_type = ""
+            request_row.payout_party_b = ""
+            request_row.payout_account_reference = ""
         if commit:
             request_row.save()
         return request_row
+
+
+class MpesaTransferForm(forms.Form):
+    """Send money from the firm Paybill to another Paybill, Till, or phone."""
+
+    company_account = forms.ModelChoiceField(
+        queryset=CompanyExpenseAccount.objects.none(),
+        label="Debit company account",
+        empty_label="Select account",
+        widget=forms.Select(attrs={"class": "form-input"}),
+        error_messages={"required": "Select which company account to debit."},
+        help_text="Ledger balance is reduced when the transfer completes.",
+    )
+    destination_type = forms.ChoiceField(
+        choices=MpesaB2bTransfer.DestinationType.choices,
+        label="Send to",
+        widget=forms.RadioSelect(),
+        error_messages={"required": "Choose a destination type."},
+    )
+    party_b = forms.CharField(
+        max_length=20,
+        label="Destination number",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Paybill, Till, or 07XX…",
+                "autocomplete": "off",
+                "inputmode": "numeric",
+            }
+        ),
+    )
+    account_reference = forms.CharField(
+        required=False,
+        max_length=13,
+        label="Account reference",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Required for Paybill destinations",
+                "autocomplete": "off",
+            }
+        ),
+    )
+    amount = forms.DecimalField(
+        min_value=Decimal("1"),
+        max_digits=14,
+        decimal_places=2,
+        label="Amount (KES)",
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-input",
+                "step": "1",
+                "min": "1",
+                "placeholder": "0",
+            }
+        ),
+    )
+    remarks = forms.CharField(
+        required=False,
+        max_length=100,
+        label="Remarks",
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Optional note",
+                "autocomplete": "off",
+            }
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        from .mpesa import get_mpesa_b2b_runtime_config
+
+        super().__init__(*args, **kwargs)
+        accounts = CompanyExpenseAccount.objects.order_by("name", "id")
+        self.fields["company_account"].queryset = accounts
+        self.fields["company_account"].label_from_instance = (
+            lambda obj: f"{obj.name} (KES {obj.balance:,.2f})"
+        )
+        cfg = get_mpesa_b2b_runtime_config()
+        allowed = []
+        if cfg.get("to_paybill"):
+            allowed.append(MpesaB2bTransfer.DestinationType.PAYBILL)
+        if cfg.get("to_till"):
+            allowed.append(MpesaB2bTransfer.DestinationType.TILL)
+        if cfg.get("to_phone"):
+            allowed.append(MpesaB2bTransfer.DestinationType.PHONE)
+        if not allowed:
+            allowed = [
+                choice[0] for choice in MpesaB2bTransfer.DestinationType.choices
+            ]
+        self.fields["destination_type"].choices = [
+            choice
+            for choice in MpesaB2bTransfer.DestinationType.choices
+            if choice[0] in allowed
+        ]
+        if (
+            not self.is_bound
+            and self.fields["destination_type"].choices
+            and not self.initial.get("destination_type")
+        ):
+            self.fields["destination_type"].initial = self.fields[
+                "destination_type"
+            ].choices[0][0]
+
+    def clean_party_b(self):
+        value = (self.cleaned_data.get("party_b") or "").strip()
+        if not value:
+            raise ValidationError("Enter the destination number.")
+        return value
+
+    def clean(self):
+        cleaned = super().clean()
+        dest = cleaned.get("destination_type")
+        party = cleaned.get("party_b") or ""
+        account = cleaned.get("company_account")
+        amount = cleaned.get("amount")
+        reference = (cleaned.get("account_reference") or "").strip()
+
+        if dest == MpesaB2bTransfer.DestinationType.PAYBILL and not reference:
+            self.add_error(
+                "account_reference",
+                "Enter the account reference for this Paybill.",
+            )
+        if dest == MpesaB2bTransfer.DestinationType.PHONE and party:
+            from .mpesa import MpesaError, normalize_msisdn
+
+            try:
+                cleaned["party_b"] = normalize_msisdn(party)
+            except MpesaError as exc:
+                self.add_error("party_b", str(exc))
+        elif party:
+            digits = "".join(ch for ch in party if ch.isdigit())
+            if len(digits) < 5:
+                self.add_error("party_b", "Enter a valid Paybill or Till number.")
+            else:
+                cleaned["party_b"] = digits
+
+        if account is not None and amount is not None and account.balance < amount:
+            self.add_error(
+                "amount",
+                f"Account “{account.name}” only has KES {account.balance:,.2f}.",
+            )
+
+        cleaned["account_reference"] = reference
+        cleaned["remarks"] = (cleaned.get("remarks") or "").strip()
+        return cleaned
