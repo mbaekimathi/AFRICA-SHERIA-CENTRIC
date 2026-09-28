@@ -1,6 +1,6 @@
 {# firm_name, firm_logo_url; optional compact, landing #}
 <div
-  class="p-crest{% if compact %} p-crest--compact{% endif %}{% if landing %} p-crest--landing{% endif %}"
+  class="p-crest{% if compact %} p-crest--compact{% endif %}{% if landing %} p-crest--landing{% endif %}{% if visual_only %} p-crest--visual-only{% endif %}{% if panel %} p-crest--panel{% endif %}{% if nav_lockup %} p-crest--nav-lockup{% endif %}"
   role="group"
   aria-label="{{ firm_name }} in partnership with Sheria Centric"
 >
@@ -42,7 +42,15 @@
     </div>
   </div>
 
+  {% if not visual_only %}
   <div class="p-crest__copy">
+    {% if nav_lockup %}
+    <p class="p-crest__nav-firm">{{ firm_name }}</p>
+    <p class="p-crest__nav-platform">
+      <span class="p-crest__nav-x" aria-hidden="true">×</span>
+      Sheria Centric
+    </p>
+    {% else %}
     <p class="p-crest__ribbon"><span>In partnership</span></p>
     <p class="p-crest__title">
       <span class="p-crest__title-firm">{{ firm_name }}</span>
@@ -50,5 +58,7 @@
       <span class="p-crest__title-platform">Sheria Centric</span>
     </p>
     <p class="p-crest__subtitle">Your firm on the practice platform</p>
+    {% endif %}
   </div>
+  {% endif %}
 </div>

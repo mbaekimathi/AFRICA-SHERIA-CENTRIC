@@ -455,6 +455,21 @@ def _firm_faq_json_ld(faqs) -> dict | None:
     }
 
 
+def _stored_image_url(file_field) -> str:
+    """Return a media URL only when the file is present in storage."""
+    if not file_field:
+        return ""
+    name = (getattr(file_field, "name", "") or "").strip()
+    if not name:
+        return ""
+    try:
+        if not file_field.storage.exists(name):
+            return ""
+        return file_field.url
+    except (OSError, ValueError):
+        return ""
+
+
 class HomeView(View):
     """Public homepage — Sheria Centric product site or company firm site."""
 
@@ -517,13 +532,21 @@ class HomeView(View):
             )
         company = FirmCompanyInformation.get_solo()
         logo = company.logo_or_main
+        firm_logo_url = _stored_image_url(logo) if logo else ""
+        main_profile = company.main_image
+        firm_hero_image_url = ""
+        if main_profile and main_profile.image:
+            firm_hero_image_url = _stored_image_url(main_profile.image)
+        if not firm_hero_image_url and firm_logo_url:
+            firm_hero_image_url = firm_logo_url
         return render(
             request,
             self.product_template,
             {
                 "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
                 "firm_name": company.display_name,
-                "firm_logo_url": logo.url if logo else "",
+                "firm_logo_url": firm_logo_url,
+                "firm_hero_image_url": firm_hero_image_url,
             },
         )
 
@@ -1224,7 +1247,7 @@ class AdvocateLoginView(LoginView):
         company = FirmCompanyInformation.get_solo()
         logo = company.logo_or_main
         context["firm_name"] = company.display_name
-        context["firm_logo_url"] = logo.url if logo else ""
+        context["firm_logo_url"] = _stored_image_url(logo) if logo else ""
         return context
 
     def form_valid(self, form):

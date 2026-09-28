@@ -6,7 +6,13 @@
   const slides = Array.from(hero.querySelectorAll("[data-slide]"));
   const dots = Array.from(hero.querySelectorAll("[data-slide-to]"));
   const progress = hero.querySelector("[data-slide-progress]");
+  const slideCounter = hero.querySelector("[data-slide-counter]");
   if (!slides.length) return;
+
+  function updateSlideCounter(activeIndex) {
+    if (!slideCounter) return;
+    slideCounter.textContent = String(activeIndex + 1).padStart(2, "0");
+  }
 
   const SLIDE_MS = 7000;
   let index = 0;
@@ -115,6 +121,7 @@
       dot.setAttribute("aria-selected", active ? "true" : "false");
     });
 
+    updateSlideCounter(index);
     runTypewriter(slides[index]);
     restartProgress();
   }
@@ -172,6 +179,7 @@
     slide.classList.toggle("is-active", active);
     slide.setAttribute("aria-hidden", active ? "false" : "true");
   });
+  updateSlideCounter(0);
   runTypewriter(slides[0]);
   startAutoplay();
 })();

@@ -5,15 +5,15 @@
 {% block body_class %}site-page site-page--landing{% endblock %}
 {% block extra_head %}
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'css/site.css' %}?v=landing-partnership-2">
-<link rel="stylesheet" href="{% static 'css/partnership-crest.css' %}?v=3">
+<link rel="stylesheet" href="{% static 'css/site.css' %}?v=landing-hero-pro-2">
+<link rel="stylesheet" href="{% static 'css/partnership-crest.css' %}?v=7">
 {% endblock %}
 
 {% block content %}
 <main class="landing">
   <header class="lp-nav">
     <a class="lp-nav__brand" href="{% url 'accounts:login' %}" aria-label="{{ firm_name }} and Sheria Centric — Employee login">
-      {% include "accounts/partials/auth_partnership_brand.html" with compact=True landing=True %}
+      {% include "accounts/partials/auth_partnership_brand.html" with compact=True landing=True nav_lockup=True %}
     </a>
     <nav class="lp-nav__actions" aria-label="Account access">
       <a class="lp-nav__link" href="{% url 'accounts:login' %}">Employee login</a>
@@ -28,19 +28,72 @@
       <span class="lp-hero__grid"></span>
     </div>
 
-    <div class="lp-hero__inner">
-      <div class="lp-hero__intro">
-        <a class="lp-brand lp-brand--partnership" href="{% url 'accounts:login' %}" aria-label="{{ firm_name }} and Sheria Centric — Employee login">
-          {% include "accounts/partials/auth_partnership_brand.html" with landing=True %}
-        </a>
+    <div class="lp-hero__inner lp-hero__inner--split">
+      <aside class="lp-hero__identity" aria-label="Firm and platform partnership">
+        <div class="lp-identity-card">
+          <header class="lp-identity-card__head">
+            <p class="lp-identity-card__eyebrow">In partnership</p>
+            <p class="lp-identity-card__platform">
+              <span class="lp-identity-card__platform-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none">
+                  <path d="M12 4.5c-3.2 1.6-5.2 2.1-7 2.25v6.4c0 4.1 2.8 7.4 7 9.1 4.2-1.7 7-5 7-9.1V6.75C17.2 6.6 15.2 6.1 12 4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  <path d="M9 12.1 11 14.3 15.5 9.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              Sheria Centric
+            </p>
+          </header>
 
-        <div class="lp-dots" role="tablist" aria-label="Feature slides" data-slide-dots>
-          <button type="button" class="lp-dot lp-dot--violet is-active" role="tab" aria-selected="true" aria-label="Platform overview" data-slide-to="0"></button>
-          <button type="button" class="lp-dot lp-dot--teal" role="tab" aria-selected="false" aria-label="Practice operations" data-slide-to="1"></button>
-          <button type="button" class="lp-dot lp-dot--orange" role="tab" aria-selected="false" aria-label="Portals" data-slide-to="2"></button>
+          <div class="lp-identity-card__crest">
+            <a class="lp-identity-card__crest-link" href="{% url 'accounts:login' %}" aria-label="{{ firm_name }} and Sheria Centric — Employee login">
+              {% include "accounts/partials/auth_partnership_brand.html" with landing=True visual_only=True panel=True %}
+            </a>
+          </div>
+
+          <div class="lp-identity-card__rule" aria-hidden="true"></div>
+
+          <figure class="lp-identity-card__media" aria-label="{{ firm_name }}">
+            <div class="lp-identity-card__frame">
+              <div class="lp-identity-card__fallback" aria-hidden="true">
+                <span>{{ firm_name|slice:":1"|upper }}</span>
+              </div>
+              {% if firm_hero_image_url %}
+              <img
+                class="lp-identity-card__photo"
+                src="{{ firm_hero_image_url }}"
+                alt=""
+                width="720"
+                height="480"
+                decoding="async"
+                onerror="this.classList.add('is-broken')"
+              >
+              {% endif %}
+              <div class="lp-identity-card__scrim">
+                <p class="lp-identity-card__firm-name">{{ firm_name }}</p>
+                <p class="lp-identity-card__firm-tag">Your firm · live on the platform</p>
+              </div>
+            </div>
+          </figure>
         </div>
-        <div class="lp-progress" aria-hidden="true"><span class="lp-progress__bar" data-slide-progress></span></div>
-      </div>
+      </aside>
+
+      <div class="lp-hero__story">
+        <header class="lp-hero__story-head">
+          <div class="lp-hero__story-meta">
+            <span class="lp-hero__story-label">Platform tour</span>
+            <span class="lp-hero__story-index" aria-live="polite">
+              <span data-slide-counter>01</span><span class="lp-hero__story-index-sep">/</span>03
+            </span>
+          </div>
+          <div class="lp-hero__controls">
+            <div class="lp-dots" role="tablist" aria-label="Feature slides" data-slide-dots>
+              <button type="button" class="lp-dot lp-dot--violet is-active" role="tab" aria-selected="true" aria-label="Platform overview" data-slide-to="0"></button>
+              <button type="button" class="lp-dot lp-dot--teal" role="tab" aria-selected="false" aria-label="Practice operations" data-slide-to="1"></button>
+              <button type="button" class="lp-dot lp-dot--orange" role="tab" aria-selected="false" aria-label="Portals" data-slide-to="2"></button>
+            </div>
+            <div class="lp-progress" aria-hidden="true"><span class="lp-progress__bar" data-slide-progress></span></div>
+          </div>
+        </header>
 
       <div class="lp-slides" data-slides>
         <article class="lp-slide is-active" data-slide role="tabpanel" aria-hidden="false">
@@ -80,9 +133,12 @@
         </article>
       </div>
 
-      <div class="lp-ctas">
-        <a class="lp-btn lp-btn--primary" href="{% url 'accounts:client_signup' %}">Start free trial</a>
-        <a class="lp-btn lp-btn--ghost" href="#capabilities">See how it works</a>
+      <footer class="lp-hero__story-foot">
+        <div class="lp-ctas">
+          <a class="lp-btn lp-btn--primary" href="{% url 'accounts:client_signup' %}">Start free trial</a>
+          <a class="lp-btn lp-btn--ghost" href="#capabilities">See how it works</a>
+        </div>
+      </footer>
       </div>
     </div>
   </section>
@@ -171,5 +227,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/site.js' %}" defer></script>
+<script src="{% static 'js/site.js' %}?v=slide-counter-1" defer></script>
 {% endblock %}
