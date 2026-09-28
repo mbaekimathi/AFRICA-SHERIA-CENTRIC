@@ -1,0 +1,54 @@
+{# firm_name, firm_logo_url; optional compact, landing #}
+<div
+  class="p-crest{% if compact %} p-crest--compact{% endif %}{% if landing %} p-crest--landing{% endif %}"
+  role="group"
+  aria-label="{{ firm_name }} in partnership with Sheria Centric"
+>
+  <div class="p-crest__orbit" aria-hidden="true"></div>
+  <div class="p-crest__arc" aria-hidden="true"></div>
+
+  <div class="p-crest__visual">
+    <div class="p-crest__medallion p-crest__medallion--firm">
+      <span class="p-crest__initial" aria-hidden="true">{{ firm_name|slice:":1"|upper }}</span>
+      {% if firm_logo_url %}
+      <img
+        class="p-crest__logo"
+        src="{{ firm_logo_url }}"
+        alt=""
+        width="120"
+        height="120"
+        decoding="async"
+        onerror="this.classList.add('is-broken')"
+      >
+      {% endif %}
+    </div>
+
+    <div class="p-crest__seal" aria-hidden="true" title="Partnership">
+      <span class="p-crest__seal-glow"></span>
+      <span class="p-crest__seal-ring"></span>
+      <svg class="p-crest__seal-icon" viewBox="0 0 32 32" fill="none">
+        <path d="M11 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM21 28a5 5 0 1 0 0-10 5 5 0 0 0 0 10z" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M14.5 10.5 17.5 13.5M17.5 18.5 14.5 21.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <div class="p-crest__medallion p-crest__medallion--platform">
+      <span class="p-crest__shield" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none">
+          <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+          <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </div>
+  </div>
+
+  <div class="p-crest__copy">
+    <p class="p-crest__ribbon"><span>In partnership</span></p>
+    <p class="p-crest__title">
+      <span class="p-crest__title-firm">{{ firm_name }}</span>
+      <span class="p-crest__title-x" aria-hidden="true">×</span>
+      <span class="p-crest__title-platform">Sheria Centric</span>
+    </p>
+    <p class="p-crest__subtitle">Your firm on the practice platform</p>
+  </div>
+</div>

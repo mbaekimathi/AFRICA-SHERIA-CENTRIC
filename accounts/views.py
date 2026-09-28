@@ -515,11 +515,15 @@ class HomeView(View):
                     "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
                 },
             )
+        company = FirmCompanyInformation.get_solo()
+        logo = company.logo_or_main
         return render(
             request,
             self.product_template,
             {
                 "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
+                "firm_name": company.display_name,
+                "firm_logo_url": logo.url if logo else "",
             },
         )
 
@@ -1217,6 +1221,10 @@ class AdvocateLoginView(LoginView):
         context["suspended_modal_reason"] = (
             reason if reason in {"login", "session"} else "session"
         )
+        company = FirmCompanyInformation.get_solo()
+        logo = company.logo_or_main
+        context["firm_name"] = company.display_name
+        context["firm_logo_url"] = logo.url if logo else ""
         return context
 
     def form_valid(self, form):

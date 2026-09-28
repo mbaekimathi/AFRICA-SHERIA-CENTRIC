@@ -1,0 +1,408 @@
+/* Shared firm × Sheria Centric partnership crest (login + landing) */
+
+.p-crest {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+  max-width: 30rem;
+  animation: rise-in 0.85s var(--ease-out, ease-out) both;
+}
+
+.p-crest__orbit {
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  width: min(22rem, 92%);
+  height: 7.5rem;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  border: 1px solid rgba(212, 175, 90, 0.12);
+  background: radial-gradient(ellipse at 50% 50%, rgba(121, 112, 255, 0.08), transparent 68%);
+  pointer-events: none;
+  animation: pCrestOrbit 18s linear infinite;
+}
+
+.p-crest__arc {
+  position: absolute;
+  top: 1.25rem;
+  left: 50%;
+  width: 15rem;
+  height: 4.75rem;
+  transform: translateX(-50%);
+  border: 1px solid transparent;
+  border-top-color: rgba(212, 175, 90, 0.22);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+@keyframes pCrestOrbit {
+  from {
+    transform: translateX(-50%) rotate(0deg);
+  }
+  to {
+    transform: translateX(-50%) rotate(360deg);
+  }
+}
+
+.p-crest__visual {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 7.5rem;
+  padding-top: 0.5rem;
+}
+
+.p-crest__medallion {
+  position: relative;
+  width: clamp(5.75rem, 16vw, 7.5rem);
+  height: clamp(5.75rem, 16vw, 7.5rem);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.p-crest__medallion--firm {
+  z-index: 1;
+  margin-right: -2.25rem;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.14), transparent 55%),
+    linear-gradient(145deg, #1a1a38 0%, #0e0e22 100%);
+}
+
+.p-crest__medallion--platform {
+  z-index: 2;
+  margin-left: -2.25rem;
+  border: 2px solid rgba(212, 175, 90, 0.55);
+  background:
+    radial-gradient(circle at 70% 30%, rgba(212, 175, 90, 0.18), transparent 52%),
+    linear-gradient(155deg, #151530 0%, #0a0a1c 100%);
+  color: var(--brass, #d4af5a);
+}
+
+.p-crest__initial {
+  font-family: var(--font-serif, "Playfair Display", serif);
+  font-size: clamp(2rem, 1.5rem + 1.4vw, 2.65rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(243, 241, 247, 0.92);
+  user-select: none;
+}
+
+.p-crest__logo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #0e0e22;
+}
+
+.p-crest__logo.is-broken {
+  display: none;
+}
+
+.p-crest__shield {
+  display: grid;
+  place-items: center;
+  width: 58%;
+  height: 58%;
+}
+
+.p-crest__shield svg {
+  width: 100%;
+  height: auto;
+}
+
+.p-crest__seal {
+  position: relative;
+  z-index: 4;
+  width: 3.25rem;
+  height: 3.25rem;
+  flex: 0 0 auto;
+  margin-inline: -0.35rem;
+  display: grid;
+  place-items: center;
+}
+
+.p-crest__seal-glow {
+  position: absolute;
+  inset: -0.35rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(212, 175, 90, 0.35), transparent 70%);
+  animation: pCrestPulse 2.8s ease-in-out infinite;
+}
+
+@keyframes pCrestPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.p-crest__seal-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(212, 175, 90, 0.65);
+  background: linear-gradient(160deg, rgba(26, 26, 56, 0.95), rgba(10, 10, 28, 0.98));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+}
+
+.p-crest__seal-icon {
+  position: relative;
+  width: 1.65rem;
+  height: 1.65rem;
+  color: var(--brass, #d4af5a);
+}
+
+.p-crest__copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.p-crest__ribbon {
+  margin: 0;
+}
+
+.p-crest__ribbon span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(243, 241, 247, 0.78);
+  border: 1px solid rgba(212, 175, 90, 0.28);
+  background: rgba(212, 175, 90, 0.07);
+}
+
+.p-crest__ribbon span::before,
+.p-crest__ribbon span::after {
+  content: "";
+  width: 0.35rem;
+  height: 1px;
+  background: rgba(212, 175, 90, 0.45);
+}
+
+.p-crest__title {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.5rem;
+  font-family: var(--font-serif, "Playfair Display", serif);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.p-crest__title-firm {
+  font-size: clamp(0.82rem, 0.75rem + 0.35vw, 1rem);
+  color: #f4f6f9;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p-crest__title-x {
+  font-size: 1.05rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #d4af5a, #7970ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgba(121, 112, 255, 0.25));
+}
+
+.p-crest__title-platform {
+  font-size: clamp(0.82rem, 0.75rem + 0.35vw, 1rem);
+  color: var(--brass, #d4af5a);
+}
+
+.p-crest__subtitle {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: rgba(243, 241, 247, 0.52);
+}
+
+/* —— Compact (nav + mobile auth) —— */
+.p-crest--compact {
+  max-width: 100%;
+  gap: 0.55rem;
+  animation: none;
+}
+
+.p-crest--compact .p-crest__orbit,
+.p-crest--compact .p-crest__arc,
+.p-crest--compact .p-crest__ribbon,
+.p-crest--compact .p-crest__subtitle {
+  display: none;
+}
+
+.p-crest--compact .p-crest__visual {
+  min-height: 0;
+  padding-top: 0;
+  justify-content: flex-start;
+}
+
+.p-crest--compact .p-crest__medallion {
+  width: clamp(2.85rem, 8vw, 3.35rem);
+  height: clamp(2.85rem, 8vw, 3.35rem);
+}
+
+.p-crest--compact .p-crest__medallion--firm {
+  margin-right: -1.15rem;
+}
+
+.p-crest--compact .p-crest__medallion--platform {
+  margin-left: -1.15rem;
+}
+
+.p-crest--compact .p-crest__initial {
+  font-size: 1.15rem;
+}
+
+.p-crest--compact .p-crest__seal {
+  width: 1.85rem;
+  height: 1.85rem;
+  margin-inline: -0.25rem;
+}
+
+.p-crest--compact .p-crest__seal-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.p-crest--compact .p-crest__copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.p-crest--compact .p-crest__title {
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+}
+
+.p-crest--compact .p-crest__title-firm,
+.p-crest--compact .p-crest__title-platform {
+  font-size: 0.62rem;
+  max-width: 6.5rem;
+}
+
+.p-crest--compact .p-crest__title-x {
+  font-size: 0.75rem;
+}
+
+.p-crest--compact {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 0.65rem;
+}
+
+.p-crest--compact .p-crest__visual {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.p-crest--compact .p-crest__copy {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.mobile-brand .p-crest--compact {
+  margin-bottom: 0;
+}
+
+/* —— Auth login (light panel compact) —— */
+.auth-page .p-crest--compact .p-crest__title-firm,
+.auth-page .p-crest--compact .p-crest__title-platform {
+  color: var(--purple-800, #3d2f8f);
+}
+
+.auth-page .p-crest--compact .p-crest__title-platform {
+  color: var(--purple-900, #2a2066);
+}
+
+.auth-page .p-crest--compact .p-crest__medallion--firm {
+  border-color: rgba(88, 70, 180, 0.2);
+  background: linear-gradient(145deg, #f3f1ff, #e8e4ff);
+}
+
+.auth-page .p-crest--compact .p-crest__initial {
+  color: var(--purple-800, #3d2f8f);
+}
+
+.auth-page .p-crest--compact .p-crest__medallion--platform {
+  border-color: rgba(212, 175, 90, 0.55);
+  background: linear-gradient(155deg, #fffef8, #f5f0e4);
+  color: #9a7b2e;
+}
+
+.auth-page .p-crest--compact .p-crest__seal-ring {
+  background: #fff;
+  border-color: rgba(88, 70, 180, 0.25);
+}
+
+.auth-page .p-crest--compact .p-crest__seal-icon {
+  color: var(--purple-700, #5846b4);
+}
+
+/* —— Landing hero —— */
+.site-page--landing .p-crest {
+  max-width: 32rem;
+  animation: lpRise 0.75s var(--lp-ease, ease) both;
+}
+
+.site-page--landing .p-crest__title-firm {
+  color: var(--lp-ink, #f4f6f9);
+}
+
+.site-page--landing .p-crest__title-platform {
+  color: var(--lp-gold, #d4af5a);
+}
+
+.site-page--landing .p-crest__subtitle {
+  color: var(--lp-muted-soft, rgba(243, 241, 247, 0.55));
+}
+
+.site-page--landing .p-crest__ribbon span {
+  color: var(--lp-muted, rgba(243, 241, 247, 0.72));
+}
+
+.site-page--landing .lp-nav__brand .p-crest--compact {
+  max-width: min(100%, 14rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .p-crest__orbit,
+  .p-crest__seal-glow {
+    animation: none !important;
+  }
+}

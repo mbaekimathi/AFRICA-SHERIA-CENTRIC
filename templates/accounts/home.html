@@ -5,20 +5,15 @@
 {% block body_class %}site-page site-page--landing{% endblock %}
 {% block extra_head %}
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'css/site.css' %}">
+<link rel="stylesheet" href="{% static 'css/site.css' %}?v=landing-partnership-2">
+<link rel="stylesheet" href="{% static 'css/partnership-crest.css' %}?v=3">
 {% endblock %}
 
 {% block content %}
 <main class="landing">
   <header class="lp-nav">
-    <a class="lp-nav__brand" href="{% url 'accounts:login' %}" aria-label="Sheria Centric — Employee login">
-      <span class="lp-nav__mark" aria-hidden="true">
-        <svg viewBox="0 0 48 48" fill="none">
-          <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
-          <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </span>
-      <span class="lp-nav__name">Sheria Centric</span>
+    <a class="lp-nav__brand" href="{% url 'accounts:login' %}" aria-label="{{ firm_name }} and Sheria Centric — Employee login">
+      {% include "accounts/partials/auth_partnership_brand.html" with compact=True landing=True %}
     </a>
     <nav class="lp-nav__actions" aria-label="Account access">
       <a class="lp-nav__link" href="{% url 'accounts:login' %}">Employee login</a>
@@ -35,17 +30,8 @@
 
     <div class="lp-hero__inner">
       <div class="lp-hero__intro">
-        <a class="lp-brand" href="{% url 'accounts:login' %}" aria-label="Sheria Centric — Employee login">
-          <div class="lp-brand__mark" aria-hidden="true">
-            <svg viewBox="0 0 48 48" fill="none">
-              <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
-              <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="lp-brand__text">
-            <p class="lp-brand__name">Sheria Centric</p>
-            <p class="lp-brand__tag">Legal practice platform</p>
-          </div>
+        <a class="lp-brand lp-brand--partnership" href="{% url 'accounts:login' %}" aria-label="{{ firm_name }} and Sheria Centric — Employee login">
+          {% include "accounts/partials/auth_partnership_brand.html" with landing=True %}
         </a>
 
         <div class="lp-dots" role="tablist" aria-label="Feature slides" data-slide-dots>
@@ -172,8 +158,8 @@
 
 <footer class="lp-footer">
   <div class="lp-footer__brand">
-    <span class="lp-footer__name">Sheria Centric</span>
-    <span class="lp-footer__tag">Legal practice platform</span>
+    <span class="lp-footer__name">{{ firm_name }} × Sheria Centric</span>
+    <span class="lp-footer__tag">Firm workspace · legal practice platform</span>
   </div>
   <nav class="lp-footer__links" aria-label="Footer">
     <a href="{% url 'accounts:login' %}">Employees</a>

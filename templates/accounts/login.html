@@ -5,17 +5,13 @@
 
 {% block content %}
 <main class="auth-shell">
-  <section class="auth-brand" aria-label="Sheria-Centric brand">
+  <section class="auth-brand" aria-label="Firm and Sheria Centric partnership">
     <div class="auth-brand__glow" aria-hidden="true"></div>
     <div class="auth-brand__content">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 48 48" fill="none">
-          <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
-          <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <p class="brand-name">Sheria Centric</p>
-      <p class="brand-tagline">Practice management built for advocates — cases, clients, and counsel in one place.</p>
+      {% include "accounts/partials/auth_partnership_brand.html" %}
+      <p class="brand-tagline brand-tagline--partnership">
+        <strong>{{ firm_name }}</strong> on Sheria Centric — secure advocate workspace, role-based firm access, and confidential practice management in one place.
+      </p>
       <ul class="brand-points">
         <li>
           <svg class="justice-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M5 8l7-4 7 4M5 8c0 3 3 5 7 5s7-2 7-5M8 21h8" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -37,14 +33,7 @@
     <div class="auth-card">
       <header class="auth-card__header">
         <div class="mobile-brand">
-          <svg class="justice-icon justice-icon--sm" viewBox="0 0 120 120" fill="none" aria-hidden="true">
-            <path d="M60 22V98" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-            <path d="M42 30H78" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-            <path d="M60 30L28 58M60 30L92 58" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
-            <path d="M28 58C28 66 35 72 44 72S58 66 58 58M62 58C62 66 67 72 76 72S92 66 92 58" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
-            <path d="M48 98H72" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-          </svg>
-          <span>Sheria-Centric</span>
+          {% include "accounts/partials/auth_partnership_brand.html" with compact=True %}
         </div>
         <p class="auth-kicker"><a href="{% url 'accounts:home' %}">← Home</a></p>
         <h1>Employee sign in</h1>

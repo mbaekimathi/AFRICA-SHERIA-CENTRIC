@@ -205,6 +205,10 @@ a:hover {
   animation: rise-in 0.8s var(--ease) 0.16s both;
 }
 
+.brand-tagline--partnership {
+  max-width: 38ch;
+}
+
 .brand-points {
   list-style: none;
   margin: 0.75rem 0 0;
@@ -254,16 +258,9 @@ a:hover {
 }
 
 .mobile-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
+  display: block;
+  width: 100%;
   margin-bottom: 1.25rem;
-  color: var(--purple-800);
-  font-family: var(--font-serif);
-  font-size: clamp(1.15rem, 1.05rem + 0.5vw, 1.35rem);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .auth-card__header h1 {
