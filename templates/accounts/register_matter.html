@@ -36,6 +36,7 @@
     novalidate
     data-client-search-url="{{ client_search_url }}"
     data-field-suggestions-url="{{ field_suggestions_url }}"
+    data-default-firm-agent="{{ firm_name|upper }}"
   >
     {% csrf_token %}
     {% if form.non_field_errors %}
@@ -373,5 +374,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/register-matter.js' %}?v=party-ordinal-1" defer></script>
+<script src="{% static 'js/register-matter.js' %}?v=default-firm-agent-1" defer></script>
 {% endblock %}

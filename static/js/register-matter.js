@@ -64,6 +64,7 @@
   const addPartyBtn = document.getElementById("add-party-btn");
   const emptyTemplate = document.getElementById("party-empty-form");
   const totalFormsInput = document.getElementById("id_parties-TOTAL_FORMS");
+  const defaultFirmAgent = (form.dataset.defaultFirmAgent || "").trim().toUpperCase();
 
   let searchTimer = null;
   let activeIndex = -1;
@@ -87,11 +88,13 @@
     const phone = card.querySelector('[name$="-phone"]');
     const email = card.querySelector('[name$="-email"]');
     const category = card.querySelector('[name$="-category"]');
+    const firmAgent = card.querySelector('[name$="-firm_agent"]');
     const isClient = card.querySelector('[name$="-is_client_party"]');
     if (name) name.value = (client.name || "").toUpperCase();
     if (phone) phone.value = (client.phone || "").toUpperCase();
     if (email) email.value = (client.email || "").toLowerCase();
     if (category && client.category) category.value = client.category;
+    if (firmAgent && defaultFirmAgent) firmAgent.value = defaultFirmAgent;
     const partyType = card.querySelector('[name$="-party_type"]');
     if (partyType && [...partyType.options].some((o) => o.value === "client")) {
       partyType.value = "client";

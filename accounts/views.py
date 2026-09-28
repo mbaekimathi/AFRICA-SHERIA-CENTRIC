@@ -10846,9 +10846,15 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _register_matter_context(form=None, party_formset=None):
         form = form or RegisterMatterForm()
+        default_firm_agent = get_firm_display_name().strip().upper()
         party_formset = party_formset or MatterPartyFormSet(
             prefix="parties",
-            initial=[{"is_client_party": True}],
+            initial=[
+                {
+                    "is_client_party": True,
+                    "firm_agent": default_firm_agent,
+                }
+            ],
         )
         selected_client = None
         client_id = form["client"].value() if form.is_bound else form.initial.get("client")
