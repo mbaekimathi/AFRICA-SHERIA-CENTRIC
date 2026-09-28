@@ -1,4 +1,5 @@
 import re
+import uuid
 from decimal import Decimal
 
 from django.contrib.auth.hashers import check_password, make_password
@@ -2246,6 +2247,14 @@ class ClientNotification(models.Model):
         self.save(update_fields=["is_read", "read_at"])
 
 
+def company_logo_upload_to(instance, filename):
+    return f"company/logo/{uuid.uuid4().hex}.png"
+
+
+def company_profile_image_upload_to(instance, filename):
+    return f"company/profile/{uuid.uuid4().hex}.webp"
+
+
 class FirmCompanyInformation(models.Model):
     """
     Firm-wide company profile (singleton row, pk=1).
@@ -2297,7 +2306,7 @@ class FirmCompanyInformation(models.Model):
         help_text="Short line used under the firm name where needed.",
     )
     logo = models.ImageField(
-        upload_to="company/logo/",
+        upload_to=company_logo_upload_to,
         blank=True,
         null=True,
         help_text="Firm logo for letterhead, invoices, and brand mark.",
@@ -2414,10 +2423,6 @@ class FirmCompanyInformation(models.Model):
             return self.logo
         main = self.main_image
         return main.image if main and main.image else None
-
-
-def company_profile_image_upload_to(instance, filename):
-    return f"company/profile/{filename}"
 
 
 class FirmCompanyProfileImage(models.Model):

@@ -42,6 +42,32 @@
   height: 6.25rem;
 }
 
+.auth-identity-card .p-crest--panel .p-crest__medallion {
+  width: clamp(4.35rem, 11vw, 5.5rem);
+  height: clamp(4.35rem, 11vw, 5.5rem);
+}
+
+.auth-identity-card .p-crest--panel .p-crest__medallion--firm {
+  margin-right: -1.85rem;
+}
+
+.auth-identity-card .p-crest--panel .p-crest__medallion--platform {
+  margin-left: -1.85rem;
+}
+
+.auth-identity-card .p-crest--panel .p-crest__orbit {
+  width: min(18rem, 100%);
+  height: 6.25rem;
+}
+
+.auth-page .p-crest--nav-lockup .p-crest__nav-firm {
+  color: var(--purple-800, #3d2f8f);
+}
+
+.auth-page .p-crest--nav-lockup .p-crest__nav-platform {
+  color: var(--purple-900, #2a2066);
+}
+
 .p-crest--panel .p-crest__orbit {
   left: 50%;
   transform: translateX(-50%);

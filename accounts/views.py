@@ -365,7 +365,13 @@ from .workspace import (
     workspace_context,
     workspace_module_visible,
 )
-from .utils import optimize_image, render_blog_body, whatsapp_chat_url
+from .utils import (
+    optimize_image,
+    refresh_company_stored_media,
+    render_blog_body,
+    stored_image_url,
+    whatsapp_chat_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -455,19 +461,32 @@ def _firm_faq_json_ld(faqs) -> dict | None:
     }
 
 
-def _stored_image_url(file_field) -> str:
-    """Return a media URL only when the file is present in storage."""
-    if not file_field:
-        return ""
-    name = (getattr(file_field, "name", "") or "").strip()
-    if not name:
-        return ""
-    try:
-        if not file_field.storage.exists(name):
-            return ""
-        return file_field.url
-    except (OSError, ValueError):
-        return ""
+def _first_stored_profile_image(company):
+    for row in company.profile_images.order_by("sort_order", "id"):
+        if row.image and stored_image_url(row.image):
+            return row
+    return None
+
+
+def _firm_partnership_context() -> dict:
+    company = FirmCompanyInformation.get_solo()
+    refresh_company_stored_media(company)
+    profile = _first_stored_profile_image(company)
+    firm_hero_image_url = (
+        stored_image_url(profile.image) if profile and profile.image else ""
+    )
+    firm_logo_url = ""
+    if company.logo:
+        firm_logo_url = stored_image_url(company.logo)
+    if not firm_logo_url and profile and profile.image:
+        firm_logo_url = stored_image_url(profile.image)
+    if not firm_hero_image_url and firm_logo_url:
+        firm_hero_image_url = firm_logo_url
+    return {
+        "firm_name": company.display_name,
+        "firm_logo_url": firm_logo_url,
+        "firm_hero_image_url": firm_hero_image_url,
+    }
 
 
 class HomeView(View):
@@ -530,23 +549,12 @@ class HomeView(View):
                     "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
                 },
             )
-        company = FirmCompanyInformation.get_solo()
-        logo = company.logo_or_main
-        firm_logo_url = _stored_image_url(logo) if logo else ""
-        main_profile = company.main_image
-        firm_hero_image_url = ""
-        if main_profile and main_profile.image:
-            firm_hero_image_url = _stored_image_url(main_profile.image)
-        if not firm_hero_image_url and firm_logo_url:
-            firm_hero_image_url = firm_logo_url
         return render(
             request,
             self.product_template,
             {
                 "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
-                "firm_name": company.display_name,
-                "firm_logo_url": firm_logo_url,
-                "firm_hero_image_url": firm_hero_image_url,
+                **_firm_partnership_context(),
             },
         )
 
@@ -1244,10 +1252,7 @@ class AdvocateLoginView(LoginView):
         context["suspended_modal_reason"] = (
             reason if reason in {"login", "session"} else "session"
         )
-        company = FirmCompanyInformation.get_solo()
-        logo = company.logo_or_main
-        context["firm_name"] = company.display_name
-        context["firm_logo_url"] = _stored_image_url(logo) if logo else ""
+        context.update(_firm_partnership_context())
         return context
 
     def form_valid(self, form):
@@ -1346,6 +1351,7 @@ class ClientLoginView(View):
                 "form": ClientLoginForm(),
                 "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
                 "show_manual": False,
+                **_firm_partnership_context(),
             },
         )
 
@@ -1363,6 +1369,7 @@ class ClientLoginView(View):
                 "form": form,
                 "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
                 "show_manual": True,
+                **_firm_partnership_context(),
             },
         )
 
@@ -5478,6 +5485,7 @@ class RoleWorkspaceView(View):
     @staticmethod
     def _company_profile_context(*, form=None):
         company = FirmCompanyInformation.get_solo()
+        refresh_company_stored_media(company)
         existing_images = list(
             company.profile_images.order_by("sort_order", "id")
         )

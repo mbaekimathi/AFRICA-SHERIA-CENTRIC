@@ -4,7 +4,6 @@
 {% block title %}Client Sign In — Sheria-Centric{% endblock %}
 {% block body_class %}auth-page{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'css/site.css' %}">
 {% if google_client_id %}
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 {% endif %}
@@ -12,17 +11,13 @@
 
 {% block content %}
 <main class="auth-shell">
-  <section class="auth-brand" aria-label="Sheria-Centric brand">
+  <section class="auth-brand" aria-label="Firm and Sheria Centric client portal">
     <div class="auth-brand__glow" aria-hidden="true"></div>
-    <div class="auth-brand__content">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 48 48" fill="none">
-          <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
-          <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <p class="brand-name">Sheria Centric</p>
-      <p class="brand-tagline">Client portal — follow your matters with the firm that represents you.</p>
+    <div class="auth-brand__content auth-brand__content--identity">
+      {% include "accounts/partials/auth_identity_panel.html" with portal="client" %}
+      <p class="brand-tagline brand-tagline--partnership">
+        Client portal for <strong>{{ firm_name }}</strong> — follow your matters securely with the firm that represents you, powered by Sheria Centric.
+      </p>
       <ul class="brand-points">
         <li>
           <svg class="justice-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V7l8-4z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -40,13 +35,7 @@
     <div class="auth-card">
       <header class="auth-card__header">
         <div class="mobile-brand">
-          <svg class="justice-icon justice-icon--sm" viewBox="0 0 120 120" fill="none" aria-hidden="true">
-            <path d="M60 22V98" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-            <path d="M42 30H78" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-            <path d="M60 30L28 58M60 30L92 58" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
-            <path d="M48 98H72" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-          </svg>
-          <span>Sheria-Centric</span>
+          {% include "accounts/partials/auth_partnership_brand.html" with compact=True nav_lockup=True %}
         </div>
         <p class="auth-kicker"><a href="{% url 'accounts:home' %}">← Home</a></p>
         <h1>Client sign in</h1>

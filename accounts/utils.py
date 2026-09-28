@@ -8,6 +8,41 @@ from django.utils.safestring import mark_safe
 from PIL import Image, ImageOps
 
 
+def stored_image_url(file_field) -> str:
+    """Return a media URL only when the file is present in storage."""
+    if not file_field:
+        return ""
+    name = (getattr(file_field, "name", "") or "").strip()
+    if not name:
+        return ""
+    try:
+        if not file_field.storage.exists(name):
+            return ""
+        return file_field.url
+    except (OSError, ValueError):
+        return ""
+
+
+def refresh_company_stored_media(company) -> None:
+    """Clear logo and profile rows that point at missing files."""
+    logo = company.logo
+    if logo and logo.name and not logo.storage.exists(logo.name):
+        logo.delete(save=False)
+        company.logo = None
+        company.save(update_fields=["logo", "updated_at"])
+
+    for image in list(company.profile_images.all()):
+        name = (image.image.name or "").strip()
+        if name and image.image.storage.exists(name):
+            continue
+        if name:
+            try:
+                image.image.delete(save=False)
+            except OSError:
+                pass
+        image.delete()
+
+
 def optimize_profile_photo(uploaded_file, max_size=400, quality=72):
     """Compress and resize a profile photo for fast loading (WebP)."""
     return optimize_image(uploaded_file, max_size=max_size, quality=quality)

@@ -1,4 +1,5 @@
 {% extends "layouts/workspace.html" %}
+{% load firm_media %}
 
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
@@ -94,11 +95,11 @@
             logo sits on a white or solid background.
           </p>
 
-          {% if company_information.logo %}
+          {% if company_information.logo|stored_media_url %}
           <div class="company-logo-preview" aria-label="Current logo">
             <div class="company-logo-preview__frame">
               <img
-                src="{{ company_information.logo.url }}"
+                src="{{ company_information.logo|stored_media_url }}"
                 alt="{{ company_information.display_name }} logo"
                 width="120"
                 height="120"
@@ -138,7 +139,13 @@
           <ul class="practice-image-list">
             {% for image in existing_images %}
             <li class="practice-image-item">
-              <img src="{{ image.image.url }}" alt="" width="120" height="90">
+              {% if image.image|stored_media_url %}
+              <img src="{{ image.image|stored_media_url }}" alt="" width="120" height="90">
+              {% else %}
+              <div class="practice-image-item__missing" role="status">
+                Image file missing — remove this row or upload again.
+              </div>
+              {% endif %}
               <div class="practice-image-item__controls">
                 <label>
                   Order

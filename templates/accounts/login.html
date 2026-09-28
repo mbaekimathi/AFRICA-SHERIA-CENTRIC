@@ -7,8 +7,8 @@
 <main class="auth-shell">
   <section class="auth-brand" aria-label="Firm and Sheria Centric partnership">
     <div class="auth-brand__glow" aria-hidden="true"></div>
-    <div class="auth-brand__content">
-      {% include "accounts/partials/auth_partnership_brand.html" %}
+    <div class="auth-brand__content auth-brand__content--identity">
+      {% include "accounts/partials/auth_identity_panel.html" with portal="employee" %}
       <p class="brand-tagline brand-tagline--partnership">
         <strong>{{ firm_name }}</strong> on Sheria Centric — secure advocate workspace, role-based firm access, and confidential practice management in one place.
       </p>
@@ -33,7 +33,7 @@
     <div class="auth-card">
       <header class="auth-card__header">
         <div class="mobile-brand">
-          {% include "accounts/partials/auth_partnership_brand.html" with compact=True %}
+          {% include "accounts/partials/auth_partnership_brand.html" with compact=True nav_lockup=True %}
         </div>
         <p class="auth-kicker"><a href="{% url 'accounts:home' %}">← Home</a></p>
         <h1>Employee sign in</h1>

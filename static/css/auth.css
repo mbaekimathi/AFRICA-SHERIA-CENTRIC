@@ -151,6 +151,171 @@ a:hover {
   max-width: 34rem;
 }
 
+.auth-brand__content--identity {
+  max-width: min(100%, 26rem);
+  gap: 1.35rem;
+}
+
+.auth-identity-card {
+  display: grid;
+  gap: 0;
+  border-radius: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.015) 42%, rgba(10, 10, 28, 0.55) 100%);
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  animation: rise-in 0.75s var(--ease-out) both;
+}
+
+.auth-identity-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.auth-identity-card__eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(243, 241, 247, 0.52);
+}
+
+.auth-identity-card__platform {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.auth-identity-card__platform-mark {
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(212, 175, 90, 0.45);
+  background: rgba(212, 175, 90, 0.08);
+  color: var(--brass);
+}
+
+.auth-identity-card__crest {
+  padding: 1rem 1rem 0.65rem;
+  overflow: hidden;
+  background: radial-gradient(ellipse 80% 70% at 50% 0%, rgba(121, 112, 255, 0.1), transparent 65%);
+}
+
+.auth-identity-card__crest-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.auth-identity-card__crest-link:hover {
+  opacity: 0.92;
+  text-decoration: none;
+}
+
+.auth-identity-card__rule {
+  height: 1px;
+  margin-inline: 1.15rem;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(212, 175, 90, 0.35) 20%,
+    rgba(121, 112, 255, 0.35) 80%,
+    transparent
+  );
+}
+
+.auth-identity-card__media {
+  margin: 0;
+  padding: 0.85rem 1.15rem 1.15rem;
+}
+
+.auth-identity-card__frame {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  min-height: 9.5rem;
+  border-radius: 0.9rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #07071a;
+}
+
+.auth-identity-card__fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-weight: 700;
+  color: var(--brass);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(121, 112, 255, 0.18), transparent 55%),
+    linear-gradient(165deg, #1a1a38, #080818);
+}
+
+.auth-identity-card__fallback span {
+  font-size: clamp(2rem, 7vw, 3rem);
+  line-height: 1;
+}
+
+.auth-identity-card__photo {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.auth-identity-card__photo.is-broken {
+  display: none;
+}
+
+.auth-identity-card__scrim {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  padding: 2.5rem 1rem 0.95rem;
+  background: linear-gradient(180deg, transparent 0%, rgba(7, 7, 26, 0.55) 38%, rgba(7, 7, 26, 0.92) 100%);
+  pointer-events: none;
+}
+
+.auth-identity-card__firm-name {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(0.95rem, 1.8vw, 1.2rem);
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+  line-height: 1.15;
+  color: #fff;
+}
+
+.auth-identity-card__firm-tag {
+  margin: 0.3rem 0 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .brand-mark {
   width: clamp(4.25rem, 7vw, 5.5rem);
   height: clamp(4.25rem, 7vw, 5.5rem);

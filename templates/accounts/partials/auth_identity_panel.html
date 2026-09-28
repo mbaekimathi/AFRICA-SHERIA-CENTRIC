@@ -1,0 +1,58 @@
+{# firm_name, firm_hero_image_url; portal: employee | client #}
+<div class="auth-identity-card">
+  <header class="auth-identity-card__head">
+    <p class="auth-identity-card__eyebrow">In partnership</p>
+    <p class="auth-identity-card__platform">
+      <span class="auth-identity-card__platform-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none">
+          <path d="M12 4.5c-3.2 1.6-5.2 2.1-7 2.25v6.4c0 4.1 2.8 7.4 7 9.1 4.2-1.7 7-5 7-9.1V6.75C17.2 6.6 15.2 6.1 12 4.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M9 12.1 11 14.3 15.5 9.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      Sheria Centric
+    </p>
+  </header>
+
+  <div class="auth-identity-card__crest">
+    {% if portal == "client" %}
+    <div class="auth-identity-card__crest-static" aria-hidden="true">
+      {% include "accounts/partials/auth_partnership_brand.html" with landing=True visual_only=True panel=True %}
+    </div>
+    {% else %}
+    <a class="auth-identity-card__crest-link" href="{% url 'accounts:login' %}" aria-label="{{ firm_name }} and Sheria Centric">
+      {% include "accounts/partials/auth_partnership_brand.html" with landing=True visual_only=True panel=True %}
+    </a>
+    {% endif %}
+  </div>
+
+  <div class="auth-identity-card__rule" aria-hidden="true"></div>
+
+  <figure class="auth-identity-card__media" aria-label="{{ firm_name }}">
+    <div class="auth-identity-card__frame">
+      <div class="auth-identity-card__fallback" aria-hidden="true">
+        <span>{{ firm_name|slice:":1"|upper }}</span>
+      </div>
+      {% if firm_hero_image_url %}
+      <img
+        class="auth-identity-card__photo"
+        src="{{ firm_hero_image_url }}"
+        alt=""
+        width="720"
+        height="480"
+        decoding="async"
+        onerror="this.classList.add('is-broken')"
+      >
+      {% endif %}
+      <div class="auth-identity-card__scrim">
+        <p class="auth-identity-card__firm-name">{{ firm_name }}</p>
+        <p class="auth-identity-card__firm-tag">
+          {% if portal == "client" %}
+          Your firm · secure client portal
+          {% else %}
+          Your firm · advocate workspace
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </figure>
+</div>
