@@ -1,13 +1,13 @@
 document.addEventListener("DOMContentLoaded", () => {
   const modal = document.getElementById("case-allocate-modal");
-  const openBtn = document.getElementById("open-allocate-modal");
+  const openBtns = document.querySelectorAll(".js-open-allocate-modal");
   const closeBtn = document.getElementById("close-allocate-modal");
   const form = document.getElementById("case-allocate-form");
   const list = document.querySelector("#allocate-employee-field .allocate-employee-list");
   const dueDate = document.getElementById("id_due_date");
   const ALL_VALUE = "__all__";
 
-  if (!modal || !openBtn) return;
+  if (!modal || !openBtns.length) return;
 
   const getChecks = () =>
     Array.from(list?.querySelectorAll('input[type="checkbox"][name="assigned_to"]') || []);
@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  openBtn.addEventListener("click", openModal);
+  openBtns.forEach((btn) => btn.addEventListener("click", openModal));
   closeBtn?.addEventListener("click", closeModal);
 
   modal.addEventListener("click", (event) => {
@@ -91,10 +91,14 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (!dueDate?.value) {
-      event.preventDefault();
-      syncAllocateMode();
-      dueDate?.reportValidity?.();
-      dueDate?.focus();
+      const proceed = window.confirm(
+        "No due date was set. Continue approving without a due date?"
+      );
+      if (!proceed) {
+        event.preventDefault();
+        syncAllocateMode();
+        dueDate?.focus();
+      }
     }
   });
 });

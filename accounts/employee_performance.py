@@ -287,12 +287,14 @@ def build_employee_performance_analytics(employee: Employee, *, days: int = 90) 
     overdue_tasks = [
         task
         for task in all_tasks
-        if task.due_date < today and task.status in OPEN_TASK_STATUSES
+        if task.due_date
+        and task.due_date < today
+        and task.status in OPEN_TASK_STATUSES
     ]
     on_time_done = [
         task
         for task in done_tasks
-        if task.updated_at.date() <= task.due_date
+        if task.due_date and task.updated_at.date() <= task.due_date
     ]
 
     assigned_cases = LitigationCase.objects.filter(
@@ -362,7 +364,9 @@ def build_employee_performance_analytics(employee: Employee, *, days: int = 90) 
                     "due_date": task.due_date,
                     "created_at": task.created_at,
                     "is_overdue": (
-                        task.due_date < today and task.status in OPEN_TASK_STATUSES
+                        bool(task.due_date)
+                        and task.due_date < today
+                        and task.status in OPEN_TASK_STATUSES
                     ),
                 }
             )
@@ -377,7 +381,9 @@ def build_employee_performance_analytics(employee: Employee, *, days: int = 90) 
                     "due_date": task.due_date,
                     "created_at": task.created_at,
                     "is_overdue": (
-                        task.due_date < today and task.status in OPEN_TASK_STATUSES
+                        bool(task.due_date)
+                        and task.due_date < today
+                        and task.status in OPEN_TASK_STATUSES
                     ),
                 }
             )

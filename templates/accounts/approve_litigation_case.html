@@ -11,7 +11,7 @@
   data-expected-status="{{ case.status }}"
   data-gone-url="{{ list_url }}"
 >
-  <header class="page-intro">
+  <header class="page-intro page-intro--split">
     <div class="page-intro__copy">
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>Approve case</h2>
@@ -20,6 +20,29 @@
         set the task brief, then approve. Assignees are notified and can
         accept or reject their task.
       </p>
+    </div>
+    <div class="page-intro__actions form-actions form-actions--start">
+      <a href="{{ list_url }}" class="btn btn--quiet">Cancel</a>
+      <a href="{{ edit_url }}" class="btn btn--quiet btn--inline">Edit</a>
+      <form
+        method="post"
+        action="{{ decline_url }}"
+        class="row-action-form"
+        onsubmit="return confirm('Decline this case? It will be marked as rejected and removed from the approval queue.');"
+      >
+        {% csrf_token %}
+        <button type="submit" class="btn btn--danger btn--inline">
+          Decline
+        </button>
+      </form>
+      <button
+        type="button"
+        class="btn btn--primary btn--inline js-open-allocate-modal"
+        aria-haspopup="dialog"
+        aria-controls="case-allocate-modal"
+      >
+        Allocate &amp; approve
+      </button>
     </div>
   </header>
 
@@ -144,8 +167,7 @@
         </form>
         <button
           type="button"
-          class="btn btn--primary btn--inline"
-          id="open-allocate-modal"
+          class="btn btn--primary btn--inline js-open-allocate-modal"
           aria-haspopup="dialog"
           aria-controls="case-allocate-modal"
         >
@@ -202,7 +224,7 @@
       </div>
 
       <div class="form-field">
-        <label for="id_due_date">Due date <span aria-hidden="true">*</span></label>
+        <label for="id_due_date">Due date <span class="field-hint">(optional)</span></label>
         {{ form.due_date }}
         {% if form.due_date.errors %}<span class="field-error">{{ form.due_date.errors.0 }}</span>{% endif %}
       </div>

@@ -1524,7 +1524,11 @@ class CaseTask(models.Model):
         default="",
         help_text="Instructions / brief for the assigned employee.",
     )
-    due_date = models.DateField()
+    due_date = models.DateField(
+        blank=True,
+        null=True,
+        help_text="Optional deadline for this task.",
+    )
     reminder_at = models.DateTimeField(
         blank=True,
         null=True,
@@ -1918,7 +1922,11 @@ class MatterTask(models.Model):
     )
     title = models.CharField(max_length=255, blank=True, default="")
     instructions = models.TextField(blank=True, default="")
-    due_date = models.DateField()
+    due_date = models.DateField(
+        blank=True,
+        null=True,
+        help_text="Optional deadline for this task.",
+    )
     reminder_at = models.DateTimeField(blank=True, null=True)
     allow_view = models.BooleanField(
         default=True,

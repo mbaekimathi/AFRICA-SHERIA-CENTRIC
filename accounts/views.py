@@ -21279,7 +21279,9 @@ class RespondCaseTaskView(View):
                         "task_id": task.pk,
                         "url": respond_url,
                         "subject": self.task_subject(task),
-                        "due_date": task.due_date.isoformat(),
+                        "due_date": (
+                            task.due_date.isoformat() if task.due_date else ""
+                        ),
                     },
                 )
 

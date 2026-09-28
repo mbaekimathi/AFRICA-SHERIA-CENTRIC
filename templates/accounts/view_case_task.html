@@ -33,7 +33,10 @@
             </span>
           </dd>
         </div>
-        <div><dt>Due date</dt><dd>{{ task.due_date|date:"d M Y" }}</dd></div>
+        <div>
+          <dt>Due date</dt>
+          <dd>{% if task.due_date %}{{ task.due_date|date:"d M Y" }}{% else %}—{% endif %}</dd>
+        </div>
         <div>
           <dt>Tasked by</dt>
           <dd>

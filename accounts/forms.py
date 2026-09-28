@@ -3245,6 +3245,7 @@ class ApproveCaseForm(forms.Form):
     )
     due_date = forms.DateField(
         label="Due date",
+        required=False,
         widget=forms.DateInput(
             attrs={
                 "class": "form-input",
@@ -3253,7 +3254,6 @@ class ApproveCaseForm(forms.Form):
                 "autocomplete": "off",
             }
         ),
-        error_messages={"required": "Select a due date."},
     )
 
     def __init__(self, *args, **kwargs):

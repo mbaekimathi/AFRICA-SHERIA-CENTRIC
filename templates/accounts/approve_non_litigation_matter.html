@@ -135,8 +135,7 @@
         </form>
         <button
           type="button"
-          class="btn btn--primary btn--inline"
-          id="open-allocate-modal"
+          class="btn btn--primary btn--inline js-open-allocate-modal"
           aria-haspopup="dialog"
           aria-controls="case-allocate-modal"
         >
@@ -193,7 +192,7 @@
       </div>
 
       <div class="form-field">
-        <label for="id_due_date">Due date <span aria-hidden="true">*</span></label>
+        <label for="id_due_date">Due date <span class="field-hint">(optional)</span></label>
         {{ form.due_date }}
         {% if form.due_date.errors %}<span class="field-error">{{ form.due_date.errors.0 }}</span>{% endif %}
       </div>

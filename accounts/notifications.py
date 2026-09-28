@@ -54,11 +54,23 @@ def _tasks_url(employee, *, kind: str | None = None, task_id: int | None = None)
     return url
 
 
+def _format_task_due(task) -> str:
+    if task.due_date:
+        return f"Due {task.due_date:%d %b %Y}."
+    return "No due date set."
+
+
+def _format_task_due_phrase(task) -> str:
+    if task.due_date:
+        return f"due {task.due_date:%d %b %Y}"
+    return "no due date set"
+
+
 def notify_case_task(task: CaseTask) -> tuple[Notification, bool]:
     """Notify only the assignee about a new case task. Returns (notification, created)."""
     assignee = task.assignee
     title_label = (task.title or "").strip() or str(task.case)
-    body = (task.instructions or "").strip() or f"Due {task.due_date:%d %b %Y}."
+    body = (task.instructions or "").strip() or _format_task_due(task)
     body = f"{body}\n\nAccept or reject this task from your Tasks list."
     return Notification.objects.get_or_create(
         recipient=assignee,
@@ -76,7 +88,7 @@ def notify_matter_task(task: MatterTask) -> tuple[Notification, bool]:
     """Notify only the assignee about a new matter task. Returns (notification, created)."""
     assignee = task.assignee
     title_label = (task.title or "").strip() or str(task.matter)
-    body = (task.instructions or "").strip() or f"Due {task.due_date:%d %b %Y}."
+    body = (task.instructions or "").strip() or _format_task_due(task)
     body = f"{body}\n\nAccept or reject this task from your Tasks list."
     return Notification.objects.get_or_create(
         recipient=assignee,
@@ -102,7 +114,7 @@ def notify_task_accepted(task, *, kind: str) -> Notification | None:
         title=f"Task accepted: {subject}",
         body=(
             f"{task.assignee.get_full_name()} accepted the task "
-            f"(due {task.due_date:%d %b %Y})."
+            f"({_format_task_due_phrase(task)})."
         ),
         source_key=f"{kind}_task_accepted:{task.pk}",
         target_url=_utility_url(assigner, "messages"),
@@ -141,7 +153,7 @@ def notify_task_completed(task, *, kind: str) -> Notification | None:
     target_url = _utility_url(assigner, "messages")
     body = (
         f"{task.assignee.get_full_name()} submitted the task as complete "
-        f"on {subject} (due {task.due_date:%d %b %Y})."
+        f"on {subject} ({_format_task_due_phrase(task)})."
     )
     notification, created = Notification.objects.get_or_create(
         recipient=assigner,
@@ -183,7 +195,7 @@ def ensure_due_reminders(employee) -> int:
                 "category": Notification.Category.REMINDER,
                 "title": f"Reminder: {task.case}",
                 "body": (task.instructions or "").strip()
-                or f"Due {task.due_date:%d %b %Y}.",
+                or _format_task_due(task),
                 "target_url": _utility_url(employee, "reminders"),
             },
         )
@@ -203,7 +215,7 @@ def ensure_due_reminders(employee) -> int:
                 "category": Notification.Category.REMINDER,
                 "title": f"Reminder: {task.matter}",
                 "body": (task.instructions or "").strip()
-                or f"Due {task.due_date:%d %b %Y}.",
+                or _format_task_due(task),
                 "target_url": _utility_url(employee, "reminders"),
             },
         )
