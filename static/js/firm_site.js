@@ -574,14 +574,38 @@
     start();
   }
 
+  /* ——— Practice page: scroll-down cue fades after leaving hero ——— */
+  const practiceScrollCue = document.querySelector("[data-fw-scroll-cue]");
+  const practiceHead = document.querySelector("[data-fw-practice-head]");
+  if (practiceScrollCue && practiceHead && "IntersectionObserver" in window) {
+    const cueObserver = new IntersectionObserver(
+      ([entry]) => {
+        practiceScrollCue.classList.toggle("is-hidden", !entry.isIntersecting);
+      },
+      { threshold: 0.35, rootMargin: "-10% 0px -40% 0px" }
+    );
+    cueObserver.observe(practiceHead);
+  }
+
   /* ——— Practice story: sticky image follows active step ——— */
   const practiceStory = document.querySelector("[data-fw-practice-story]");
   if (practiceStory) {
     const steps = [...practiceStory.querySelectorAll("[data-fw-practice-step]")];
     const frames = [...practiceStory.querySelectorAll("[data-fw-practice-frame]")];
+    const dots = [...practiceStory.querySelectorAll("[data-fw-practice-dot]")];
+    const scrollHint = practiceStory.querySelector("[data-fw-practice-hint]");
     const setActive = (index) => {
       steps.forEach((step, i) => step.classList.toggle("is-active", i === index));
       frames.forEach((frame, i) => frame.classList.toggle("is-active", i === index));
+      dots.forEach((dot, i) => {
+        const on = i === index;
+        dot.classList.toggle("is-active", on);
+        if (on) dot.setAttribute("aria-current", "true");
+        else dot.removeAttribute("aria-current");
+      });
+      if (scrollHint) {
+        scrollHint.classList.toggle("is-hidden", index >= Math.max(0, steps.length - 1));
+      }
     };
     if (reduceMotion || !("IntersectionObserver" in window)) {
       setActive(0);

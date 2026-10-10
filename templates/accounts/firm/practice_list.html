@@ -5,18 +5,47 @@
 {% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
 
 {% block firm_content %}
-<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
+<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich fw-pagehead--practice" data-fw-practice-head>
   <div class="fw-pagehead__bg" aria-hidden="true"></div>
   <span class="fw-pagehead__mark" aria-hidden="true">Practice</span>
   <div class="fw-wrap" data-fw-anim="rise">
     <p class="fw-pagehead__eyebrow">Practice</p>
     <h1>Practice areas</h1>
-    <p class="fw-pagehead__lede">Land, family, commercial, and more — scroll through each area for focused guidance.</p>
+    <p class="fw-pagehead__lede">Land, family, commercial, and more — scroll down through each area for focused guidance.</p>
+    {% if practice_areas %}
+    <a class="fw-scroll-cue" href="#practice-story" data-fw-scroll-cue>
+      <span class="fw-scroll-cue__label">Scroll down</span>
+      <span class="fw-scroll-cue__track" aria-hidden="true">
+        <span class="fw-scroll-cue__mouse">
+          <span class="fw-scroll-cue__wheel"></span>
+        </span>
+        <span class="fw-scroll-cue__chevrons">
+          <span></span><span></span>
+        </span>
+      </span>
+    </a>
+    {% endif %}
   </div>
 </section>
 
 {% if practice_areas %}
-<section class="fw-practice-story" data-fw-practice-story>
+<section class="fw-practice-story" id="practice-story" data-fw-practice-story data-fw-scroll-section="practice">
+  <aside class="fw-practice-story__progress" aria-label="Practice areas progress" data-fw-practice-progress>
+    <p class="fw-practice-story__progress-label">Scroll</p>
+    <ol class="fw-practice-story__dots">
+      {% for area in practice_areas %}
+      <li>
+        <a
+          href="#practice-{{ area.slug }}"
+          class="fw-practice-story__dot{% if forloop.first %} is-active{% endif %}"
+          data-fw-practice-dot="{{ forloop.counter0 }}"
+          aria-label="{{ area.name }}"
+        ><span>{{ forloop.counter|stringformat:"02d" }}</span></a>
+      </li>
+      {% endfor %}
+    </ol>
+  </aside>
+
   <div class="fw-practice-story__stage">
     <div class="fw-practice-story__visual" aria-hidden="true">
       <div class="fw-practice-story__visual-stick">
@@ -33,6 +62,10 @@
         {% endwith %}
         {% endfor %}
         <div class="fw-practice-story__veil"></div>
+        <p class="fw-practice-story__scroll-hint" data-fw-practice-hint>
+          <span>Keep scrolling</span>
+          <span class="fw-practice-story__scroll-hint-arrow" aria-hidden="true"></span>
+        </p>
       </div>
     </div>
 
