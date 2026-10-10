@@ -8768,18 +8768,8 @@ body.is-lightbox-open {
   overflow: hidden;
 }
 
-/* Gallery order-1 portrait: compact side panel, not a full-bleed takeover */
-.fw-rail--photo {
-  grid-template-columns: clamp(14rem, 26vw, 20rem) minmax(0, 1fr);
-  min-height: 0;
-}
-
 .fw-rail.is-ready .fw-rail__img {
   animation: fwRailKen 22s ease-in-out infinite alternate;
-}
-
-.fw-rail--photo.is-ready .fw-rail__img {
-  animation: fwRailKenSoft 26s ease-in-out infinite alternate;
 }
 
 
@@ -8790,11 +8780,6 @@ body.is-lightbox-open {
   background: #060e1a;
   overflow: hidden;
   border-right: 1px solid color-mix(in srgb, var(--fw-brass) 42%, transparent);
-}
-
-.fw-rail--photo .fw-rail__media {
-  max-width: 20rem;
-  justify-self: stretch;
 }
 
 .fw-rail__media::after {
@@ -8817,14 +8802,14 @@ body.is-lightbox-open {
 .fw-rail--photo .fw-rail__media-stick {
   position: sticky;
   top: 5.5rem;
-  height: min(var(--fw-seam-run, calc(100dvh - 5.5rem)), 36rem);
-  min-height: 22rem;
-  max-height: min(36rem, calc(100dvh - 5.5rem));
+  height: 100%;
+  min-height: var(--fw-seam-run, calc(100dvh - 5.5rem));
+  align-self: stretch;
 }
 
 .fw-rail__photo {
-  position: relative;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
 }
 
@@ -8832,18 +8817,16 @@ body.is-lightbox-open {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 35% 18%;
+  object-position: center 18%;
   display: block;
-  filter: grayscale(0.22) contrast(1.06) brightness(0.95);
-  transform: scale(1.06);
+  filter: grayscale(0.12) contrast(1.05) brightness(0.96);
+  transform: scale(1.04);
   will-change: transform;
 }
 
 .fw-rail--photo .fw-rail__img {
   object-fit: cover;
-  object-position: center 12%;
-  filter: grayscale(0.1) contrast(1.04) brightness(0.97);
-  transform: scale(1.02);
+  object-position: center 14%;
 }
 
 .fw-rail__veil {
@@ -9265,11 +9248,6 @@ body.is-lightbox-open {
   to { transform: scale(1.16) translate3d(-1.5%, -1%, 0); }
 }
 
-@keyframes fwRailKenSoft {
-  from { transform: scale(1.02) translate3d(0, 0, 0); }
-  to { transform: scale(1.05) translate3d(-0.6%, -0.4%, 0); }
-}
-
 @keyframes fwRailItemIn {
   from {
     opacity: 0;
@@ -9301,14 +9279,6 @@ body.is-lightbox-open {
     grid-template-columns: minmax(15rem, 0.8fr) minmax(20rem, 1.2fr);
   }
 
-  .fw-rail--photo {
-    grid-template-columns: clamp(13rem, 24vw, 17rem) minmax(0, 1fr);
-  }
-
-  .fw-rail--photo .fw-rail__media {
-    max-width: 17rem;
-  }
-
   .fw-rail__caption {
     display: none;
   }
@@ -9320,18 +9290,10 @@ body.is-lightbox-open {
     background: #fff;
   }
 
-  .fw-rail--photo {
-    grid-template-columns: 1fr;
-  }
-
   .fw-rail__media {
     min-height: 0;
     border-right: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--fw-brass) 35%, transparent);
-  }
-
-  .fw-rail--photo .fw-rail__media {
-    max-width: none;
   }
 
   .fw-rail__media::after {
@@ -9341,8 +9303,8 @@ body.is-lightbox-open {
   .fw-rail__media-stick {
     position: relative;
     width: 100%;
-    height: min(48vh, 22rem);
-    min-height: 0;
+    height: min(52vh, 26rem);
+    min-height: 18rem;
     clip-path: none;
     -webkit-clip-path: none;
   }
@@ -9350,9 +9312,8 @@ body.is-lightbox-open {
   .fw-rail--photo .fw-rail__media-stick {
     position: relative;
     top: auto;
-    height: min(36vh, 16rem);
-    min-height: 12rem;
-    max-height: 16rem;
+    height: min(52vh, 26rem);
+    min-height: 18rem;
   }
 
   .fw-rail__cards {
