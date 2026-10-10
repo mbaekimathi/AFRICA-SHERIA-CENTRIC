@@ -5165,7 +5165,7 @@ class CompanyProfileImagesForm(forms.Form):
             }
         ),
         label="Company images",
-        help_text="Gallery images for the firm profile and website.",
+        help_text="Order 1 = homepage hero. Order 2+ = public Gallery page.",
     )
 
 

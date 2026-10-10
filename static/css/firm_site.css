@@ -154,12 +154,17 @@
   transition: background 0.25s var(--fw-ease), box-shadow 0.25s var(--fw-ease);
 }
 
+.fw-header__main > .fw-wrap {
+  width: min(100% - 2 * var(--fw-pad-inline), 96rem);
+}
+
 .fw-header__inner {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 1.25rem;
+  column-gap: 1.25rem;
+  row-gap: 0.35rem;
   min-height: 4.5rem;
   transition: min-height 0.25s var(--fw-ease);
 }
@@ -174,8 +179,11 @@
   gap: 0.85rem;
   text-decoration: none;
   color: var(--fw-ink);
-  flex: 0 1 auto;
+  grid-column: 1;
+  justify-self: start;
+  z-index: 1;
   min-width: 0;
+  max-width: 100%;
 }
 
 .fw-brand__mark {
@@ -257,15 +265,17 @@
 .fw-header__menus {
   display: flex;
   align-items: center;
-  gap: 1.1rem;
+  justify-content: center;
+  grid-column: 2;
+  justify-self: center;
   min-width: 0;
 }
 
 .fw-nav {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.1rem;
+  flex-wrap: nowrap;
+  gap: 0.05rem;
 }
 
 .fw-nav a {
@@ -304,7 +314,12 @@
 .fw-header__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.55rem;
+  grid-column: 3;
+  justify-self: end;
+  z-index: 1;
+  min-width: 0;
 }
 
 .fw-header__quiet {
@@ -342,9 +357,31 @@
   transform: translateY(-1px);
 }
 
+@media (min-width: 1101px) and (max-width: 1280px) {
+  .fw-nav a {
+    padding: 0.45rem 0.45rem;
+    font-size: 0.82rem;
+  }
+
+  .fw-nav a::after {
+    left: 0.45rem;
+    right: 0.45rem;
+  }
+
+  .fw-header__quiet {
+    padding: 0.45rem 0.35rem;
+  }
+
+  .fw-header__cta {
+    padding: 0.6rem 0.85rem;
+  }
+}
+
 @media (max-width: 1100px) {
   .fw-nav-toggle {
     display: inline-block;
+    grid-column: 2;
+    justify-self: end;
   }
 
   .fw-header__top-inner {
@@ -359,9 +396,19 @@
     width: 100%;
   }
 
+  .fw-header__inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 3.85rem;
+  }
+
+  .fw-brand {
+    max-width: 100%;
+  }
+
   .fw-header__menus {
     display: none;
-    flex: 1 1 100%;
+    grid-column: 1 / -1;
+    justify-self: stretch;
     flex-direction: column;
     align-items: stretch;
     gap: 0.85rem;
@@ -370,25 +417,16 @@
     max-height: min(70dvh, 28rem);
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 0.35rem 0 1.1rem;
+    padding: 0.35rem 0 0.35rem;
   }
 
   .fw-header.is-open .fw-header__menus {
     display: flex;
   }
 
-  .fw-header__inner {
-    flex-wrap: wrap;
-    min-height: 3.85rem;
-  }
-
-  .fw-brand {
-    flex: 1 1 auto;
-    max-width: calc(100% - 3.5rem);
-  }
-
   .fw-nav {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 0.15rem;
     padding: 0.4rem;
@@ -406,8 +444,16 @@
   }
 
   .fw-header__actions {
+    display: none;
+    grid-column: 1 / -1;
+    justify-self: stretch;
     flex-direction: column;
     align-items: stretch;
+    padding: 0 0 1.1rem;
+  }
+
+  .fw-header.is-open .fw-header__actions {
+    display: flex;
   }
 
   .fw-header__quiet {
@@ -7707,9 +7753,10 @@ body.is-lightbox-open {
 .fw-nav a {
   color: color-mix(in srgb, #f4f7fb 88%, transparent);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   font-size: 0.78rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .fw-nav a:hover,

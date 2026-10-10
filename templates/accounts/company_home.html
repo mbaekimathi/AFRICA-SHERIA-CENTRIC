@@ -15,7 +15,7 @@
 {% endblock %}
 
 {% block firm_content %}
-{% with hero_img=website_images.hero practice_img=website_images.practice %}
+{% with hero_img=firm_hero_image_url|default:website_images.hero practice_img=website_images.practice %}
 <div class="fw-rail{% if hero_img %} fw-rail--photo{% endif %}" data-fw-hero>
   <aside class="fw-rail__media">
     <div class="fw-rail__media-stick">

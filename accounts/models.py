@@ -396,7 +396,15 @@ class Employee(AbstractUser):
     about_me = models.TextField(
         blank=True,
         default="",
-        help_text="Short personal bio shown on this user's profile.",
+        help_text="Short bio on the employee profile; shown on the website when published.",
+    )
+    website_published = models.BooleanField(
+        default=False,
+        help_text="Show this employee on the public firm website team.",
+    )
+    website_rank = models.PositiveIntegerField(
+        default=100,
+        help_text="Lower numbers appear first on the public team page.",
     )
 
     USERNAME_FIELD = "login_code"

@@ -41,7 +41,11 @@
       {% for card in gallery_cards %}
       {% with gurl=card.item.image|stored_media_url %}
       {% if gurl %}
-      <a class="fw-gallery-reel__slide" href="{{ card.item.get_absolute_url }}">
+      <a
+        class="fw-gallery-reel__slide"
+        href="{% if card.item.slug %}{{ card.item.get_absolute_url }}{% else %}{{ gurl }}{% endif %}"
+        {% if not card.item.slug %}data-fw-lightbox data-caption="{{ card.item.title }}"{% endif %}
+      >
         <img src="{{ gurl }}" alt="" loading="lazy" width="480" height="320">
         <span class="fw-gallery-reel__copy">
           <em>{{ card.topic_label }}</em>
@@ -56,7 +60,12 @@
       {% for card in gallery_cards %}
       {% with gurl=card.item.image|stored_media_url %}
       {% if gurl %}
-      <a class="fw-gallery-reel__slide" href="{{ card.item.get_absolute_url }}" tabindex="-1">
+      <a
+        class="fw-gallery-reel__slide"
+        href="{% if card.item.slug %}{{ card.item.get_absolute_url }}{% else %}{{ gurl }}{% endif %}"
+        tabindex="-1"
+        {% if not card.item.slug %}data-fw-lightbox data-caption="{{ card.item.title }}"{% endif %}
+      >
         <img src="{{ gurl }}" alt="" loading="lazy" width="480" height="320">
         <span class="fw-gallery-reel__copy">
           <em>{{ card.topic_label }}</em>
@@ -106,16 +115,28 @@
       data-fw-gallery-topic="{{ card.topic_slug }}"
       data-fw-anim="rise"
     >
-      <a class="fw-gallery-spotlight__media" href="{{ card.item.get_absolute_url }}">
+      <a
+        class="fw-gallery-spotlight__media"
+        href="{% if card.item.slug %}{{ card.item.get_absolute_url }}{% else %}{{ gurl }}{% endif %}"
+        {% if not card.item.slug %}data-fw-lightbox data-caption="{{ card.item.title }}"{% endif %}
+      >
         <img src="{{ gurl }}" alt="{{ card.item.title }}" loading="eager" width="1400" height="900">
         <span class="fw-gallery-spotlight__shade" aria-hidden="true"></span>
       </a>
       <div class="fw-gallery-spotlight__copy">
         <p class="fw-gallery-spotlight__tag">{{ card.topic_label }}</p>
-        <h3><a href="{{ card.item.get_absolute_url }}">{{ card.item.title }}</a></h3>
+        <h3>
+          {% if card.item.slug %}
+          <a href="{{ card.item.get_absolute_url }}">{{ card.item.title }}</a>
+          {% else %}
+          {{ card.item.title }}
+          {% endif %}
+        </h3>
         {% if card.item.caption %}<p>{{ card.item.caption }}</p>{% endif %}
         <div class="fw-gallery-spotlight__meta">
+          {% if card.item.updated_at %}
           <time datetime="{{ card.item.updated_at|date:'c' }}">Updated {{ card.item.updated_at|date:"j M Y" }}</time>
+          {% endif %}
           <div class="fw-gallery-spotlight__actions">
             <a
               class="fw-gallery-spotlight__expand"
@@ -123,7 +144,9 @@
               data-fw-lightbox
               data-caption="{{ card.item.title }}{% if card.item.caption %} — {{ card.item.caption }}{% endif %}"
             >View photo</a>
+            {% if card.item.slug %}
             <a class="fw-gallery-spotlight__story" href="{{ card.item.get_absolute_url }}">Full story</a>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -144,7 +167,11 @@
         data-fw-anim="scale"
         style="--i:{{ forloop.counter0 }}"
       >
-        <a class="fw-gallery-tile__hit" href="{{ card.item.get_absolute_url }}">
+        <a
+          class="fw-gallery-tile__hit"
+          href="{% if card.item.slug %}{{ card.item.get_absolute_url }}{% else %}{{ gurl }}{% endif %}"
+          {% if not card.item.slug %}data-fw-lightbox data-caption="{{ card.item.title }}"{% endif %}
+        >
           <div class="fw-gallery-tile__media">
             <img src="{{ gurl }}" alt="{{ card.item.title }}" loading="lazy" width="800" height="600">
             <span class="fw-gallery-tile__veil" aria-hidden="true"></span>
@@ -154,7 +181,9 @@
             <span class="fw-gallery-tile__tag">{{ card.topic_label }}</span>
             <strong>{{ card.item.title }}</strong>
             {% if card.item.caption %}<span>{{ card.item.caption|truncatewords:16 }}</span>{% endif %}
+            {% if card.item.created_at %}
             <time datetime="{{ card.item.created_at|date:'c' }}">{{ card.item.created_at|date:"j M Y" }}</time>
+            {% endif %}
           </div>
         </a>
         <a

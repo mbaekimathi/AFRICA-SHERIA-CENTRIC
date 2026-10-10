@@ -1,4 +1,5 @@
 {% extends "layouts/workspace.html" %}
+{% load firm_media %}
 
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
@@ -9,22 +10,126 @@
       <p class="page-kicker">Company information</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Register advocates and staff profiles for the firm website team page.
+        Publish employees from the system, or add guest profiles for people who are not
+        staff accounts. Only <strong>published</strong> profiles appear on the public website
+        (employees must also be active).
       </p>
     </div>
     <div class="page-intro__actions">
-      <a href="{{ company_team_new_url }}" class="btn btn--primary btn--inline">Add team member</a>
+      <a href="{{ company_team_new_url }}" class="btn btn--primary btn--inline">Add guest profile</a>
     </div>
   </header>
 
   <section class="panel">
     <div class="panel__head">
-      <h3>Team members</h3>
+      <h3>Employees</h3>
+      <p class="panel__hint">
+        {% if employees %}
+        {{ employees|length }} total · {{ team_published_count }} published · {{ team_draft_count }} draft
+        {% else %}
+        No employees in the system
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--company-list">
+      {% if employees %}
+      <ul class="faq-list">
+        {% for employee in employees %}
+        <li class="faq-item">
+          <div class="faq-item__main">
+            <p class="faq-item__title">
+              {% if employee.profile_photo|stored_media_url %}
+              <img
+                class="company-team-thumb"
+                src="{{ employee.profile_photo|stored_media_url }}"
+                alt=""
+                width="40"
+                height="40"
+                loading="lazy"
+                decoding="async"
+              >
+              {% endif %}
+              {{ employee.get_full_name }}
+              {% if employee.website_published %}
+              <span class="status-pill status-pill--active">Published</span>
+              {% else %}
+              <span class="status-pill status-pill--suspended">Draft</span>
+              {% endif %}
+              {% if employee.status != "active" %}
+              <span class="status-pill status-pill--suspended">{{ employee.get_status_display }}</span>
+              {% endif %}
+            </p>
+            <p class="faq-item__answer">
+              {{ employee.get_role_display }}
+              {% if employee.login_code %} · {{ employee.login_code }}{% endif %}
+            </p>
+            {% if employee.about_me %}
+            <p class="faq-item__answer">{{ employee.about_me|truncatewords:24 }}</p>
+            {% endif %}
+            <p class="faq-item__meta">
+              {% if employee.status != "active" %}
+              <span>Not active — will not appear on the site even if published</span>
+              <span class="faq-item__meta-sep" aria-hidden="true">·</span>
+              {% endif %}
+              <span>Website order #{{ employee.website_rank }}</span>
+            </p>
+          </div>
+          <div class="faq-item__actions company-team-actions">
+            <form method="post" class="company-team-rank-form">
+              {% csrf_token %}
+              <input type="hidden" name="employee_id" value="{{ employee.pk }}">
+              <input type="hidden" name="action" value="save_rank">
+              <label class="visually-hidden" for="emp-rank-{{ employee.pk }}">Display order</label>
+              <input
+                id="emp-rank-{{ employee.pk }}"
+                type="number"
+                name="website_rank"
+                min="1"
+                max="9999"
+                value="{{ employee.website_rank }}"
+                class="company-team-rank-input"
+                title="Lower numbers appear first on the website"
+              >
+              <button type="submit" class="btn btn--quiet btn--inline">Save order</button>
+            </form>
+            {% if employee.website_published %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="employee_id" value="{{ employee.pk }}">
+              <input type="hidden" name="action" value="draft">
+              <button type="submit" class="btn btn--quiet btn--inline">Move to draft</button>
+            </form>
+            {% else %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="employee_id" value="{{ employee.pk }}">
+              <input type="hidden" name="action" value="publish">
+              <button type="submit" class="btn btn--primary btn--inline">Publish to website</button>
+            </form>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No employees yet</p>
+        <p class="empty-state__copy">
+          Add staff in HR / onboarding first, then return here to publish who should appear on the firm website.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Guest profiles (not employees)</h3>
       <p class="panel__hint">
         {% if team_members %}
-        {{ team_members|length }} profile{{ team_members|length|pluralize }}
+        {{ team_members|length }} total · {{ guest_published_count }} published · {{ guest_draft_count }} draft
         {% else %}
-        None registered
+        None added yet
         {% endif %}
       </p>
     </div>
@@ -35,10 +140,22 @@
         <li class="faq-item">
           <div class="faq-item__main">
             <p class="faq-item__title">
-              <span class="faq-item__rank">#{{ member.rank }}</span>
+              {% if member.photo|stored_media_url %}
+              <img
+                class="company-team-thumb"
+                src="{{ member.photo|stored_media_url }}"
+                alt=""
+                width="40"
+                height="40"
+                loading="lazy"
+                decoding="async"
+              >
+              {% endif %}
               {{ member.name }}
-              {% if not member.is_published %}
-              <span class="status-pill status-pill--suspended">Hidden</span>
+              {% if member.is_published %}
+              <span class="status-pill status-pill--active">Published</span>
+              {% else %}
+              <span class="status-pill status-pill--suspended">Draft</span>
               {% endif %}
             </p>
             {% if member.title or member.practice_focus %}
@@ -48,23 +165,68 @@
               {% if member.practice_focus %}{{ member.practice_focus }}{% endif %}
             </p>
             {% endif %}
+            {% if member.bio %}
+            <p class="faq-item__answer">{{ member.bio|truncatewords:24 }}</p>
+            {% endif %}
             <p class="faq-item__meta">
+              <span>Guest profile</span>
+              <span class="faq-item__meta-sep" aria-hidden="true">·</span>
+              <span>Website order #{{ member.rank }}</span>
+              <span class="faq-item__meta-sep" aria-hidden="true">·</span>
               <span>Updated {{ member.updated_at|date:"j M Y" }}</span>
             </p>
           </div>
-          <div class="faq-item__actions">
+          <div class="faq-item__actions company-team-actions">
+            <form method="post" class="company-team-rank-form">
+              {% csrf_token %}
+              <input type="hidden" name="guest_id" value="{{ member.pk }}">
+              <input type="hidden" name="action" value="save_rank">
+              <label class="visually-hidden" for="guest-rank-{{ member.pk }}">Display order</label>
+              <input
+                id="guest-rank-{{ member.pk }}"
+                type="number"
+                name="website_rank"
+                min="1"
+                max="9999"
+                value="{{ member.rank }}"
+                class="company-team-rank-input"
+                title="Lower numbers appear first on the website"
+              >
+              <button type="submit" class="btn btn--quiet btn--inline">Save order</button>
+            </form>
             <a href="{% url 'accounts:edit_team_member' role=role_slug member_id=member.pk %}" class="btn btn--quiet btn--inline">Edit</a>
+            {% if member.is_published %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="guest_id" value="{{ member.pk }}">
+              <input type="hidden" name="action" value="draft">
+              <button type="submit" class="btn btn--quiet btn--inline">Move to draft</button>
+            </form>
+            {% else %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="guest_id" value="{{ member.pk }}">
+              <input type="hidden" name="action" value="publish">
+              <button type="submit" class="btn btn--primary btn--inline">Publish to website</button>
+            </form>
+            {% endif %}
+            <form method="post" onsubmit="return confirm('Delete this guest profile?');">
+              {% csrf_token %}
+              <input type="hidden" name="guest_id" value="{{ member.pk }}">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="btn btn--quiet btn--inline">Delete</button>
+            </form>
           </div>
         </li>
         {% endfor %}
       </ul>
       {% else %}
       <div class="empty-state">
-        <p class="empty-state__title">No team members yet</p>
+        <p class="empty-state__title">No guest profiles yet</p>
         <p class="empty-state__copy">
-          Add the first advocate or staff profile for the public website.
+          Add consultants, of-counsel, or other people who should appear on the website but do not have employee accounts.
         </p>
-        <a href="{{ company_team_new_url }}" class="btn btn--primary btn--inline">Add team member</a>
+        <a href="{{ company_team_new_url }}" class="btn btn--primary btn--inline">Add guest profile</a>
       </div>
       {% endif %}
     </div>

@@ -23,7 +23,7 @@
       toggle.addEventListener("click", () => {
         setOpen(!header.classList.contains("is-open"));
       });
-      panel.querySelectorAll("a").forEach((link) => {
+      header.querySelectorAll(".fw-nav a, .fw-header__actions a").forEach((link) => {
         link.addEventListener("click", () => setOpen(false));
       });
     }

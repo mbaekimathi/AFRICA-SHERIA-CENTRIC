@@ -541,13 +541,83 @@ def _first_stored_profile_image(company):
     return None
 
 
+def _stored_profile_images(company):
+    """Company Gallery profile images with readable files, lowest order first."""
+    return [
+        row
+        for row in company.profile_images.order_by("sort_order", "id")
+        if stored_image_url(row.image)
+    ]
+
+
+def _company_gallery_home_image_url(company) -> str:
+    """
+    Homepage hero from Company Gallery order 1.
+
+    Uses the first profile gallery image, else the first titled gallery row (rank 1).
+    """
+    profiles = _stored_profile_images(company)
+    if profiles:
+        return stored_image_url(profiles[0].image) or ""
+    first = (
+        FirmGalleryImage.objects.order_by("rank", "title").only("image").first()
+    )
+    if first:
+        return stored_image_url(first.image) or ""
+    return ""
+
+
+def _profile_image_as_gallery_item(row, order: int):
+    """Adapt a profile gallery row (order 2+) for the public gallery hub."""
+    from types import SimpleNamespace
+
+    url = stored_image_url(row.image)
+    created = getattr(row, "created_at", None)
+    return SimpleNamespace(
+        pk=row.pk,
+        title=f"Chambers moment {order}",
+        caption="",
+        image=row.image,
+        created_at=created,
+        updated_at=created,
+        slug="",
+        has_gallery_detail=False,
+        get_absolute_url=lambda u=url: u or "#",
+    )
+
+
+def _public_gallery_items(company):
+    """
+    Public Gallery page items: Company Gallery order 2+ and titled entries.
+
+    Order 1 (homepage hero) is excluded. When there are no profile images,
+    the first FirmGalleryImage (rank 1 / homepage fallback) is also excluded.
+    """
+    items = []
+    profiles = _stored_profile_images(company)
+    for offset, row in enumerate(profiles[1:], start=2):
+        items.append(_profile_image_as_gallery_item(row, offset))
+
+    firm_items = list(FirmGalleryImage.objects.order_by("rank", "title"))
+    if profiles:
+        items.extend(firm_items)
+    else:
+        items.extend(firm_items[1:])
+    return items
+
+
 def _firm_partnership_context() -> dict:
     company = FirmCompanyInformation.get_solo()
     refresh_company_stored_media(company)
     profile = _first_stored_profile_image(company)
     website_images = resolve_firm_website_images(company)
     firm_media_pool = firm_posted_media_pool(company)
-    firm_hero_image_url = website_images.get("hero") or ""
+    # Homepage hero prefers Company Gallery order 1; dedicated website hero is fallback.
+    firm_hero_image_url = (
+        _company_gallery_home_image_url(company)
+        or website_images.get("hero")
+        or ""
+    )
     firm_logo_url = ""
     if company.logo:
         firm_logo_url = stored_image_url(company.logo)
@@ -572,10 +642,7 @@ _FIRM_WEBSITE_ROLE_RANK = {
 }
 
 
-def _firm_website_employees(*, limit: int | None = None):
-    """Active employees for the public firm website, with profile photos."""
-    from types import SimpleNamespace
-
+def _employee_website_role_order(qs):
     from django.db.models import Case, IntegerField, Value, When
 
     role_order = Case(
@@ -586,37 +653,79 @@ def _firm_website_employees(*, limit: int | None = None):
         default=Value(99),
         output_field=IntegerField(),
     )
-    qs = (
-        Employee.objects.filter(status=Employee.Status.ACTIVE)
-        .annotate(_role_rank=role_order)
-        .order_by("_role_rank", "first_name", "last_name")
-        .only(
-            "first_name",
-            "last_name",
-            "courtesy_title",
-            "role",
-            "profile_photo",
-            "login_code",
-        )
+    return qs.annotate(_role_rank=role_order).order_by(
+        "website_rank", "_role_rank", "first_name", "last_name"
     )
-    if limit is not None:
-        qs = qs[:limit]
+
+
+def _firm_website_employees(*, limit: int | None = None):
+    """
+    Public website team: published active employees plus published guest profiles.
+    Sorted by display rank, then name.
+    """
+    from types import SimpleNamespace
 
     members = []
+
+    qs = _employee_website_role_order(
+        Employee.objects.filter(
+            status=Employee.Status.ACTIVE,
+            website_published=True,
+        )
+    ).only(
+        "first_name",
+        "last_name",
+        "courtesy_title",
+        "role",
+        "profile_photo",
+        "login_code",
+        "about_me",
+        "website_rank",
+    )
     for emp in qs:
         name = (emp.get_full_name() or emp.login_code or "").strip()
         initial_source = (emp.first_name or name or "?").strip()
         members.append(
-            SimpleNamespace(
-                name=name,
-                title=emp.get_role_display(),
-                practice_focus="",
-                bio="",
-                photo=emp.profile_photo,
-                initial=initial_source[:1].upper(),
+            (
+                emp.website_rank or 100,
+                name.lower(),
+                SimpleNamespace(
+                    name=name,
+                    title=emp.get_role_display(),
+                    practice_focus="",
+                    bio=(emp.about_me or "").strip(),
+                    photo=emp.profile_photo,
+                    initial=initial_source[:1].upper(),
+                ),
             )
         )
-    return members
+
+    for guest in FirmTeamMember.objects.filter(is_published=True).order_by(
+        "rank", "name"
+    ):
+        name = (guest.name or "").strip()
+        if not name:
+            continue
+        members.append(
+            (
+                guest.rank or 100,
+                name.lower(),
+                SimpleNamespace(
+                    name=name,
+                    title=(guest.title or "").strip(),
+                    practice_focus=(guest.practice_focus or "").strip(),
+                    bio=(guest.bio or "").strip(),
+                    photo=guest.photo,
+                    initial=name[:1].upper(),
+                ),
+            )
+        )
+
+    members.sort(key=lambda row: (row[0], row[1]))
+    result = [row[2] for row in members]
+    if limit is not None:
+        return result[:limit]
+    return result
 
 
 class HomeView(View):
@@ -636,9 +745,7 @@ class HomeView(View):
                 )
             )
             faqs = list(FirmFAQ.objects.order_by("rank", "question")[:4])
-            gallery_items = list(
-                FirmGalleryImage.objects.order_by("rank", "title")[:4]
-            )
+            gallery_items = _public_gallery_items(company)[:4]
             blog_posts = list(
                 EmployeeBlogPost.objects.filter(
                     status=EmployeeBlogPost.Status.PUBLISHED
@@ -939,14 +1046,15 @@ class FirmGalleryListView(View):
     template_name = "accounts/firm/gallery_list.html"
 
     def get(self, request):
-        items = list(FirmGalleryImage.objects.order_by("rank", "title"))
+        company = FirmCompanyInformation.get_solo()
+        items = _public_gallery_items(company)
         hub = _firm_gallery_hub(items)
         return _firm_page_render(
             request,
             self.template_name,
             "gallery",
             "Gallery",
-            f"Daily life and moments inside {FirmCompanyInformation.get_solo().display_name}.",
+            f"Daily life and moments inside {company.display_name}.",
             hub,
         )
 
@@ -1601,7 +1709,11 @@ class SignUpView(View):
     def get(self, request):
         if request.user.is_authenticated:
             return redirect_for_employee(request.user)
-        return render(request, self.template_name, {"form": SignUpForm()})
+        return render(
+            request,
+            self.template_name,
+            {"form": SignUpForm(), **_firm_partnership_context()},
+        )
 
     def post(self, request):
         form = SignUpForm(request.POST, request.FILES)
@@ -1617,7 +1729,11 @@ class SignUpView(View):
             )
             response = redirect("accounts:employee_onboarding")
             return attach_greeting_cookie(response, request)
-        return render(request, self.template_name, {"form": form})
+        return render(
+            request,
+            self.template_name,
+            {"form": form, **_firm_partnership_context()},
+        )
 
 
 class ClientLoginView(View):
@@ -1670,6 +1786,7 @@ class ClientSignUpView(View):
             {
                 "form": ClientSignUpForm(),
                 "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
+                **_firm_partnership_context(),
             },
         )
 
@@ -1689,6 +1806,7 @@ class ClientSignUpView(View):
             {
                 "form": form,
                 "google_client_id": getattr(settings, "GOOGLE_CLIENT_ID", ""),
+                **_firm_partnership_context(),
             },
         )
 
@@ -5849,21 +5967,21 @@ class RoleWorkspaceView(View):
             if raw is None or raw == "":
                 continue
             try:
-                image.sort_order = max(0, int(raw))
+                image.sort_order = max(1, int(raw))
             except (TypeError, ValueError):
                 continue
             image.save(update_fields=["sort_order"])
 
         uploads = request.FILES.getlist("images")
         if uploads:
-            start = 0
+            start = 1
             if append:
                 last = (
                     company.profile_images.order_by("-sort_order")
                     .values_list("sort_order", flat=True)
                     .first()
                 )
-                start = (last + 1) if last is not None else 0
+                start = (last + 1) if last is not None else 1
             for index, uploaded in enumerate(uploads):
                 optimized = optimize_image(uploaded, max_size=1600, quality=78)
                 FirmCompanyProfileImage.objects.create(
@@ -5872,8 +5990,10 @@ class RoleWorkspaceView(View):
                     sort_order=start + index,
                 )
 
+        # Keep Order 1-based: 1 = homepage hero, 2+ = public Gallery page.
         for index, image in enumerate(
-            company.profile_images.order_by("sort_order", "id")
+            company.profile_images.order_by("sort_order", "id"),
+            start=1,
         ):
             if image.sort_order != index:
                 image.sort_order = index
@@ -6674,9 +6794,31 @@ class RoleWorkspaceView(View):
 
     @staticmethod
     def _company_team_context(user):
-        members = list(FirmTeamMember.objects.order_by("rank", "name"))
+        employees = list(
+            _employee_website_role_order(Employee.objects.all()).only(
+                "first_name",
+                "last_name",
+                "courtesy_title",
+                "role",
+                "status",
+                "profile_photo",
+                "login_code",
+                "about_me",
+                "website_published",
+                "website_rank",
+            )
+        )
+        guests = list(FirmTeamMember.objects.order_by("rank", "name"))
+        emp_published = sum(1 for emp in employees if emp.website_published)
+        guest_published = sum(1 for guest in guests if guest.is_published)
         return {
-            "team_members": members,
+            "employees": employees,
+            "team_members": guests,
+            "team_published_count": emp_published,
+            "team_draft_count": len(employees) - emp_published,
+            "guest_published_count": guest_published,
+            "guest_draft_count": len(guests) - guest_published,
+            "company_team_url": RoleWorkspaceView._company_team_list_url(user),
             "company_team_new_url": RoleWorkspaceView._company_team_new_url(user),
         }
 
@@ -6690,7 +6832,79 @@ class RoleWorkspaceView(View):
 
     def _post_company_team(self, request, user, resolved):
         if resolved["leaf"] == "company-team":
-            return redirect(self._company_team_new_url(user))
+            action = (request.POST.get("action") or "").strip()
+            employee_id = (request.POST.get("employee_id") or "").strip()
+            guest_id = (request.POST.get("guest_id") or "").strip()
+
+            if employee_id.isdigit() and action in {"publish", "draft", "save_rank"}:
+                employee = get_object_or_404(Employee, pk=int(employee_id))
+                if action == "publish":
+                    employee.website_published = True
+                    employee.save(update_fields=["website_published"])
+                    messages.success(
+                        request,
+                        f"{employee.get_full_name()} will appear on the public website.",
+                    )
+                elif action == "draft":
+                    employee.website_published = False
+                    employee.save(update_fields=["website_published"])
+                    messages.success(
+                        request,
+                        f"{employee.get_full_name()} is hidden from the public website.",
+                    )
+                elif action == "save_rank":
+                    raw_rank = (request.POST.get("website_rank") or "").strip()
+                    try:
+                        rank = max(1, min(9999, int(raw_rank)))
+                    except ValueError:
+                        rank = employee.website_rank or 100
+                    employee.website_rank = rank
+                    employee.save(update_fields=["website_rank"])
+                    messages.success(
+                        request,
+                        f"Display order updated for {employee.get_full_name()}.",
+                    )
+            elif guest_id.isdigit() and action in {
+                "publish",
+                "draft",
+                "save_rank",
+                "delete",
+            }:
+                guest = get_object_or_404(FirmTeamMember, pk=int(guest_id))
+                if action == "publish":
+                    guest.is_published = True
+                    guest.updated_by = user
+                    guest.save(update_fields=["is_published", "updated_by", "updated_at"])
+                    messages.success(
+                        request,
+                        f"“{guest.name}” will appear on the public website.",
+                    )
+                elif action == "draft":
+                    guest.is_published = False
+                    guest.updated_by = user
+                    guest.save(update_fields=["is_published", "updated_by", "updated_at"])
+                    messages.success(
+                        request,
+                        f"“{guest.name}” is hidden from the public website.",
+                    )
+                elif action == "save_rank":
+                    raw_rank = (request.POST.get("website_rank") or "").strip()
+                    try:
+                        rank = max(1, min(9999, int(raw_rank)))
+                    except ValueError:
+                        rank = guest.rank or 1
+                    guest.rank = rank
+                    guest.updated_by = user
+                    guest.save(update_fields=["rank", "updated_by", "updated_at"])
+                    messages.success(
+                        request,
+                        f"Display order updated for “{guest.name}”.",
+                    )
+                elif action == "delete":
+                    name = guest.name
+                    guest.delete()
+                    messages.success(request, f"Guest profile “{name}” deleted.")
+            return redirect(self._company_team_list_url(user))
 
         form = TeamMemberForm(request.POST, request.FILES)
         context = workspace_context(
@@ -6704,7 +6918,11 @@ class RoleWorkspaceView(View):
             member = form.save(commit=False)
             member.updated_by = user
             member.save()
-            messages.success(request, f"Team member “{member.name}” added.")
+            messages.success(
+                request,
+                f"Guest team member “{member.name}” added"
+                f"{' and published' if member.is_published else ' as draft'}.",
+            )
             return redirect(self._company_team_list_url(user))
 
         context.update(self._company_team_form_context(user, form=form))

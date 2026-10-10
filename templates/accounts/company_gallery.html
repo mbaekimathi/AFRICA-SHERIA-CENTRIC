@@ -11,6 +11,7 @@
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
         Photos and visuals that introduce the firm’s office, team, and community presence.
+        Order 1 appears on the homepage hero. Order 2 and below appear on the public Gallery page.
       </p>
     </div>
     <div class="page-intro__actions">
@@ -21,7 +22,7 @@
   <section class="panel" aria-labelledby="profile-gallery-heading">
     <div class="panel__head">
       <h3 id="profile-gallery-heading">Current gallery images</h3>
-      <p class="panel__hint">Profile and website gallery. Change order or remove images below.</p>
+      <p class="panel__hint">Order 1 = homepage hero. Order 2+ = public Gallery page. Change order or remove images below.</p>
     </div>
     <div class="panel__body panel__body--company-list">
       <form
@@ -60,7 +61,7 @@
                     class="form-input"
                     name="image_order_{{ image.pk }}"
                     value="{{ image.sort_order }}"
-                    min="0"
+                    min="1"
                     step="1"
                   >
                 </label>

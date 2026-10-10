@@ -39,7 +39,7 @@
         <div class="website-image-grid">
           <fieldset class="website-image-card">
             <legend>Homepage hero</legend>
-            <p class="field-hint">Full-bleed background on the homepage hero.</p>
+            <p class="field-hint">Fallback for the homepage hero when Company Gallery has no images.</p>
             {% include "accounts/partials/website_image_field.html" with field=form.website_hero_image clear=form.clear_website_hero_image current=company_information.website_hero_image %}
           </fieldset>
 

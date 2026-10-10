@@ -72,7 +72,7 @@
             {{ form.rank.label }} <span aria-hidden="true">*</span>
           </label>
           {{ form.rank }}
-          <span class="field-hint">Lower numbers appear first (1 is highest priority).</span>
+          <span class="field-hint">Lower numbers appear first. Rank 1 can fill the homepage hero when no Order 1 profile image is set; Rank 2+ appear on the Gallery page.</span>
           {% if form.rank.errors %}<span class="field-error">{{ form.rank.errors.0 }}</span>{% endif %}
         </div>
         <div class="form-actions form-actions--start">

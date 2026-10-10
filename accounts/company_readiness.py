@@ -373,6 +373,7 @@ def analyze_company_information(
     ]
 
     from .models import (
+        Employee,
         EmployeeBlogPost,
         FirmFAQ,
         FirmGalleryImage,
@@ -391,11 +392,17 @@ def analyze_company_information(
         ),
     ]
 
-    team_count = FirmTeamMember.objects.filter(is_published=True).count()
+    team_count = (
+        Employee.objects.filter(
+            status=Employee.Status.ACTIVE,
+            website_published=True,
+        ).count()
+        + FirmTeamMember.objects.filter(is_published=True).count()
+    )
     team_checks = [
         FieldCheck(
             "team_members",
-            "At least one published team member",
+            "At least one published team profile (employee or guest)",
             team_count > 0,
             True,
         ),
@@ -543,7 +550,7 @@ def analyze_company_information(
                     icon=icon,
                     checks=team_checks,
                     url=url_for(slug),
-                    empty_summary="No team members have been registered yet.",
+                    empty_summary="No team profiles are published on the website yet.",
                 )
             )
         elif slug == "company-testimonials":
