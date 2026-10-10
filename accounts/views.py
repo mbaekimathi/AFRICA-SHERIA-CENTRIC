@@ -78,6 +78,7 @@ from .forms import (
     StaffClientProfileForm,
     StaffRegisterClientForm,
     CompanyInformationForm,
+    CompanyProfileImagesForm,
     CompanyContactsForm,
     CompanyThemeForm,
     CompanyLetterheadForm,
@@ -87,7 +88,12 @@ from .forms import (
     SignatureCaptureForm,
     EmployeeDigitalStampForm,
     AboutCompanyForm,
+    CompanyHomepageForm,
+    CompanyWebsiteImagesForm,
+    CompanyPrivacyForm,
     CompanyTermsForm,
+    TeamMemberForm,
+    TestimonialForm,
     CourtAttendanceAdvocateFormSet,
     CourtAttendanceBringUpItemFormSet,
     CreateGoogleDocumentForm,
@@ -246,6 +252,8 @@ from .models import (
     FirmGalleryImage,
     FirmPracticeArea,
     FirmPracticeAreaImage,
+    FirmTeamMember,
+    FirmTestimonial,
     GoogleDriveConnection,
     Invoice,
     CompanyExpenseAccount,
@@ -366,9 +374,11 @@ from .workspace import (
     workspace_module_visible,
 )
 from .utils import (
+    firm_posted_media_pool,
     optimize_image,
     refresh_company_stored_media,
     render_blog_body,
+    resolve_firm_website_images,
     stored_image_url,
     whatsapp_chat_url,
 )
@@ -461,6 +471,69 @@ def _firm_faq_json_ld(faqs) -> dict | None:
     }
 
 
+_FAQ_TOPIC_RULES = (
+    ("consultations", "Consultations", ("book", "consultation", "bring", "meeting", "hours")),
+    ("fees", "Fees & billing", ("fee", "charge", "cost", "bill")),
+    ("reach", "Reach & support", ("whatsapp", "located", "serve", "area", "support")),
+    ("legal-info", "Legal information", ("advice", "article", "website", "legal")),
+)
+
+
+def _firm_faq_topic(question: str, answer: str) -> tuple[str, str]:
+    blob = f"{question} {answer}".lower()
+    for slug, label, keywords in _FAQ_TOPIC_RULES:
+        if any(word in blob for word in keywords):
+            return slug, label
+    return "general", "General"
+
+
+def _firm_faq_hub(faqs) -> dict:
+    """Build topic filters and stable anchors for the public FAQ hub."""
+    from django.utils.text import slugify
+
+    items = []
+    topic_counts: dict[str, dict] = {}
+    used_anchors: dict[str, int] = {}
+
+    for faq in faqs:
+        topic_slug, topic_label = _firm_faq_topic(faq.question, faq.answer)
+        base = slugify(faq.question)[:72] or f"faq-{faq.pk}"
+        anchor = base
+        if anchor in used_anchors:
+            used_anchors[anchor] += 1
+            anchor = f"{base}-{used_anchors[anchor]}"
+        else:
+            used_anchors[anchor] = 1
+
+        if topic_slug not in topic_counts:
+            topic_counts[topic_slug] = {"slug": topic_slug, "label": topic_label, "count": 0}
+        topic_counts[topic_slug]["count"] += 1
+
+        items.append(
+            {
+                "faq": faq,
+                "topic_slug": topic_slug,
+                "topic_label": topic_label,
+                "anchor": anchor,
+            }
+        )
+
+    topic_order = [rule[0] for rule in _FAQ_TOPIC_RULES] + ["general"]
+    topics = []
+    for slug in topic_order:
+        if slug in topic_counts:
+            topics.append(topic_counts[slug])
+    for slug, data in topic_counts.items():
+        if slug not in topic_order:
+            topics.append(data)
+
+    return {
+        "faq_items": items,
+        "faq_topics": topics,
+        "faq_count": len(items),
+    }
+
+
 def _first_stored_profile_image(company):
     for row in company.profile_images.order_by("sort_order", "id"):
         if row.image and stored_image_url(row.image):
@@ -472,8 +545,10 @@ def _firm_partnership_context() -> dict:
     company = FirmCompanyInformation.get_solo()
     refresh_company_stored_media(company)
     profile = _first_stored_profile_image(company)
-    firm_hero_image_url = (
-        stored_image_url(profile.image) if profile and profile.image else ""
+    website_images = resolve_firm_website_images(company)
+    firm_media_pool = firm_posted_media_pool(company)
+    firm_hero_image_url = website_images.get("hero") or (
+        firm_media_pool[0] if firm_media_pool else ""
     )
     firm_logo_url = ""
     if company.logo:
@@ -486,7 +561,66 @@ def _firm_partnership_context() -> dict:
         "firm_name": company.display_name,
         "firm_logo_url": firm_logo_url,
         "firm_hero_image_url": firm_hero_image_url,
+        "website_images": website_images,
+        "firm_media_pool": firm_media_pool,
     }
+
+
+_FIRM_WEBSITE_ROLE_RANK = {
+    Employee.Role.MANAGING_PARTNER: 0,
+    Employee.Role.FIRM_ADMIN: 1,
+    Employee.Role.ADVOCATE: 2,
+    Employee.Role.EMPLOYEE: 3,
+    Employee.Role.INTERN: 4,
+    Employee.Role.IT_SUPPORT: 5,
+}
+
+
+def _firm_website_employees(*, limit: int | None = None):
+    """Active employees for the public firm website, with profile photos."""
+    from types import SimpleNamespace
+
+    from django.db.models import Case, IntegerField, Value, When
+
+    role_order = Case(
+        *[
+            When(role=role, then=Value(rank))
+            for role, rank in _FIRM_WEBSITE_ROLE_RANK.items()
+        ],
+        default=Value(99),
+        output_field=IntegerField(),
+    )
+    qs = (
+        Employee.objects.filter(status=Employee.Status.ACTIVE)
+        .annotate(_role_rank=role_order)
+        .order_by("_role_rank", "first_name", "last_name")
+        .only(
+            "first_name",
+            "last_name",
+            "courtesy_title",
+            "role",
+            "profile_photo",
+            "login_code",
+        )
+    )
+    if limit is not None:
+        qs = qs[:limit]
+
+    members = []
+    for emp in qs:
+        name = (emp.get_full_name() or emp.login_code or "").strip()
+        initial_source = (emp.first_name or name or "?").strip()
+        members.append(
+            SimpleNamespace(
+                name=name,
+                title=emp.get_role_display(),
+                practice_focus="",
+                bio="",
+                photo=emp.profile_photo,
+                initial=initial_source[:1].upper(),
+            )
+        )
+    return members
 
 
 class HomeView(View):
@@ -520,26 +654,41 @@ class HomeView(View):
             canonical_url = request.build_absolute_uri(reverse("accounts:home"))
             json_ld_graph = [_firm_organization_json_ld(request, company, firm_name)]
             whatsapp_url = ""
-            if company.phone:
+            wa_number = company.public_whatsapp_number
+            if wa_number:
                 whatsapp_url = whatsapp_chat_url(
-                    company.phone,
+                    wa_number,
                     f"Hello {firm_name}, I would like to enquire about legal services.",
                 )
             slides = _build_firm_slides(
                 request, company, firm_name, practice_areas, gallery_items
             )
+            team_members = _firm_website_employees()
+            testimonials = list(
+                FirmTestimonial.objects.filter(is_published=True).order_by(
+                    "rank", "attribution"
+                )[:4]
+            )
+            media_ctx = _firm_partnership_context()
             return render(
                 request,
                 self.company_template,
                 {
                     "company": company,
                     "firm_name": firm_name,
+                    "firm_logo_url": media_ctx.get("firm_logo_url", ""),
+                    "firm_hero_image_url": media_ctx.get("firm_hero_image_url", ""),
+                    "website_images": media_ctx.get("website_images") or {},
+                    "firm_media_pool": media_ctx.get("firm_media_pool") or [],
                     "practice_areas": practice_areas,
                     "faqs": faqs,
                     "gallery_items": gallery_items,
                     "blog_posts": blog_posts,
+                    "team_members": team_members,
+                    "testimonials": testimonials,
                     "slides": slides,
                     "has_terms": bool((company.terms_and_conditions or "").strip()),
+                    "has_privacy": bool((company.privacy_policy or "").strip()),
                     "meta_description": meta_description,
                     "canonical_url": canonical_url,
                     "json_ld": mark_safe(json.dumps(json_ld_graph, ensure_ascii=False)),
@@ -563,16 +712,19 @@ def _build_firm_slides(request, company, firm_name, practice_areas, gallery_item
     """Hero slideshow slides from firm profile, practice areas, and gallery."""
     slides = [
         {
-            "eyebrow": "Law firm · Kajiado",
-            "title": firm_name,
+            "eyebrow": (company.hero_eyebrow or "").strip() or "Law firm · Kajiado",
+            "title": (company.hero_headline or "").strip() or firm_name,
             "text": (
-                (company.visitor_feeling or company.tagline or company.value_proposition)
+                (company.hero_subtext or "").strip()
+                or (company.visitor_feeling or company.tagline or company.value_proposition)
                 or "Practical counsel for families, land, and business."
             ),
-            "cta_label": "Explore practice areas",
-            "cta_url": reverse("accounts:firm_practice_list"),
-            "cta2_label": "Contact the firm",
-            "cta2_url": reverse("accounts:firm_contact"),
+            "cta_label": (company.hero_primary_cta_label or "").strip()
+            or "Contact the firm",
+            "cta_url": reverse("accounts:firm_contact"),
+            "cta2_label": (company.hero_secondary_cta_label or "").strip()
+            or "Practice areas",
+            "cta2_url": reverse("accounts:firm_practice_list"),
             "tone": "navy",
             "image_url": "",
         }
@@ -617,15 +769,22 @@ def _public_firm_context(nav_active: str = "", solid_nav: bool = True):
     company = FirmCompanyInformation.get_solo()
     firm_name = company.display_name
     whatsapp_url = ""
-    if company.phone:
+    wa_number = company.public_whatsapp_number
+    if wa_number:
         whatsapp_url = whatsapp_chat_url(
-            company.phone,
+            wa_number,
             f"Hello {firm_name}, I would like to enquire about legal services.",
         )
+    media_ctx = _firm_partnership_context()
     return {
         "company": company,
         "firm_name": firm_name,
+        "firm_logo_url": media_ctx.get("firm_logo_url", ""),
+        "firm_hero_image_url": media_ctx.get("firm_hero_image_url", ""),
+        "website_images": media_ctx.get("website_images") or {},
+        "firm_media_pool": media_ctx.get("firm_media_pool") or [],
         "has_terms": bool((company.terms_and_conditions or "").strip()),
+        "has_privacy": bool((company.privacy_policy or "").strip()),
         "whatsapp_url": whatsapp_url,
         "nav_active": nav_active,
         "firm_nav_solid": solid_nav,
@@ -657,6 +816,22 @@ class FirmAboutView(View):
             "about",
             "About the firm",
             f"Learn about {company.display_name} — our story, values, and service areas in Kajiado County.",
+            {"team_members": _firm_website_employees()},
+        )
+
+
+class FirmTeamView(View):
+    template_name = "accounts/firm/team.html"
+
+    def get(self, request):
+        company = FirmCompanyInformation.get_solo()
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "team",
+            "Our team",
+            f"Meet the advocates and team at {company.display_name}.",
+            {"team_members": _firm_website_employees()},
         )
 
 
@@ -738,6 +913,7 @@ class FirmFaqsView(View):
     def get(self, request):
         faqs = list(FirmFAQ.objects.order_by("rank", "question"))
         faq_ld = _firm_faq_json_ld(faqs)
+        hub = _firm_faq_hub(faqs)
         return _firm_page_render(
             request,
             self.template_name,
@@ -746,6 +922,7 @@ class FirmFaqsView(View):
             f"Common questions about working with {FirmCompanyInformation.get_solo().display_name}.",
             {
                 "faqs": faqs,
+                **hub,
                 "json_ld": mark_safe(json.dumps(faq_ld, ensure_ascii=False))
                 if faq_ld
                 else "",
@@ -790,6 +967,35 @@ class FirmTermsView(View):
                 or (
                     f"Terms for {context['firm_name']} will be published here shortly. "
                     f"For enquiries, please use the contact page."
+                ),
+            }
+        )
+        return render(request, self.template_name, context)
+
+
+class FirmPrivacyView(View):
+    """Public privacy policy page for the company website."""
+
+    template_name = "accounts/firm/privacy.html"
+
+    def get(self, request):
+        context = _public_firm_context(nav_active="privacy", solid_nav=True)
+        company = context["company"]
+        privacy = (company.privacy_policy or "").strip()
+        context.update(
+            {
+                "page_title": "Privacy policy",
+                "meta_description": (
+                    f"Privacy policy for clients and website visitors of "
+                    f"{context['firm_name']}."
+                ),
+                "canonical_url": request.build_absolute_uri(
+                    reverse("accounts:firm_privacy")
+                ),
+                "privacy_text": privacy
+                or (
+                    f"The privacy policy for {context['firm_name']} will be published "
+                    f"here shortly. For enquiries, please use the contact page."
                 ),
             }
         )
@@ -1006,6 +1212,11 @@ class BlogSitemapView(View):
                 "priority": "0.8",
             },
             {
+                "loc": request.build_absolute_uri(reverse("accounts:firm_team")),
+                "lastmod": company.updated_at,
+                "priority": "0.75",
+            },
+            {
                 "loc": request.build_absolute_uri(
                     reverse("accounts:firm_practice_list")
                 ),
@@ -1035,6 +1246,16 @@ class BlogSitemapView(View):
                 "priority": "0.8",
             },
         ]
+        if (company.privacy_policy or "").strip():
+            urls.append(
+                {
+                    "loc": request.build_absolute_uri(
+                        reverse("accounts:firm_privacy")
+                    ),
+                    "lastmod": company.updated_at,
+                    "priority": "0.3",
+                }
+            )
         if (company.terms_and_conditions or "").strip():
             urls.append(
                 {
@@ -3871,12 +4092,19 @@ class RoleWorkspaceView(View):
     company_profile_template = "accounts/company_profile.html"
     company_contacts_template = "accounts/company_contacts.html"
     about_company_template = "accounts/about_company.html"
+    company_homepage_template = "accounts/company_homepage.html"
+    company_website_images_template = "accounts/company_website_images.html"
     practice_areas_template = "accounts/practice_areas.html"
     practice_area_form_template = "accounts/practice_area_form.html"
+    company_team_template = "accounts/company_team.html"
+    company_team_form_template = "accounts/company_team_form.html"
+    company_testimonials_template = "accounts/company_testimonials.html"
+    company_testimonial_form_template = "accounts/company_testimonial_form.html"
     company_faqs_template = "accounts/company_faqs.html"
     company_blogs_template = "accounts/company_blogs.html"
     company_gallery_template = "accounts/company_gallery.html"
     company_gallery_form_template = "accounts/company_gallery_form.html"
+    company_privacy_template = "accounts/company_privacy.html"
     company_terms_template = "accounts/company_terms.html"
     research_template = "accounts/research.html"
     blogs_template = "accounts/blogs.html"
@@ -4074,6 +4302,10 @@ class RoleWorkspaceView(View):
                 role_slug=user.role_slug,
                 trail=list(resolved["trail"]),
             )
+            context["website_preview_url"] = reverse("accounts:home")
+            context["website_template_url"] = user.workspace_url(
+                "dashboard", "system-settings", "website-template"
+            )
             response = render(
                 request, self.company_information_template, context
             )
@@ -4086,12 +4318,36 @@ class RoleWorkspaceView(View):
         elif resolved["leaf"] == "about-company":
             context.update(self._about_company_context())
             response = render(request, self.about_company_template, context)
+        elif resolved.get("is_company_homepage"):
+            context.update(self._company_homepage_context())
+            response = render(request, self.company_homepage_template, context)
+        elif resolved.get("is_company_website_images"):
+            context.update(self._company_website_images_context())
+            response = render(
+                request, self.company_website_images_template, context
+            )
         elif resolved.get("is_practice_areas"):
             context.update(self._practice_areas_context(user))
             response = render(request, self.practice_areas_template, context)
         elif resolved.get("is_practice_areas_new"):
             context.update(self._practice_area_form_context(user))
             response = render(request, self.practice_area_form_template, context)
+        elif resolved.get("is_company_team"):
+            context.update(self._company_team_context(user))
+            response = render(request, self.company_team_template, context)
+        elif resolved.get("is_company_team_new"):
+            context.update(self._company_team_form_context(user))
+            response = render(request, self.company_team_form_template, context)
+        elif resolved.get("is_company_testimonials"):
+            context.update(self._company_testimonials_context(user))
+            response = render(
+                request, self.company_testimonials_template, context
+            )
+        elif resolved.get("is_company_testimonials_new"):
+            context.update(self._company_testimonial_form_context(user))
+            response = render(
+                request, self.company_testimonial_form_template, context
+            )
         elif resolved.get("is_company_faqs"):
             context.update(self._company_faqs_context(user))
             response = render(request, self.company_faqs_template, context)
@@ -4109,6 +4365,9 @@ class RoleWorkspaceView(View):
             response = render(
                 request, self.company_gallery_form_template, context
             )
+        elif resolved.get("is_company_privacy"):
+            context.update(self._company_privacy_context())
+            response = render(request, self.company_privacy_template, context)
         elif resolved.get("is_company_terms"):
             context.update(self._company_terms_context())
             response = render(request, self.company_terms_template, context)
@@ -4635,12 +4894,19 @@ class RoleWorkspaceView(View):
             "company-profile",
             "company-contacts",
             "about-company",
+            "company-homepage",
+            "company-website-images",
             "practice-areas",
             "practice-areas-new",
+            "company-team",
+            "company-team-new",
+            "company-testimonials",
+            "company-testimonials-new",
             "company-faqs",
             "company-faqs-new",
             "company-gallery",
             "company-gallery-new",
+            "company-privacy",
             "company-terms",
             "website-template",
             "company-theme",
@@ -4728,14 +4994,32 @@ class RoleWorkspaceView(View):
         if resolved["leaf"] == "about-company":
             return self._post_about_company(request, user, resolved)
 
+        if resolved["leaf"] == "company-homepage":
+            return self._post_company_homepage(request, user, resolved)
+
+        if resolved["leaf"] == "company-website-images":
+            return self._post_company_website_images(request, user, resolved)
+
         if resolved["leaf"] in {"practice-areas", "practice-areas-new"}:
             return self._post_practice_area(request, user, resolved)
+
+        if resolved["leaf"] in {"company-team", "company-team-new"}:
+            return self._post_company_team(request, user, resolved)
+
+        if resolved["leaf"] in {
+            "company-testimonials",
+            "company-testimonials-new",
+        }:
+            return self._post_company_testimonial(request, user, resolved)
 
         if resolved["leaf"] in {"company-faqs", "company-faqs-new"}:
             return self._post_company_faq(request, user, resolved)
 
         if resolved["leaf"] in {"company-gallery", "company-gallery-new"}:
             return self._post_company_gallery(request, user, resolved)
+
+        if resolved["leaf"] == "company-privacy":
+            return self._post_company_privacy(request, user, resolved)
 
         if resolved["leaf"] == "company-terms":
             return self._post_company_terms(request, user, resolved)
@@ -5486,12 +5770,8 @@ class RoleWorkspaceView(View):
     def _company_profile_context(*, form=None):
         company = FirmCompanyInformation.get_solo()
         refresh_company_stored_media(company)
-        existing_images = list(
-            company.profile_images.order_by("sort_order", "id")
-        )
         return {
             "company_information": company,
-            "existing_images": existing_images,
             "form": form or CompanyInformationForm(instance=company),
         }
 
@@ -5624,7 +5904,6 @@ class RoleWorkspaceView(View):
             info.updated_by = user
             info.save()
             form.apply_logo(info)
-            self._sync_company_profile_images(request, info, append=True)
             messages.success(request, "Company profile saved.")
             return redirect(user.workspace_url(*resolved["trail"]))
 
@@ -6103,6 +6382,13 @@ class RoleWorkspaceView(View):
 
     @staticmethod
     def _company_blogs_context(user, request=None):
+        drafts = list(
+            EmployeeBlogPost.objects.filter(
+                status=EmployeeBlogPost.Status.DRAFT
+            )
+            .select_related("author")
+            .order_by("-updated_at", "-created_at")
+        )
         pending = list(
             EmployeeBlogPost.objects.filter(
                 status=EmployeeBlogPost.Status.SUBMITTED
@@ -6119,8 +6405,10 @@ class RoleWorkspaceView(View):
         )
         share_intents = pop_share_intents(request) if request is not None else []
         return {
+            "draft_blog_posts": drafts,
             "pending_blog_posts": pending,
             "published_blog_posts": published,
+            "draft_blog_count": len(drafts),
             "pending_blog_count": len(pending),
             "published_blog_count": len(published),
             "public_blog_list_url": reverse("accounts:blog_list"),
@@ -6178,10 +6466,17 @@ class RoleWorkspaceView(View):
         return user.workspace_url("dashboard", "company-gallery-new")
 
     @staticmethod
-    def _company_gallery_context(user):
+    def _company_gallery_context(user, *, profile_images_form=None):
+        company = FirmCompanyInformation.get_solo()
+        refresh_company_stored_media(company)
         items = list(FirmGalleryImage.objects.order_by("rank", "title"))
+        existing_images = list(
+            company.profile_images.order_by("sort_order", "id")
+        )
         return {
             "gallery_items": items,
+            "existing_images": existing_images,
+            "profile_images_form": profile_images_form or CompanyProfileImagesForm(),
             "company_gallery_new_url": RoleWorkspaceView._company_gallery_new_url(
                 user
             ),
@@ -6199,6 +6494,8 @@ class RoleWorkspaceView(View):
 
     def _post_company_gallery(self, request, user, resolved):
         if resolved["leaf"] == "company-gallery":
+            if request.POST.get("save_profile_images"):
+                return self._post_company_profile_images(request, user, resolved)
             return redirect(self._company_gallery_new_url(user))
 
         form = GalleryImageForm(request.POST, request.FILES)
@@ -6218,6 +6515,220 @@ class RoleWorkspaceView(View):
 
         context.update(self._company_gallery_form_context(user, form=form))
         response = render(request, self.company_gallery_form_template, context)
+        return attach_greeting_cookie(response, request)
+
+    def _post_company_profile_images(self, request, user, resolved):
+        company = FirmCompanyInformation.get_solo()
+        form = CompanyProfileImagesForm(request.POST, request.FILES)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            self._sync_company_profile_images(request, company, append=True)
+            messages.success(request, "Gallery images saved.")
+            return redirect(self._company_gallery_list_url(user))
+
+        context.update(
+            self._company_gallery_context(user, profile_images_form=form)
+        )
+        response = render(request, self.company_gallery_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_homepage_context(*, form=None):
+        company = FirmCompanyInformation.get_solo()
+        return {
+            "company_information": company,
+            "form": form or CompanyHomepageForm(instance=company),
+        }
+
+    def _post_company_homepage(self, request, user, resolved):
+        company = FirmCompanyInformation.get_solo()
+        form = CompanyHomepageForm(request.POST, instance=company)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            info = form.save(commit=False)
+            info.updated_by = user
+            info.save()
+            messages.success(request, "Homepage content saved.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._company_homepage_context(form=form))
+        response = render(request, self.company_homepage_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_website_images_context(*, form=None):
+        company = FirmCompanyInformation.get_solo()
+        refresh_company_stored_media(company)
+        return {
+            "company_information": company,
+            "form": form or CompanyWebsiteImagesForm(instance=company),
+            "section_fields": CompanyWebsiteImagesForm.SECTION_FIELDS,
+        }
+
+    def _post_company_website_images(self, request, user, resolved):
+        company = FirmCompanyInformation.get_solo()
+        form = CompanyWebsiteImagesForm(
+            request.POST, request.FILES, instance=company
+        )
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            form.apply_website_images(company)
+            company.updated_by = user
+            company.save(update_fields=["updated_by", "updated_at"])
+            messages.success(request, "Website section images saved.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._company_website_images_context(form=form))
+        response = render(
+            request, self.company_website_images_template, context
+        )
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_team_list_url(user):
+        return user.workspace_url("dashboard", "company-team")
+
+    @staticmethod
+    def _company_team_new_url(user):
+        return user.workspace_url("dashboard", "company-team-new")
+
+    @staticmethod
+    def _company_team_context(user):
+        members = list(FirmTeamMember.objects.order_by("rank", "name"))
+        return {
+            "team_members": members,
+            "company_team_new_url": RoleWorkspaceView._company_team_new_url(user),
+        }
+
+    @staticmethod
+    def _company_team_form_context(user, *, form=None, team_member=None):
+        return {
+            "form": form or TeamMemberForm(instance=team_member),
+            "team_member": team_member,
+            "company_team_url": RoleWorkspaceView._company_team_list_url(user),
+        }
+
+    def _post_company_team(self, request, user, resolved):
+        if resolved["leaf"] == "company-team":
+            return redirect(self._company_team_new_url(user))
+
+        form = TeamMemberForm(request.POST, request.FILES)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            member = form.save(commit=False)
+            member.updated_by = user
+            member.save()
+            messages.success(request, f"Team member “{member.name}” added.")
+            return redirect(self._company_team_list_url(user))
+
+        context.update(self._company_team_form_context(user, form=form))
+        response = render(request, self.company_team_form_template, context)
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_testimonials_list_url(user):
+        return user.workspace_url("dashboard", "company-testimonials")
+
+    @staticmethod
+    def _company_testimonials_new_url(user):
+        return user.workspace_url("dashboard", "company-testimonials-new")
+
+    @staticmethod
+    def _company_testimonials_context(user):
+        items = list(FirmTestimonial.objects.order_by("rank", "attribution"))
+        return {
+            "testimonials": items,
+            "company_testimonials_new_url": (
+                RoleWorkspaceView._company_testimonials_new_url(user)
+            ),
+        }
+
+    @staticmethod
+    def _company_testimonial_form_context(user, *, form=None, testimonial=None):
+        return {
+            "form": form or TestimonialForm(instance=testimonial),
+            "testimonial": testimonial,
+            "company_testimonials_url": (
+                RoleWorkspaceView._company_testimonials_list_url(user)
+            ),
+        }
+
+    def _post_company_testimonial(self, request, user, resolved):
+        if resolved["leaf"] == "company-testimonials":
+            return redirect(self._company_testimonials_new_url(user))
+
+        form = TestimonialForm(request.POST)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            item = form.save(commit=False)
+            item.updated_by = user
+            item.save()
+            messages.success(request, "Testimonial added.")
+            return redirect(self._company_testimonials_list_url(user))
+
+        context.update(self._company_testimonial_form_context(user, form=form))
+        response = render(
+            request, self.company_testimonial_form_template, context
+        )
+        return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _company_privacy_context(*, form=None):
+        company = FirmCompanyInformation.get_solo()
+        return {
+            "company_information": company,
+            "form": form or CompanyPrivacyForm(instance=company),
+        }
+
+    def _post_company_privacy(self, request, user, resolved):
+        company = FirmCompanyInformation.get_solo()
+        form = CompanyPrivacyForm(request.POST, instance=company)
+        context = workspace_context(
+            user,
+            request=request,
+            page_title=resolved["page_title"],
+            page_trail=resolved["trail"],
+            active_page=resolved["leaf"],
+        )
+        if form.is_valid():
+            info = form.save(commit=False)
+            info.updated_by = user
+            info.save()
+            messages.success(request, "Privacy policy saved.")
+            return redirect(user.workspace_url(*resolved["trail"]))
+
+        context.update(self._company_privacy_context(form=form))
+        response = render(request, self.company_privacy_template, context)
         return attach_greeting_cookie(response, request)
 
     @staticmethod
@@ -15743,6 +16254,167 @@ class EditFAQView(View):
         context.update(
             RoleWorkspaceView._company_faq_form_context(
                 user, form=form, faq=faq
+            )
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+class EditTeamMemberView(View):
+    """Edit or delete a firm team member."""
+
+    template_name = "accounts/company_team_form.html"
+
+    def _member_or_404(self, member_id):
+        return get_object_or_404(FirmTeamMember, pk=member_id)
+
+    def get(self, request, role, member_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_team_member",
+                    kwargs={"role": user.role_slug, "member_id": member_id},
+                )
+            )
+        member = self._member_or_404(member_id)
+        trail = ["dashboard", "company-team"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit team member",
+            page_trail=trail,
+            active_page="company-team",
+        )
+        context.update(
+            RoleWorkspaceView._company_team_form_context(
+                user, team_member=member
+            )
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, member_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_team_member",
+                    kwargs={"role": user.role_slug, "member_id": member_id},
+                )
+            )
+        member = self._member_or_404(member_id)
+        list_url = RoleWorkspaceView._company_team_list_url(user)
+
+        if request.POST.get("team_delete"):
+            name = member.name
+            member.delete()
+            messages.success(request, f"Team member “{name}” deleted.")
+            return redirect(list_url)
+
+        form = TeamMemberForm(request.POST, request.FILES, instance=member)
+        trail = ["dashboard", "company-team"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit team member",
+            page_trail=trail,
+            active_page="company-team",
+        )
+        if form.is_valid():
+            member = form.save(commit=False)
+            member.updated_by = user
+            member.save()
+            messages.success(request, f"Team member “{member.name}” saved.")
+            return redirect(list_url)
+
+        context.update(
+            RoleWorkspaceView._company_team_form_context(
+                user, form=form, team_member=member
+            )
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+
+class EditTestimonialView(View):
+    """Edit or delete a firm testimonial."""
+
+    template_name = "accounts/company_testimonial_form.html"
+
+    def _item_or_404(self, item_id):
+        return get_object_or_404(FirmTestimonial, pk=item_id)
+
+    def get(self, request, role, item_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_testimonial",
+                    kwargs={"role": user.role_slug, "item_id": item_id},
+                )
+            )
+        item = self._item_or_404(item_id)
+        trail = ["dashboard", "company-testimonials"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit testimonial",
+            page_trail=trail,
+            active_page="company-testimonials",
+        )
+        context.update(
+            RoleWorkspaceView._company_testimonial_form_context(
+                user, testimonial=item
+            )
+        )
+        response = render(request, self.template_name, context)
+        return attach_greeting_cookie(response, request)
+
+    def post(self, request, role, item_id):
+        user = request.user
+        if user.status != Employee.Status.ACTIVE:
+            return redirect_for_employee(request, user)
+        if role != user.role_slug:
+            return redirect(
+                reverse(
+                    "accounts:edit_testimonial",
+                    kwargs={"role": user.role_slug, "item_id": item_id},
+                )
+            )
+        item = self._item_or_404(item_id)
+        list_url = RoleWorkspaceView._company_testimonials_list_url(user)
+
+        if request.POST.get("testimonial_delete"):
+            item.delete()
+            messages.success(request, "Testimonial deleted.")
+            return redirect(list_url)
+
+        form = TestimonialForm(request.POST, instance=item)
+        trail = ["dashboard", "company-testimonials"]
+        context = workspace_context(
+            user,
+            request=request,
+            page_title="Edit testimonial",
+            page_trail=trail,
+            active_page="company-testimonials",
+        )
+        if form.is_valid():
+            item = form.save(commit=False)
+            item.updated_by = user
+            item.save()
+            messages.success(request, "Testimonial saved.")
+            return redirect(list_url)
+
+        context.update(
+            RoleWorkspaceView._company_testimonial_form_context(
+                user, form=form, testimonial=item
             )
         )
         response = render(request, self.template_name, context)

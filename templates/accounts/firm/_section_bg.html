@@ -1,0 +1,10 @@
+{# Atmospheric section background. Pass: src, tone (ink|soft|light), speed (optional) #}
+{% if src %}
+<div class="fw-bg" data-fw-bg data-speed="{{ speed|default:'0.18' }}" aria-hidden="true">
+  <div class="fw-bg__plane" data-fw-parallax data-speed="{{ speed|default:'0.18' }}">
+    <img class="fw-bg__img" src="{{ src }}" alt="" loading="lazy" decoding="async">
+  </div>
+  <div class="fw-bg__veil fw-bg__veil--{{ tone|default:'soft' }}"></div>
+  <div class="fw-bg__grain"></div>
+</div>
+{% endif %}

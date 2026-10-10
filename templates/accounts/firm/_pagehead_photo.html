@@ -1,0 +1,4 @@
+{# Optional pagehead photo from posted media only. Pass: src, speed #}
+{% if src %}
+<img class="fw-pagehead__photo" data-fw-parallax data-speed="{{ speed|default:'0.25' }}" src="{{ src }}" alt="" loading="eager">
+{% endif %}

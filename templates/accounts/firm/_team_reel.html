@@ -1,0 +1,63 @@
+{# Full-bleed coverflow employee slideshow. Expects team_members in context. #}
+{% load firm_media %}
+<div class="fw-team-deck" data-fw-team-slides aria-roledescription="carousel" aria-label="Team members">
+  <div class="fw-wrap fw-team-deck__top">
+    <div class="fw-team-deck__status">
+      <span class="fw-team-deck__pulse" aria-hidden="true"></span>
+      <span class="fw-team-deck__live">Now featuring</span>
+      <span class="fw-team-deck__who" data-fw-team-who>—</span>
+    </div>
+    <div class="fw-team-deck__controls">
+      <button type="button" class="fw-team-deck__btn" data-fw-team-prev aria-label="Previous">‹</button>
+      <button type="button" class="fw-team-deck__btn fw-team-deck__btn--toggle" data-fw-team-toggle aria-label="Pause slideshow" aria-pressed="false">❚❚</button>
+      <button type="button" class="fw-team-deck__btn" data-fw-team-next aria-label="Next">›</button>
+    </div>
+  </div>
+
+  <div class="fw-team-deck__stage">
+    <div class="fw-team-deck__glow" aria-hidden="true"></div>
+    {% for member in team_members %}
+    <article
+      class="fw-team-deck__card{% if forloop.first %} is-active{% endif %}"
+      data-fw-team-slide="{{ forloop.counter0 }}"
+      data-fw-team-name="{{ member.name }}"
+      {% if not forloop.first %}aria-hidden="true"{% endif %}
+    >
+      <div class="fw-team-deck__media">
+        {% if member.photo|stored_media_url %}
+        <img src="{{ member.photo|stored_media_url }}" alt="{{ member.name }}" loading="{% if forloop.first %}eager{% else %}lazy{% endif %}" width="720" height="900">
+        {% else %}
+        <span class="fw-team-deck__ph" aria-hidden="true"></span>
+        <span class="fw-team-deck__initial" aria-hidden="true">{% firstof member.initial member.name|slice:":1"|upper %}</span>
+        {% endif %}
+        <div class="fw-team-deck__shade"></div>
+      </div>
+      <div class="fw-team-deck__meta">
+        <p class="fw-team-deck__index" aria-hidden="true">{{ forloop.counter|stringformat:"02d" }}</p>
+        <h3>{{ member.name }}</h3>
+        {% if member.title %}<p class="fw-team-deck__title">{{ member.title }}</p>{% endif %}
+        {% if member.practice_focus %}<p class="fw-team-deck__focus">{{ member.practice_focus }}</p>{% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+
+  <div class="fw-wrap fw-team-deck__foot">
+    <div class="fw-team-deck__progress" aria-hidden="true"><span></span></div>
+    {% if team_members|length > 1 %}
+    <div class="fw-team-deck__dots" role="tablist" aria-label="Choose team member">
+      {% for member in team_members %}
+      <button
+        type="button"
+        class="fw-team-deck__dot{% if forloop.first %} is-active{% endif %}"
+        data-fw-team-dot="{{ forloop.counter0 }}"
+        role="tab"
+        aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+        aria-label="{{ member.name }}"
+      ></button>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <p class="fw-team-deck__count" data-fw-team-count aria-live="polite">01 / {{ team_members|length|stringformat:"02d" }}</p>
+  </div>
+</div>

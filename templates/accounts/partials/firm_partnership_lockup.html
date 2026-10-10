@@ -1,0 +1,39 @@
+{# Horizontal partnership lockup — firm × platform #}
+<div class="fw-partner" role="group" aria-label="{{ firm_name }} in partnership with Sheria Centric software">
+  <p class="fw-partner__eyebrow">In partnership</p>
+
+  <div class="fw-partner__rail">
+    <div class="fw-partner__side fw-partner__side--firm">
+      <span class="fw-partner__mark fw-partner__mark--firm">
+        {% if firm_logo_url %}
+        <img src="{{ firm_logo_url }}" alt="" width="96" height="96" decoding="async">
+        {% else %}
+        <span class="fw-partner__initial" aria-hidden="true">{{ firm_name|slice:":1"|upper }}</span>
+        {% endif %}
+      </span>
+      <span class="fw-partner__meta">
+        <span class="fw-partner__name">{{ firm_name }}</span>
+        <span class="fw-partner__role">Law firm</span>
+      </span>
+    </div>
+
+    <span class="fw-partner__join" aria-hidden="true">
+      <span class="fw-partner__join-line"></span>
+      <span class="fw-partner__join-x">×</span>
+      <span class="fw-partner__join-line"></span>
+    </span>
+
+    <div class="fw-partner__side fw-partner__side--platform">
+      <span class="fw-partner__mark fw-partner__mark--platform">
+        <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+          <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="fw-partner__meta">
+        <span class="fw-partner__name">Sheria Centric</span>
+        <span class="fw-partner__role">Practice software</span>
+      </span>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,52 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="company-privacy-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Publish the firm’s privacy policy and a short legal disclaimer for website visitors.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Privacy content</h3>
+      <p class="panel__hint">{{ company_information.display_name }}</p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="workspace-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+        <div class="form-field">
+          <label for="{{ form.privacy_policy.id_for_label }}">{{ form.privacy_policy.label }}</label>
+          {{ form.privacy_policy }}
+          {% if form.privacy_policy.errors %}
+          <span class="field-error">{{ form.privacy_policy.errors.0 }}</span>
+          {% endif %}
+        </div>
+        <div class="form-field">
+          <label for="{{ form.legal_disclaimer.id_for_label }}">{{ form.legal_disclaimer.label }}</label>
+          {{ form.legal_disclaimer }}
+          <span class="field-hint">Shown in the website footer when set.</span>
+          {% if form.legal_disclaimer.errors %}
+          <span class="field-error">{{ form.legal_disclaimer.errors.0 }}</span>
+          {% endif %}
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">Save privacy policy</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

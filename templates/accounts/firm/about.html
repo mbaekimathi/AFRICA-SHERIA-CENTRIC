@@ -1,82 +1,232 @@
-{% extends "accounts/firm/base.html" %}
-{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}
-<link rel="canonical" href="{{ canonical_url }}">
-{% endblock %}
-
-{% block firm_content %}
-<section class="fw-pagehead">
-  <div class="fw-wrap">
-    <p class="fw-pagehead__eyebrow">About</p>
-    <h1>{{ firm_name }}</h1>
-    {% if company.tagline %}<p class="fw-pagehead__lede">{{ company.tagline }}</p>{% endif %}
-  </div>
-</section>
-
-<section class="fw-section fw-section--white">
-  <div class="fw-wrap">
-    <div class="fw-facts fw-reveal">
-      {% if company.founded_year or company.founded_by %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Founded</p>
-        <p>{% if company.founded_year %}{{ company.founded_year }}{% endif %}{% if company.founded_year and company.founded_by %} · {% endif %}{% if company.founded_by %}{{ company.founded_by }}{% endif %}</p>
-      </div>
-      {% endif %}
-      {% if company.legal_name %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Legal name</p>
-        <p>{{ company.legal_name }}</p>
-      </div>
-      {% endif %}
-      {% if company.market_gap %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Why we started</p>
-        <p>{{ company.market_gap }}</p>
-      </div>
-      {% endif %}
-      {% if company.milestone %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Milestone</p>
-        <p>{{ company.milestone }}</p>
-      </div>
-      {% endif %}
-      {% if company.service_areas %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Where we serve</p>
-        <p>{{ company.service_areas }}</p>
-      </div>
-      {% endif %}
-      {% if company.value_proposition %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">What we offer</p>
-        <p>{{ company.value_proposition }}</p>
-      </div>
-      {% endif %}
-      {% if company.future_vision %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Looking ahead</p>
-        <p>{{ company.future_vision }}</p>
-      </div>
-      {% endif %}
-    </div>
-
-    {% if company.core_values %}
-    <h2 class="fw-subhead fw-reveal">Our values</h2>
-    <div class="fw-values fw-reveal">
-      {% for value in company.core_values %}
-      <div class="fw-value">
-        <strong>{{ value.name }}</strong>
-        {% if value.how %}<span>{{ value.how }}</span>{% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    <div class="fw-btn-row fw-actions fw-reveal">
-      <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_practice_list' %}">Practice areas</a>
-      <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_contact' %}">Contact</a>
-    </div>
-  </div>
-</section>
-{% endblock %}
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}
+<link rel="canonical" href="{{ canonical_url }}">
+{% endblock %}
+
+{% block firm_content %}
+<section class="fw-about-hero fw-about-hero--solid" data-fw-hero>
+  <div class="fw-about-hero__plane" aria-hidden="true">
+    <div class="fw-about-hero__veil"></div>
+    <div class="fw-about-hero__orb"></div>
+    <span class="fw-about-hero__mark">Our story</span>
+  </div>
+
+  <div class="fw-wrap fw-about-hero__stage">
+    {% if firm_logo_url %}
+    <img class="fw-about-hero__logo fw-hero__anim" style="--d:0" src="{{ firm_logo_url }}" alt="" width="68" height="68">
+    {% endif %}
+    <p class="fw-about-hero__eyebrow fw-hero__anim" style="--d:1">
+      <span class="fw-hero__rule" aria-hidden="true"></span>
+      About the firm
+    </p>
+    <h1 class="fw-hero__anim" style="--d:2">{{ firm_name }}</h1>
+    <p class="fw-about-hero__lede fw-hero__anim" style="--d:3">
+      {% if company.tagline %}{{ company.tagline }}
+      {% elif company.visitor_feeling %}{{ company.visitor_feeling }}
+      {% else %}A modern chambers for clear counsel and lasting trust.{% endif %}
+    </p>
+    <div class="fw-about-hero__chips fw-hero__anim" style="--d:4">
+      {% if company.founded_year %}
+      <span>
+        {% include "accounts/firm/_icons.html" with name="spark" class="fw-ico fw-ico--sm" %}
+        Est. {{ company.founded_year }}
+      </span>
+      {% endif %}
+      {% if company.city %}
+      <span>
+        {% include "accounts/firm/_icons.html" with name="pin" class="fw-ico fw-ico--sm" %}
+        {{ company.city }}{% if company.country %}, {{ company.country }}{% endif %}
+      </span>
+      {% endif %}
+      {% if company.lsk_number %}
+      <span>
+        {% include "accounts/firm/_icons.html" with name="shield" class="fw-ico fw-ico--sm" %}
+        LSK advocates
+      </span>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{% if company.value_proposition or company.visitor_feeling %}
+<section class="fw-about-manifesto">
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-about-manifesto__kicker">What we stand for</p>
+    <blockquote class="fw-about-manifesto__quote">
+      <span aria-hidden="true">“</span>
+      <p>{% if company.value_proposition %}{{ company.value_proposition }}{% else %}{{ company.visitor_feeling }}{% endif %}</p>
+    </blockquote>
+    {% if company.visitor_feeling and company.value_proposition %}
+    <p class="fw-about-manifesto__aside">{{ company.visitor_feeling }}</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="fw-section fw-about-origin">
+  <div class="fw-wrap fw-about-split">
+    {% if website_images.story %}
+    <div class="fw-about-split__media" data-fw-tilt data-fw-anim="left">
+      <img src="{{ website_images.story }}" alt="{{ firm_name }} chambers" loading="lazy">
+      <div class="fw-about-split__caption">
+        <strong>Chambers</strong>
+        <span>{% if company.physical_address %}{{ company.physical_address|truncatewords:10 }}{% else %}Where counsel begins{% endif %}</span>
+      </div>
+    </div>
+    {% endif %}
+    <div class="fw-about-split__copy" data-fw-anim="right">
+      <p class="fw-section__eyebrow">Origin</p>
+      <h2>Why we exist</h2>
+      <p>
+        {% if company.market_gap %}{{ company.market_gap }}
+        {% else %}We built {{ firm_name }} to deliver practical legal counsel with the clarity and care clients deserve.{% endif %}
+      </p>
+      {% if company.milestone %}
+      <div class="fw-about-callout">
+        <span class="fw-about-callout__ico">{% include "accounts/firm/_icons.html" with name="spark" class="fw-ico" %}</span>
+        <div>
+          <p class="fw-about-callout__label">Milestone</p>
+          <p>{{ company.milestone }}</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="fw-section fw-section--ink fw-about-journey">
+  <div class="fw-wrap">
+    <div class="fw-section__head" data-fw-anim="fade">
+      <p class="fw-section__eyebrow fw-section__eyebrow--light">Journey</p>
+      <h2>How the firm took shape</h2>
+    </div>
+    <ol class="fw-about-timeline">
+      <li data-fw-anim="rise" style="--i:0">
+        <span class="fw-about-timeline__node" aria-hidden="true"></span>
+        <span class="fw-about-timeline__year">{% if company.founded_year %}{{ company.founded_year }}{% else %}Begin{% endif %}</span>
+        <h3>Founded</h3>
+        <p>{% if company.founded_by %}By {{ company.founded_by }}.{% else %}{{ firm_name }} opens its doors.{% endif %}</p>
+      </li>
+      <li data-fw-anim="rise" style="--i:1">
+        <span class="fw-about-timeline__node" aria-hidden="true"></span>
+        <span class="fw-about-timeline__year">Build</span>
+        <h3>Practice &amp; platform</h3>
+        <p>{% if company.milestone %}{{ company.milestone|truncatewords:28 }}{% else %}Counsel, process, and secure digital workflows under one roof.{% endif %}</p>
+      </li>
+      <li data-fw-anim="rise" style="--i:2">
+        <span class="fw-about-timeline__node" aria-hidden="true"></span>
+        <span class="fw-about-timeline__year">Serve</span>
+        <h3>Where we work</h3>
+        <p>{% if company.service_areas %}{{ company.service_areas }}{% else %}Families, businesses, and organisations across the County.{% endif %}</p>
+      </li>
+      <li data-fw-anim="rise" style="--i:3">
+        <span class="fw-about-timeline__node" aria-hidden="true"></span>
+        <span class="fw-about-timeline__year">Ahead</span>
+        <h3>Looking forward</h3>
+        <p>{% if company.future_vision %}{{ company.future_vision }}{% else %}Growing access to justice through clear counsel and modern practice.{% endif %}</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="fw-section">
+  <div class="fw-wrap fw-about-split fw-about-split--flip">
+    <div class="fw-about-split__copy" data-fw-anim="left">
+      <p class="fw-section__eyebrow">Credentials</p>
+      <h2>Professional standing</h2>
+      <p>
+        {% if company.professional_credentials %}{{ company.professional_credentials }}
+        {% else %}Advocates practising with integrity, clarity, and care.{% endif %}
+      </p>
+      <ul class="fw-about-creds">
+        {% if company.legal_name %}
+        <li>
+          <span>Legal name</span>
+          <strong>{{ company.legal_name }}</strong>
+        </li>
+        {% endif %}
+        {% if company.lsk_number %}
+        <li>
+          <span>LSK / practising</span>
+          <strong>{{ company.lsk_number }}</strong>
+        </li>
+        {% endif %}
+        {% if company.founded_year %}
+        <li>
+          <span>Established</span>
+          <strong>{{ company.founded_year }}</strong>
+        </li>
+        {% endif %}
+      </ul>
+    </div>
+    {% if website_images.credentials %}
+    <div class="fw-about-split__media" data-fw-tilt data-fw-anim="right">
+      <img src="{{ website_images.credentials }}" alt="{{ firm_name }}" loading="lazy">
+      <div class="fw-about-split__caption">
+        <strong>Grounded in law</strong>
+        <span>Research, judgment, and careful drafting</span>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+{% if company.core_values %}
+<section class="fw-section">
+  <div class="fw-wrap">
+    <div class="fw-section__head" data-fw-anim="rise">
+      <p class="fw-section__eyebrow">Values</p>
+      <h2>How we practise</h2>
+      <p class="fw-section__lede">Principles that shape every matter we take on.</p>
+    </div>
+    <div class="fw-about-values">
+      {% for value in company.core_values %}
+      <article class="fw-about-value" style="--i:{{ forloop.counter0 }}" data-fw-tilt data-fw-anim="scale">
+        <span class="fw-about-value__num">{{ forloop.counter|stringformat:"02d" }}</span>
+        <span class="fw-about-value__ico" aria-hidden="true">
+          {% if forloop.counter == 1 %}{% include "accounts/firm/_icons.html" with name="shield" class="fw-ico fw-ico--lg" %}
+          {% elif forloop.counter == 2 %}{% include "accounts/firm/_icons.html" with name="scales" class="fw-ico fw-ico--lg" %}
+          {% elif forloop.counter == 3 %}{% include "accounts/firm/_icons.html" with name="spark" class="fw-ico fw-ico--lg" %}
+          {% else %}{% include "accounts/firm/_icons.html" with name="book" class="fw-ico fw-ico--lg" %}
+          {% endif %}
+        </span>
+        <h3>{{ value.name }}</h3>
+        {% if value.how %}<p>{{ value.how }}</p>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if team_members %}
+<section class="fw-section fw-section--ink fw-about-people">
+  <div class="fw-wrap">
+    <div class="fw-section__row fw-section__row--team">
+      <div class="fw-section__head" data-fw-anim="left">
+        <p class="fw-section__eyebrow fw-section__eyebrow--light">People</p>
+        <h2>The advocates behind the work</h2>
+      </div>
+      <a class="fw-link fw-link--light" data-fw-anim="right" href="{% url 'accounts:firm_team' %}">Full team <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+  {% include "accounts/firm/_team_reel.html" %}
+</section>
+{% endif %}
+
+<section class="fw-cta fw-cta--rich">
+  <div class="fw-cta__aurora" aria-hidden="true"></div>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-cta__eyebrow">Next step</p>
+    <h2>Ready to work with {{ firm_name }}?</h2>
+    <p>Explore our practice areas or reach chambers for a consultation.</p>
+    <div class="fw-btn-row">
+      <a class="fw-btn fw-btn--on-dark fw-btn--glow" href="{% url 'accounts:firm_practice_list' %}" data-fw-magnetic>Practice areas</a>
+      <a class="fw-btn fw-btn--ghost" href="{% url 'accounts:firm_contact' %}">Contact chambers</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

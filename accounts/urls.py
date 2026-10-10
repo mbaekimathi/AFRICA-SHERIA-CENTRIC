@@ -8,6 +8,7 @@ urlpatterns = [
     # Public site
     path("", views.HomeView.as_view(), name="home"),
     path("about/", views.FirmAboutView.as_view(), name="firm_about"),
+    path("team/", views.FirmTeamView.as_view(), name="firm_team"),
     path("practice/", views.FirmPracticeListView.as_view(), name="firm_practice_list"),
     path(
         "practice/<slug:slug>/",
@@ -30,6 +31,7 @@ urlpatterns = [
         name="blog_event_track",
     ),
     path("terms/", views.FirmTermsView.as_view(), name="firm_terms"),
+    path("privacy/", views.FirmPrivacyView.as_view(), name="firm_privacy"),
     path("blog-sitemap.xml", views.BlogSitemapView.as_view(), name="blog_sitemap"),
     path("robots.txt", views.RobotsTxtView.as_view(), name="robots_txt"),
     # Employee auth
@@ -750,6 +752,16 @@ urlpatterns = [
         "<slug:role>/dashboard/company-faqs/<int:faq_id>/edit/",
         views.EditFAQView.as_view(),
         name="edit_faq",
+    ),
+    path(
+        "<slug:role>/dashboard/company-team/<int:member_id>/edit/",
+        views.EditTeamMemberView.as_view(),
+        name="edit_team_member",
+    ),
+    path(
+        "<slug:role>/dashboard/company-testimonials/<int:item_id>/edit/",
+        views.EditTestimonialView.as_view(),
+        name="edit_testimonial",
     ),
     path(
         "<slug:role>/dashboard/company-gallery/<int:item_id>/edit/",

@@ -1,37 +1,50 @@
-{% extends "accounts/firm/base.html" %}
-{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}
-<link rel="canonical" href="{{ request.build_absolute_uri }}">
-<meta property="og:title" content="{{ page_title }} — {{ firm_name }}">
-<meta property="og:description" content="{{ meta_description }}">
-{% endblock %}
-
-{% block firm_content %}
-<section class="fw-pagehead">
-  <div class="fw-wrap">
-    <p class="fw-pagehead__eyebrow">Insights</p>
-    <h1>{{ page_title }}</h1>
-    <p class="fw-pagehead__lede">Articles and guidance from {{ firm_name }}.</p>
-  </div>
-</section>
-
-<section class="fw-section fw-section--white">
-  <div class="fw-wrap">
-    <div class="fw-posts">
-      {% for post in blog_posts %}
-      <a class="fw-post fw-reveal" href="{{ post.get_absolute_url }}">
-        <span class="fw-post__meta">
-          {% if post.published_at %}{{ post.published_at|date:"j M Y" }}{% else %}{{ post.updated_at|date:"j M Y" }}{% endif %}
-          · {{ post.author.get_full_name }}
-        </span>
-        <h2>{{ post.title }}</h2>
-        <p>{% if post.excerpt %}{{ post.excerpt }}{% else %}{{ post.body|truncatewords:36 }}{% endif %}</p>
-      </a>
-      {% empty %}
-      <p>No published articles yet.</p>
-      {% endfor %}
-    </div>
-  </div>
-</section>
-{% endblock %}
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}
+<link rel="canonical" href="{{ request.build_absolute_uri }}">
+<meta property="og:title" content="{{ page_title }} — {{ firm_name }}">
+<meta property="og:description" content="{{ meta_description }}">
+{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
+  <div class="fw-pagehead__bg" aria-hidden="true"></div>
+<span class="fw-pagehead__mark" aria-hidden="true">Insights</span>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-pagehead__eyebrow">Insights</p>
+    <h1>{{ page_title }}</h1>
+    <p class="fw-pagehead__lede">Articles and practical guidance from {{ firm_name }}.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap">
+    <div class="fw-insight-grid fw-insight-grid--page">
+      {% for post in blog_posts %}
+      <a class="fw-insight fw-insight--lg" href="{{ post.get_absolute_url }}" data-fw-anim="rise" style="--i:{{ forloop.counter0 }}">
+        <span class="fw-insight__thumb" aria-hidden="true">
+          {% if post.cover_image|stored_media_url %}
+          <img src="{{ post.cover_image|stored_media_url }}" alt="" loading="lazy">
+          {% elif website_images.blog %}
+          <img src="{{ website_images.blog }}" alt="" loading="lazy">
+          {% elif firm_media_pool %}
+          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter0 }}" alt="" loading="lazy">
+          {% endif %}
+        </span>
+        <span class="fw-insight__meta">
+          {% if post.published_at %}{{ post.published_at|date:"j M Y" }}{% else %}{{ post.updated_at|date:"j M Y" }}{% endif %}
+          · {{ post.author.get_full_name }}
+        </span>
+        <h2>{{ post.title }}</h2>
+        <p>{% if post.excerpt %}{{ post.excerpt }}{% else %}{{ post.body|truncatewords:36 }}{% endif %}</p>
+        <span class="fw-insight__go">Read article <span aria-hidden="true">→</span></span>
+      </a>
+      {% empty %}
+      <p class="fw-empty" data-fw-anim="fade">No published articles yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

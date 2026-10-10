@@ -1,0 +1,43 @@
+{# Sparse sticky photo cards behind scrolling content. Pass optional: a, b, c image URLs #}
+{% load firm_media %}
+{% with src_a=a|default:website_images.hero|default:firm_hero_image_url %}
+{% with src_b=b|default:website_images.story|default:website_images.about %}
+{% with src_c=c|default:website_images.gallery|default:website_images.practice %}
+{% if src_a or src_b or src_c or firm_media_pool %}
+<aside class="fw-scene" aria-hidden="true">
+  <div class="fw-scene__stick">
+    <div class="fw-scene__grid">
+      {% if src_a %}
+      <figure class="fw-scene__card fw-scene__card--a" data-fw-bg>
+        <img src="{{ src_a }}" alt="" loading="lazy" decoding="async">
+      </figure>
+      {% elif firm_media_pool %}
+      <figure class="fw-scene__card fw-scene__card--a" data-fw-bg>
+        <img src="{{ firm_media_pool|firm_media_pick:0 }}" alt="" loading="lazy" decoding="async">
+      </figure>
+      {% endif %}
+      {% if src_b %}
+      <figure class="fw-scene__card fw-scene__card--b" data-fw-bg>
+        <img src="{{ src_b }}" alt="" loading="lazy" decoding="async">
+      </figure>
+      {% elif firm_media_pool %}
+      <figure class="fw-scene__card fw-scene__card--b" data-fw-bg>
+        <img src="{{ firm_media_pool|firm_media_pick:1 }}" alt="" loading="lazy" decoding="async">
+      </figure>
+      {% endif %}
+      {% if src_c %}
+      <figure class="fw-scene__card fw-scene__card--c" data-fw-bg>
+        <img src="{{ src_c }}" alt="" loading="lazy" decoding="async">
+      </figure>
+      {% elif firm_media_pool %}
+      <figure class="fw-scene__card fw-scene__card--c" data-fw-bg>
+        <img src="{{ firm_media_pool|firm_media_pick:2 }}" alt="" loading="lazy" decoding="async">
+      </figure>
+      {% endif %}
+    </div>
+  </div>
+</aside>
+{% endif %}
+{% endwith %}
+{% endwith %}
+{% endwith %}

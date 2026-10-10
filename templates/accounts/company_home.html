@@ -1,178 +1,326 @@
-{% extends "accounts/firm/base.html" %}
-
-{% block title %}{{ firm_name }}{% if company.tagline %} — {{ company.tagline }}{% endif %}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-
-{% block firm_head %}
-<link rel="canonical" href="{{ canonical_url }}">
-<meta name="robots" content="index, follow">
-<meta property="og:type" content="website">
-<meta property="og:title" content="{{ firm_name }}{% if company.tagline %} — {{ company.tagline }}{% endif %}">
-<meta property="og:description" content="{{ meta_description }}">
-<meta property="og:url" content="{{ canonical_url }}">
-<script type="application/ld+json">{{ json_ld }}</script>
-{% endblock %}
-
-{% block firm_content %}
-<section class="fw-hero">
-  <div class="fw-hero__bg" aria-hidden="true"></div>
-  <div class="fw-wrap fw-hero__grid">
-    <div class="fw-hero__inner">
-      <p class="fw-hero__eyebrow">
-        <span class="fw-hero__eyebrow-dot" aria-hidden="true"></span>
-        Advocates · Kajiado County
-      </p>
-      <h1>{{ firm_name }}</h1>
-      <p class="fw-hero__lede">
-        {% if company.visitor_feeling %}{{ company.visitor_feeling }}
-        {% elif company.tagline %}{{ company.tagline }}
-        {% elif company.value_proposition %}{{ company.value_proposition }}
-        {% else %}Professional legal counsel for families, land, and business.{% endif %}
-      </p>
-      <div class="fw-btn-row">
-        <a class="fw-btn fw-btn--on-dark" href="{% url 'accounts:firm_contact' %}">Contact the firm</a>
-        <a class="fw-btn fw-btn--ghost" href="{% url 'accounts:firm_practice_list' %}">Practice areas</a>
-      </div>
-      {% if company.city or company.physical_address %}
-      <p class="fw-hero__meta">
-        {% if company.physical_address %}{{ company.physical_address }}{% elif company.city %}{{ company.city }}{% if company.country %}, {{ company.country }}{% endif %}{% endif %}
-      </p>
-      {% endif %}
-    </div>
-
-    <aside class="fw-hero__panel" aria-label="Firm snapshot">
-      <p class="fw-hero__panel-title">At a glance</p>
-      <ul class="fw-hero__panel-list">
-        {% if company.founded_year or company.founded_by %}
-        <li>
-          <span>Founded</span>
-          <strong>{% if company.founded_year %}{{ company.founded_year }}{% endif %}{% if company.founded_year and company.founded_by %} · {% endif %}{% if company.founded_by %}{{ company.founded_by }}{% endif %}</strong>
-        </li>
-        {% endif %}
-        {% if company.service_areas %}
-        <li>
-          <span>Service areas</span>
-          <strong>{{ company.service_areas|truncatewords:12 }}</strong>
-        </li>
-        {% endif %}
-        {% if company.phone %}
-        <li>
-          <span>Phone</span>
-          <a href="tel:{{ company.phone }}">{{ company.phone }}</a>
-        </li>
-        {% endif %}
-        {% if company.email %}
-        <li>
-          <span>Email</span>
-          <a href="mailto:{{ company.email }}">{{ company.email }}</a>
-        </li>
-        {% endif %}
-        {% if not company.founded_year and not company.founded_by and not company.service_areas and not company.phone and not company.email %}
-        <li>
-          <span>Counsel</span>
-          <strong>Families, land &amp; business matters</strong>
-        </li>
-        {% endif %}
-      </ul>
-    </aside>
-  </div>
-</section>
-
-{% if practice_areas %}
-<section class="fw-section fw-section--white">
-  <div class="fw-wrap">
-    <div class="fw-section__row fw-reveal">
-      <div class="fw-section__head">
-        <p class="fw-section__eyebrow">Practice</p>
-        <h2>How we advise clients</h2>
-        <p class="fw-section__lede">Clear counsel across the matters that matter in Kajiado.</p>
-      </div>
-      <a class="fw-link" href="{% url 'accounts:firm_practice_list' %}">View all →</a>
-    </div>
-    <div class="fw-practice-grid">
-      {% for area in practice_areas %}
-      <a class="fw-practice-card fw-reveal" href="{{ area.get_absolute_url }}">
-        <span class="fw-practice-card__num">{{ forloop.counter|stringformat:"02d" }}</span>
-        <h3>{{ area.name }}</h3>
-        {% if area.summary %}<p>{{ area.summary|truncatewords:22 }}</p>{% endif %}
-        <span class="fw-practice-card__more">Open page →</span>
-      </a>
-      {% endfor %}
-    </div>
-  </div>
-</section>
-{% endif %}
-
-<section class="fw-section fw-section--soft">
-  <div class="fw-wrap fw-split fw-reveal">
-    <div class="fw-split__copy">
-      <p class="fw-section__eyebrow">About</p>
-      <h2>A firm rooted in Kiserian</h2>
-      <p>
-        {% if company.value_proposition %}{{ company.value_proposition }}{% elif company.tagline %}{{ company.tagline }}{% else %}Professional legal counsel for families, land, and business across Kajiado County.{% endif %}
-      </p>
-      <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_about' %}">Read about the firm</a>
-    </div>
-    <div class="fw-facts">
-      {% if company.founded_year or company.founded_by %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Founded</p>
-        <p>{% if company.founded_year %}{{ company.founded_year }}{% endif %}{% if company.founded_year and company.founded_by %} · {% endif %}{% if company.founded_by %}{{ company.founded_by }}{% endif %}</p>
-      </div>
-      {% endif %}
-      {% if company.service_areas %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Service areas</p>
-        <p>{{ company.service_areas }}</p>
-      </div>
-      {% endif %}
-      {% if company.legal_name %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">Legal name</p>
-        <p>{{ company.legal_name }}</p>
-      </div>
-      {% endif %}
-      {% if company.visitor_feeling and company.value_proposition %}
-      <div class="fw-fact">
-        <p class="fw-fact__label">For clients</p>
-        <p>{{ company.visitor_feeling|truncatewords:28 }}</p>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-</section>
-
-{% if blog_posts %}
-<section class="fw-section fw-section--white">
-  <div class="fw-wrap">
-    <div class="fw-section__row fw-reveal">
-      <div class="fw-section__head">
-        <p class="fw-section__eyebrow">Insights</p>
-        <h2>From our desk</h2>
-      </div>
-      <a class="fw-link" href="{% url 'accounts:blog_list' %}">All articles →</a>
-    </div>
-    <div class="fw-posts">
-      {% for post in blog_posts %}
-      <a class="fw-post fw-reveal" href="{{ post.get_absolute_url }}">
-        <span class="fw-post__meta">{% if post.published_at %}{{ post.published_at|date:"j M Y" }}{% endif %}{% if post.author %} · {{ post.author.get_full_name }}{% endif %}</span>
-        <h3>{{ post.title }}</h3>
-        <p>{% if post.excerpt %}{{ post.excerpt|truncatewords:28 }}{% else %}{{ post.body|truncatewords:28 }}{% endif %}</p>
-      </a>
-      {% endfor %}
-    </div>
-  </div>
-</section>
-{% endif %}
-
-<section class="fw-cta">
-  <div class="fw-wrap fw-reveal">
-    <h2>Speak with {{ firm_name }}</h2>
-    <p>Book a consultation or message the chambers on WhatsApp during ordinary business hours.</p>
-    <div class="fw-btn-row">
-      <a class="fw-btn fw-btn--on-dark" href="{% url 'accounts:firm_contact' %}">Contact page</a>
-      <a class="fw-btn fw-btn--ghost" href="{% url 'accounts:firm_faqs' %}">FAQs</a>
-    </div>
-  </div>
-</section>
-{% endblock %}
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+
+{% block title %}{{ firm_name }}{% if company.tagline %} — {{ company.tagline }}{% endif %}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+
+{% block firm_head %}
+<link rel="canonical" href="{{ canonical_url }}">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ firm_name }}{% if company.tagline %} — {{ company.tagline }}{% endif %}">
+<meta property="og:description" content="{{ meta_description }}">
+<meta property="og:url" content="{{ canonical_url }}">
+<script type="application/ld+json">{{ json_ld }}</script>
+{% endblock %}
+
+{% block firm_content %}
+{% with hero_img=website_images.hero|default:firm_hero_image_url practice_img=website_images.practice|default:"" %}
+<div class="fw-rail{% if hero_img %} fw-rail--photo{% endif %}" data-fw-hero>
+  <aside class="fw-rail__media">
+    <div class="fw-rail__media-stick">
+      <div class="fw-rail__photo">
+        {% if hero_img %}
+        <img class="fw-rail__img" src="{{ hero_img }}" alt="" width="1200" height="1600" aria-hidden="true">
+        {% endif %}
+        <div class="fw-rail__veil" aria-hidden="true"></div>
+        <div class="fw-rail__orb fw-rail__orb--a" aria-hidden="true"></div>
+        <div class="fw-rail__orb fw-rail__orb--b" aria-hidden="true"></div>
+        <div class="fw-rail__partnership">
+          {% include "accounts/partials/firm_partnership_lockup.html" %}
+        </div>
+      </div>
+      <div class="fw-rail__edge" aria-hidden="true">
+        <span class="fw-rail__edge-core"></span>
+        <span class="fw-rail__edge-glow"></span>
+        <span class="fw-rail__edge-tick"></span>
+      </div>
+    </div>
+  </aside>
+
+  <div class="fw-rail__cards">
+    <div class="fw-rail-stack" data-fw-anim="rise" style="--i:0">
+      <section class="fw-rail-stack__hero">
+        <div class="fw-rail-stack__hero-brand">
+          {% if firm_logo_url %}
+          <div class="fw-rail-stack__logo-wrap">
+            <img class="fw-rail-stack__logo" src="{{ firm_logo_url }}" alt="{{ firm_name }}" width="240" height="240">
+          </div>
+          {% endif %}
+          <nav class="fw-rail-stack__actions" aria-label="Quick links">
+            {% if company.phone %}
+            <a href="tel:{{ company.phone }}" data-fw-magnetic>Call {{ company.phone }}</a>
+            {% else %}
+            <a href="{% url 'accounts:firm_contact' %}" data-fw-magnetic>Book a consultation</a>
+            {% endif %}
+            <a href="#fw-practice" data-fw-magnetic>Practice</a>
+            <a href="{% url 'accounts:firm_about' %}">Our story</a>
+          </nav>
+        </div>
+        <div class="fw-rail-stack__hero-copy">
+          <p class="fw-rail-stack__eyebrow">
+            {% if company.hero_eyebrow %}{{ company.hero_eyebrow }}{% else %}Advocates · Nairobi, Kenya{% endif %}
+          </p>
+          <h1>
+            {% if company.hero_headline %}{{ company.hero_headline }}{% else %}Sheria Centric{% endif %}
+          </h1>
+          <p class="fw-rail-stack__lede">
+            {% if company.hero_subtext %}{{ company.hero_subtext }}
+            {% elif company.visitor_feeling %}{{ company.visitor_feeling }}
+            {% elif company.tagline %}{{ company.tagline }}
+            {% else %}Professional legal counsel and modern practice tools for families, businesses, and law firms in Nairobi.{% endif %}
+          </p>
+        </div>
+      </section>
+
+      <section class="fw-practice-slides fw-practice-slides--compact fw-practice-slides--book" id="fw-practice" data-fw-practice-slides>
+        <header class="fw-practice-slides__bar">
+          <div>
+            <p class="fw-practice-slides__kicker">Practice areas</p>
+            <p class="fw-practice-slides__hint">Turn the page · Land · family · commercial · disputes</p>
+          </div>
+          <div class="fw-practice-slides__controls">
+            <button type="button" class="fw-practice-slides__btn" data-fw-slide-prev aria-label="Previous practice">‹</button>
+            <button type="button" class="fw-practice-slides__btn" data-fw-slide-next aria-label="Next practice">›</button>
+          </div>
+        </header>
+
+        {% if practice_areas %}
+        {% with slide_areas=practice_areas|slice:":6" %}
+        <div class="fw-practice-slides__tome">
+        <div class="fw-practice-slides__book" aria-hidden="true">
+          <span class="fw-practice-slides__cover fw-practice-slides__cover--left"></span>
+          <span class="fw-practice-slides__cover fw-practice-slides__cover--right"></span>
+          <span class="fw-practice-slides__spine"></span>
+        </div>
+        <div class="fw-practice-slides__stage" aria-roledescription="carousel" aria-label="Practice areas">
+          {% for area in slide_areas %}
+          {% with area_img=area.main_image.image|stored_media_url pool_pick=firm_media_pool|firm_media_pick:forloop.counter %}
+          <article
+            class="fw-practice-slides__slide{% if forloop.first %} is-active{% endif %}"
+            data-fw-slide="{{ forloop.counter0 }}"
+            data-tone="{{ forloop.counter0|add:'1' }}"
+            {% if not forloop.first %}aria-hidden="true"{% endif %}
+          >
+            <div class="fw-practice-slides__leaf fw-practice-slides__leaf--left">
+              <div class="fw-practice-slides__media" aria-hidden="true">
+                {% if area_img %}
+                <img src="{{ area_img }}" alt="" loading="{% if forloop.first %}eager{% else %}lazy{% endif %}" width="960" height="720">
+                {% elif pool_pick and pool_pick != firm_logo_url %}
+                <img src="{{ pool_pick }}" alt="" loading="{% if forloop.first %}eager{% else %}lazy{% endif %}" width="960" height="720">
+                {% else %}
+                <span class="fw-practice-slides__ph fw-practice-slides__ph--{{ area.name|practice_icon }}">
+                  <span class="fw-practice-slides__ph-ico">
+                    {% include "accounts/firm/_icons.html" with name=area.name|practice_icon class="fw-ico fw-ico--lg" %}
+                  </span>
+                </span>
+                {% endif %}
+                <span class="fw-practice-slides__shade"></span>
+                <span class="fw-practice-slides__edge"></span>
+                <span class="fw-practice-slides__mark">{{ forloop.counter|stringformat:"02d" }}</span>
+                <span class="fw-practice-slides__caption">{{ area.name }}</span>
+              </div>
+            </div>
+            <div class="fw-practice-slides__leaf fw-practice-slides__leaf--right">
+              <div class="fw-practice-slides__panel">
+                <p class="fw-practice-slides__num" aria-hidden="true">{{ forloop.counter|stringformat:"02d" }} / {{ slide_areas|length|stringformat:"02d" }}</p>
+                <p class="fw-practice-slides__label">Practice focus</p>
+                <span class="fw-practice-slides__rule" aria-hidden="true"></span>
+                <span class="fw-practice-slides__ico" aria-hidden="true">
+                  {% include "accounts/firm/_icons.html" with name=area.name|practice_icon class="fw-ico" %}
+                </span>
+                <h3>{{ area.name }}</h3>
+                {% if area.summary %}
+                <p class="fw-practice-slides__copy">{{ area.summary|truncatewords:26 }}</p>
+                {% else %}
+                <p class="fw-practice-slides__copy">Focused advocacy and practical guidance for matters in this area.</p>
+                {% endif %}
+                <ul class="fw-practice-slides__chips" aria-hidden="true">
+                  <li>Counsel</li>
+                  <li>Strategy</li>
+                  <li>Resolution</li>
+                </ul>
+                <a class="fw-practice-slides__cta" href="{{ area.get_absolute_url }}">
+                  Explore this practice <span aria-hidden="true">→</span>
+                </a>
+              </div>
+              <span class="fw-practice-slides__pageback" aria-hidden="true"></span>
+            </div>
+          </article>
+          {% endwith %}
+          {% endfor %}
+          <div class="fw-practice-slides__progress" aria-hidden="true"><span></span></div>
+        </div>
+        </div>
+
+        <div class="fw-practice-slides__foot">
+          <div class="fw-practice-slides__dots" role="tablist" aria-label="Choose practice area">
+            {% for area in slide_areas %}
+            <button
+              type="button"
+              class="fw-practice-slides__dot{% if forloop.first %} is-active{% endif %}"
+              data-fw-slide-dot="{{ forloop.counter0 }}"
+              role="tab"
+              aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+              aria-label="{{ area.name }}"
+            ></button>
+            {% endfor %}
+          </div>
+          <a class="fw-link fw-link--rail" href="{% url 'accounts:firm_practice_list' %}">All areas <span aria-hidden="true">→</span></a>
+        </div>
+        {% endwith %}
+        {% endif %}
+      </section>
+
+      <section class="fw-rail-stack__firm">
+        <div class="fw-rail-stack__firm-copy">
+          <p class="fw-rail-stack__eyebrow fw-rail-stack__eyebrow--teal">The firm</p>
+          <p class="fw-rail-stack__firm-line">
+            {% if company.tagline %}{{ company.tagline }}{% else %}Rooted in Kiserian. Trusted across the County.{% endif %}
+          </p>
+        </div>
+        <div class="fw-rail-stack__firm-actions">
+          <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_about' %}" data-fw-magnetic>Our story</a>
+          <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_contact' %}" data-fw-magnetic>Contact</a>
+          <a class="fw-btn fw-btn--brass-outline" href="{% url 'accounts:firm_contact' %}" data-fw-magnetic>Visit us</a>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endwith %}
+
+{% if team_members %}
+<section class="fw-section fw-section--ink fw-section--team" id="fw-people" data-fw-scroll-section="people">
+  <div class="fw-team-band" aria-hidden="true"></div>
+  <div class="fw-wrap">
+    <div class="fw-section__row fw-section__row--team">
+      <div class="fw-section__head" data-fw-anim="left">
+        <p class="fw-section__eyebrow fw-section__eyebrow--light">People</p>
+        <h2>Meet the advocates</h2>
+        <p class="fw-section__lede">The counsel behind every matter.</p>
+      </div>
+      <a class="fw-link fw-link--light" data-fw-anim="right" href="{% url 'accounts:firm_team' %}">Full team <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+  {% include "accounts/firm/_team_reel.html" %}
+</section>
+{% endif %}
+
+{% if testimonials %}
+<section class="fw-section fw-section--ink fw-section--voices" id="fw-voices" data-fw-scroll-section="voices">
+  <div class="fw-wrap">
+    <div class="fw-section__head" data-fw-anim="fade">
+      <p class="fw-section__eyebrow fw-section__eyebrow--light">Client voices</p>
+      <h2>Words that travel with us</h2>
+    </div>
+    <div class="fw-voice-stage">
+      {% for item in testimonials %}
+      <blockquote class="fw-voice" data-fw-anim="rise" style="--i:{{ forloop.counter0 }}">
+        <span class="fw-voice__mark" aria-hidden="true">“</span>
+        <p>{{ item.quote|truncatewords:42 }}</p>
+        <footer>
+          <cite>{{ item.attribution }}</cite>
+          {% if item.role %}<span>{{ item.role }}</span>{% endif %}
+        </footer>
+      </blockquote>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if blog_posts %}
+<section class="fw-section fw-section--insights" id="fw-insights" data-fw-scroll-section="insights">
+  <div class="fw-insights-glow" aria-hidden="true"></div>
+  <div class="fw-wrap">
+    <div class="fw-section__row">
+      <div class="fw-section__head" data-fw-anim="left">
+        <p class="fw-section__eyebrow">Insights</p>
+        <h2>From our desk</h2>
+        <p class="fw-section__lede">Practical notes and counsel from the chambers.</p>
+      </div>
+      <a class="fw-link" data-fw-anim="right" href="{% url 'accounts:blog_list' %}">All articles <span aria-hidden="true">→</span></a>
+    </div>
+
+    {% with lead=blog_posts.0 %}
+    <a class="fw-insight-feature" href="{{ lead.get_absolute_url }}" data-fw-anim="rise" data-fw-tilt>
+      <span class="fw-insight-feature__media" aria-hidden="true">
+        {% if lead.cover_image|stored_media_url %}
+        <img src="{{ lead.cover_image|stored_media_url }}" alt="" loading="lazy" width="960" height="640">
+        {% elif website_images.blog %}
+        <img src="{{ website_images.blog }}" alt="" loading="lazy" width="960" height="640">
+        {% elif firm_media_pool %}
+        <img src="{{ firm_media_pool|firm_media_pick:0 }}" alt="" loading="lazy" width="960" height="640">
+        {% else %}
+        <span class="fw-insight-feature__ph"></span>
+        {% endif %}
+        <span class="fw-insight-feature__shade"></span>
+        <span class="fw-insight-feature__index" aria-hidden="true">01</span>
+      </span>
+      <span class="fw-insight-feature__body">
+        <span class="fw-insight-feature__kicker">Latest</span>
+        <span class="fw-insight-feature__meta">
+          {% if lead.published_at %}{{ lead.published_at|date:"j M Y" }}{% else %}{{ lead.updated_at|date:"j M Y" }}{% endif %}
+          {% if lead.author %} · {{ lead.author.get_full_name }}{% endif %}
+        </span>
+        <h3>{{ lead.title }}</h3>
+        <p>{% if lead.excerpt %}{{ lead.excerpt|truncatewords:36 }}{% else %}{{ lead.body|truncatewords:36 }}{% endif %}</p>
+        <span class="fw-insight-feature__go">Read article <span aria-hidden="true">→</span></span>
+      </span>
+    </a>
+    {% endwith %}
+
+    {% if blog_posts|length > 1 %}
+    <div class="fw-insight-rail">
+      {% for post in blog_posts %}
+      {% if not forloop.first %}
+      <a class="fw-insight-rail__card" href="{{ post.get_absolute_url }}" data-fw-anim="rise" style="--i:{{ forloop.counter0 }}">
+        <span class="fw-insight-rail__media" aria-hidden="true">
+          {% if post.cover_image|stored_media_url %}
+          <img src="{{ post.cover_image|stored_media_url }}" alt="" loading="lazy" width="640" height="400">
+          {% elif website_images.blog %}
+          <img src="{{ website_images.blog }}" alt="" loading="lazy" width="640" height="400">
+          {% elif firm_media_pool %}
+          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter }}" alt="" loading="lazy" width="640" height="400">
+          {% else %}
+          <span class="fw-insight-rail__ph"></span>
+          {% endif %}
+        </span>
+        <span class="fw-insight-rail__copy">
+          <span class="fw-insight-rail__num" aria-hidden="true">{{ forloop.counter|stringformat:"02d" }}</span>
+          <span class="fw-insight-rail__meta">
+            {% if post.published_at %}{{ post.published_at|date:"j M Y" }}{% endif %}
+            {% if post.author %} · {{ post.author.get_full_name }}{% endif %}
+          </span>
+          <h3>{{ post.title }}</h3>
+          <span class="fw-insight-rail__go">Read <span aria-hidden="true">→</span></span>
+        </span>
+      </a>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="fw-cta fw-cta--rich" id="fw-consult" data-fw-scroll-section="consult">
+  <div class="fw-cta__aurora" aria-hidden="true"></div>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-cta__eyebrow">Consultation</p>
+    <h2>{% if company.consultation_cta_label %}{{ company.consultation_cta_label }}{% else %}Speak with {{ firm_name }}{% endif %}</h2>
+    <p>
+      {% if company.consultation_blurb %}{{ company.consultation_blurb }}
+      {% else %}Book a consultation or message the chambers during ordinary business hours.{% endif %}
+    </p>
+    <div class="fw-btn-row">
+      {% if company.phone %}
+      <a class="fw-btn fw-btn--brass-outline" href="tel:{{ company.phone }}" data-fw-magnetic>Call {{ company.phone }}</a>
+      {% endif %}
+      <a class="fw-btn fw-btn--on-dark fw-btn--glow" href="{% url 'accounts:firm_contact' %}" data-fw-magnetic>Contact chambers</a>
+      <a class="fw-btn fw-btn--ghost" href="{% url 'accounts:firm_faqs' %}">FAQs</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,31 +1,67 @@
-{% extends "accounts/firm/base.html" %}
-{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
-
-{% block firm_content %}
-<section class="fw-pagehead">
-  <div class="fw-wrap">
-    <p class="fw-pagehead__eyebrow">Practice</p>
-    <h1>Practice areas</h1>
-    <p class="fw-pagehead__lede">Select an area to open its full page — land, family, commercial, and more.</p>
-  </div>
-</section>
-
-<section class="fw-section fw-section--white">
-  <div class="fw-wrap">
-    <div class="fw-practice-grid">
-      {% for area in practice_areas %}
-      <a class="fw-practice-card fw-reveal" href="{{ area.get_absolute_url }}">
-        <span class="fw-practice-card__num">{{ forloop.counter|stringformat:"02d" }}</span>
-        <h3>{{ area.name }}</h3>
-        {% if area.summary %}<p>{{ area.summary }}</p>{% endif %}
-        <span class="fw-practice-card__more">Open page →</span>
-      </a>
-      {% empty %}
-      <p>Practice areas will appear once added in Company Information.</p>
-      {% endfor %}
-    </div>
-  </div>
-</section>
-{% endblock %}
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
+  <div class="fw-pagehead__bg" aria-hidden="true"></div>
+  <span class="fw-pagehead__mark" aria-hidden="true">Practice</span>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-pagehead__eyebrow">Practice</p>
+    <h1>Practice areas</h1>
+    <p class="fw-pagehead__lede">Land, family, commercial, and more — scroll through each area for focused guidance.</p>
+  </div>
+</section>
+
+{% if practice_areas %}
+<section class="fw-practice-story" data-fw-practice-story>
+  <div class="fw-practice-story__stage">
+    <div class="fw-practice-story__visual" aria-hidden="true">
+      <div class="fw-practice-story__visual-stick">
+        {% for area in practice_areas %}
+        {% with area_img=area.main_image.image|stored_media_url %}
+        <figure class="fw-practice-story__frame{% if forloop.first %} is-active{% endif %}" data-fw-practice-frame="{{ forloop.counter0 }}">
+          {% if area_img %}
+          <img src="{{ area_img }}" alt="" width="1100" height="1400">
+          {% elif firm_media_pool %}
+          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter0 }}" alt="" width="1100" height="1400">
+          {% else %}
+          <span class="fw-practice-story__ph"></span>
+          {% endif %}
+          <figcaption>{{ area.name }}</figcaption>
+        </figure>
+        {% endwith %}
+        {% endfor %}
+        <div class="fw-practice-story__veil"></div>
+      </div>
+    </div>
+
+    <div class="fw-practice-story__steps">
+      {% for area in practice_areas %}
+      <article class="fw-practice-story__step" id="practice-{{ area.slug }}" data-fw-practice-step="{{ forloop.counter0 }}">
+        <p class="fw-practice-story__num">{{ forloop.counter|stringformat:"02d" }} / {{ practice_areas|length|stringformat:"02d" }}</p>
+        <span class="fw-practice-story__ico" aria-hidden="true">
+          {% include "accounts/firm/_icons.html" with name=area.name|practice_icon class="fw-ico fw-ico--lg" %}
+        </span>
+        <h2>{{ area.name }}</h2>
+        {% if area.summary %}
+        <p class="fw-practice-story__lede">{{ area.summary }}</p>
+        {% else %}
+        <p class="fw-practice-story__lede">Focused advocacy for matters in this area of practice.</p>
+        {% endif %}
+        <a class="fw-btn fw-btn--primary" href="{{ area.get_absolute_url }}" data-fw-magnetic>Open practice page</a>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% else %}
+<section class="fw-section">
+  <div class="fw-wrap">
+    <p class="fw-empty">Practice areas will appear once added in Company Information.</p>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

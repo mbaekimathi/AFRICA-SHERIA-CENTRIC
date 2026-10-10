@@ -1,0 +1,83 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="company-testimonial-form-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Testimonials</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        {% if testimonial %}
+        Update this quote for the firm website.
+        {% else %}
+        Add a client quote visitors will see as social proof.
+        {% endif %}
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>{% if testimonial %}Edit testimonial{% else %}New testimonial{% endif %}</h3>
+      <p class="panel__hint">
+        <a href="{{ company_testimonials_url }}">Back to testimonials</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="workspace-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.quote.id_for_label }}">{{ form.quote.label }} <span aria-hidden="true">*</span></label>
+          {{ form.quote }}
+          {% if form.quote.errors %}<span class="field-error">{{ form.quote.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.attribution.id_for_label }}">{{ form.attribution.label }} <span aria-hidden="true">*</span></label>
+            {{ form.attribution }}
+            {% if form.attribution.errors %}<span class="field-error">{{ form.attribution.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.role.id_for_label }}">{{ form.role.label }}</label>
+            {{ form.role }}
+            {% if form.role.errors %}<span class="field-error">{{ form.role.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.rank.id_for_label }}">{{ form.rank.label }} <span aria-hidden="true">*</span></label>
+            {{ form.rank }}
+            <span class="field-hint">Lower numbers appear first.</span>
+            {% if form.rank.errors %}<span class="field-error">{{ form.rank.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label class="settings-toggle" for="{{ form.is_published.id_for_label }}">
+              <span class="settings-toggle__control">{{ form.is_published }}</span>
+              <span>{{ form.is_published.label }}</span>
+            </label>
+            {% if form.is_published.errors %}<span class="field-error">{{ form.is_published.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <a href="{{ company_testimonials_url }}" class="btn btn--quiet btn--inline">Cancel</a>
+          {% if testimonial %}
+          <button type="submit" name="testimonial_delete" value="1" class="btn btn--quiet btn--inline" onclick="return confirm('Delete this testimonial?');">Delete</button>
+          {% endif %}
+          <button type="submit" class="btn btn--primary btn--inline">
+            {% if testimonial %}Save testimonial{% else %}Add testimonial{% endif %}
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

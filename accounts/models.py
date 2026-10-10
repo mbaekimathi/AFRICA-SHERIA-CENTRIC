@@ -2255,6 +2255,10 @@ def company_profile_image_upload_to(instance, filename):
     return f"company/profile/{uuid.uuid4().hex}.webp"
 
 
+def company_website_image_upload_to(instance, filename):
+    return f"company/website/{uuid.uuid4().hex}.webp"
+
+
 class FirmCompanyInformation(models.Model):
     """
     Firm-wide company profile (singleton row, pk=1).
@@ -2283,8 +2287,26 @@ class FirmCompanyInformation(models.Model):
         verbose_name="Tax PIN",
         help_text="KRA PIN or equivalent tax identifier.",
     )
+    lsk_number = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        verbose_name="LSK / practising number",
+        help_text="Law Society of Kenya or equivalent practising certificate number.",
+    )
+    professional_credentials = models.TextField(
+        blank=True,
+        default="",
+        help_text="Memberships, regulators, or credentials shown on the website.",
+    )
     email = models.EmailField(blank=True, default="")
     phone = models.CharField(max_length=40, blank=True, default="")
+    whatsapp_number = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        help_text="Public WhatsApp number for click-to-chat (falls back to primary phone).",
+    )
     website = models.URLField(blank=True, default="")
     linkedin_url = models.URLField(blank=True, default="")
     facebook_url = models.URLField(blank=True, default="")
@@ -2299,17 +2321,135 @@ class FirmCompanyInformation(models.Model):
     postal_address = models.CharField(max_length=255, blank=True, default="")
     city = models.CharField(max_length=120, blank=True, default="")
     country = models.CharField(max_length=120, blank=True, default="Kenya")
+    business_hours = models.TextField(
+        blank=True,
+        default="",
+        help_text="Ordinary business / chambers hours for the contact page.",
+    )
+    directions = models.TextField(
+        blank=True,
+        default="",
+        help_text="How to find the chambers (landmarks, floor, nearby roads).",
+    )
+    map_embed_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Google Maps embed URL (iframe src) for the contact page.",
+    )
     tagline = models.CharField(
         max_length=255,
         blank=True,
         default="",
         help_text="Short line used under the firm name where needed.",
     )
+    hero_eyebrow = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Small label above the homepage hero headline.",
+    )
+    hero_headline = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Primary homepage hero headline (falls back to firm name).",
+    )
+    hero_subtext = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Supporting sentence under the homepage hero headline.",
+    )
+    hero_primary_cta_label = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text="Primary hero button label (default: Contact the firm).",
+    )
+    hero_secondary_cta_label = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text="Secondary hero button label (default: Practice areas).",
+    )
+    consultation_blurb = models.TextField(
+        blank=True,
+        default="",
+        help_text="Short copy inviting visitors to book a consultation.",
+    )
+    consultation_cta_label = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text="Consultation CTA button label.",
+    )
     logo = models.ImageField(
         upload_to=company_logo_upload_to,
         blank=True,
         null=True,
         help_text="Firm logo for letterhead, invoices, and brand mark.",
+    )
+    # —— Website section images (public firm site) ——
+    website_hero_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="Homepage hero background image.",
+    )
+    website_story_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="Homepage story band and About “origin” photo.",
+    )
+    website_about_hero_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="About page hero background.",
+    )
+    website_credentials_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="About page credentials / research photo.",
+    )
+    website_practice_hero_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="Practice areas page hero background.",
+    )
+    website_team_hero_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="Team page hero background.",
+    )
+    website_gallery_hero_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="Gallery page hero background.",
+    )
+    website_faqs_hero_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="FAQs page hero background.",
+    )
+    website_blog_hero_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="Insights / blog list page hero background.",
+    )
+    website_contact_hero_image = models.ImageField(
+        upload_to=company_website_image_upload_to,
+        blank=True,
+        null=True,
+        help_text="Contact page hero background.",
     )
     # —— About company (website story) ——
     visitor_feeling = models.CharField(
@@ -2355,6 +2495,16 @@ class FirmCompanyInformation(models.Model):
         blank=True,
         default="",
         help_text="Public terms and conditions shown on the firm website.",
+    )
+    privacy_policy = models.TextField(
+        blank=True,
+        default="",
+        help_text="Public privacy policy shown on the firm website.",
+    )
+    legal_disclaimer = models.TextField(
+        blank=True,
+        default="",
+        help_text="Short legal disclaimer (e.g. website content is not legal advice).",
     )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
@@ -2411,6 +2561,11 @@ class FirmCompanyInformation(models.Model):
             if url:
                 links.append({"key": key, "label": label, "url": url})
         return links
+
+    @property
+    def public_whatsapp_number(self) -> str:
+        """Number used for public WhatsApp CTAs (dedicated field, else phone)."""
+        return (self.whatsapp_number or self.phone or "").strip()
 
     @property
     def main_image(self):
@@ -2584,6 +2739,102 @@ class FirmFAQ(models.Model):
 
     def __str__(self):
         return self.question
+
+
+def team_member_photo_upload_to(instance, filename):
+    return f"company/team/{filename}"
+
+
+class FirmTeamMember(models.Model):
+    """Advocate or staff profile shown on the firm website team page."""
+
+    name = models.CharField(max_length=160)
+    title = models.CharField(
+        max_length=160,
+        blank=True,
+        default="",
+        help_text="Role shown publicly, e.g. Managing Partner.",
+    )
+    bio = models.TextField(blank=True, default="")
+    practice_focus = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Short practice focus line for cards.",
+    )
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    photo = models.ImageField(
+        upload_to=team_member_photo_upload_to,
+        blank=True,
+        null=True,
+    )
+    rank = models.PositiveIntegerField(
+        default=1,
+        help_text="Lower numbers appear first (1 = highest priority).",
+    )
+    is_published = models.BooleanField(
+        default=True,
+        help_text="Uncheck to hide this person from the public website.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="team_member_updates",
+    )
+
+    class Meta:
+        ordering = ["rank", "name"]
+        verbose_name = "Team member"
+        verbose_name_plural = "Team members"
+
+    def __str__(self):
+        return self.name
+
+
+class FirmTestimonial(models.Model):
+    """Client quote or social-proof entry for the firm website."""
+
+    quote = models.TextField()
+    attribution = models.CharField(
+        max_length=160,
+        help_text="Client or source name (can be anonymised).",
+    )
+    role = models.CharField(
+        max_length=160,
+        blank=True,
+        default="",
+        help_text="Optional role or matter type, e.g. Family law client.",
+    )
+    rank = models.PositiveIntegerField(
+        default=1,
+        help_text="Lower numbers appear first (1 = highest priority).",
+    )
+    is_published = models.BooleanField(
+        default=True,
+        help_text="Uncheck to hide this quote from the public website.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="testimonial_updates",
+    )
+
+    class Meta:
+        ordering = ["rank", "attribution"]
+        verbose_name = "Testimonial"
+        verbose_name_plural = "Testimonials"
+
+    def __str__(self):
+        return f"{self.attribution}: {self.quote[:48]}"
 
 
 def gallery_image_upload_to(instance, filename):

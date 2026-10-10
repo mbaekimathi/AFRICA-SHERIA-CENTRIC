@@ -135,6 +135,15 @@
         </div>
 
         <div class="form-field">
+          <label for="{{ form.whatsapp_number.id_for_label }}">{{ form.whatsapp_number.label }}</label>
+          {{ form.whatsapp_number }}
+          <span class="field-hint">Used for public WhatsApp buttons. Falls back to primary phone when empty.</span>
+          {% if form.whatsapp_number.errors %}
+          <span class="field-error">{{ form.whatsapp_number.errors.0 }}</span>
+          {% endif %}
+        </div>
+
+        <div class="form-field">
           <label for="{{ form.website.id_for_label }}">
             {{ form.website.label }}
             <span
@@ -261,6 +270,32 @@
             {% endif %}
           </div>
         </div>
+
+        <fieldset class="form-fieldset">
+          <legend>Hours &amp; directions</legend>
+          <div class="form-field">
+            <label for="{{ form.business_hours.id_for_label }}">{{ form.business_hours.label }}</label>
+            {{ form.business_hours }}
+            {% if form.business_hours.errors %}
+            <span class="field-error">{{ form.business_hours.errors.0 }}</span>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.directions.id_for_label }}">{{ form.directions.label }}</label>
+            {{ form.directions }}
+            {% if form.directions.errors %}
+            <span class="field-error">{{ form.directions.errors.0 }}</span>
+            {% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.map_embed_url.id_for_label }}">{{ form.map_embed_url.label }}</label>
+            {{ form.map_embed_url }}
+            <span class="field-hint">Paste the Google Maps embed URL (the iframe src value).</span>
+            {% if form.map_embed_url.errors %}
+            <span class="field-error">{{ form.map_embed_url.errors.0 }}</span>
+            {% endif %}
+          </div>
+        </fieldset>
 
         <div class="form-actions form-actions--start">
           <button type="submit" class="btn btn--primary btn--inline">

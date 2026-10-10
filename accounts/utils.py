@@ -23,13 +23,186 @@ def stored_image_url(file_field) -> str:
         return ""
 
 
+WEBSITE_IMAGE_FIELDS = (
+    "website_hero_image",
+    "website_story_image",
+    "website_about_hero_image",
+    "website_credentials_image",
+    "website_practice_hero_image",
+    "website_team_hero_image",
+    "website_gallery_hero_image",
+    "website_faqs_hero_image",
+    "website_blog_hero_image",
+    "website_contact_hero_image",
+)
+
+
+WEBSITE_IMAGE_KEYS = (
+    "hero",
+    "story",
+    "about",
+    "credentials",
+    "practice",
+    "team",
+    "gallery",
+    "faqs",
+    "blog",
+    "contact",
+)
+
+_WEBSITE_IMAGE_FIELD_MAP = {
+    "hero": "website_hero_image",
+    "story": "website_story_image",
+    "about": "website_about_hero_image",
+    "credentials": "website_credentials_image",
+    "practice": "website_practice_hero_image",
+    "team": "website_team_hero_image",
+    "gallery": "website_gallery_hero_image",
+    "faqs": "website_faqs_hero_image",
+    "blog": "website_blog_hero_image",
+    "contact": "website_contact_hero_image",
+}
+
+
+def firm_website_image_urls(company) -> dict[str, str]:
+    """Public website section image URLs keyed by short section name."""
+    return {
+        key: stored_image_url(getattr(company, field, None))
+        for key, field in _WEBSITE_IMAGE_FIELD_MAP.items()
+    }
+
+
+def firm_posted_media_pool(company) -> list[str]:
+    """
+    Unique image URLs uploaded for the firm (no static/stock/web assets).
+    Order: section uploads, profile, gallery, practice, team, blog covers, logo.
+    """
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    def add(url: str) -> None:
+        url = (url or "").strip()
+        if not url or url in seen:
+            return
+        seen.add(url)
+        urls.append(url)
+
+    for key in WEBSITE_IMAGE_KEYS:
+        add(stored_image_url(getattr(company, _WEBSITE_IMAGE_FIELD_MAP[key], None)))
+
+    for row in company.profile_images.order_by("sort_order", "id"):
+        add(stored_image_url(row.image))
+
+    try:
+        from accounts.models import (
+            Employee,
+            EmployeeBlogPost,
+            FirmGalleryImage,
+            FirmPracticeAreaImage,
+            FirmTeamMember,
+        )
+    except Exception:
+        return urls
+
+    for item in FirmGalleryImage.objects.order_by("rank", "title").only("image"):
+        add(stored_image_url(item.image))
+
+    for row in FirmPracticeAreaImage.objects.order_by("sort_order", "id").only("image"):
+        add(stored_image_url(row.image))
+
+    for member in FirmTeamMember.objects.filter(is_published=True).only("photo"):
+        add(stored_image_url(member.photo))
+
+    for emp in (
+        Employee.objects.filter(status=Employee.Status.ACTIVE)
+        .exclude(profile_photo="")
+        .only("profile_photo")
+    ):
+        add(stored_image_url(emp.profile_photo))
+
+    for post in (
+        EmployeeBlogPost.objects.filter(status=EmployeeBlogPost.Status.PUBLISHED)
+        .exclude(cover_image="")
+        .order_by("-published_at", "-updated_at")
+        .only("cover_image")[:12]
+    ):
+        add(stored_image_url(post.cover_image))
+
+    add(stored_image_url(company.logo))
+    return urls
+
+
+def resolve_firm_website_images(company) -> dict[str, str]:
+    """
+    Section image URLs preferring the dedicated upload, then other posted media.
+    Never falls back to static stock or remote stock photos.
+    """
+    specific = firm_website_image_urls(company)
+    pool = firm_posted_media_pool(company)
+    if not pool:
+        return {key: "" for key in WEBSITE_IMAGE_KEYS}
+
+    logo_url = stored_image_url(getattr(company, "logo", None))
+    # Prefer real photos over the firm logo for atmospheric backgrounds.
+    atmosphere = [url for url in pool if url != logo_url] or pool
+
+    # Preferred cascade when a section has no dedicated upload.
+    fallback_order = {
+        "hero": ("story", "about", "gallery", "contact", "practice"),
+        "story": ("hero", "about", "gallery", "credentials"),
+        "about": ("hero", "story", "gallery", "team"),
+        "credentials": ("practice", "story", "about", "hero"),
+        "practice": ("credentials", "hero", "story", "gallery"),
+        "team": ("about", "hero", "gallery", "story"),
+        "gallery": ("hero", "story", "about", "team"),
+        "faqs": ("contact", "hero", "story", "about"),
+        "blog": ("story", "credentials", "hero", "gallery"),
+        "contact": ("hero", "about", "gallery", "faqs"),
+    }
+
+    resolved: dict[str, str] = {}
+    for index, key in enumerate(WEBSITE_IMAGE_KEYS):
+        url = specific.get(key) or ""
+        if not url:
+            for alt in fallback_order.get(key, ()):
+                url = specific.get(alt) or ""
+                if url:
+                    break
+        if not url:
+            url = atmosphere[index % len(atmosphere)]
+        resolved[key] = url
+    return resolved
+
+
 def refresh_company_stored_media(company) -> None:
-    """Clear logo and profile rows that point at missing files."""
+    """Clear logo, website images, and profile rows that point at missing files."""
+    cleared = []
     logo = company.logo
     if logo and logo.name and not logo.storage.exists(logo.name):
         logo.delete(save=False)
         company.logo = None
-        company.save(update_fields=["logo", "updated_at"])
+        cleared.append("logo")
+
+    for field_name in WEBSITE_IMAGE_FIELDS:
+        field = getattr(company, field_name, None)
+        name = (getattr(field, "name", "") or "").strip()
+        if not name:
+            continue
+        try:
+            exists = field.storage.exists(name)
+        except (OSError, ValueError):
+            exists = False
+        if exists:
+            continue
+        try:
+            field.delete(save=False)
+        except OSError:
+            pass
+        setattr(company, field_name, None)
+        cleared.append(field_name)
+
+    if cleared:
+        company.save(update_fields=[*cleared, "updated_at"])
 
     for image in list(company.profile_images.all()):
         name = (image.image.name or "").strip()

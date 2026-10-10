@@ -1,0 +1,19 @@
+{% load firm_media %}
+{% if current|stored_media_url %}
+<div class="website-image-card__preview">
+  <img src="{{ current|stored_media_url }}" alt="" width="280" height="160" loading="lazy">
+  <label class="website-image-card__clear">
+    {{ clear }}
+    <span>{{ clear.label }}</span>
+  </label>
+</div>
+{% endif %}
+<div class="form-field">
+  <label for="{{ field.id_for_label }}">
+    {% if current|stored_media_url %}Replace image{% else %}Upload image{% endif %}
+  </label>
+  {{ field }}
+  {% if field.errors %}
+  <span class="field-error">{{ field.errors.0 }}</span>
+  {% endif %}
+</div>

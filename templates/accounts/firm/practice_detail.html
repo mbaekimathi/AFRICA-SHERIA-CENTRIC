@@ -1,60 +1,81 @@
-{% extends "accounts/firm/base.html" %}
-{% block title %}{{ area.name }} — {{ firm_name }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
-
-{% block firm_content %}
-<section class="fw-pagehead">
-  <div class="fw-wrap">
-    <p class="fw-pagehead__eyebrow"><a href="{% url 'accounts:firm_practice_list' %}">Practice areas</a></p>
-    <h1>{{ area.name }}</h1>
-    {% if area.summary %}<p class="fw-pagehead__lede">{{ area.summary }}</p>{% endif %}
-  </div>
-</section>
-
-<section class="fw-section fw-section--white">
-  <div class="fw-wrap fw-detail fw-reveal">
-    <div class="fw-detail__media">
-      {% if area.main_image %}
-      <img src="{{ area.main_image.image.url }}" alt="{{ area.name }}" loading="lazy">
-      {% else %}
-      <div class="fw-detail__ph">{{ area.name|slice:":1"|upper }}</div>
-      {% endif %}
-    </div>
-    <div>
-      {% if area.details %}
-      <div class="fw-prose">{{ area.details|linebreaks }}</div>
-      {% elif area.summary %}
-      <div class="fw-prose"><p>{{ area.summary }}</p></div>
-      {% endif %}
-      <div class="fw-btn-row fw-actions">
-        <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}">Enquire</a>
-        {% if whatsapp_url %}
-        <a class="fw-btn fw-btn--outline" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">WhatsApp</a>
-        {% endif %}
-        <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_practice_list' %}">All areas</a>
-      </div>
-    </div>
-  </div>
-</section>
-
-{% if related_areas %}
-<section class="fw-section fw-section--soft">
-  <div class="fw-wrap">
-    <div class="fw-section__head fw-reveal">
-      <p class="fw-section__eyebrow">Also practise</p>
-      <h2>Related areas</h2>
-    </div>
-    <div class="fw-practice-grid">
-      {% for related in related_areas %}
-      <a class="fw-practice-card fw-reveal" href="{{ related.get_absolute_url }}">
-        <span class="fw-practice-card__num">{{ forloop.counter|stringformat:"02d" }}</span>
-        <h3>{{ related.name }}</h3>
-        <span class="fw-practice-card__more">Open →</span>
-      </a>
-      {% endfor %}
-    </div>
-  </div>
-</section>
-{% endif %}
-{% endblock %}
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ area.name }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+{% with area_img=area.main_image.image|stored_media_url %}
+{% with hero_src=area_img|default:website_images.practice %}
+<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
+  <div class="fw-pagehead__bg" aria-hidden="true"></div>
+<span class="fw-pagehead__mark" aria-hidden="true">{{ area.name|slice:":8" }}</span>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-pagehead__eyebrow"><a href="{% url 'accounts:firm_practice_list' %}">Practice areas</a></p>
+    <p class="fw-pagehead__ico">{% include "accounts/firm/_icons.html" with name=area.name|practice_icon class="fw-ico fw-ico--lg" %}</p>
+    <h1>{{ area.name }}</h1>
+    {% if area.summary %}<p class="fw-pagehead__lede">{{ area.summary }}</p>{% endif %}
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap fw-detail">
+    {% if area_img or website_images.practice or firm_media_pool %}
+    <div class="fw-detail__media" data-fw-tilt data-fw-anim="left">
+      <img src="{% if area_img %}{{ area_img }}{% elif website_images.practice %}{{ website_images.practice }}{% else %}{{ firm_media_pool|firm_media_pick:0 }}{% endif %}" alt="{{ area.name }}" loading="lazy">
+    </div>
+    {% endif %}
+    <div data-fw-anim="right">
+      {% if area.details %}
+      <div class="fw-prose">{{ area.details|linebreaks }}</div>
+      {% elif area.summary %}
+      <div class="fw-prose"><p>{{ area.summary }}</p></div>
+      {% endif %}
+      <div class="fw-btn-row fw-actions">
+        <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}" data-fw-magnetic>Enquire</a>
+        {% if whatsapp_url %}
+        <a class="fw-btn fw-btn--outline" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+        {% endif %}
+        <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_practice_list' %}">All areas</a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endwith %}
+{% endwith %}
+
+{% if related_areas %}
+<section class="fw-section fw-section--soft">
+  <div class="fw-wrap">
+    <div class="fw-section__head" data-fw-anim="fade">
+      <p class="fw-section__eyebrow">Also practise</p>
+      <h2>Related areas</h2>
+    </div>
+    <div class="fw-practice-mosaic">
+      {% for related in related_areas %}
+      {% with rel_img=related.main_image.image|stored_media_url %}
+      <a class="fw-practice-tile fw-practice-tile--media" href="{{ related.get_absolute_url }}" style="--i:{{ forloop.counter0 }}" data-fw-tilt data-fw-anim="scale">
+        <span class="fw-practice-tile__media" aria-hidden="true">
+          {% if rel_img %}
+          <img src="{{ rel_img }}" alt="" loading="lazy">
+          {% elif website_images.practice %}
+          <img src="{{ website_images.practice }}" alt="" loading="lazy">
+          {% elif firm_media_pool %}
+          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter0 }}" alt="" loading="lazy">
+          {% endif %}
+        </span>
+        <span class="fw-practice-tile__glow" aria-hidden="true"></span>
+        <span class="fw-practice-tile__ico">
+          {% include "accounts/firm/_icons.html" with name=related.name|practice_icon class="fw-ico fw-ico--lg" %}
+        </span>
+        <span class="fw-practice-tile__num">{{ forloop.counter|stringformat:"02d" }}</span>
+        <h3>{{ related.name }}</h3>
+        <span class="fw-practice-tile__go">Open <span aria-hidden="true">→</span></span>
+      </a>
+      {% endwith %}
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

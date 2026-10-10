@@ -47,6 +47,8 @@ from .models import (
     FirmFAQ,
     FirmGalleryImage,
     FirmPracticeArea,
+    FirmTeamMember,
+    FirmTestimonial,
     Invoice,
     TaxRate,
     LitigationCase,
@@ -5034,18 +5036,6 @@ class CompanyInformationForm(forms.ModelForm):
             }
         ),
     )
-    images = MultipleFileField(
-        required=False,
-        widget=MultipleFileInput(
-            attrs={
-                "class": "form-input form-input--file",
-                "accept": "image/*",
-                "id": "id_company_profile_images",
-            }
-        ),
-        label="Company images",
-        help_text="Gallery images for the firm profile and website.",
-    )
 
     class Meta:
         model = FirmCompanyInformation
@@ -5054,6 +5044,8 @@ class CompanyInformationForm(forms.ModelForm):
             "trading_name",
             "registration_number",
             "tax_pin",
+            "lsk_number",
+            "professional_credentials",
             "tagline",
         ]
         labels = {
@@ -5061,6 +5053,8 @@ class CompanyInformationForm(forms.ModelForm):
             "trading_name": "Trading / brand name",
             "registration_number": "Registration number",
             "tax_pin": "Tax PIN",
+            "lsk_number": "LSK / practising number",
+            "professional_credentials": "Professional credentials",
             "tagline": "Tagline",
         }
         widgets = {
@@ -5094,6 +5088,21 @@ class CompanyInformationForm(forms.ModelForm):
                     "id": "id_company_tax_pin",
                 }
             ),
+            "lsk_number": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. LSK / P.105 / …",
+                    "id": "id_company_lsk_number",
+                }
+            ),
+            "professional_credentials": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Memberships, regulators, or credentials shown publicly",
+                    "id": "id_company_professional_credentials",
+                }
+            ),
             "tagline": forms.TextInput(
                 attrs={
                     "class": "form-input",
@@ -5106,7 +5115,14 @@ class CompanyInformationForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["legal_name"].required = True
-        for name in ("trading_name", "registration_number", "tax_pin", "tagline"):
+        for name in (
+            "trading_name",
+            "registration_number",
+            "tax_pin",
+            "lsk_number",
+            "professional_credentials",
+            "tagline",
+        ):
             self.fields[name].required = False
 
     def clean_legal_name(self):
@@ -5136,6 +5152,23 @@ class CompanyInformationForm(forms.ModelForm):
         return company
 
 
+class CompanyProfileImagesForm(forms.Form):
+    """Upload gallery images for the firm profile and website."""
+
+    images = MultipleFileField(
+        required=False,
+        widget=MultipleFileInput(
+            attrs={
+                "class": "form-input form-input--file",
+                "accept": "image/*",
+                "id": "id_company_profile_images",
+            }
+        ),
+        label="Company images",
+        help_text="Gallery images for the firm profile and website.",
+    )
+
+
 class CompanyContactsForm(forms.ModelForm):
     """Firm contact and address details for the website."""
 
@@ -5144,6 +5177,7 @@ class CompanyContactsForm(forms.ModelForm):
         fields = [
             "email",
             "phone",
+            "whatsapp_number",
             "website",
             "linkedin_url",
             "facebook_url",
@@ -5154,10 +5188,14 @@ class CompanyContactsForm(forms.ModelForm):
             "postal_address",
             "city",
             "country",
+            "business_hours",
+            "directions",
+            "map_embed_url",
         ]
         labels = {
             "email": "Primary email",
             "phone": "Primary phone",
+            "whatsapp_number": "Public WhatsApp number",
             "website": "Website",
             "linkedin_url": "LinkedIn",
             "facebook_url": "Facebook",
@@ -5168,6 +5206,9 @@ class CompanyContactsForm(forms.ModelForm):
             "postal_address": "Postal address",
             "city": "City",
             "country": "Country",
+            "business_hours": "Business hours",
+            "directions": "Directions / how to find us",
+            "map_embed_url": "Map embed URL",
         }
         widgets = {
             "email": forms.EmailInput(
@@ -5185,6 +5226,15 @@ class CompanyContactsForm(forms.ModelForm):
                     "autocomplete": "tel",
                     "inputmode": "tel",
                     "id": "id_company_phone",
+                }
+            ),
+            "whatsapp_number": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "+254 700 000 000",
+                    "autocomplete": "tel",
+                    "inputmode": "tel",
+                    "id": "id_company_whatsapp_number",
                 }
             ),
             "website": forms.URLInput(
@@ -5266,6 +5316,30 @@ class CompanyContactsForm(forms.ModelForm):
                     "id": "id_company_country",
                 }
             ),
+            "business_hours": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Mon–Fri 8:30am–5:00pm\nSat by appointment",
+                    "id": "id_company_business_hours",
+                }
+            ),
+            "directions": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Landmarks, floor, nearby roads…",
+                    "id": "id_company_directions",
+                }
+            ),
+            "map_embed_url": forms.URLInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "https://www.google.com/maps/embed?…",
+                    "autocomplete": "url",
+                    "id": "id_company_map_embed_url",
+                }
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -5290,6 +5364,12 @@ class CompanyContactsForm(forms.ModelForm):
 
     def clean_youtube_url(self):
         return (self.cleaned_data.get("youtube_url") or "").strip()
+
+    def clean_map_embed_url(self):
+        return (self.cleaned_data.get("map_embed_url") or "").strip()
+
+    def clean_whatsapp_number(self):
+        return (self.cleaned_data.get("whatsapp_number") or "").strip()
 
 
 FIRM_CORE_VALUE_CHOICES = (
@@ -5730,6 +5810,498 @@ class CompanyTermsForm(forms.ModelForm):
         return (self.cleaned_data.get("terms_and_conditions") or "").strip()
 
 
+class CompanyPrivacyForm(forms.ModelForm):
+    """Firm privacy policy and short legal disclaimer."""
+
+    class Meta:
+        model = FirmCompanyInformation
+        fields = ["privacy_policy", "legal_disclaimer"]
+        labels = {
+            "privacy_policy": "Privacy policy",
+            "legal_disclaimer": "Legal disclaimer",
+        }
+        widgets = {
+            "privacy_policy": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 16,
+                    "placeholder": "Write the firm’s public privacy policy…",
+                    "id": "id_company_privacy_policy",
+                }
+            ),
+            "legal_disclaimer": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 4,
+                    "placeholder": "e.g. Website content is general information and not legal advice.",
+                    "id": "id_company_legal_disclaimer",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["privacy_policy"].required = False
+        self.fields["legal_disclaimer"].required = False
+
+    def clean_privacy_policy(self):
+        return (self.cleaned_data.get("privacy_policy") or "").strip()
+
+    def clean_legal_disclaimer(self):
+        return (self.cleaned_data.get("legal_disclaimer") or "").strip()
+
+
+class CompanyWebsiteImagesForm(forms.ModelForm):
+    """Upload images for each public website section."""
+
+    SECTION_FIELDS = [
+        (
+            "website_hero_image",
+            "Homepage hero",
+            "Full-bleed background on the homepage hero.",
+        ),
+        (
+            "website_story_image",
+            "Story / origin photo",
+            "Homepage story band and About “why we exist” photo.",
+        ),
+        (
+            "website_about_hero_image",
+            "About page hero",
+            "Background image at the top of the About page.",
+        ),
+        (
+            "website_credentials_image",
+            "Credentials photo",
+            "About page credentials / research image.",
+        ),
+        (
+            "website_practice_hero_image",
+            "Practice page hero",
+            "Background on the Practice areas page.",
+        ),
+        (
+            "website_team_hero_image",
+            "Team page hero",
+            "Background on the Team page.",
+        ),
+        (
+            "website_gallery_hero_image",
+            "Gallery page hero",
+            "Background on the Gallery page.",
+        ),
+        (
+            "website_faqs_hero_image",
+            "FAQs page hero",
+            "Background on the FAQs page.",
+        ),
+        (
+            "website_blog_hero_image",
+            "Insights page hero",
+            "Background on the Insights / blog list page.",
+        ),
+        (
+            "website_contact_hero_image",
+            "Contact page hero",
+            "Background on the Contact page.",
+        ),
+    ]
+
+    clear_website_hero_image = forms.BooleanField(
+        required=False, label="Remove homepage hero image"
+    )
+    clear_website_story_image = forms.BooleanField(
+        required=False, label="Remove story / origin photo"
+    )
+    clear_website_about_hero_image = forms.BooleanField(
+        required=False, label="Remove About page hero"
+    )
+    clear_website_credentials_image = forms.BooleanField(
+        required=False, label="Remove credentials photo"
+    )
+    clear_website_practice_hero_image = forms.BooleanField(
+        required=False, label="Remove Practice page hero"
+    )
+    clear_website_team_hero_image = forms.BooleanField(
+        required=False, label="Remove Team page hero"
+    )
+    clear_website_gallery_hero_image = forms.BooleanField(
+        required=False, label="Remove Gallery page hero"
+    )
+    clear_website_faqs_hero_image = forms.BooleanField(
+        required=False, label="Remove FAQs page hero"
+    )
+    clear_website_blog_hero_image = forms.BooleanField(
+        required=False, label="Remove Insights page hero"
+    )
+    clear_website_contact_hero_image = forms.BooleanField(
+        required=False, label="Remove Contact page hero"
+    )
+
+    class Meta:
+        model = FirmCompanyInformation
+        fields = [
+            "website_hero_image",
+            "website_story_image",
+            "website_about_hero_image",
+            "website_credentials_image",
+            "website_practice_hero_image",
+            "website_team_hero_image",
+            "website_gallery_hero_image",
+            "website_faqs_hero_image",
+            "website_blog_hero_image",
+            "website_contact_hero_image",
+        ]
+        labels = {
+            "website_hero_image": "Homepage hero",
+            "website_story_image": "Story / origin photo",
+            "website_about_hero_image": "About page hero",
+            "website_credentials_image": "Credentials photo",
+            "website_practice_hero_image": "Practice page hero",
+            "website_team_hero_image": "Team page hero",
+            "website_gallery_hero_image": "Gallery page hero",
+            "website_faqs_hero_image": "FAQs page hero",
+            "website_blog_hero_image": "Insights page hero",
+            "website_contact_hero_image": "Contact page hero",
+        }
+        widgets = {
+            name: forms.FileInput(
+                attrs={
+                    "class": "form-input form-input--file",
+                    "accept": "image/*",
+                    "id": f"id_{name}",
+                }
+            )
+            for name in [
+                "website_hero_image",
+                "website_story_image",
+                "website_about_hero_image",
+                "website_credentials_image",
+                "website_practice_hero_image",
+                "website_team_hero_image",
+                "website_gallery_hero_image",
+                "website_faqs_hero_image",
+                "website_blog_hero_image",
+                "website_contact_hero_image",
+            ]
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, _label, help_text in self.SECTION_FIELDS:
+            self.fields[name].required = False
+            self.fields[name].help_text = help_text
+            clear_name = f"clear_{name}"
+            if clear_name in self.fields:
+                self.fields[clear_name].required = False
+
+    def apply_website_images(self, company):
+        """Optimize uploads and honour clear checkboxes for section images."""
+        update_fields = []
+        for name, _label, _help in self.SECTION_FIELDS:
+            uploaded = self.cleaned_data.get(name)
+            clear = bool(self.cleaned_data.get(f"clear_{name}"))
+            current = getattr(company, name, None)
+
+            if uploaded:
+                optimized = optimize_image(uploaded, max_size=1800, quality=80)
+                if current:
+                    current.delete(save=False)
+                setattr(company, name, optimized)
+                update_fields.append(name)
+            elif clear and current:
+                current.delete(save=False)
+                setattr(company, name, None)
+                update_fields.append(name)
+
+        if update_fields:
+            company.save(update_fields=[*update_fields, "updated_at"])
+        return company
+
+
+class CompanyHomepageForm(forms.ModelForm):
+    """Homepage hero and consultation CTA copy for the company website."""
+
+    class Meta:
+        model = FirmCompanyInformation
+        fields = [
+            "hero_eyebrow",
+            "hero_headline",
+            "hero_subtext",
+            "hero_primary_cta_label",
+            "hero_secondary_cta_label",
+            "consultation_blurb",
+            "consultation_cta_label",
+        ]
+        labels = {
+            "hero_eyebrow": "Hero eyebrow",
+            "hero_headline": "Hero headline",
+            "hero_subtext": "Hero supporting text",
+            "hero_primary_cta_label": "Primary CTA label",
+            "hero_secondary_cta_label": "Secondary CTA label",
+            "consultation_blurb": "Consultation invitation",
+            "consultation_cta_label": "Consultation CTA label",
+        }
+        widgets = {
+            "hero_eyebrow": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Advocates · Kajiado County",
+                    "id": "id_company_hero_eyebrow",
+                }
+            ),
+            "hero_headline": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Defaults to the firm display name when empty",
+                    "id": "id_company_hero_headline",
+                }
+            ),
+            "hero_subtext": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "One clear sentence under the headline",
+                    "id": "id_company_hero_subtext",
+                }
+            ),
+            "hero_primary_cta_label": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Contact the firm",
+                    "id": "id_company_hero_primary_cta_label",
+                }
+            ),
+            "hero_secondary_cta_label": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Practice areas",
+                    "id": "id_company_hero_secondary_cta_label",
+                }
+            ),
+            "consultation_blurb": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 3,
+                    "placeholder": "Invite visitors to book a consultation…",
+                    "id": "id_company_consultation_blurb",
+                }
+            ),
+            "consultation_cta_label": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Book a consultation",
+                    "id": "id_company_consultation_cta_label",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in self.fields:
+            self.fields[name].required = False
+
+
+class TeamMemberForm(forms.ModelForm):
+    """Create or edit a public team / advocate profile."""
+
+    class Meta:
+        model = FirmTeamMember
+        fields = [
+            "name",
+            "title",
+            "practice_focus",
+            "bio",
+            "email",
+            "phone",
+            "photo",
+            "rank",
+            "is_published",
+        ]
+        labels = {
+            "name": "Full name",
+            "title": "Role / title",
+            "practice_focus": "Practice focus",
+            "bio": "Bio",
+            "email": "Public email",
+            "phone": "Public phone",
+            "photo": "Photo",
+            "rank": "Rank",
+            "is_published": "Show on website",
+        }
+        widgets = {
+            "name": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Jane Wanjiku",
+                    "id": "id_team_name",
+                }
+            ),
+            "title": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Managing Partner",
+                    "id": "id_team_title",
+                }
+            ),
+            "practice_focus": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. Land & conveyancing",
+                    "id": "id_team_practice_focus",
+                }
+            ),
+            "bio": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 5,
+                    "placeholder": "Short public biography…",
+                    "id": "id_team_bio",
+                }
+            ),
+            "email": forms.EmailInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Optional public email",
+                    "id": "id_team_email",
+                }
+            ),
+            "phone": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Optional public phone",
+                    "id": "id_team_phone",
+                }
+            ),
+            "photo": forms.ClearableFileInput(
+                attrs={
+                    "class": "form-input form-input--file",
+                    "accept": "image/*",
+                    "id": "id_team_photo",
+                }
+            ),
+            "rank": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "min": 1,
+                    "id": "id_team_rank",
+                }
+            ),
+            "is_published": forms.CheckboxInput(
+                attrs={
+                    "class": "form-check",
+                    "id": "id_team_is_published",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["name"].required = True
+        for name in (
+            "title",
+            "practice_focus",
+            "bio",
+            "email",
+            "phone",
+            "photo",
+        ):
+            self.fields[name].required = False
+        self.fields["rank"].required = True
+        self.fields["rank"].initial = self.fields["rank"].initial or 1
+        self.fields["is_published"].required = False
+
+    def clean_name(self):
+        name = (self.cleaned_data.get("name") or "").strip()
+        if not name:
+            raise ValidationError("Name is required.")
+        return name
+
+    def clean_rank(self):
+        rank = self.cleaned_data.get("rank")
+        if rank is None or rank < 1:
+            raise ValidationError("Rank must be 1 or higher.")
+        return rank
+
+
+class TestimonialForm(forms.ModelForm):
+    """Create or edit a client testimonial / quote."""
+
+    class Meta:
+        model = FirmTestimonial
+        fields = ["quote", "attribution", "role", "rank", "is_published"]
+        labels = {
+            "quote": "Quote",
+            "attribution": "Attribution",
+            "role": "Role / matter type",
+            "rank": "Rank",
+            "is_published": "Show on website",
+        }
+        widgets = {
+            "quote": forms.Textarea(
+                attrs={
+                    "class": "form-input",
+                    "rows": 4,
+                    "placeholder": "Client quote…",
+                    "id": "id_testimonial_quote",
+                }
+            ),
+            "attribution": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "e.g. A.K. or Family law client",
+                    "id": "id_testimonial_attribution",
+                }
+            ),
+            "role": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Optional context",
+                    "id": "id_testimonial_role",
+                }
+            ),
+            "rank": forms.NumberInput(
+                attrs={
+                    "class": "form-input",
+                    "min": 1,
+                    "id": "id_testimonial_rank",
+                }
+            ),
+            "is_published": forms.CheckboxInput(
+                attrs={
+                    "class": "form-check",
+                    "id": "id_testimonial_is_published",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["quote"].required = True
+        self.fields["attribution"].required = True
+        self.fields["role"].required = False
+        self.fields["rank"].required = True
+        self.fields["rank"].initial = self.fields["rank"].initial or 1
+        self.fields["is_published"].required = False
+
+    def clean_quote(self):
+        quote = (self.cleaned_data.get("quote") or "").strip()
+        if not quote:
+            raise ValidationError("Quote is required.")
+        return quote
+
+    def clean_attribution(self):
+        attribution = (self.cleaned_data.get("attribution") or "").strip()
+        if not attribution:
+            raise ValidationError("Attribution is required.")
+        return attribution
+
+    def clean_rank(self):
+        rank = self.cleaned_data.get("rank")
+        if rank is None or rank < 1:
+            raise ValidationError("Rank must be 1 or higher.")
+        return rank
+
+
 class GalleryImageForm(forms.ModelForm):
     """Create or edit a firm gallery entry."""
 
@@ -5812,26 +6384,43 @@ class GalleryImageForm(forms.ModelForm):
 
 
 class WebsiteTemplateForm(forms.ModelForm):
-    """Choose which public homepage appears at `/`."""
+    """Toggle whether `/` shows the company website or Sheria Centric."""
+
+    company_website_enabled = forms.BooleanField(
+        required=False,
+        label="Company website",
+        help_text=(
+            "On shows your firm public website. Off shows the Sheria Centric "
+            "product website."
+        ),
+        widget=forms.CheckboxInput(
+            attrs={"id": "id_company_website_enabled"}
+        ),
+    )
 
     class Meta:
         model = WebsiteTemplateSetting
-        fields = ["active_template"]
-        labels = {
-            "active_template": "Homepage website",
-        }
-        widgets = {
-            "active_template": forms.RadioSelect(
-                attrs={"class": "website-template-choice-group"}
-            ),
-        }
+        fields = []
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["active_template"].choices = list(
-            WebsiteTemplateSetting.TemplateChoice.choices
-        )
-        self.fields["active_template"].required = True
+        instance = getattr(self, "instance", None)
+        if instance is not None:
+            self.fields["company_website_enabled"].initial = bool(
+                instance.uses_company_website
+            )
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if self.cleaned_data.get("company_website_enabled"):
+            instance.active_template = WebsiteTemplateSetting.TemplateChoice.COMPANY
+        else:
+            instance.active_template = (
+                WebsiteTemplateSetting.TemplateChoice.SHERIA_CENTRIC
+            )
+        if commit:
+            instance.save()
+        return instance
 
 
 class FinanceSettingsForm(forms.ModelForm):

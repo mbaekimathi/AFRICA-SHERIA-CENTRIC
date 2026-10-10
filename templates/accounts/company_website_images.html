@@ -1,0 +1,107 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="company-website-images-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Upload photos for each public website section. These replace the default
+        atmospheric images on Home, About, Practice, Team, Gallery, FAQs, Insights, and Contact.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Website section images</h3>
+      <p class="panel__hint">{{ company_information.display_name }}</p>
+    </div>
+    <div class="panel__body">
+      <form
+        method="post"
+        class="workspace-form"
+        enctype="multipart/form-data"
+        novalidate
+      >
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="website-image-grid">
+          <fieldset class="website-image-card">
+            <legend>Homepage hero</legend>
+            <p class="field-hint">Full-bleed background on the homepage hero.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_hero_image clear=form.clear_website_hero_image current=company_information.website_hero_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>Story / origin photo</legend>
+            <p class="field-hint">Homepage story band and About “why we exist” photo.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_story_image clear=form.clear_website_story_image current=company_information.website_story_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>About page hero</legend>
+            <p class="field-hint">Background image at the top of the About page.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_about_hero_image clear=form.clear_website_about_hero_image current=company_information.website_about_hero_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>Credentials photo</legend>
+            <p class="field-hint">About page credentials / research image.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_credentials_image clear=form.clear_website_credentials_image current=company_information.website_credentials_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>Practice page hero</legend>
+            <p class="field-hint">Background on the Practice areas page.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_practice_hero_image clear=form.clear_website_practice_hero_image current=company_information.website_practice_hero_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>Team page hero</legend>
+            <p class="field-hint">Background on the Team page.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_team_hero_image clear=form.clear_website_team_hero_image current=company_information.website_team_hero_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>Gallery page hero</legend>
+            <p class="field-hint">Background on the Gallery page.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_gallery_hero_image clear=form.clear_website_gallery_hero_image current=company_information.website_gallery_hero_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>FAQs page hero</legend>
+            <p class="field-hint">Background on the FAQs page.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_faqs_hero_image clear=form.clear_website_faqs_hero_image current=company_information.website_faqs_hero_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>Insights page hero</legend>
+            <p class="field-hint">Background on the Insights / blog list page.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_blog_hero_image clear=form.clear_website_blog_hero_image current=company_information.website_blog_hero_image %}
+          </fieldset>
+
+          <fieldset class="website-image-card">
+            <legend>Contact page hero</legend>
+            <p class="field-hint">Background on the Contact page.</p>
+            {% include "accounts/partials/website_image_field.html" with field=form.website_contact_hero_image clear=form.clear_website_contact_hero_image current=company_information.website_contact_hero_image %}
+          </fieldset>
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">Save website images</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

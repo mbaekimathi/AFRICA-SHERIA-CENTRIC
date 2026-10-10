@@ -18,13 +18,20 @@
 
   <section class="panel">
     <div class="panel__head">
-      <h3>Active homepage</h3>
+      <h3>Public homepage</h3>
       <p class="panel__hint">
-        {% if website_setting.uses_company_website %}
-        <span class="status-pill status-pill--active">Company website</span>
-        {% else %}
-        <span class="status-pill status-pill--active">Sheria Centric</span>
-        {% endif %}
+        <span
+          class="status-pill status-pill--active"
+          id="website-template-status"
+          data-on-label="Company website"
+          data-off-label="Sheria Centric"
+        >
+          {% if website_setting.uses_company_website %}
+          Company website
+          {% else %}
+          Sheria Centric
+          {% endif %}
+        </span>
       </p>
     </div>
     <div class="panel__body">
@@ -37,63 +44,37 @@
         </div>
         {% endif %}
 
-        <div class="website-template-grid" role="radiogroup" aria-label="Homepage website">
-          <label class="website-template-card{% if form.active_template.value == 'sheria_centric' %} is-selected{% endif %}">
-            <input
-              type="radio"
-              name="{{ form.active_template.name }}"
-              value="sheria_centric"
-              {% if form.active_template.value == 'sheria_centric' %}checked{% endif %}
-            >
-            <span class="website-template-card__preview website-template-card__preview--product" aria-hidden="true">
-              <span class="website-template-card__mark">SC</span>
-              <span class="website-template-card__lines">
-                <i></i><i></i><i></i>
-              </span>
+        <div class="website-template-toggle">
+          <div class="website-template-toggle__copy">
+            <strong>{{ form.company_website_enabled.label }}</strong>
+            <span>
+              Turn on to show the
+              <em>{{ firm_name }}</em>
+              website built from
+              <a href="{{ company_information_url }}">Company Information</a>.
+              Turn off to show the Sheria Centric product website.
             </span>
-            <span class="website-template-card__body">
-              <strong>Sheria Centric website</strong>
-              <span>Product landing page for the practice ERP platform.</span>
-            </span>
-          </label>
-
-          <label class="website-template-card{% if form.active_template.value == 'company' %} is-selected{% endif %}">
-            <input
-              type="radio"
-              name="{{ form.active_template.name }}"
-              value="company"
-              {% if form.active_template.value == 'company' %}checked{% endif %}
-            >
-            <span class="website-template-card__preview website-template-card__preview--firm" aria-hidden="true">
-              <span class="website-template-card__mark">{{ firm_name|slice:":1"|upper }}</span>
-              <span class="website-template-card__lines">
-                <i></i><i></i><i></i>
-              </span>
-            </span>
-            <span class="website-template-card__body">
-              <strong>Company website</strong>
-              <span>
-                Public firm site for
-                <em>{{ firm_name }}</em>
-                — profile, practice areas, gallery, FAQs, blogs, contacts, and terms from Company Information.
-              </span>
+          </div>
+          <label class="website-template-switch" for="{{ form.company_website_enabled.id_for_label }}">
+            {{ form.company_website_enabled }}
+            <span class="website-template-switch__ui" aria-hidden="true"></span>
+            <span class="website-template-switch__label" data-on="On" data-off="Off">
+              {% if form.company_website_enabled.value %}On{% else %}Off{% endif %}
             </span>
           </label>
         </div>
-
-        {% if form.active_template.errors %}
-        <p class="field-error">{{ form.active_template.errors.0 }}</p>
+        {% if form.company_website_enabled.errors %}
+        <p class="field-error">{{ form.company_website_enabled.errors.0 }}</p>
         {% endif %}
 
         <p class="field-hint website-template-hint">
-          Company website content comes from
-          <a href="{{ company_information_url }}">Company Information</a>.
-          Keep profile and contacts registered so the firm homepage looks complete.
+          Company website content comes from profile, practice areas, gallery, FAQs,
+          blogs, contacts, team, and testimonials under Company Information.
         </p>
 
         <div class="form-actions form-actions--start">
           <button type="submit" class="btn btn--primary btn--inline">
-            Save website template
+            Save website setting
           </button>
           <a class="btn btn--quiet btn--inline" href="{% url 'accounts:home' %}" target="_blank" rel="noopener noreferrer">
             Preview homepage
@@ -117,15 +98,28 @@
 {% block extra_js %}
 <script>
   (function () {
-    var form = document.getElementById("website-template-form");
-    if (!form) return;
-    form.querySelectorAll(".website-template-card input[type='radio']").forEach(function (input) {
-      input.addEventListener("change", function () {
-        form.querySelectorAll(".website-template-card").forEach(function (card) {
-          card.classList.toggle("is-selected", card.querySelector("input").checked);
-        });
-      });
-    });
+    var input = document.getElementById("id_company_website_enabled");
+    if (!input) return;
+
+    var label = document.querySelector(".website-template-switch__label");
+    var status = document.getElementById("website-template-status");
+
+    function sync() {
+      var on = Boolean(input.checked);
+      if (label) {
+        label.textContent = on
+          ? label.getAttribute("data-on") || "On"
+          : label.getAttribute("data-off") || "Off";
+      }
+      if (status) {
+        status.textContent = on
+          ? status.getAttribute("data-on-label") || "Company website"
+          : status.getAttribute("data-off-label") || "Sheria Centric";
+      }
+    }
+
+    input.addEventListener("change", sync);
+    sync();
   })();
 </script>
 {% endblock %}

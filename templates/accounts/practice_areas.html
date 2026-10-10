@@ -3,7 +3,7 @@
 {% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
 
 {% block content %}
-<section class="page" id="practice-areas-page">
+<section class="page page--form-medium" id="practice-areas-page">
   <header class="page-intro page-intro--split">
     <div class="page-intro__copy">
       <p class="page-kicker">Company information</p>
@@ -29,14 +29,14 @@
         {% endif %}
       </p>
     </div>
-    <div class="panel__body">
+    <div class="panel__body panel__body--company-list">
       {% if practice_areas %}
       <ul class="practice-area-list">
         {% for area in practice_areas %}
         <li class="practice-area-item">
           <div class="practice-area-item__media">
             {% if area.main_image %}
-            <img src="{{ area.main_image.image.url }}" alt="" width="96" height="72">
+            <img src="{{ area.main_image.image.url }}" alt="" width="96" height="72" loading="lazy" decoding="async">
             {% else %}
             <div class="practice-area-item__placeholder" aria-hidden="true">No image</div>
             {% endif %}
@@ -46,10 +46,13 @@
               <span class="practice-area-item__rank">#{{ area.rank }}</span>
               {{ area.name }}
             </p>
+            {% if area.summary %}
             <p class="practice-area-item__summary">{{ area.summary|truncatewords:28 }}</p>
+            {% endif %}
             <p class="practice-area-item__meta">
-              {{ area.images.count }} image{{ area.images.count|pluralize }}
-              · Updated {{ area.updated_at|date:"j M Y" }}
+              <span>{{ area.images.count }} image{{ area.images.count|pluralize }}</span>
+              <span class="practice-area-item__meta-sep" aria-hidden="true">·</span>
+              <span>Updated {{ area.updated_at|date:"j M Y" }}</span>
             </p>
           </div>
           <div class="practice-area-item__actions">

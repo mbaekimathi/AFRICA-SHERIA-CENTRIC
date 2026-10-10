@@ -150,6 +150,7 @@ def analyze_company_information(
             False,
         ),
         FieldCheck("tagline", "Tagline", _filled(company.tagline), True),
+        FieldCheck("logo", "Firm logo", bool(company.logo), True),
         FieldCheck(
             "registration_number",
             "Registration number",
@@ -158,15 +159,96 @@ def analyze_company_information(
         ),
         FieldCheck("tax_pin", "Tax PIN", _filled(company.tax_pin), False),
         FieldCheck(
+            "lsk_number",
+            "LSK / practising number",
+            _filled(company.lsk_number),
+            False,
+        ),
+        FieldCheck(
+            "professional_credentials",
+            "Professional credentials",
+            _filled(company.professional_credentials),
+            False,
+        ),
+        FieldCheck(
             "profile_images",
             "Company images",
             company.profile_images.exists(),
             False,
         ),
     ]
+
+    website_image_checks = [
+        FieldCheck(
+            "website_hero_image",
+            "Homepage hero image",
+            bool(company.website_hero_image),
+            True,
+        ),
+        FieldCheck(
+            "website_story_image",
+            "Story / origin photo",
+            bool(company.website_story_image),
+            False,
+        ),
+        FieldCheck(
+            "website_about_hero_image",
+            "About page hero",
+            bool(company.website_about_hero_image),
+            False,
+        ),
+        FieldCheck(
+            "website_credentials_image",
+            "Credentials photo",
+            bool(company.website_credentials_image),
+            False,
+        ),
+        FieldCheck(
+            "website_practice_hero_image",
+            "Practice page hero",
+            bool(company.website_practice_hero_image),
+            False,
+        ),
+        FieldCheck(
+            "website_team_hero_image",
+            "Team page hero",
+            bool(company.website_team_hero_image),
+            False,
+        ),
+        FieldCheck(
+            "website_gallery_hero_image",
+            "Gallery page hero",
+            bool(company.website_gallery_hero_image),
+            False,
+        ),
+        FieldCheck(
+            "website_faqs_hero_image",
+            "FAQs page hero",
+            bool(company.website_faqs_hero_image),
+            False,
+        ),
+        FieldCheck(
+            "website_blog_hero_image",
+            "Insights page hero",
+            bool(company.website_blog_hero_image),
+            False,
+        ),
+        FieldCheck(
+            "website_contact_hero_image",
+            "Contact page hero",
+            bool(company.website_contact_hero_image),
+            False,
+        ),
+    ]
     contact_checks = [
         FieldCheck("email", "Primary email", _filled(company.email), True),
         FieldCheck("phone", "Primary phone", _filled(company.phone), True),
+        FieldCheck(
+            "whatsapp_number",
+            "Public WhatsApp number",
+            _filled(company.whatsapp_number),
+            False,
+        ),
         FieldCheck("website", "Website URL", _filled(company.website), False),
         FieldCheck(
             "physical_address",
@@ -180,6 +262,24 @@ def analyze_company_information(
             "postal_address",
             "Postal address",
             _filled(company.postal_address),
+            False,
+        ),
+        FieldCheck(
+            "business_hours",
+            "Business hours",
+            _filled(company.business_hours),
+            True,
+        ),
+        FieldCheck(
+            "directions",
+            "Directions",
+            _filled(company.directions),
+            False,
+        ),
+        FieldCheck(
+            "map_embed_url",
+            "Map embed URL",
+            _filled(company.map_embed_url),
             False,
         ),
         FieldCheck(
@@ -245,10 +345,41 @@ def analyze_company_information(
             True,
         ),
     ]
+    homepage_checks = [
+        FieldCheck(
+            "hero_headline",
+            "Hero headline",
+            _filled(company.hero_headline),
+            False,
+        ),
+        FieldCheck(
+            "hero_subtext",
+            "Hero supporting text",
+            _filled(company.hero_subtext),
+            True,
+        ),
+        FieldCheck(
+            "hero_primary_cta_label",
+            "Primary CTA label",
+            _filled(company.hero_primary_cta_label),
+            False,
+        ),
+        FieldCheck(
+            "consultation_blurb",
+            "Consultation invitation",
+            _filled(company.consultation_blurb),
+            False,
+        ),
+    ]
 
-    content_summaries = {}
-
-    from .models import EmployeeBlogPost, FirmFAQ, FirmGalleryImage, FirmPracticeArea
+    from .models import (
+        EmployeeBlogPost,
+        FirmFAQ,
+        FirmGalleryImage,
+        FirmPracticeArea,
+        FirmTeamMember,
+        FirmTestimonial,
+    )
 
     practice_area_count = FirmPracticeArea.objects.count()
     practice_checks = [
@@ -257,6 +388,26 @@ def analyze_company_information(
             "At least one practice area",
             practice_area_count > 0,
             True,
+        ),
+    ]
+
+    team_count = FirmTeamMember.objects.filter(is_published=True).count()
+    team_checks = [
+        FieldCheck(
+            "team_members",
+            "At least one published team member",
+            team_count > 0,
+            True,
+        ),
+    ]
+
+    testimonial_count = FirmTestimonial.objects.filter(is_published=True).count()
+    testimonial_checks = [
+        FieldCheck(
+            "testimonials",
+            "At least one published testimonial",
+            testimonial_count > 0,
+            False,
         ),
     ]
 
@@ -289,6 +440,21 @@ def analyze_company_information(
             "At least one gallery item",
             gallery_count > 0,
             True,
+        ),
+    ]
+
+    privacy_checks = [
+        FieldCheck(
+            "privacy_policy",
+            "Privacy policy text",
+            bool((company.privacy_policy or "").strip()),
+            True,
+        ),
+        FieldCheck(
+            "legal_disclaimer",
+            "Legal disclaimer",
+            bool((company.legal_disclaimer or "").strip()),
+            False,
         ),
     ]
 
@@ -336,6 +502,28 @@ def analyze_company_information(
                     empty_summary="About company has not been registered.",
                 )
             )
+        elif slug == "company-homepage":
+            sections.append(
+                _section_from_checks(
+                    slug=slug,
+                    label=label,
+                    icon=icon,
+                    checks=homepage_checks,
+                    url=url_for(slug),
+                    empty_summary="Homepage content has not been registered.",
+                )
+            )
+        elif slug == "company-website-images":
+            sections.append(
+                _section_from_checks(
+                    slug=slug,
+                    label=label,
+                    icon=icon,
+                    checks=website_image_checks,
+                    url=url_for(slug),
+                    empty_summary="Website section images have not been uploaded yet.",
+                )
+            )
         elif slug == "practice-areas":
             sections.append(
                 _section_from_checks(
@@ -345,6 +533,28 @@ def analyze_company_information(
                     checks=practice_checks,
                     url=url_for(slug),
                     empty_summary="No practice areas have been registered yet.",
+                )
+            )
+        elif slug == "company-team":
+            sections.append(
+                _section_from_checks(
+                    slug=slug,
+                    label=label,
+                    icon=icon,
+                    checks=team_checks,
+                    url=url_for(slug),
+                    empty_summary="No team members have been registered yet.",
+                )
+            )
+        elif slug == "company-testimonials":
+            sections.append(
+                _section_from_checks(
+                    slug=slug,
+                    label=label,
+                    icon=icon,
+                    checks=testimonial_checks,
+                    url=url_for(slug),
+                    empty_summary="No testimonials have been registered yet.",
                 )
             )
         elif slug == "company-faqs":
@@ -380,6 +590,17 @@ def analyze_company_information(
                     empty_summary="No gallery media has been registered yet.",
                 )
             )
+        elif slug == "company-privacy":
+            sections.append(
+                _section_from_checks(
+                    slug=slug,
+                    label=label,
+                    icon=icon,
+                    checks=privacy_checks,
+                    url=url_for(slug),
+                    empty_summary="Privacy policy has not been registered yet.",
+                )
+            )
         elif slug == "company-terms":
             sections.append(
                 _section_from_checks(
@@ -398,9 +619,7 @@ def analyze_company_information(
                     label=label,
                     icon=icon,
                     url=url_for(slug),
-                    summary=content_summaries.get(
-                        slug, f"{label} has not been registered yet."
-                    ),
+                    summary=f"{label} has not been registered yet.",
                 )
             )
 
@@ -426,6 +645,8 @@ def analyze_company_information(
         readiness_tone = "suspended"
 
     action_items: list[dict] = []
+    gap_groups: list[dict] = []
+    next_action: dict | None = None
     for section in sections:
         if section.status == "complete":
             continue
@@ -440,6 +661,30 @@ def analyze_company_information(
                     "priority": priority,
                 }
             )
+        gap_groups.append(
+            {
+                "section": section.label,
+                "url": section.url,
+                "status": section.status,
+                "status_label": section.status_label,
+                "percent": section.percent,
+                "required": list(section.missing_required),
+                "optional": list(section.missing_optional),
+                "summary": section.summary,
+            }
+        )
+        if next_action is None and section.missing_required:
+            next_action = {
+                "section": section.label,
+                "url": section.url,
+                "item": section.missing_required[0],
+                "count": len(section.missing_required),
+                "more_count": max(0, len(section.missing_required) - 1),
+            }
+
+    required_action_count = sum(
+        1 for a in action_items if a["priority"] == "required"
+    )
 
     return {
         "company": company,
@@ -452,9 +697,9 @@ def analyze_company_information(
         "missing_count": missing,
         "section_count": total,
         "action_items": action_items,
-        "required_action_count": sum(
-            1 for a in action_items if a["priority"] == "required"
-        ),
+        "gap_groups": gap_groups,
+        "next_action": next_action,
+        "required_action_count": required_action_count,
         "display_name": company.display_name,
         "updated_at": company.updated_at,
         "updated_by": company.updated_by,

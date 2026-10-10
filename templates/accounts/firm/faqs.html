@@ -1,35 +1,165 @@
-{% extends "accounts/firm/base.html" %}
-{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
-{% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}
-<link rel="canonical" href="{{ canonical_url }}">
-{% if json_ld %}<script type="application/ld+json">{{ json_ld }}</script>{% endif %}
-{% endblock %}
-
-{% block firm_content %}
-<section class="fw-pagehead">
-  <div class="fw-wrap">
-    <p class="fw-pagehead__eyebrow">Help</p>
-    <h1>Frequently asked questions</h1>
-    <p class="fw-pagehead__lede">Straight answers about working with {{ firm_name }}.</p>
-  </div>
-</section>
-
-<section class="fw-section fw-section--white">
-  <div class="fw-wrap">
-    <div class="fw-faqs">
-      {% for faq in faqs %}
-      <details class="fw-faq fw-reveal">
-        <summary>{{ faq.question }}</summary>
-        <p>{{ faq.answer }}</p>
-      </details>
-      {% empty %}
-      <p>FAQs will appear once added in Company Information.</p>
-      {% endfor %}
-    </div>
-    <div class="fw-actions fw-reveal">
-      <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}">Contact the firm</a>
-    </div>
-  </div>
-</section>
-{% endblock %}
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}
+<link rel="canonical" href="{{ canonical_url }}">
+{% if json_ld %}<script type="application/ld+json">{{ json_ld }}</script>{% endif %}
+{% endblock %}
+
+{% block firm_content %}
+{% with hero_src=website_images.faqs|default:website_images.contact|default:firm_hero_image_url %}
+
+<section class="fw-faq-hero{% if hero_src %} fw-faq-hero--photo{% endif %}" data-fw-scroll-section>
+  {% if hero_src %}
+  <img class="fw-faq-hero__img" src="{{ hero_src }}" alt="" loading="eager" width="1600" height="900">
+  {% endif %}
+  <div class="fw-faq-hero__veil" aria-hidden="true"></div>
+  <div class="fw-faq-hero__orb" aria-hidden="true"></div>
+  <div class="fw-wrap fw-faq-hero__inner" data-fw-anim="rise">
+    <nav class="fw-faq-hero__crumb" aria-label="Breadcrumb">
+      <a href="{% url 'accounts:home' %}">Home</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">FAQs</span>
+    </nav>
+    <p class="fw-faq-hero__eyebrow">Help centre</p>
+    <h1>Answers, clearly explained</h1>
+    <p class="fw-faq-hero__lede">
+      Straight answers about working with {{ firm_name }} — search, browse by topic, or jump to a question below.
+    </p>
+    {% if faq_count %}
+    <ul class="fw-faq-hero__stats">
+      <li><strong>{{ faq_count }}</strong> questions</li>
+      <li><strong>{{ faq_topics|length }}</strong> topics</li>
+      {% if company.business_hours %}<li>Office hours listed</li>{% endif %}
+    </ul>
+    {% endif %}
+  </div>
+</section>
+
+<section class="fw-faq-hub" data-fw-faq-hub>
+  <div class="fw-wrap fw-faq-hub__layout">
+    <aside class="fw-faq-hub__side" data-fw-anim="left">
+      <div class="fw-faq-hub__panel fw-faq-hub__panel--search">
+        <label class="fw-faq-hub__label" for="fw-faq-search">Search FAQs</label>
+        <div class="fw-faq-hub__search">
+          <span class="fw-faq-hub__search-ico" aria-hidden="true">
+            {% include "accounts/firm/_icons.html" with name="book" class="fw-ico fw-ico--sm" %}
+          </span>
+          <input
+            id="fw-faq-search"
+            type="search"
+            class="fw-faq-hub__input"
+            placeholder="Type a keyword…"
+            autocomplete="off"
+            data-fw-faq-search
+          >
+        </div>
+        <p class="fw-faq-hub__match" data-fw-faq-match aria-live="polite">
+          {% if faq_count %}Showing all {{ faq_count }} questions{% endif %}
+        </p>
+      </div>
+
+      {% if faq_topics %}
+      <div class="fw-faq-hub__panel">
+        <p class="fw-faq-hub__label">Browse by topic</p>
+        <div class="fw-faq-hub__topics" role="tablist" aria-label="FAQ topics">
+          <button type="button" class="fw-faq-hub__topic is-active" data-fw-faq-topic="all" role="tab" aria-selected="true">
+            All <span>{{ faq_count }}</span>
+          </button>
+          {% for topic in faq_topics %}
+          <button type="button" class="fw-faq-hub__topic" data-fw-faq-topic="{{ topic.slug }}" role="tab" aria-selected="false">
+            {{ topic.label }} <span>{{ topic.count }}</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if faq_items %}
+      <div class="fw-faq-hub__panel fw-faq-hub__panel--jump">
+        <p class="fw-faq-hub__label">Quick jump</p>
+        <ol class="fw-faq-hub__jump">
+          {% for item in faq_items|slice:":5" %}
+          <li><a href="#{{ item.anchor }}">{{ item.faq.question }}</a></li>
+          {% endfor %}
+        </ol>
+      </div>
+      {% endif %}
+
+      <div class="fw-faq-hub__panel fw-faq-hub__panel--help">
+        <p class="fw-faq-hub__label">Still stuck?</p>
+        <p class="fw-faq-hub__help-copy">Message chambers or book a consultation — we respond during business hours.</p>
+        <div class="fw-btn-row">
+          {% if whatsapp_url %}
+          <a class="fw-btn fw-btn--primary" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer" data-fw-magnetic>WhatsApp</a>
+          {% endif %}
+          <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_contact' %}">Contact</a>
+        </div>
+      </div>
+    </aside>
+
+    <div class="fw-faq-hub__main" data-fw-anim="rise">
+      <div class="fw-faq-hub__toolbar">
+        <p class="fw-faq-hub__toolbar-label">Questions</p>
+        <div class="fw-faq-hub__toolbar-actions">
+          <button type="button" class="fw-faq-hub__tool" data-fw-faq-expand-all>Expand all</button>
+          <button type="button" class="fw-faq-hub__tool" data-fw-faq-collapse-all>Collapse all</button>
+        </div>
+      </div>
+
+      <div class="fw-faq-stack" data-fw-faq-list>
+        {% for item in faq_items %}
+        <details
+          class="fw-faq fw-faq--hub"
+          id="{{ item.anchor }}"
+          data-fw-faq-item
+          data-fw-faq-topic="{{ item.topic_slug }}"
+          data-fw-search="{{ item.faq.question|lower }} {{ item.faq.answer|lower }}"
+          data-fw-anim="rise"
+          style="--i:{{ forloop.counter0 }}"
+        >
+          <summary>
+            <span class="fw-faq__index" aria-hidden="true">{{ forloop.counter|stringformat:"02d" }}</span>
+            <span class="fw-faq__text">
+              <span class="fw-faq__topic">{{ item.topic_label }}</span>
+              <span class="fw-faq__q">{{ item.faq.question }}</span>
+            </span>
+            <span class="fw-faq__toggle" aria-hidden="true"></span>
+          </summary>
+          <div class="fw-faq__body">
+            <p>{{ item.faq.answer|linebreaksbr }}</p>
+            <div class="fw-faq__foot">
+              <a class="fw-faq__permalink" href="#{{ item.anchor }}">Copy link to this answer</a>
+              <a class="fw-faq__ask" href="{% url 'accounts:firm_contact' %}">Ask about this</a>
+            </div>
+          </div>
+        </details>
+        {% empty %}
+        <p class="fw-empty" data-fw-anim="fade">FAQs will appear once added in Company Information.</p>
+        {% endfor %}
+      </div>
+
+      <p class="fw-faq-hub__empty" data-fw-faq-empty hidden>
+        No questions match your search. Try another keyword or <button type="button" data-fw-faq-reset>clear filters</button>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="fw-faq-cta">
+  <div class="fw-wrap fw-faq-cta__inner" data-fw-anim="rise">
+    <div>
+      <p class="fw-faq-cta__kicker">Personal advice</p>
+      <h2>Your matter is unique — FAQs are a starting point</h2>
+      <p>General answers cannot replace counsel tailored to your facts. When you are ready, speak with {{ firm_name }} directly.</p>
+    </div>
+    <div class="fw-btn-row">
+      <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}" data-fw-magnetic>Contact the firm</a>
+      <a class="fw-btn fw-btn--outline" href="{% url 'accounts:blog_list' %}">Read insights</a>
+    </div>
+  </div>
+</section>
+
+{% endwith %}
+{% endblock %}

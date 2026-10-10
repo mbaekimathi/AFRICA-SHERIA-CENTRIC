@@ -3,8 +3,8 @@
   <div class="fw-wrap">
     <div class="fw-footer__cta-strip">
       <div>
-        <p class="fw-footer__cta-kicker">Ready to talk?</p>
-        <h2 class="fw-footer__cta-title">Book a consultation with {{ firm_name }}</h2>
+        <p class="fw-footer__cta-kicker">Ready when you are</p>
+        <h2 class="fw-footer__cta-title">Arrange a consultation with {{ firm_name }}</h2>
       </div>
       <div class="fw-footer__cta-actions">
         <a class="fw-footer__cta-btn" href="{% url 'accounts:firm_contact' %}">Contact chambers</a>
@@ -17,7 +17,11 @@
     <div class="fw-footer__grid">
       <div class="fw-footer__brand">
         <a class="fw-footer__logo" href="{% url 'accounts:home' %}">
+          {% if firm_logo_url %}
+          <img class="fw-footer__logo-img" src="{{ firm_logo_url }}" alt="" width="40" height="40">
+          {% else %}
           <span class="fw-footer__mark" aria-hidden="true">{{ firm_name|slice:":1"|upper }}</span>
+          {% endif %}
           <span>
             <span class="fw-footer__name">{{ firm_name }}</span>
             <span class="fw-footer__sub">Advocates &amp; legal counsel</span>
@@ -47,6 +51,7 @@
           <a href="{% url 'accounts:home' %}">Home</a>
           <a href="{% url 'accounts:firm_practice_list' %}">Practice</a>
           <a href="{% url 'accounts:firm_about' %}">About</a>
+          <a href="{% url 'accounts:firm_team' %}">Team</a>
           <a href="{% url 'accounts:firm_gallery_list' %}">Gallery</a>
           <a href="{% url 'accounts:blog_list' %}">Insights</a>
         </nav>
@@ -57,8 +62,9 @@
         <nav class="fw-footer__nav" aria-label="Support">
           <a href="{% url 'accounts:firm_faqs' %}">FAQs</a>
           <a href="{% url 'accounts:firm_contact' %}">Contact</a>
+          <a href="{% url 'accounts:firm_privacy' %}">Privacy</a>
           <a href="{% url 'accounts:firm_terms' %}">Terms</a>
-          <a href="{% url 'accounts:client_login' %}">Client login</a>
+          <a href="{% url 'accounts:client_login' %}">Client portal</a>
           <a href="{% url 'accounts:login' %}">Employee login</a>
         </nav>
       </div>
@@ -101,8 +107,12 @@
         {{ company.legal_name }}.
         {% endif %}
         {% if company.registration_number %}Reg. {{ company.registration_number }}.{% endif %}
+        {% if company.lsk_number %}LSK {{ company.lsk_number }}.{% endif %}
       </p>
-      <p class="fw-footer__note">Professional legal counsel · Kajiado County</p>
+      <p class="fw-footer__note">
+        {% if company.legal_disclaimer %}{{ company.legal_disclaimer|truncatewords:28 }}
+        {% else %}Professional legal counsel · Kajiado County{% endif %}
+      </p>
     </div>
   </div>
 </footer>

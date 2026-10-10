@@ -1,0 +1,54 @@
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
+  <div class="fw-pagehead__bg" aria-hidden="true"></div>
+<span class="fw-pagehead__mark" aria-hidden="true">Team</span>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-pagehead__eyebrow">People</p>
+    <h1>Our team</h1>
+    <p class="fw-pagehead__lede">Advocates and counsel practising at {{ firm_name }}.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--soft">
+  <div class="fw-wrap">
+    {% if team_members %}
+    <div class="fw-team-profiles">
+      {% for member in team_members %}
+      <article class="fw-team-profile fw-team-profile--rich" data-fw-anim="rise" style="--i:{{ forloop.counter0 }}">
+        <div class="fw-team-profile__media" data-fw-tilt>
+          {% if member.photo|stored_media_url %}
+          <img
+            src="{{ member.photo|stored_media_url }}"
+            alt="{{ member.name }}"
+            width="520"
+            height="640"
+            loading="lazy"
+          >
+          {% else %}
+          <span class="fw-team-profile__ph" aria-hidden="true"></span>
+          <span class="fw-team-profile__badge" aria-hidden="true">{% firstof member.initial member.name|slice:":1"|upper %}</span>
+          {% endif %}
+          <div class="fw-team-profile__rim" aria-hidden="true"></div>
+        </div>
+        <div class="fw-team-profile__body">
+          <p class="fw-team-profile__index" aria-hidden="true">{{ forloop.counter|stringformat:"02d" }}</p>
+          <h2>{{ member.name }}</h2>
+          {% if member.title %}<p class="fw-team-profile__title">{{ member.title }}</p>{% endif %}
+          {% if member.practice_focus %}<p class="fw-team-profile__focus">{{ member.practice_focus }}</p>{% endif %}
+          {% if member.bio %}<p class="fw-team-profile__bio">{{ member.bio|truncatewords:55 }}</p>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="fw-empty" data-fw-anim="fade">Team profiles will appear here once registered.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

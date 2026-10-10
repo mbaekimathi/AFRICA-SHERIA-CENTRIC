@@ -1,5 +1,5 @@
 {% extends "accounts/firm/base.html" %}
-{% load static %}
+{% load static firm_media %}
 
 {% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
@@ -15,66 +15,263 @@
 {% endblock %}
 
 {% block firm_content %}
-<article class="fw-article" data-blog-track-url="{{ blog_track_url }}">
-  <div class="fw-article__wrap">
-    <p class="fw-article__meta">
+{% with cover=post.cover_image|stored_media_url author_photo=post.author.profile_photo|stored_media_url %}
+{% with hero_src=cover|default:website_images.blog|default:firm_hero_image_url %}
+
+<section class="fw-article-hero{% if hero_src %} fw-article-hero--photo{% endif %}">
+  {% if hero_src %}
+  <img class="fw-article-hero__img" src="{{ hero_src }}" alt="" loading="eager" width="1600" height="900">
+  {% endif %}
+  <div class="fw-article-hero__veil" aria-hidden="true"></div>
+  <div class="fw-wrap fw-article-hero__inner" data-fw-anim="rise">
+    <nav class="fw-article-hero__crumb" aria-label="Breadcrumb">
+      <a href="{% url 'accounts:home' %}">Home</a>
+      <span aria-hidden="true">/</span>
       <a href="{% url 'accounts:blog_list' %}">Insights</a>
-      ·
-      <time datetime="{% if post.published_at %}{{ post.published_at|date:'c' }}{% else %}{{ post.updated_at|date:'c' }}{% endif %}">
-        {% if post.published_at %}{{ post.published_at|date:"j F Y" }}{% else %}{{ post.updated_at|date:"j F Y" }}{% endif %}
-      </time>
-      · {{ reading_time }} min read
-    </p>
-    <h1>{{ post.title }}</h1>
-    {% if post.excerpt %}<p class="fw-article__standfirst">{{ post.excerpt }}</p>{% endif %}
-    <p class="fw-article__meta">By {{ post.author.get_full_name }}{% if author_role %} · {{ author_role }}{% endif %}</p>
-
-    {% if post.cover_image %}
-    <figure class="fw-article__cover">
-      <img src="{{ post.cover_image.url }}" alt="" width="1200" height="675" loading="eager">
-    </figure>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">Article</span>
+    </nav>
+    {% if post.focus_keyword %}
+    <p class="fw-article-hero__topic">{{ post.focus_keyword }}</p>
+    {% else %}
+    <p class="fw-article-hero__topic">Insight</p>
     {% endif %}
-
-    <div class="fw-article__body">
-      {{ body_html|safe }}
+    <h1>{{ post.title }}</h1>
+    {% if post.excerpt %}<p class="fw-article-hero__lede">{{ post.excerpt }}</p>{% endif %}
+    <div class="fw-article-hero__meta">
+      <div class="fw-article-hero__author-chip">
+        {% if author_photo %}
+        <img src="{{ author_photo }}" alt="" width="44" height="44">
+        {% else %}
+        <span aria-hidden="true">{{ author_initials }}</span>
+        {% endif %}
+        <div>
+          <strong>{{ post.author.get_full_name }}</strong>
+          {% if author_role %}<em>{{ author_role }}</em>{% endif %}
+        </div>
+      </div>
+      <ul>
+        <li>
+          <time datetime="{% if post.published_at %}{{ post.published_at|date:'c' }}{% else %}{{ post.updated_at|date:'c' }}{% endif %}">
+            {% if post.published_at %}{{ post.published_at|date:"j F Y" }}{% else %}{{ post.updated_at|date:"j F Y" }}{% endif %}
+          </time>
+        </li>
+        <li>{{ reading_time }} min read</li>
+        <li>{{ post.word_count }} words</li>
+      </ul>
     </div>
+    {% if post.tag_list %}
+    <ul class="fw-article-hero__tags">
+      {% for tag in post.tag_list %}
+      <li>{{ tag }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</section>
 
-    <div class="fw-article__actions fw-btn-row">
-      {% if whatsapp_url %}
-      <a
-        class="fw-btn fw-btn--primary"
-        href="{{ whatsapp_url }}"
-        target="_blank"
-        rel="noopener noreferrer"
-        data-blog-event="cta_whatsapp"
-      >Enquire on WhatsApp</a>
+<article class="fw-article-detail" data-blog-track-url="{{ blog_track_url }}">
+  <div class="fw-wrap fw-article-detail__layout">
+    <aside class="fw-article-detail__side" data-fw-anim="left">
+      {% if toc %}
+      <nav class="fw-article-toc" aria-label="On this page">
+        <p class="fw-article-toc__label">On this page</p>
+        <ol>
+          {% for item in toc %}
+          <li class="fw-article-toc__l{{ item.level }}">
+            <a href="#{{ item.id }}">{{ item.label }}</a>
+          </li>
+          {% endfor %}
+        </ol>
+      </nav>
       {% endif %}
-      <a
-        class="fw-btn fw-btn--outline"
-        href="{% url 'accounts:firm_contact' %}"
-        data-blog-event="cta_contact"
-      >Contact the firm</a>
-      <a class="fw-btn fw-btn--outline" href="{% url 'accounts:blog_list' %}">More insights</a>
+
+      <div class="fw-article-share">
+        <p class="fw-article-share__label">Share</p>
+        <div class="fw-article-share__row">
+          <a
+            href="https://wa.me/?text={{ post.title|urlencode }}%20{{ share_url|urlencode }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-blog-event="share_whatsapp"
+          >WhatsApp</a>
+          <a
+            href="https://twitter.com/intent/tweet?text={{ post.title|urlencode }}&url={{ share_url|urlencode }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-blog-event="share_x"
+          >X</a>
+          <a
+            href="https://www.linkedin.com/sharing/share-offsite/?url={{ share_url|urlencode }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-blog-event="share_linkedin"
+          >LinkedIn</a>
+          <button type="button" class="fw-article-share__copy" data-fw-copy="{{ share_url }}" data-blog-event="share_copy">
+            Copy link
+          </button>
+        </div>
+      </div>
+
+      <div class="fw-article-facts">
+        <p class="fw-article-facts__label">Article details</p>
+        <dl>
+          <div>
+            <dt>Published</dt>
+            <dd>{% if post.published_at %}{{ post.published_at|date:"j M Y" }}{% else %}{{ post.updated_at|date:"j M Y" }}{% endif %}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{{ post.updated_at|date:"j M Y" }}</dd>
+          </div>
+          <div>
+            <dt>Reading time</dt>
+            <dd>{{ reading_time }} minutes</dd>
+          </div>
+          {% if post.focus_keyword %}
+          <div>
+            <dt>Focus</dt>
+            <dd>{{ post.focus_keyword }}</dd>
+          </div>
+          {% endif %}
+          {% if company_city %}
+          <div>
+            <dt>Chambers</dt>
+            <dd>{{ company_city }}{% if company.country %}, {{ company.country }}{% endif %}</dd>
+          </div>
+          {% endif %}
+        </dl>
+      </div>
+    </aside>
+
+    <div class="fw-article-detail__main" data-fw-anim="rise">
+      {% if cover %}
+      <figure class="fw-article-detail__cover">
+        <img src="{{ cover }}" alt="" width="1200" height="675" loading="eager">
+        {% if post.excerpt %}<figcaption>{{ post.excerpt }}</figcaption>{% endif %}
+      </figure>
+      {% endif %}
+
+      {% if toc %}
+      <div class="fw-article-detail__takeaways">
+        <p class="fw-article-detail__takeaways-label">In this article</p>
+        <ul>
+          {% for item in toc %}
+          {% if item.level == 2 %}
+          <li><a href="#{{ item.id }}">{{ item.label }}</a></li>
+          {% endif %}
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <div class="fw-article-detail__body">
+        {{ body_html|safe }}
+      </div>
+
+      {% if post.tag_list %}
+      <div class="fw-article-detail__topics">
+        <p>Topics</p>
+        <ul>
+          {% for tag in post.tag_list %}
+          <li>{{ tag }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      <section class="fw-article-author">
+        <div class="fw-article-author__media" aria-hidden="true">
+          {% if author_photo %}
+          <img src="{{ author_photo }}" alt="" width="96" height="96">
+          {% else %}
+          <span>{{ author_initials }}</span>
+          {% endif %}
+        </div>
+        <div class="fw-article-author__copy">
+          <p class="fw-article-author__kicker">Written by</p>
+          <h2>{{ post.author.get_full_name }}</h2>
+          {% if author_role %}<p class="fw-article-author__role">{{ author_role }} · {{ firm_name }}</p>{% endif %}
+          {% if author_bio %}
+          <p class="fw-article-author__bio">{{ author_bio }}</p>
+          {% else %}
+          <p class="fw-article-author__bio">
+            Counsel and insights from {{ firm_name }}{% if company_city %} in {{ company_city }}{% endif %}.
+            {{ author_published_count }} published article{{ author_published_count|pluralize }} on this site.
+          </p>
+          {% endif %}
+          {% if author_more_posts %}
+          <div class="fw-article-author__more">
+            <p>More from this author</p>
+            <ul>
+              {% for item in author_more_posts %}
+              <li><a href="{{ item.get_absolute_url }}">{{ item.title }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <div class="fw-article-detail__cta">
+        <div>
+          <p class="fw-article-detail__cta-kicker">Next step</p>
+          <h2>Discuss this with {{ firm_name }}</h2>
+          <p>
+            {% if company_tagline %}{{ company_tagline }}{% else %}Book a consultation or message chambers during ordinary business hours.{% endif %}
+          </p>
+          {% if company_phone or company_email %}
+          <ul class="fw-article-detail__contact">
+            {% if company_phone %}<li><a href="tel:{{ company_phone }}">{{ company_phone }}</a></li>{% endif %}
+            {% if company_email %}<li><a href="mailto:{{ company_email }}">{{ company_email }}</a></li>{% endif %}
+          </ul>
+          {% endif %}
+        </div>
+        <div class="fw-btn-row">
+          {% if whatsapp_url %}
+          <a class="fw-btn fw-btn--primary" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer" data-blog-event="cta_whatsapp" data-fw-magnetic>Enquire on WhatsApp</a>
+          {% endif %}
+          <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_contact' %}" data-blog-event="cta_contact">Contact the firm</a>
+          <a class="fw-btn fw-btn--outline" href="{% url 'accounts:blog_list' %}">All insights</a>
+        </div>
+      </div>
     </div>
   </div>
 </article>
+{% endwith %}
+{% endwith %}
 
 {% if related_posts %}
 <section class="fw-section fw-section--soft">
-  <div class="fw-wrap" style="width:min(100% - 2 * var(--fw-pad), 46rem)">
-    <div class="fw-section__head fw-reveal">
-      <p class="fw-section__eyebrow">More reading</p>
+  <div class="fw-wrap">
+    <div class="fw-section__head" data-fw-anim="fade">
+      <p class="fw-section__eyebrow">Continue reading</p>
       <h2>Related articles</h2>
     </div>
-    <div class="fw-posts">
+    <div class="fw-insight-rail fw-insight-rail--related">
       {% for related in related_posts %}
-      <a
-        class="fw-post fw-reveal"
-        href="{{ related.get_absolute_url }}"
-        data-blog-event="related_click"
-      >
-        <span class="fw-post__meta">{% if related.published_at %}{{ related.published_at|date:"j M Y" }}{% endif %}</span>
-        <h3>{{ related.title }}</h3>
+      <a class="fw-insight-rail__card" href="{{ related.get_absolute_url }}" data-blog-event="related_click" data-fw-anim="rise" style="--i:{{ forloop.counter0 }}">
+        <span class="fw-insight-rail__media" aria-hidden="true">
+          {% if related.cover_image|stored_media_url %}
+          <img src="{{ related.cover_image|stored_media_url }}" alt="" loading="lazy" width="640" height="400">
+          {% elif website_images.blog %}
+          <img src="{{ website_images.blog }}" alt="" loading="lazy" width="640" height="400">
+          {% elif firm_media_pool %}
+          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter }}" alt="" loading="lazy" width="640" height="400">
+          {% else %}
+          <span class="fw-insight-rail__ph"></span>
+          {% endif %}
+        </span>
+        <span class="fw-insight-rail__copy">
+          <span class="fw-insight-rail__num" aria-hidden="true">{{ forloop.counter|stringformat:"02d" }}</span>
+          <span class="fw-insight-rail__meta">
+            {% if related.published_at %}{{ related.published_at|date:"j M Y" }}{% endif %}
+            {% if related.author %} · {{ related.author.get_full_name }}{% endif %}
+          </span>
+          <h3>{{ related.title }}</h3>
+          {% if related.excerpt %}<p>{{ related.excerpt|truncatewords:18 }}</p>{% endif %}
+          <span class="fw-insight-rail__go">Read <span aria-hidden="true">→</span></span>
+        </span>
       </a>
       {% endfor %}
     </div>
@@ -85,4 +282,21 @@
 
 {% block firm_scripts %}
 <script src="{% static 'js/blog-track.js' %}" defer></script>
+<script>
+(() => {
+  document.querySelectorAll("[data-fw-copy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const value = btn.getAttribute("data-fw-copy") || "";
+      try {
+        await navigator.clipboard.writeText(value);
+        const prev = btn.textContent;
+        btn.textContent = "Copied";
+        window.setTimeout(() => { btn.textContent = prev; }, 1600);
+      } catch (_) {
+        btn.textContent = "Copy failed";
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}

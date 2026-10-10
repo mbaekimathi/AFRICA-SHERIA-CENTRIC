@@ -1,0 +1,73 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="company-team-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Register advocates and staff profiles for the firm website team page.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ company_team_new_url }}" class="btn btn--primary btn--inline">Add team member</a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Team members</h3>
+      <p class="panel__hint">
+        {% if team_members %}
+        {{ team_members|length }} profile{{ team_members|length|pluralize }}
+        {% else %}
+        None registered
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--company-list">
+      {% if team_members %}
+      <ul class="faq-list">
+        {% for member in team_members %}
+        <li class="faq-item">
+          <div class="faq-item__main">
+            <p class="faq-item__title">
+              <span class="faq-item__rank">#{{ member.rank }}</span>
+              {{ member.name }}
+              {% if not member.is_published %}
+              <span class="status-pill status-pill--suspended">Hidden</span>
+              {% endif %}
+            </p>
+            {% if member.title or member.practice_focus %}
+            <p class="faq-item__answer">
+              {% if member.title %}{{ member.title }}{% endif %}
+              {% if member.title and member.practice_focus %} · {% endif %}
+              {% if member.practice_focus %}{{ member.practice_focus }}{% endif %}
+            </p>
+            {% endif %}
+            <p class="faq-item__meta">
+              <span>Updated {{ member.updated_at|date:"j M Y" }}</span>
+            </p>
+          </div>
+          <div class="faq-item__actions">
+            <a href="{% url 'accounts:edit_team_member' role=role_slug member_id=member.pk %}" class="btn btn--quiet btn--inline">Edit</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No team members yet</p>
+        <p class="empty-state__copy">
+          Add the first advocate or staff profile for the public website.
+        </p>
+        <a href="{{ company_team_new_url }}" class="btn btn--primary btn--inline">Add team member</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

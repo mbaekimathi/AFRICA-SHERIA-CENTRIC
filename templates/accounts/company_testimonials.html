@@ -1,0 +1,73 @@
+{% extends "layouts/workspace.html" %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="company-testimonials-page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Company information</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Register client quotes and social proof for the firm website.
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a href="{{ company_testimonials_new_url }}" class="btn btn--primary btn--inline">Add testimonial</a>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Testimonials</h3>
+      <p class="panel__hint">
+        {% if testimonials %}
+        {{ testimonials|length }} quote{{ testimonials|length|pluralize }}
+        {% else %}
+        None registered
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body panel__body--company-list">
+      {% if testimonials %}
+      <ul class="faq-list">
+        {% for item in testimonials %}
+        <li class="faq-item">
+          <div class="faq-item__main">
+            <p class="faq-item__title">
+              <span class="faq-item__rank">#{{ item.rank }}</span>
+              {{ item.attribution }}
+              {% if not item.is_published %}
+              <span class="status-pill status-pill--suspended">Hidden</span>
+              {% endif %}
+            </p>
+            {% if item.quote %}
+            <p class="faq-item__answer">{{ item.quote|truncatewords:28 }}</p>
+            {% endif %}
+            <p class="faq-item__meta">
+              {% if item.role %}
+              <span>{{ item.role }}</span>
+              <span class="faq-item__meta-sep" aria-hidden="true">·</span>
+              {% endif %}
+              <span>Updated {{ item.updated_at|date:"j M Y" }}</span>
+            </p>
+          </div>
+          <div class="faq-item__actions">
+            <a href="{% url 'accounts:edit_testimonial' role=role_slug item_id=item.pk %}" class="btn btn--quiet btn--inline">Edit</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No testimonials yet</p>
+        <p class="empty-state__copy">
+          Add anonymised or named client quotes for the public website.
+        </p>
+        <a href="{{ company_testimonials_new_url }}" class="btn btn--primary btn--inline">Add testimonial</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

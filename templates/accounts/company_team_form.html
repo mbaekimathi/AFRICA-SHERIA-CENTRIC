@@ -1,0 +1,111 @@
+{% extends "layouts/workspace.html" %}
+{% load firm_media %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" id="company-team-form-page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">Team / Advocates</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        {% if team_member %}
+        Update this team profile for the firm website.
+        {% else %}
+        Add an advocate or staff profile visitors can meet on the website.
+        {% endif %}
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>{% if team_member %}Edit team member{% else %}New team member{% endif %}</h3>
+      <p class="panel__hint">
+        <a href="{{ company_team_url }}">Back to team</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="post" class="workspace-form" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="form-alert" role="alert">
+          {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="form-field">
+          <label for="{{ form.name.id_for_label }}">{{ form.name.label }} <span aria-hidden="true">*</span></label>
+          {{ form.name }}
+          {% if form.name.errors %}<span class="field-error">{{ form.name.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+            {{ form.title }}
+            {% if form.title.errors %}<span class="field-error">{{ form.title.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.practice_focus.id_for_label }}">{{ form.practice_focus.label }}</label>
+            {{ form.practice_focus }}
+            {% if form.practice_focus.errors %}<span class="field-error">{{ form.practice_focus.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="{{ form.bio.id_for_label }}">{{ form.bio.label }}</label>
+          {{ form.bio }}
+          {% if form.bio.errors %}<span class="field-error">{{ form.bio.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+            {{ form.email }}
+            {% if form.email.errors %}<span class="field-error">{{ form.email.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>
+            {{ form.phone }}
+            {% if form.phone.errors %}<span class="field-error">{{ form.phone.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="{{ form.photo.id_for_label }}">{{ form.photo.label }}</label>
+          {% if team_member and team_member.photo|stored_media_url %}
+          <p class="field-hint">
+            <img src="{{ team_member.photo|stored_media_url }}" alt="" width="72" height="72" style="object-fit:cover;border-radius:8px;">
+          </p>
+          {% endif %}
+          {{ form.photo }}
+          {% if form.photo.errors %}<span class="field-error">{{ form.photo.errors.0 }}</span>{% endif %}
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="{{ form.rank.id_for_label }}">{{ form.rank.label }} <span aria-hidden="true">*</span></label>
+            {{ form.rank }}
+            <span class="field-hint">Lower numbers appear first.</span>
+            {% if form.rank.errors %}<span class="field-error">{{ form.rank.errors.0 }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label class="settings-toggle" for="{{ form.is_published.id_for_label }}">
+              <span class="settings-toggle__control">{{ form.is_published }}</span>
+              <span>{{ form.is_published.label }}</span>
+            </label>
+            {% if form.is_published.errors %}<span class="field-error">{{ form.is_published.errors.0 }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="form-actions form-actions--start">
+          <a href="{{ company_team_url }}" class="btn btn--quiet btn--inline">Cancel</a>
+          {% if team_member %}
+          <button type="submit" name="team_delete" value="1" class="btn btn--quiet btn--inline" onclick="return confirm('Delete this team member?');">Delete</button>
+          {% endif %}
+          <button type="submit" class="btn btn--primary btn--inline">
+            {% if team_member %}Save member{% else %}Add member{% endif %}
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+</section>
+{% endblock %}

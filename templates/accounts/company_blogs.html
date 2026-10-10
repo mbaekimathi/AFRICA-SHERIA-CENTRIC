@@ -9,7 +9,7 @@
       <p class="page-kicker">{{ session_greeting }}</p>
       <h2>{{ page_title }}</h2>
       <p class="page-lead">
-        Review submitted posts before they go live. Approved posts appear on the website at
+        Browse employee drafts and published posts. Review submitted posts before they go live at
         <a href="{{ public_blog_list_url }}" target="_blank" rel="noopener">/blog/</a>.
       </p>
     </div>
@@ -17,6 +17,59 @@
       <a href="{{ public_blog_list_url }}" class="btn btn--quiet btn--inline" target="_blank" rel="noopener">Open website blogs</a>
     </div>
   </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employee drafts</h3>
+      <p class="panel__hint">
+        {% if draft_blog_count %}
+        {{ draft_blog_count }} draft{{ draft_blog_count|pluralize }}
+        {% else %}
+        None yet
+        {% endif %}
+      </p>
+    </div>
+    <div class="panel__body">
+      {% if draft_blog_posts %}
+      <ul class="blog-post-list">
+        {% for post in draft_blog_posts %}
+        <li class="blog-post-item">
+          <div class="blog-post-item__main">
+            <p class="blog-post-item__title">{{ post.title }}</p>
+            <p class="blog-post-item__meta">
+              <span class="status-pill status-pill--draft">Draft</span>
+              <span>{{ post.author.get_full_name }}</span>
+              <span>Updated {{ post.updated_at|date:"j M Y, H:i" }}</span>
+              {% with seo=post.seo_checklist %}
+              <span class="blog-post-item__seo">SEO {{ seo.score }}%</span>
+              {% endwith %}
+            </p>
+            <p class="blog-post-item__excerpt">
+              {% if post.excerpt %}{{ post.excerpt|truncatewords:28 }}{% else %}{{ post.body|truncatewords:28 }}{% endif %}
+            </p>
+            {% if post.review_note %}
+            <p class="blog-post-item__review-note">
+              <strong>Needs changes:</strong> {{ post.review_note|truncatewords:36 }}
+            </p>
+            {% endif %}
+          </div>
+          <div class="blog-post-item__actions">
+            <a
+              href="{% url 'accounts:review_company_blog' role=role_slug post_id=post.pk %}"
+              class="btn btn--quiet btn--inline"
+            >View</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">No draft posts</p>
+        <p class="empty-state__copy">When employees save blog drafts, they will appear here.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
 
   <section class="panel">
     <div class="panel__head">
