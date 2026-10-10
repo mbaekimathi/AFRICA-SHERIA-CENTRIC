@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block firm_content %}
-{% with hero_src=website_images.faqs|default:website_images.contact|default:firm_hero_image_url %}
+{% with hero_src=website_images.faqs %}
 
 <section class="fw-faq-hero{% if hero_src %} fw-faq-hero--photo{% endif %}" data-fw-scroll-section>
   {% if hero_src %}

@@ -100,9 +100,9 @@
           allowfullscreen
         ></iframe>
       </div>
-      {% elif website_images.contact or firm_media_pool %}
+      {% elif website_images.contact %}
       <div class="fw-map fw-map--lift fw-map--photo" data-fw-anim="scale">
-        <img src="{% if website_images.contact %}{{ website_images.contact }}{% else %}{{ firm_media_pool|firm_media_pick:0 }}{% endif %}" alt="{{ firm_name }}" loading="lazy">
+        <img src="{{ website_images.contact }}" alt="{{ firm_name }}" loading="lazy">
       </div>
       {% endif %}
     </div>

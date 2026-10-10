@@ -27,10 +27,6 @@
         <span class="fw-insight__thumb" aria-hidden="true">
           {% if post.cover_image|stored_media_url %}
           <img src="{{ post.cover_image|stored_media_url }}" alt="" loading="lazy">
-          {% elif website_images.blog %}
-          <img src="{{ website_images.blog }}" alt="" loading="lazy">
-          {% elif firm_media_pool %}
-          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter0 }}" alt="" loading="lazy">
           {% endif %}
         </span>
         <span class="fw-insight__meta">

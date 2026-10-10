@@ -25,8 +25,6 @@
         <figure class="fw-practice-story__frame{% if forloop.first %} is-active{% endif %}" data-fw-practice-frame="{{ forloop.counter0 }}">
           {% if area_img %}
           <img src="{{ area_img }}" alt="" width="1100" height="1400">
-          {% elif firm_media_pool %}
-          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter0 }}" alt="" width="1100" height="1400">
           {% else %}
           <span class="fw-practice-story__ph"></span>
           {% endif %}

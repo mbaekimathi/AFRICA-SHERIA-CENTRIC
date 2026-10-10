@@ -6,31 +6,56 @@
 
 {% block firm_content %}
 {% with gurl=item.image|stored_media_url %}
-{% with hero_src=gurl|default:website_images.gallery %}
-<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
-  <div class="fw-pagehead__bg" aria-hidden="true"></div>
-<span class="fw-pagehead__mark" aria-hidden="true">Gallery</span>
-  <div class="fw-wrap" data-fw-anim="rise">
-    <p class="fw-pagehead__eyebrow"><a href="{% url 'accounts:firm_gallery_list' %}">Gallery</a></p>
+{% with hero_src=gurl %}
+
+<section class="fw-gallery-moment{% if hero_src %} fw-gallery-moment--photo{% endif %}">
+  {% if hero_src %}
+  <img class="fw-gallery-moment__bg" src="{{ hero_src }}" alt="" loading="eager" width="1600" height="900">
+  {% endif %}
+  <div class="fw-gallery-moment__veil" aria-hidden="true"></div>
+  <div class="fw-wrap fw-gallery-moment__inner" data-fw-anim="rise">
+    <nav class="fw-gallery-moment__crumb" aria-label="Breadcrumb">
+      <a href="{% url 'accounts:home' %}">Home</a>
+      <span aria-hidden="true">/</span>
+      <a href="{% url 'accounts:firm_gallery_list' %}">Gallery</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">Moment</span>
+    </nav>
+    <p class="fw-gallery-moment__tag">Daily at chambers</p>
     <h1>{{ item.title }}</h1>
-    {% if item.caption %}<p class="fw-pagehead__lede">{{ item.caption }}</p>{% endif %}
+    {% if item.caption %}<p class="fw-gallery-moment__lede">{{ item.caption }}</p>{% endif %}
+    <ul class="fw-gallery-moment__meta">
+      <li><time datetime="{{ item.created_at|date:'c' }}">Captured {{ item.created_at|date:"j F Y" }}</time></li>
+      <li>Updated {{ item.updated_at|date:"j M Y" }}</li>
+    </ul>
   </div>
 </section>
 
 <section class="fw-section fw-section--white">
-  <div class="fw-wrap fw-detail">
-    <div class="fw-detail__media fw-detail__media--tall" data-fw-tilt data-fw-anim="left">
+  <div class="fw-wrap fw-gallery-moment__layout">
+    <figure class="fw-gallery-moment__figure" data-fw-anim="left">
       {% if gurl %}
-      <img src="{{ gurl }}" alt="{{ item.title }}" loading="lazy">
+      <a href="{{ gurl }}" data-fw-lightbox data-caption="{{ item.title }}{% if item.caption %} — {{ item.caption }}{% endif %}">
+        <img src="{{ gurl }}" alt="{{ item.title }}" loading="lazy" width="1200" height="800">
+        <span class="fw-gallery-moment__expand">Expand photo</span>
+      </a>
       {% else %}
       <div class="fw-detail__ph">{{ firm_name|slice:":1"|upper }}</div>
       {% endif %}
-    </div>
-    <div data-fw-anim="right">
-      {% if item.caption %}<div class="fw-prose"><p>{{ item.caption }}</p></div>{% endif %}
-      <div class="fw-btn-row fw-actions">
-        <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_gallery_list' %}">Back to gallery</a>
+      {% if item.caption %}<figcaption>{{ item.caption }}</figcaption>{% endif %}
+    </figure>
+    <div class="fw-gallery-moment__aside" data-fw-anim="right">
+      <div class="fw-gallery-moment__story">
+        <p class="fw-gallery-moment__story-kicker">What you are seeing</p>
+        {% if item.caption %}
+        <p>{{ item.caption }}</p>
+        {% else %}
+        <p>A moment from daily practice at {{ firm_name }} — client work, consultations, and life inside chambers.</p>
+        {% endif %}
+      </div>
+      <div class="fw-btn-row">
         <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}" data-fw-magnetic>Visit chambers</a>
+        <a class="fw-btn fw-btn--outline" href="{% url 'accounts:firm_gallery_list' %}">All moments</a>
       </div>
     </div>
   </div>
@@ -41,17 +66,26 @@
 {% if siblings %}
 <section class="fw-section fw-section--soft">
   <div class="fw-wrap">
-    <div class="fw-section__head" data-fw-anim="fade"><h2>More from the gallery</h2></div>
-    <div class="fw-gallery">
+    <div class="fw-section__head" data-fw-anim="fade">
+      <p class="fw-section__eyebrow">More from the firm</p>
+      <h2>Nearby moments</h2>
+    </div>
+    <div class="fw-gallery-bento fw-gallery-bento--compact">
       {% for sibling in siblings %}
       {% with surl=sibling.image|stored_media_url %}
       {% if surl %}
-      <a class="fw-gallery-card" href="{{ sibling.get_absolute_url }}" data-fw-anim="scale" style="--i:{{ forloop.counter0 }}" data-fw-tilt>
-        <div class="fw-gallery-card__media">
-          <img src="{{ surl }}" alt="{{ sibling.title }}" loading="lazy">
-        </div>
-        <div class="fw-gallery-card__body"><strong>{{ sibling.title }}</strong></div>
-      </a>
+      <article class="fw-gallery-tile fw-gallery-tile--standard" data-fw-anim="scale" style="--i:{{ forloop.counter0 }}">
+        <a class="fw-gallery-tile__hit" href="{{ sibling.get_absolute_url }}">
+          <div class="fw-gallery-tile__media">
+            <img src="{{ surl }}" alt="{{ sibling.title }}" loading="lazy" width="640" height="480">
+            <span class="fw-gallery-tile__veil" aria-hidden="true"></span>
+          </div>
+          <div class="fw-gallery-tile__body">
+            <strong>{{ sibling.title }}</strong>
+            {% if sibling.caption %}<span>{{ sibling.caption|truncatewords:12 }}</span>{% endif %}
+          </div>
+        </a>
+      </article>
       {% endif %}
       {% endwith %}
       {% endfor %}

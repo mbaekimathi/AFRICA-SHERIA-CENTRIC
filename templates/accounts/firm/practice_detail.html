@@ -6,7 +6,7 @@
 
 {% block firm_content %}
 {% with area_img=area.main_image.image|stored_media_url %}
-{% with hero_src=area_img|default:website_images.practice %}
+{% with hero_src=area_img %}
 <section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
   <div class="fw-pagehead__bg" aria-hidden="true"></div>
 <span class="fw-pagehead__mark" aria-hidden="true">{{ area.name|slice:":8" }}</span>
@@ -20,9 +20,9 @@
 
 <section class="fw-section fw-section--white">
   <div class="fw-wrap fw-detail">
-    {% if area_img or website_images.practice or firm_media_pool %}
+    {% if area_img %}
     <div class="fw-detail__media" data-fw-tilt data-fw-anim="left">
-      <img src="{% if area_img %}{{ area_img }}{% elif website_images.practice %}{{ website_images.practice }}{% else %}{{ firm_media_pool|firm_media_pick:0 }}{% endif %}" alt="{{ area.name }}" loading="lazy">
+      <img src="{{ area_img }}" alt="{{ area.name }}" loading="lazy">
     </div>
     {% endif %}
     <div data-fw-anim="right">
@@ -58,10 +58,6 @@
         <span class="fw-practice-tile__media" aria-hidden="true">
           {% if rel_img %}
           <img src="{{ rel_img }}" alt="" loading="lazy">
-          {% elif website_images.practice %}
-          <img src="{{ website_images.practice }}" alt="" loading="lazy">
-          {% elif firm_media_pool %}
-          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter0 }}" alt="" loading="lazy">
           {% endif %}
         </span>
         <span class="fw-practice-tile__glow" aria-hidden="true"></span>

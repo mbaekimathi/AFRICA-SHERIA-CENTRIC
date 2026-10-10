@@ -547,16 +547,12 @@ def _firm_partnership_context() -> dict:
     profile = _first_stored_profile_image(company)
     website_images = resolve_firm_website_images(company)
     firm_media_pool = firm_posted_media_pool(company)
-    firm_hero_image_url = website_images.get("hero") or (
-        firm_media_pool[0] if firm_media_pool else ""
-    )
+    firm_hero_image_url = website_images.get("hero") or ""
     firm_logo_url = ""
     if company.logo:
         firm_logo_url = stored_image_url(company.logo)
     if not firm_logo_url and profile and profile.image:
         firm_logo_url = stored_image_url(profile.image)
-    if not firm_hero_image_url and firm_logo_url:
-        firm_hero_image_url = firm_logo_url
     return {
         "firm_name": company.display_name,
         "firm_logo_url": firm_logo_url,
@@ -874,18 +870,84 @@ class FirmPracticeDetailView(View):
         )
 
 
+_GALLERY_ACTIVITY_RULES = (
+    ("reception", "Reception & arrivals", ("reception", "chambers", "nairobi", "arrival", "welcome")),
+    ("consultations", "Client consultations", ("consultation", "meeting", "client", "private")),
+    ("casework", "Casework & filings", ("desk", "filing", "petition", "agreement", "matter", "draft")),
+    ("team", "Team & culture", ("team", "advocate", "staff", "colleague")),
+    ("outreach", "Community & events", ("event", "community", "outreach", "seminar")),
+)
+
+
+def _firm_gallery_activity(title: str, caption: str) -> tuple[str, str]:
+    blob = f"{title} {caption}".lower()
+    for slug, label, keywords in _GALLERY_ACTIVITY_RULES:
+        if any(word in blob for word in keywords):
+            return slug, label
+    return "daily", "Daily at chambers"
+
+
+def _firm_gallery_hub(items) -> dict:
+    """Cards, activity topics, and bento sizing for the public gallery."""
+    bento_sizes = ("feature", "tall", "wide", "standard", "standard", "tall")
+    cards = []
+    topic_counts: dict[str, dict] = {}
+
+    for index, item in enumerate(items):
+        topic_slug, topic_label = _firm_gallery_activity(item.title, item.caption or "")
+        size = bento_sizes[index % len(bento_sizes)]
+        if index == 0:
+            size = "feature"
+
+        if topic_slug not in topic_counts:
+            topic_counts[topic_slug] = {
+                "slug": topic_slug,
+                "label": topic_label,
+                "count": 0,
+            }
+        topic_counts[topic_slug]["count"] += 1
+
+        cards.append(
+            {
+                "item": item,
+                "topic_slug": topic_slug,
+                "topic_label": topic_label,
+                "size": size,
+                "index": index + 1,
+            }
+        )
+
+    topic_order = [rule[0] for rule in _GALLERY_ACTIVITY_RULES] + ["daily"]
+    topics = []
+    for slug in topic_order:
+        if slug in topic_counts:
+            topics.append(topic_counts[slug])
+    for slug, data in topic_counts.items():
+        if slug not in topic_order:
+            topics.append(data)
+
+    return {
+        "gallery_items": items,
+        "gallery_cards": cards,
+        "gallery_topics": topics,
+        "gallery_count": len(cards),
+        "gallery_featured": cards[0] if cards else None,
+    }
+
+
 class FirmGalleryListView(View):
     template_name = "accounts/firm/gallery_list.html"
 
     def get(self, request):
         items = list(FirmGalleryImage.objects.order_by("rank", "title"))
+        hub = _firm_gallery_hub(items)
         return _firm_page_render(
             request,
             self.template_name,
             "gallery",
             "Gallery",
-            f"Inside the chambers of {FirmCompanyInformation.get_solo().display_name}.",
-            {"gallery_items": items},
+            f"Daily life and moments inside {FirmCompanyInformation.get_solo().display_name}.",
+            hub,
         )
 
 

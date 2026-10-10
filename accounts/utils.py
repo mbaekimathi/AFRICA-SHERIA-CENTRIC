@@ -134,44 +134,12 @@ def firm_posted_media_pool(company) -> list[str]:
 
 def resolve_firm_website_images(company) -> dict[str, str]:
     """
-    Section image URLs preferring the dedicated upload, then other posted media.
-    Never falls back to static stock or remote stock photos.
+    Section image URLs from dedicated website section uploads only.
+
+    Empty string when a section has no upload — templates should not substitute
+    other posted media in that slot.
     """
-    specific = firm_website_image_urls(company)
-    pool = firm_posted_media_pool(company)
-    if not pool:
-        return {key: "" for key in WEBSITE_IMAGE_KEYS}
-
-    logo_url = stored_image_url(getattr(company, "logo", None))
-    # Prefer real photos over the firm logo for atmospheric backgrounds.
-    atmosphere = [url for url in pool if url != logo_url] or pool
-
-    # Preferred cascade when a section has no dedicated upload.
-    fallback_order = {
-        "hero": ("story", "about", "gallery", "contact", "practice"),
-        "story": ("hero", "about", "gallery", "credentials"),
-        "about": ("hero", "story", "gallery", "team"),
-        "credentials": ("practice", "story", "about", "hero"),
-        "practice": ("credentials", "hero", "story", "gallery"),
-        "team": ("about", "hero", "gallery", "story"),
-        "gallery": ("hero", "story", "about", "team"),
-        "faqs": ("contact", "hero", "story", "about"),
-        "blog": ("story", "credentials", "hero", "gallery"),
-        "contact": ("hero", "about", "gallery", "faqs"),
-    }
-
-    resolved: dict[str, str] = {}
-    for index, key in enumerate(WEBSITE_IMAGE_KEYS):
-        url = specific.get(key) or ""
-        if not url:
-            for alt in fallback_order.get(key, ()):
-                url = specific.get(alt) or ""
-                if url:
-                    break
-        if not url:
-            url = atmosphere[index % len(atmosphere)]
-        resolved[key] = url
-    return resolved
+    return firm_website_image_urls(company)
 
 
 def refresh_company_stored_media(company) -> None:

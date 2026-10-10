@@ -15,7 +15,7 @@
 {% endblock %}
 
 {% block firm_content %}
-{% with hero_img=website_images.hero|default:firm_hero_image_url practice_img=website_images.practice|default:"" %}
+{% with hero_img=website_images.hero practice_img=website_images.practice %}
 <div class="fw-rail{% if hero_img %} fw-rail--photo{% endif %}" data-fw-hero>
   <aside class="fw-rail__media">
     <div class="fw-rail__media-stick">
@@ -95,7 +95,7 @@
         </div>
         <div class="fw-practice-slides__stage" aria-roledescription="carousel" aria-label="Practice areas">
           {% for area in slide_areas %}
-          {% with area_img=area.main_image.image|stored_media_url pool_pick=firm_media_pool|firm_media_pick:forloop.counter %}
+          {% with area_img=area.main_image.image|stored_media_url %}
           <article
             class="fw-practice-slides__slide{% if forloop.first %} is-active{% endif %}"
             data-fw-slide="{{ forloop.counter0 }}"
@@ -106,8 +106,6 @@
               <div class="fw-practice-slides__media" aria-hidden="true">
                 {% if area_img %}
                 <img src="{{ area_img }}" alt="" loading="{% if forloop.first %}eager{% else %}lazy{% endif %}" width="960" height="720">
-                {% elif pool_pick and pool_pick != firm_logo_url %}
-                <img src="{{ pool_pick }}" alt="" loading="{% if forloop.first %}eager{% else %}lazy{% endif %}" width="960" height="720">
                 {% else %}
                 <span class="fw-practice-slides__ph fw-practice-slides__ph--{{ area.name|practice_icon }}">
                   <span class="fw-practice-slides__ph-ico">
@@ -248,10 +246,6 @@
       <span class="fw-insight-feature__media" aria-hidden="true">
         {% if lead.cover_image|stored_media_url %}
         <img src="{{ lead.cover_image|stored_media_url }}" alt="" loading="lazy" width="960" height="640">
-        {% elif website_images.blog %}
-        <img src="{{ website_images.blog }}" alt="" loading="lazy" width="960" height="640">
-        {% elif firm_media_pool %}
-        <img src="{{ firm_media_pool|firm_media_pick:0 }}" alt="" loading="lazy" width="960" height="640">
         {% else %}
         <span class="fw-insight-feature__ph"></span>
         {% endif %}
@@ -279,10 +273,6 @@
         <span class="fw-insight-rail__media" aria-hidden="true">
           {% if post.cover_image|stored_media_url %}
           <img src="{{ post.cover_image|stored_media_url }}" alt="" loading="lazy" width="640" height="400">
-          {% elif website_images.blog %}
-          <img src="{{ website_images.blog }}" alt="" loading="lazy" width="640" height="400">
-          {% elif firm_media_pool %}
-          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter }}" alt="" loading="lazy" width="640" height="400">
           {% else %}
           <span class="fw-insight-rail__ph"></span>
           {% endif %}

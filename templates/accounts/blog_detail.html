@@ -16,7 +16,7 @@
 
 {% block firm_content %}
 {% with cover=post.cover_image|stored_media_url author_photo=post.author.profile_photo|stored_media_url %}
-{% with hero_src=cover|default:website_images.blog|default:firm_hero_image_url %}
+{% with hero_src=cover %}
 
 <section class="fw-article-hero{% if hero_src %} fw-article-hero--photo{% endif %}">
   {% if hero_src %}
@@ -254,10 +254,6 @@
         <span class="fw-insight-rail__media" aria-hidden="true">
           {% if related.cover_image|stored_media_url %}
           <img src="{{ related.cover_image|stored_media_url }}" alt="" loading="lazy" width="640" height="400">
-          {% elif website_images.blog %}
-          <img src="{{ website_images.blog }}" alt="" loading="lazy" width="640" height="400">
-          {% elif firm_media_pool %}
-          <img src="{{ firm_media_pool|firm_media_pick:forloop.counter }}" alt="" loading="lazy" width="640" height="400">
           {% else %}
           <span class="fw-insight-rail__ph"></span>
           {% endif %}

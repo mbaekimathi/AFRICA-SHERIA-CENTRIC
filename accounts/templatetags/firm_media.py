@@ -62,7 +62,7 @@ def firm_media_pick(pool, index=0):
 
 @register.filter
 def firm_stock(index=0):
-    """Deprecated: stock photos removed — use firm_media_pool|firm_media_pick."""
+    """Deprecated: do not use for section fallbacks; each slot uses its own upload."""
     return ""
 
 

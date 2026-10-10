@@ -167,6 +167,10 @@
     ".fw-faq-hub__side",
     ".fw-faq-hub__main",
     ".fw-faq-cta__inner",
+    ".fw-gallery-spotlight",
+    ".fw-gallery-tile",
+    ".fw-gallery-cta__inner",
+    ".fw-gallery-lounge__head",
   ].join(", ");
 
   const animTargets = document.querySelectorAll(animSelector);
@@ -758,6 +762,65 @@
     show(0);
     start();
   });
+
+  /* ——— Gallery hub: activity filters ——— */
+  const galleryHub = document.querySelector("[data-fw-gallery-hub]");
+  if (galleryHub) {
+    const matchEl = galleryHub.querySelector("[data-fw-gallery-match]");
+    const emptyEl = galleryHub.querySelector("[data-fw-gallery-empty]");
+    const resetBtn = galleryHub.querySelector("[data-fw-gallery-reset]");
+    const items = [...galleryHub.querySelectorAll("[data-fw-gallery-item]")];
+    const topicBtns = [
+      ...galleryHub.querySelectorAll(
+        ".fw-gallery-lounge__topic[data-fw-gallery-topic]"
+      ),
+    ];
+    let activeTopic = "all";
+
+    const setTopicActive = (slug) => {
+      topicBtns.forEach((btn) => {
+        const on = btn.dataset.fwGalleryTopic === slug;
+        btn.classList.toggle("is-active", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      });
+    };
+
+    const applyFilters = () => {
+      let visible = 0;
+      items.forEach((el) => {
+        const topic = el.dataset.fwGalleryTopic || "";
+        const show = activeTopic === "all" || topic === activeTopic;
+        el.classList.toggle("is-filtered-out", !show);
+        if (show) visible += 1;
+      });
+      if (matchEl) {
+        const total = items.length;
+        if (activeTopic !== "all") {
+          matchEl.textContent = `Showing ${visible} of ${total} moments`;
+        } else {
+          matchEl.textContent = total ? `Showing all ${total} moments` : "";
+        }
+      }
+      if (emptyEl) emptyEl.hidden = visible > 0;
+    };
+
+    topicBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activeTopic = btn.dataset.fwGalleryTopic || "all";
+        setTopicActive(activeTopic);
+        applyFilters();
+      });
+    });
+
+    resetBtn?.addEventListener("click", () => {
+      activeTopic = "all";
+      setTopicActive("all");
+      applyFilters();
+    });
+
+    setTopicActive("all");
+    applyFilters();
+  }
 
   /* ——— FAQ hub: search, topics, expand ——— */
   const faqHub = document.querySelector("[data-fw-faq-hub]");
