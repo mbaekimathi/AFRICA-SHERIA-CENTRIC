@@ -12,8 +12,8 @@
         List every employee and manage their work mailbox.
         {% if can_edit_work_email %}
         Assign an existing address with Save, use Generate &amp; notify to create
-        one, or Send reset link so the employee can set a new work-email password
-        from their personal inbox.
+        one, or Add email to give an employee another mailbox they can read and
+        reply from in Messages.
         {% endif %}
       </p>
     </div>
@@ -166,7 +166,7 @@
               <td>{{ row.employee.get_status_display }}</td>
               <td>
                 {% if can_edit_work_email and row.work_email_editable %}
-                {% include "accounts/partials/work_email_editor.html" with work_email_update_url=row.work_email_update_url return_to="email-settings" input_id=row.work_email_input_id employee_label=row.employee_label work_email_value=row.work_email_value has_work_email=row.has_work_email %}
+                {% include "accounts/partials/work_email_editor.html" with work_email_update_url=row.work_email_update_url return_to="email-settings" input_id=row.work_email_input_id extra_email_input_id=row.extra_email_input_id employee_label=row.employee_label work_email_value=row.work_email_value has_work_email=row.has_work_email extra_emails=row.extra_emails %}
                 {% else %}
                 {{ row.employee.work_email|default:"—" }}
                 {% endif %}

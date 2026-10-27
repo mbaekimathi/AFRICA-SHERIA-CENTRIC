@@ -67,3 +67,74 @@
     {% endif %}
   {% endif %}
 </form>
+{% if extra_emails %}
+<div class="work-email-extras">
+  {% for extra in extra_emails %}
+  <div class="work-email-extras__row">
+    <span class="work-email-extras__address">
+      <span
+        class="work-email-extras__dot{% if extra.mailbox_connected %} is-live{% endif %}"
+        aria-hidden="true"
+        title="{% if extra.mailbox_connected %}Mailbox connected{% else %}Password not connected yet{% endif %}"
+      ></span>
+      {{ extra.email }}
+    </span>
+    <form method="post" action="{{ work_email_update_url }}" class="work-email-extras__actions">
+      {% csrf_token %}
+      {% if return_to %}
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      {% endif %}
+      <input type="hidden" name="mailbox_id" value="{{ extra.pk }}">
+      {% if work_email_provisioning_ready and email_smtp_ready %}
+      <button
+        type="submit"
+        name="action"
+        value="reset_extra_password"
+        class="btn btn--ghost btn--inline"
+        title="Email a password-reset link for {{ extra.email }} to the employee's personal address"
+      >
+        Reset link
+      </button>
+      {% endif %}
+      <button
+        type="submit"
+        name="action"
+        value="remove_extra"
+        class="btn btn--ghost btn--inline"
+        title="Unlink {{ extra.email }} — the mailbox stays on the mail server"
+      >
+        Remove
+      </button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% if work_email_provisioning_ready %}
+<form method="post" action="{{ work_email_update_url }}" class="work-email-editor work-email-extras__add">
+  {% csrf_token %}
+  {% if return_to %}
+  <input type="hidden" name="return_to" value="{{ return_to }}">
+  {% endif %}
+  <label class="visually-hidden" for="{{ extra_email_input_id }}">
+    Add another work email for {{ employee_label }}
+  </label>
+  <input
+    type="text"
+    name="extra_email"
+    id="{{ extra_email_input_id }}"
+    class="form-input work-email-editor__input"
+    placeholder="another@{{ work_email_domain|default:'firm.com' }}"
+    autocomplete="off"
+  >
+  <button
+    type="submit"
+    name="action"
+    value="add_extra"
+    class="btn btn--primary btn--inline work-email-editor__save"
+    title="Create (or link an existing) mailbox on the mail server and email login instructions to the employee"
+  >
+    Add email
+  </button>
+</form>
+{% endif %}

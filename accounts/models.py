@@ -451,6 +451,37 @@ class Employee(AbstractUser):
 
         return decrypt_mailbox_password(self.work_email_password_encrypted)
 
+    def mailbox_rows(self) -> list[dict]:
+        """Primary + extra mailboxes for switchers and settings lists."""
+        rows = []
+        primary = (self.work_email or "").strip().lower()
+        if primary:
+            rows.append(
+                {
+                    "key": "",
+                    "email": primary,
+                    "connected": self.mailbox_connected,
+                    "is_primary": True,
+                }
+            )
+        for extra in self.extra_mailboxes.all():
+            rows.append(
+                {
+                    "key": str(extra.pk),
+                    "email": (extra.email or "").strip().lower(),
+                    "connected": extra.mailbox_connected,
+                    "is_primary": False,
+                }
+            )
+        return rows
+
+    def linked_mailbox_for(self, key):
+        """Return this employee's extra mailbox for a ?mailbox= key, or None."""
+        key = (key or "").strip()
+        if not key or not key.isdigit():
+            return None
+        return self.extra_mailboxes.filter(pk=int(key)).first()
+
     def _titled_name(self, part: str) -> str:
         part = (part or "").strip()
         title = self.get_courtesy_title_display() if self.courtesy_title else ""
@@ -564,6 +595,69 @@ class Employee(AbstractUser):
     def dashboard_url_name(self):
         """Backward-compatible alias — prefer dashboard_url for redirects."""
         return self.dashboard_url
+
+
+class EmployeeMailbox(models.Model):
+    """
+    An extra firm mailbox linked to an employee account.
+
+    Employees with more than one firm address (e.g. a personal address and a
+    shared department mailbox) can connect each one in Messages to read and
+    reply from it. The primary mailbox stays on ``Employee.work_email``.
+    """
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="extra_mailboxes",
+    )
+    email = models.EmailField(
+        unique=True,
+        help_text="Extra firm mailbox address linked to the employee.",
+    )
+    mailbox_password_encrypted = models.TextField(
+        blank=True,
+        default="",
+        help_text="Encrypted cPanel mailbox password for IMAP/SMTP in Messages.",
+    )
+    created_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="linked_mailboxes_added",
+        help_text="Manager who linked this mailbox.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["email"]
+        verbose_name = "Employee mailbox"
+        verbose_name_plural = "Employee mailboxes"
+
+    def __str__(self):
+        return f"{self.email} ({self.employee})"
+
+    @property
+    def mailbox_connected(self) -> bool:
+        return bool((self.mailbox_password_encrypted or "").strip())
+
+    def set_mailbox_password(self, password: str, *, save: bool = True) -> None:
+        from .mail_crypto import encrypt_mailbox_password
+
+        self.mailbox_password_encrypted = encrypt_mailbox_password(password)
+        if save:
+            self.save(update_fields=["mailbox_password_encrypted"])
+
+    def clear_mailbox_password(self, *, save: bool = True) -> None:
+        self.mailbox_password_encrypted = ""
+        if save:
+            self.save(update_fields=["mailbox_password_encrypted"])
+
+    def get_mailbox_password(self) -> str:
+        from .mail_crypto import decrypt_mailbox_password
+
+        return decrypt_mailbox_password(self.mailbox_password_encrypted)
 
 
 def blog_cover_upload_to(instance, filename):
@@ -6543,6 +6637,27 @@ class EmployeeCommunication(models.Model):
         if self.to_employee_id:
             return "Employee"
         return "Contact"
+
+
+class EmployeeCommunicationAttachment(models.Model):
+    """A file attached to a logged employee email, kept for read-back."""
+
+    communication = models.ForeignKey(
+        EmployeeCommunication,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    file = models.FileField(upload_to="communications/attachments/%Y/%m/")
+    filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=255, blank=True, default="")
+    size = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return self.filename
 
 
 class RoleActivityPermission(models.Model):

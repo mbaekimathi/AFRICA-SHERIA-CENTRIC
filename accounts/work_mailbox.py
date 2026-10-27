@@ -260,18 +260,29 @@ def _date_display(raw: str) -> str:
 class WorkMailbox:
     """IMAP/SMTP session for one employee's firm mailbox."""
 
-    def __init__(self, employee):
+    def __init__(self, employee, mailbox=None):
         self.employee = employee
         self._folder_names: list[str] | None = None
-        self.address = (employee.work_email or "").strip().lower()
-        if not self.address:
-            raise WorkMailboxError("Your account has no work email yet.")
-        try:
-            self.password = employee.get_work_mailbox_password()
-        except MailCryptoError as exc:
-            raise WorkMailboxError(
-                "Connect your mailbox password to read and send mail here."
-            ) from exc
+        if mailbox is not None:
+            self.address = (mailbox.email or "").strip().lower()
+            if not self.address:
+                raise WorkMailboxError("That linked mailbox has no address.")
+            try:
+                self.password = mailbox.get_mailbox_password()
+            except MailCryptoError as exc:
+                raise WorkMailboxError(
+                    "Connect the mailbox password to read and send mail here."
+                ) from exc
+        else:
+            self.address = (employee.work_email or "").strip().lower()
+            if not self.address:
+                raise WorkMailboxError("Your account has no work email yet.")
+            try:
+                self.password = employee.get_work_mailbox_password()
+            except MailCryptoError as exc:
+                raise WorkMailboxError(
+                    "Connect your mailbox password to read and send mail here."
+                ) from exc
         self.host = mail_host_for_address(self.address)
 
     def verify_credentials(self) -> None:
@@ -657,11 +668,16 @@ class WorkMailbox:
             )
 
 
-def connect_mailbox(employee, password: str) -> None:
+def connect_mailbox(employee, password: str, mailbox=None) -> None:
     """Validate password against IMAP and store it encrypted."""
-    address = (employee.work_email or "").strip().lower()
-    if not address:
-        raise WorkMailboxError("Your account has no work email yet.")
+    if mailbox is not None:
+        address = (mailbox.email or "").strip().lower()
+        if not address:
+            raise WorkMailboxError("That linked mailbox has no address.")
+    else:
+        address = (employee.work_email or "").strip().lower()
+        if not address:
+            raise WorkMailboxError("Your account has no work email yet.")
     host = mail_host_for_address(address)
     context = ssl.create_default_context()
     try:
@@ -675,4 +691,7 @@ def connect_mailbox(employee, password: str) -> None:
         ) from exc
     except (OSError, TimeoutError, ssl.SSLError) as exc:
         raise WorkMailboxError(f"Could not reach {host}:993 — {exc}") from exc
-    employee.set_work_mailbox_password(password)
+    if mailbox is not None:
+        mailbox.set_mailbox_password(password)
+    else:
+        employee.set_work_mailbox_password(password)

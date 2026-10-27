@@ -1,18 +1,37 @@
+import shutil
+import tempfile
 from unittest.mock import MagicMock, patch
 
-from django.test import TestCase
+from django.core.files.base import ContentFile
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 
 from accounts.models import (
     Client,
     CommunicationSettings,
     Employee,
+    EmployeeActivityPermission,
     EmployeeCommunication,
+    EmployeeCommunicationAttachment,
     WhatsAppConversation,
     WhatsAppMessage,
 )
 
 
 class EmployeeCommunicationsPagesTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._media_root = tempfile.mkdtemp(prefix="comm-test-media-")
+        cls._media_override = override_settings(MEDIA_ROOT=cls._media_root)
+        cls._media_override.enable()
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        cls._media_override.disable()
+        shutil.rmtree(cls._media_root, ignore_errors=True)
+
     def setUp(self):
         self.user = Employee.objects.create_user(
             login_code="828282",
@@ -193,7 +212,7 @@ class EmployeeCommunicationsPagesTests(TestCase):
 
         self.assertContains(
             response,
-            "That work email is already assigned to another employee.",
+            "That work email is already linked to an employee account.",
         )
         self.colleague.refresh_from_db()
         self.assertEqual(
@@ -413,6 +432,89 @@ class EmployeeCommunicationsPagesTests(TestCase):
         self.assertContains(detail, "Attached is the weekly matter report.")
         self.assertContains(detail, self.colleague.work_email)
 
+    def test_detail_lists_attachments_with_view_and_download_links(self):
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        attachment = EmployeeCommunicationAttachment.objects.create(
+            communication=record,
+            filename="contract.pdf",
+            content_type="application/pdf",
+            size=4,
+            file=ContentFile(b"%PDF", name="contract.pdf"),
+        )
+        log_url = self.channel_url("email-communications", str(self.colleague.pk))
+        detail = self.http.get(f"{log_url}{record.pk}/")
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, "1 attachment")
+        self.assertContains(detail, "contract.pdf")
+        file_url = f"{log_url}{record.pk}/attachments/{attachment.pk}/"
+        self.assertContains(detail, file_url)
+        self.assertContains(detail, f"{file_url}?download=1")
+
+    def test_attachment_view_and_download_endpoints(self):
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        attachment = EmployeeCommunicationAttachment.objects.create(
+            communication=record,
+            filename="contract.pdf",
+            content_type="application/pdf",
+            size=4,
+            file=ContentFile(b"%PDF", name="contract.pdf"),
+        )
+        file_url = (
+            f"{self.channel_url('email-communications', str(self.colleague.pk))}"
+            f"{record.pk}/attachments/{attachment.pk}/"
+        )
+
+        inline = self.http.get(file_url)
+        self.assertEqual(inline.status_code, 200)
+        self.assertEqual(inline["Content-Type"], "application/pdf")
+        self.assertTrue(inline["Content-Disposition"].startswith("inline"))
+        self.assertIn('filename="contract.pdf"', inline["Content-Disposition"])
+        self.assertEqual(b"".join(inline.streaming_content), b"%PDF")
+
+        download = self.http.get(f"{file_url}?download=1")
+        self.assertEqual(download.status_code, 200)
+        self.assertTrue(download["Content-Disposition"].startswith("attachment"))
+
+    def test_attachment_of_another_employees_message_is_not_found(self):
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        attachment = EmployeeCommunicationAttachment.objects.create(
+            communication=record,
+            filename="contract.pdf",
+            content_type="application/pdf",
+            size=4,
+            file=ContentFile(b"%PDF", name="contract.pdf"),
+        )
+        other_log_url = self.channel_url("email-communications", str(self.user.pk))
+        response = self.http.get(
+            f"{other_log_url}{record.pk}/attachments/{attachment.pk}/"
+        )
+        self.assertEqual(response.status_code, 404)
+
     def test_log_only_shows_that_employees_messages(self):
         mine = EmployeeCommunication.objects.create(
             sender=self.user,
@@ -460,6 +562,185 @@ class EmployeeCommunicationsPagesTests(TestCase):
         detail = self.http.get(f"{log_url}{message.pk}/")
         self.assertContains(detail, "Documents received, thank you.")
 
+    def test_detail_shows_reply_form_for_email(self):
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        detail = self.http.get(
+            f"{self.channel_url('email-communications', str(self.colleague.pk))}"
+            f"{record.pk}/"
+        )
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, "Send reply")
+        self.assertContains(detail, "Re: Contract")
+        self.assertContains(detail, self.firm_client.email)
+
+    def test_whatsapp_detail_hides_the_reply_form(self):
+        conversation = WhatsAppConversation.objects.create(
+            msisdn="254700111222",
+            client=self.firm_client,
+            display_name="Sam Client",
+        )
+        message = WhatsAppMessage.objects.create(
+            conversation=conversation,
+            direction=WhatsAppMessage.Direction.OUTBOUND,
+            body="Documents received, thank you.",
+            status=WhatsAppMessage.Status.SENT,
+            sent_by=self.colleague,
+        )
+        detail = self.http.get(
+            f"{self.channel_url('whatsapp-communications', str(self.colleague.pk))}"
+            f"{message.pk}/"
+        )
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotContains(detail, "Send reply")
+
+    @patch("accounts.work_mailbox.WorkMailbox")
+    def test_reply_sends_and_logs_a_new_record(self, mailbox_cls):
+        mailbox = MagicMock()
+        mailbox.address = self.user.work_email
+        mailbox_cls.return_value = mailbox
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        detail_url = (
+            f"{self.channel_url('email-communications', str(self.colleague.pk))}"
+            f"{record.pk}/"
+        )
+
+        response = self.http.post(
+            detail_url,
+            {"subject": "Re: Contract", "body": "Thanks, received."},
+        )
+
+        self.assertRedirects(response, detail_url, fetch_redirect_response=False)
+        mailbox.send_message.assert_called_once()
+        self.assertEqual(
+            mailbox.send_message.call_args.kwargs["to_addrs"],
+            [self.firm_client.email],
+        )
+        reply = EmployeeCommunication.objects.get(sender=self.user)
+        self.assertEqual(reply.channel, EmployeeCommunication.Channel.EMAIL)
+        self.assertEqual(reply.to_client, self.firm_client)
+        self.assertIsNone(reply.to_employee)
+        self.assertEqual(reply.to_address, self.firm_client.email)
+        self.assertEqual(reply.subject, "Re: Contract")
+        self.assertEqual(reply.body, "Thanks, received.")
+
+    @patch("accounts.work_mailbox.WorkMailbox")
+    def test_reply_to_a_received_email_goes_to_its_sender(self, mailbox_cls):
+        sender_emp = Employee.objects.create_user(
+            login_code="868686",
+            password="test-pass-123",
+            first_name="Amina",
+            last_name="Clerk",
+            personal_email="amina.clerk@example.com",
+            role=Employee.Role.ADVOCATE,
+            status=Employee.Status.ACTIVE,
+            work_email="amina.clerk@sheriacentric.com",
+        )
+        mailbox = MagicMock()
+        mailbox.address = self.user.work_email
+        mailbox_cls.return_value = mailbox
+        record = EmployeeCommunication.objects.create(
+            sender=sender_emp,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=sender_emp.work_email,
+            to_employee=self.colleague,
+            to_address=self.colleague.work_email,
+            subject="Intake question",
+            body="When is the filing?",
+        )
+        detail_url = (
+            f"{self.channel_url('email-communications', str(self.colleague.pk))}"
+            f"{record.pk}/"
+        )
+
+        detail = self.http.get(detail_url)
+        self.assertContains(detail, sender_emp.work_email)
+
+        response = self.http.post(detail_url, {"body": "Friday morning."})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            mailbox.send_message.call_args.kwargs["to_addrs"],
+            [sender_emp.work_email],
+        )
+        reply = EmployeeCommunication.objects.get(sender=self.user)
+        self.assertEqual(reply.to_employee, sender_emp)
+        self.assertEqual(reply.subject, "Re: Intake question")
+
+    @patch("accounts.work_mailbox.WorkMailbox")
+    def test_reply_requires_a_body(self, mailbox_cls):
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        detail_url = (
+            f"{self.channel_url('email-communications', str(self.colleague.pk))}"
+            f"{record.pk}/"
+        )
+
+        response = self.http.post(detail_url, {"subject": "Re: Contract", "body": ""})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Write a reply before sending.")
+        mailbox_cls.return_value.send_message.assert_not_called()
+        self.assertFalse(
+            EmployeeCommunication.objects.filter(sender=self.user).exists()
+        )
+
+    @patch("accounts.work_mailbox.WorkMailbox")
+    def test_reply_is_locked_without_the_communicate_action(self, mailbox_cls):
+        EmployeeActivityPermission.objects.create(
+            employee=self.user,
+            module_slug="user-management",
+            activity_slug="email-communications",
+            action="communicate",
+            is_allowed=False,
+        )
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        detail_url = (
+            f"{self.channel_url('email-communications', str(self.colleague.pk))}"
+            f"{record.pk}/"
+        )
+
+        detail = self.http.get(detail_url)
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotContains(detail, "Send reply")
+
+        response = self.http.post(detail_url, {"body": "Thanks, received."})
+        self.assertEqual(response.status_code, 302)
+        mailbox_cls.return_value.send_message.assert_not_called()
+        self.assertFalse(
+            EmployeeCommunication.objects.filter(sender=self.user).exists()
+        )
+
     def test_unknown_channel_is_not_found(self):
         response = self.http.get(
             self.channel_url("fax-communications", str(self.colleague.pk))
@@ -468,6 +749,19 @@ class EmployeeCommunicationsPagesTests(TestCase):
 
 
 class MessageLoggingTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._media_root = tempfile.mkdtemp(prefix="comm-log-test-media-")
+        cls._media_override = override_settings(MEDIA_ROOT=cls._media_root)
+        cls._media_override.enable()
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        cls._media_override.disable()
+        shutil.rmtree(cls._media_root, ignore_errors=True)
+
     def setUp(self):
         self.user = Employee.objects.create_user(
             login_code="848484",
@@ -517,6 +811,7 @@ class MessageLoggingTests(TestCase):
     @patch("accounts.work_mailbox.WorkMailbox")
     def test_client_email_is_logged(self, mailbox_cls):
         mailbox = MagicMock()
+        mailbox.address = self.user.work_email
         mailbox_cls.return_value = mailbox
 
         response = self.http.post(
@@ -544,6 +839,7 @@ class MessageLoggingTests(TestCase):
     @patch("accounts.work_mailbox.WorkMailbox")
     def test_colleague_email_is_logged(self, mailbox_cls):
         mailbox = MagicMock()
+        mailbox.address = self.user.work_email
         mailbox_cls.return_value = mailbox
 
         response = self.http.post(
@@ -565,6 +861,37 @@ class MessageLoggingTests(TestCase):
         self.assertEqual(record.to_employee, self.colleague)
         self.assertIsNone(record.to_client)
         self.assertEqual(record.to_address, self.colleague.work_email)
+
+    @patch("accounts.work_mailbox.WorkMailbox")
+    def test_sent_email_attachments_are_stored_on_the_log_record(
+        self, mailbox_cls
+    ):
+        mailbox = MagicMock()
+        mailbox.address = self.user.work_email
+        mailbox_cls.return_value = mailbox
+
+        response = self.http.post(
+            self.url,
+            {
+                "action": "send_email",
+                "recipient": f"client:{self.firm_client.pk}",
+                "subject": "Contract",
+                "body": "Signed contract attached.",
+                "attachments": SimpleUploadedFile(
+                    "contract.pdf",
+                    b"%PDF-bytes",
+                    content_type="application/pdf",
+                ),
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        record = EmployeeCommunication.objects.get(sender=self.user)
+        attachment = record.attachments.get()
+        self.assertEqual(attachment.filename, "contract.pdf")
+        self.assertEqual(attachment.content_type, "application/pdf")
+        self.assertEqual(attachment.size, len(b"%PDF-bytes"))
+        with attachment.file.open("rb") as handle:
+            self.assertEqual(handle.read(), b"%PDF-bytes")
 
     def test_sending_to_yourself_is_rejected(self):
         response = self.http.post(

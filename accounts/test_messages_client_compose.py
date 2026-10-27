@@ -89,6 +89,7 @@ class MessagesClientComposeTests(TestCase):
     def test_send_email_uses_work_mailbox(self, mailbox_cls):
         self.user.set_work_mailbox_password("mailbox-secret")
         mailbox = MagicMock()
+        mailbox.address = self.user.work_email
         mailbox_cls.return_value = mailbox
 
         response = self.http.post(
@@ -266,6 +267,7 @@ class MessagesClientComposeTests(TestCase):
     def test_person_compose_send_returns_to_conversation(self, mailbox_cls):
         self.user.set_work_mailbox_password("mailbox-secret")
         mailbox = MagicMock()
+        mailbox.address = self.user.work_email
         mailbox_cls.return_value = mailbox
         colleague = Employee.objects.create_user(
             login_code="919194",

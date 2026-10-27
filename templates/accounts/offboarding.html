@@ -1,0 +1,184 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page page--form-medium" data-reveal-root>
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Pick an employee to review exactly what changes when they are offboarded,
+        then confirm. Their account record and finance history stay on file.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Employee</h3>
+      <p class="panel__hint">
+        <a href="{{ list_url }}">Back to employee management</a>
+      </p>
+    </div>
+    <div class="panel__body">
+      <form method="get" action="{{ offboarding_url }}" class="workspace-form" novalidate>
+        <div class="form-field">
+          <label for="id_offboard_employee">
+            Employee to offboard <span aria-hidden="true">*</span>
+          </label>
+          <select
+            name="employee"
+            id="id_offboard_employee"
+            class="form-input"
+            onchange="this.form.requestSubmit()"
+          >
+            <option value="" {% if not selected_employee %}selected{% endif %} disabled>
+              Select an employee
+            </option>
+            {% for option in employees %}
+            <option
+              value="{{ option.pk }}"
+              {% if selected_employee and selected_employee.pk == option.pk %}selected{% endif %}
+            >
+              {{ option.get_full_name|default:option.login_code }}
+              · {{ option.get_role_display }}
+              · {{ option.get_status_display }}
+            </option>
+            {% endfor %}
+          </select>
+          <span class="field-hint">
+            Active and suspended employees are listed. Pending sign-ups are handled
+            under Onboarding &amp; Approvals.
+          </span>
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">
+            Review offboarding
+          </button>
+        </div>
+        {% if invalid_selection %}
+        <div class="form-alert" role="alert">
+          That employee is not available for offboarding.
+        </div>
+        {% endif %}
+      </form>
+    </div>
+  </section>
+
+  {% if selected_employee %}
+  <section class="panel" data-reveal>
+    <div class="panel__head">
+      <h3>Offboarding summary</h3>
+      <p class="panel__hint">What changes when this employee is offboarded</p>
+    </div>
+    <div class="panel__body">
+      <div class="review-identity">
+        {% if selected_employee.profile_photo %}
+        <img class="avatar avatar--lg" src="{{ selected_employee.profile_photo.url }}" alt="">
+        {% else %}
+        <div class="avatar avatar--lg avatar--placeholder" aria-hidden="true">
+          {{ selected_employee.first_name|slice:":1"|upper }}{{ selected_employee.last_name|slice:":1"|upper }}
+        </div>
+        {% endif %}
+        <div>
+          <p class="identity-name">
+            {{ selected_employee.get_full_name|default:selected_employee.login_code }}
+          </p>
+          <p class="identity-meta">
+            {{ selected_employee.get_role_display }}
+            · Login code {{ selected_employee.login_code }}
+            · <span class="status-pill status-pill--{{ selected_employee.status }}">{{ selected_employee.get_status_display }}</span>
+          </p>
+        </div>
+      </div>
+
+      <ul class="doc-list">
+        {% for change in preview.changes %}
+        <li class="doc-list__item">
+          <div>
+            <p class="doc-list__label">{{ change.label }}</p>
+            <p class="doc-list__meta">{{ change.detail }}</p>
+            {% if change.items %}
+            <p class="doc-list__meta">
+              {% for item in change.items %}
+                {{ item }}{% if not forloop.last %} · {% endif %}
+              {% endfor %}
+              {% if change.overflow %}· +{{ change.overflow }} more{% endif %}
+            </p>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="panel" data-reveal>
+    <div class="panel__head">
+      <h3>What stays on record</h3>
+      <p class="panel__hint">Offboarding keeps the account and its history</p>
+    </div>
+    <div class="panel__body">
+      <ul class="doc-list">
+        {% for item in preview.kept %}
+        <li class="doc-list__item">
+          <div>
+            <p class="doc-list__meta">{{ item }}</p>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="panel" data-reveal>
+    <div class="panel__head">
+      <h3>Confirm offboarding</h3>
+      <p class="panel__hint">This can be reversed by unsuspending the account</p>
+    </div>
+    <div class="panel__body">
+      {% if is_self %}
+      <div class="form-alert" role="alert">
+        You cannot offboard your own account.
+      </div>
+      {% elif can_offboard %}
+      <form method="post" action="{{ offboard_post_url }}" class="workspace-form" novalidate>
+        {% csrf_token %}
+        <div class="form-field">
+          <label class="settings-toggle">
+            <span class="settings-toggle__control">
+              <input type="checkbox" name="confirm" value="yes">
+            </span>
+            <span class="settings-toggle__copy">
+              <strong>I have reviewed the changes above</strong>
+              <span>
+                Offboard
+                {{ selected_employee.get_full_name|default:selected_employee.login_code }} —
+                suspend their account, sign out all sessions, suspend the work
+                mailbox, and release their case, matter, and task allocations.
+              </span>
+            </span>
+          </label>
+        </div>
+        <div class="form-actions form-actions--start">
+          <a href="{{ list_url }}" class="btn btn--quiet">Cancel</a>
+          <button type="submit" class="btn btn--danger btn--inline">
+            Offboard employee
+          </button>
+        </div>
+      </form>
+      {% else %}
+      <p class="panel__hint">
+        You can review offboarding for this employee, but you are not permitted
+        to offboard them. An administrator can grant Edit on Offboarding in
+        Roles &amp; Permissions.
+      </p>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+</section>
+{% endblock %}

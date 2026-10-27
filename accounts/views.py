@@ -50,7 +50,10 @@ from .cpanel_mail import (
     CpanelMailError,
     adopt_existing_mailbox,
     change_mailbox_password,
+    create_mailbox,
     find_reusable_mailbox,
+    generate_password,
+    list_mailboxes,
     provision_work_email,
     suggest_work_email,
     suspend_mailbox,
@@ -60,10 +63,12 @@ from .employee_communications import (
     CHANNEL_PAGE_SLUGS,
     channel_page,
     employee_channel_summaries,
+    employee_communication_record,
     employee_message,
     employee_messages,
     message_recipient_groups,
     resolve_message_recipient,
+    save_communication_attachments,
 )
 from .forms import (
     AboutMeForm,
@@ -236,6 +241,7 @@ from .models import (
     EmployeeActivityPermission,
     EmployeeBlogPost,
     EmployeeCommunication,
+    EmployeeMailbox,
     EmployeeWorkSession,
     CommunicationSettings,
     CompanyLetterheadSetting,
@@ -1562,11 +1568,21 @@ class SetWorkEmailPasswordView(View):
             form.add_error(None, str(exc))
             return render(request, self.template_name, context)
 
-        employee = Employee.objects.filter(
-            work_email__iexact=context["work_email"]
+        linked = EmployeeMailbox.objects.filter(
+            employee_id=context["employee_id"],
+            email__iexact=context["work_email"],
         ).first()
-        if employee is not None:
-            employee.set_work_mailbox_password(form.cleaned_data["password1"])
+        if linked is not None:
+            linked.set_mailbox_password(form.cleaned_data["password1"])
+        else:
+            employee = Employee.objects.filter(
+                pk=context["employee_id"],
+                work_email__iexact=context["work_email"],
+            ).first()
+            if employee is not None:
+                employee.set_work_mailbox_password(
+                    form.cleaned_data["password1"]
+                )
 
         context["success"] = True
         context["form"] = None
@@ -1603,15 +1619,18 @@ class SetWorkEmailPasswordView(View):
 
         employee = Employee.objects.filter(pk=payload["employee_id"]).first()
         work_email = payload["work_email"]
-        if (
-            employee is None
-            or not (employee.work_email or "").strip()
-            or employee.work_email.strip().lower() != work_email
-        ):
+        assigned = employee is not None and (
+            (employee.work_email or "").strip().lower() == work_email
+            or employee.extra_mailboxes.filter(
+                email__iexact=work_email
+            ).exists()
+        )
+        if not assigned:
             context["error"] = (
                 "This mailbox is no longer assigned to that employee account."
             )
             return context
+        context["employee_id"] = employee.pk
 
         domain = work_email.partition("@")[2]
         context.update(
@@ -4243,6 +4262,7 @@ class RoleWorkspaceView(View):
     settings_template = "accounts/settings.html"
     theme_settings_template = "accounts/theme_settings.html"
     employee_management_template = "accounts/employee_management.html"
+    offboarding_template = "accounts/offboarding.html"
     client_management_template = "accounts/client_management.html"
     approve_pending_clients_template = "accounts/approve_pending_clients.html"
     client_profile_template = "accounts/client_profile.html"
@@ -4751,6 +4771,9 @@ class RoleWorkspaceView(View):
                 "offboarding",
             )
             response = render(request, self.employee_management_template, context)
+        elif resolved["leaf"] == "offboarding":
+            context.update(self._offboarding_context(request, user))
+            response = render(request, self.offboarding_template, context)
         elif resolved["leaf"] == "register-employee":
             context.update(self._register_employee_context(user))
             response = render(request, self.register_employee_template, context)
@@ -8004,6 +8027,22 @@ class RoleWorkspaceView(View):
             response = render(request, self.whatsapp_inbox_template, context)
             return attach_greeting_cookie(response, request)
 
+    @staticmethod
+    def _requested_mailbox(user, request):
+        """Extra EmployeeMailbox chosen via ?mailbox= / POST, or None (primary)."""
+        linked = user.linked_mailbox_for(
+            request.POST.get("mailbox") or request.GET.get("mailbox")
+        )
+        if linked is None and not (user.work_email or "").strip():
+            # No primary address: default to the first linked mailbox.
+            linked = user.extra_mailboxes.order_by("email").first()
+        return linked
+
+    @staticmethod
+    def _mailbox_qs(mailbox) -> str:
+        """`&mailbox=<pk>` query suffix for redirects, or empty for primary."""
+        return f"&mailbox={mailbox.pk}" if mailbox is not None else ""
+
     def _post_messages(self, request, user, resolved):
         """Mailbox connect/send/delete and SMS from the Messages page."""
         from .client_notifications import notify_staff_message_to_client
@@ -8038,34 +8077,46 @@ class RoleWorkspaceView(View):
 
         if action == "connect_mailbox":
             password = request.POST.get("mailbox_password") or ""
+            linked = self._requested_mailbox(user, request)
             try:
-                connect_mailbox(user, password)
+                connect_mailbox(user, password, mailbox=linked)
                 messages.success(request, "Mailbox connected. You can read and send mail.")
             except WorkMailboxError as exc:
                 messages.error(request, str(exc))
             person_id = (request.POST.get("person") or "").strip()
+            mb_qs = self._mailbox_qs(linked)
             if person_id.isdigit():
-                return redirect(f"{messages_base}?person={person_id}")
-            return redirect(f"{messages_base}?channel=email")
+                return redirect(f"{messages_base}?person={person_id}{mb_qs}")
+            return redirect(f"{messages_base}?channel=email{mb_qs}")
 
         if action == "disconnect_mailbox":
-            user.clear_work_mailbox_password()
+            linked = self._requested_mailbox(user, request)
+            if linked is not None:
+                linked.clear_mailbox_password()
+            else:
+                user.clear_work_mailbox_password()
             messages.info(request, "Mailbox password cleared from this account.")
-            return redirect(f"{messages_base}?channel=email")
+            return redirect(
+                f"{messages_base}?channel=email{self._mailbox_qs(linked)}"
+            )
 
         if action == "delete_email":
             folder = (request.POST.get("folder") or "inbox").strip().lower()
             uid = (request.POST.get("uid") or "").strip()
+            linked = self._requested_mailbox(user, request)
             try:
-                WorkMailbox(user).move_to_trash(folder, uid)
+                WorkMailbox(user, mailbox=linked).move_to_trash(folder, uid)
                 messages.success(request, "Message moved to Trash.")
             except WorkMailboxError as exc:
                 messages.error(request, str(exc))
             return redirect(
                 f"{messages_base}?channel=email&folder={folder}&refresh=1"
+                f"{self._mailbox_qs(linked)}"
             )
 
         if action in {"send_email", "save_draft"}:
+            linked = self._requested_mailbox(user, request)
+            mb_qs = self._mailbox_qs(linked)
             form_data = {
                 "to": (request.POST.get("to") or "").strip(),
                 "cc": (request.POST.get("cc") or "").strip(),
@@ -8099,7 +8150,7 @@ class RoleWorkspaceView(View):
                 return _render_email({"form": str(exc)}, form_data)
 
             try:
-                mailbox = WorkMailbox(user)
+                mailbox = WorkMailbox(user, mailbox=linked)
                 if action == "save_draft":
                     mailbox.save_draft(
                         to_addrs=to_list,
@@ -8110,7 +8161,8 @@ class RoleWorkspaceView(View):
                     )
                     messages.success(request, "Draft saved.")
                     return redirect(
-                        f"{messages_base}?channel=email&folder=drafts&refresh=1"
+                        f"{messages_base}?channel=email&folder=drafts"
+                        f"&refresh=1{mb_qs}"
                     )
 
                 mailbox.send_message(
@@ -8141,16 +8193,17 @@ class RoleWorkspaceView(View):
                     .exclude(pk=user.pk)
                     .first()
                 )
-            EmployeeCommunication.objects.create(
+            record = EmployeeCommunication.objects.create(
                 sender=user,
                 channel=EmployeeCommunication.Channel.EMAIL,
-                from_identity=user.work_email or "",
+                from_identity=mailbox.address,
                 to_client=client,
                 to_employee=employee,
                 to_address=primary,
                 subject=form_data["subject"],
                 body=form_data["body"],
             )
+            save_communication_attachments(record, attachments)
             if client is not None:
                 notify_staff_message_to_client(
                     client,
@@ -8172,8 +8225,12 @@ class RoleWorkspaceView(View):
             messages.success(request, "Email sent.")
             person_id = (request.POST.get("person") or "").strip()
             if person_id.isdigit():
-                return redirect(f"{messages_base}?person={person_id}&refresh=1")
-            return redirect(f"{messages_base}?channel=email&folder=sent&refresh=1")
+                return redirect(
+                    f"{messages_base}?person={person_id}&refresh=1{mb_qs}"
+                )
+            return redirect(
+                f"{messages_base}?channel=email&folder=sent&refresh=1{mb_qs}"
+            )
 
         if action == "send_sms":
             channel = "sms"
@@ -8277,12 +8334,17 @@ class RoleWorkspaceView(View):
         folder = (request.GET.get("folder") or "inbox").strip().lower()
         uid = (request.GET.get("uid") or "").strip()
         part = (request.GET.get("part") or "0").strip()
+        linked = RoleWorkspaceView._requested_mailbox(user, request)
         try:
-            attachment = WorkMailbox(user).get_attachment(folder, uid, int(part))
+            attachment = WorkMailbox(user, mailbox=linked).get_attachment(
+                folder, uid, int(part)
+            )
         except (WorkMailboxError, ValueError) as exc:
             messages.error(request, str(exc))
+            mb_qs = f"&mailbox={linked.pk}" if linked is not None else ""
             return redirect(
-                f"{user.workspace_url('dashboard', 'messages')}?channel=email&folder={folder}"
+                f"{user.workspace_url('dashboard', 'messages')}"
+                f"?channel=email&folder={folder}{mb_qs}"
             )
         response = HttpResponse(
             attachment.payload, content_type=attachment.content_type
@@ -8934,6 +8996,200 @@ class RoleWorkspaceView(View):
                 "employee-management",
             ),
         }
+
+    def _offboarding_context(self, request, user):
+        employees = list(
+            Employee.objects.filter(
+                status__in=[
+                    Employee.Status.ACTIVE,
+                    Employee.Status.SUSPENDED,
+                ]
+            ).order_by("first_name", "last_name", "login_code")
+        )
+        employee_param = (request.GET.get("employee") or "").strip()
+        selected = None
+        if employee_param:
+            selected = next(
+                (
+                    employee
+                    for employee in employees
+                    if str(employee.pk) == employee_param
+                ),
+                None,
+            )
+
+        context = {
+            "employees": employees,
+            "selected_employee": selected,
+            "invalid_selection": bool(employee_param) and selected is None,
+            "offboarding_url": user.workspace_url(
+                *EMPLOYEE_MANAGEMENT_TRAIL, "offboarding"
+            ),
+            "list_url": _employee_management_list_url(user),
+            "can_offboard": workspace_activity_action_permitted(
+                user, _USER_MODULE, "offboarding", "edit"
+            ),
+        }
+        if selected is not None:
+            context["preview"] = self._offboarding_preview(selected)
+            context["is_self"] = selected.pk == user.pk
+            context["offboard_post_url"] = reverse(
+                "accounts:offboard_employee",
+                kwargs={"role": user.role_slug, "employee_id": selected.pk},
+            )
+        return context
+
+    @staticmethod
+    def _offboarding_preview(employee):
+        """Itemise what changes when this employee is offboarded."""
+        open_task_statuses = (
+            CaseTask.Status.PENDING,
+            CaseTask.Status.ACCEPTED,
+        )
+        active_cases = list(
+            LitigationCase.objects.filter(
+                assigned_to=employee,
+                status=LitigationCase.Status.ACTIVE,
+            )
+            .select_related("client")
+            .order_by("-filing_date", "-created_at")
+        )
+        active_matters = list(
+            NonLitigationMatter.objects.filter(
+                assigned_to=employee,
+                status=NonLitigationMatter.Status.ACTIVE,
+            )
+            .select_related("client")
+            .order_by("-date_opened", "-created_at")
+        )
+        case_tasks_open = CaseTask.objects.filter(
+            assignee=employee, status__in=open_task_statuses
+        ).count()
+        matter_tasks_open = MatterTask.objects.filter(
+            assignee=employee, status__in=open_task_statuses
+        ).count()
+        bring_up_items = (
+            CourtAttendanceBringUpItem.objects.filter(
+                allocated_to=employee
+            ).count()
+            + MatterAttendanceBringUpItem.objects.filter(
+                allocated_to=employee
+            ).count()
+        )
+        open_sessions = EmployeeWorkSession.objects.filter(
+            employee=employee, logout_at__isnull=True
+        ).count()
+        work_email = (employee.work_email or "").strip()
+        personal_email = (employee.personal_email or "").strip()
+
+        def _counted(singular, count):
+            return f"{count} {singular}{'s' if count != 1 else ''}"
+
+        changes = [
+            {
+                "label": "Account status",
+                "detail": (
+                    "Already suspended — stays suspended and cannot sign in."
+                    if employee.status == Employee.Status.SUSPENDED
+                    else "Active → Suspended — sign-in is blocked immediately."
+                ),
+            },
+            {
+                "label": "Signed-in sessions",
+                "detail": (
+                    f"{_counted('open session', open_sessions)} signed out "
+                    "on every device."
+                    if open_sessions
+                    else "No open sessions to sign out."
+                ),
+            },
+            {
+                "label": "Work email",
+                "detail": (
+                    f"{work_email} is suspended on the mail server and the "
+                    "saved mailbox password is cleared."
+                    if work_email
+                    else "No work mailbox assigned — nothing to suspend."
+                ),
+            },
+            {
+                "label": "Offboarding notice",
+                "detail": (
+                    f"A notice is emailed to {personal_email}."
+                    if personal_email
+                    else "No personal email on file — no notice can be sent."
+                ),
+            },
+        ]
+        if employee.website_published:
+            changes.append(
+                {
+                    "label": "Public website",
+                    "detail": "Removed from the published firm team page.",
+                }
+            )
+
+        def _allocation(label, records, singular):
+            if not records:
+                return {
+                    "label": label,
+                    "detail": f"No active {singular} allocations.",
+                }
+            return {
+                "label": label,
+                "detail": (
+                    f"{_counted(f'active {singular}', len(records))} "
+                    "lose their allocation."
+                ),
+                "items": [str(record) for record in records[:5]],
+                "overflow": max(len(records) - 5, 0),
+            }
+
+        changes.append(_allocation("Litigation cases", active_cases, "case"))
+        changes.append(
+            _allocation("Non-litigation matters", active_matters, "matter")
+        )
+        tasks_open = case_tasks_open + matter_tasks_open
+        changes.append(
+            {
+                "label": "Open tasks",
+                "detail": (
+                    f"{_counted('pending or accepted task', tasks_open)} "
+                    f"cancelled ({case_tasks_open} case, "
+                    f"{matter_tasks_open} matter)."
+                    if tasks_open
+                    else "No pending or accepted tasks to cancel."
+                ),
+            }
+        )
+        changes.append(
+            {
+                "label": "Bring-up reminders",
+                "detail": (
+                    f"{_counted('bring-up item', bring_up_items)} allocated "
+                    "to them cleared."
+                    if bring_up_items
+                    else "No bring-up items allocated to them."
+                ),
+            }
+        )
+
+        kept = [
+            (
+                f"{_counted('payroll run', employee.payroll_runs.count())}, "
+                f"{_counted('salary advance', employee.salary_advances.count())}, "
+                f"and "
+                f"{_counted('petty-cash claim', employee.petty_cash_expense_requests.count())} "
+                "stay on record."
+            ),
+            "Uploaded documents and Google Drive folders are kept.",
+            "Cases and matters they registered keep their history.",
+            (
+                f"Login code {employee.login_code} stays reserved on the "
+                "suspended record."
+            ),
+        ]
+        return {"changes": changes, "kept": kept}
 
     @staticmethod
     def _client_accounts_context(request, *, user=None, resolved=None):
@@ -12422,7 +12678,9 @@ class RoleWorkspaceView(View):
         search = (request.GET.get("q") or "").strip()
         employees = Employee.objects.exclude(
             status=Employee.Status.PENDING_ONBOARDING
-        ).order_by("first_name", "last_name", "login_code")
+        ).order_by("first_name", "last_name", "login_code").prefetch_related(
+            "extra_mailboxes"
+        )
         if search:
             term = search.lower()
             employees = [
@@ -12431,6 +12689,10 @@ class RoleWorkspaceView(View):
                 if term in employee.get_full_name().lower()
                 or term in (employee.work_email or "").lower()
                 or term in (employee.login_code or "").lower()
+                or any(
+                    term in (extra.email or "").lower()
+                    for extra in employee.extra_mailboxes.all()
+                )
             ]
         else:
             employees = list(employees)
@@ -12451,27 +12713,27 @@ class RoleWorkspaceView(View):
                     "work_email_editable": employee.status
                     in {Employee.Status.ACTIVE, Employee.Status.SUSPENDED},
                     "work_email_input_id": f"id_work_email_{employee.pk}",
+                    "extra_email_input_id": f"id_extra_email_{employee.pk}",
                     "employee_label": label,
                     "work_email_value": employee.work_email or "",
                     "has_work_email": bool((employee.work_email or "").strip()),
+                    "extra_emails": list(employee.extra_mailboxes.all()),
                 }
             )
         context = {
             "email_settings_employees": rows,
             "email_settings_employee_count": len(rows),
             "email_settings_search": search,
-            "can_edit_work_email": workspace_activity_action_permitted(
-                user, _USER_MODULE, "employee-management", "edit"
-            )
-            or workspace_activity_action_permitted(
-                user, _USER_MODULE, "email-settings", "edit"
-            ),
+            "can_edit_work_email": _work_email_edit_permitted(user),
             "work_email_provisioning_ready": (
                 communication_setting.work_email_provisioning_ready
             ),
             "work_email_provisioning_gaps": (
                 communication_setting.work_email_provisioning_gaps
             ),
+            "work_email_domain": (
+                communication_setting.work_email_domain or ""
+            ).strip().lstrip("@"),
             "email_smtp_ready": communication_setting.email_ready,
             "work_email_reuse_candidate": None,
             "communication_settings_url": user.workspace_url(
@@ -12506,9 +12768,22 @@ class RoleWorkspaceView(View):
         default_wa_message = (setting.whatsapp_default_message or "").strip()
         work_email = employee_work_email(user)
         work_phone = employee_work_phone(user)
+        active_extra_mailbox = RoleWorkspaceView._requested_mailbox(
+            user, request
+        )
+        mailbox_rows = user.mailbox_rows()
+        active_mail_address = (
+            (active_extra_mailbox.email or "").strip().lower()
+            if active_extra_mailbox is not None
+            else work_email
+        )
         channel = (active_channel or request.GET.get("channel") or "").strip().lower()
         if channel not in {"email", "sms", "whatsapp"}:
-            channel = "email" if work_email else ("sms" if work_phone else "whatsapp")
+            channel = (
+                "email"
+                if active_mail_address
+                else ("sms" if work_phone else "whatsapp")
+            )
         view = (request.GET.get("view") or "").strip().lower()
         if view not in {"chats"}:
             view = ""
@@ -12567,7 +12842,10 @@ class RoleWorkspaceView(View):
                     "total": 0,
                     "last_record": record,
                     "last_is_from_me": record.sender_id == user.pk,
-                    "url": f"{messages_base}?person={person.pk}",
+                    "url": (
+                        f"{messages_base}?person={person.pk}"
+                        f"{RoleWorkspaceView._mailbox_qs(active_extra_mailbox)}"
+                    ),
                 },
             )
             row["total"] += 1
@@ -12610,18 +12888,21 @@ class RoleWorkspaceView(View):
                     .first()
                 )
 
-        email_available = bool(work_email)
+        email_available = bool(mailbox_rows)
         email_chat = {
             "available": email_available,
             "label": "Email",
             "hint": (
-                work_email
+                active_mail_address
                 if email_available
                 else "Your account has no work email yet"
             ),
-            "url": f"{messages_base}?channel=email",
+            "url": (
+                f"{messages_base}?channel=email"
+                f"{RoleWorkspaceView._mailbox_qs(active_extra_mailbox)}"
+            ),
             "external": False,
-            "from_identity": work_email,
+            "from_identity": active_mail_address,
         }
 
         sms_available = bool(work_phone) and setting.sms_ready
@@ -12657,7 +12938,7 @@ class RoleWorkspaceView(View):
             person_to = (selected_person.work_email or "").strip()
 
         mail_ctx = {}
-        if work_email and (channel == "email" or selected_person is not None):
+        if mailbox_rows and (channel == "email" or selected_person is not None):
             compose_to = (
                 posted.get("to")
                 or person_to
@@ -12678,6 +12959,7 @@ class RoleWorkspaceView(View):
                     "references": posted.get("references", ""),
                 },
                 list_mail=selected_person is None and channel == "email",
+                mailbox=active_extra_mailbox,
             )
 
         return {
@@ -12694,7 +12976,7 @@ class RoleWorkspaceView(View):
             "active_message_view": view,
             "email_recipient_groups": email_groups,
             "sms_recipient_groups": sms_groups,
-            "compose_work_email": work_email,
+            "compose_work_email": active_mail_address,
             "compose_work_phone": work_phone,
             "compose_email_ready": email_available,
             "compose_sms_ready": sms_available,
@@ -13295,6 +13577,15 @@ def _employee_workspace_guard(
     return user, None
 
 
+def _work_email_edit_permitted(user) -> bool:
+    """Email-settings or employee-management edit rights manage work emails."""
+    return workspace_activity_action_permitted(
+        user, _USER_MODULE, "employee-management", "edit"
+    ) or workspace_activity_action_permitted(
+        user, _USER_MODULE, "email-settings", "edit"
+    )
+
+
 def _guard_perm(request, role, *, module, activity, action, redirect_to=None):
     return _employee_workspace_guard(
         request,
@@ -13345,6 +13636,17 @@ def _guard_employee_management(request, role, *, action="view", redirect_to=None
         role,
         module=_USER_MODULE,
         activity="employee-management",
+        action=action,
+        redirect_to=redirect_to,
+    )
+
+
+def _guard_employee_offboarding(request, role, *, action="view", redirect_to=None):
+    return _guard_perm(
+        request,
+        role,
+        module=_USER_MODULE,
+        activity="offboarding",
         action=action,
         redirect_to=redirect_to,
     )
@@ -14629,7 +14931,13 @@ class UpdateEmployeeWorkEmailView(View):
         )
         if exclude_employee_id is not None:
             queryset = queryset.exclude(pk=exclude_employee_id)
-        return set(queryset.values_list("work_email", flat=True))
+        reserved = set(queryset.values_list("work_email", flat=True))
+        reserved.update(
+            EmployeeMailbox.objects.exclude(email="").values_list(
+                "email", flat=True
+            )
+        )
+        return reserved
 
     @classmethod
     def _allocate_and_notify(
@@ -14675,15 +14983,172 @@ class UpdateEmployeeWorkEmailView(View):
             )
         return redirect(cls._list_url(user, request))
 
-    def post(self, request, role, employee_id):
-        user, denied = _guard_employee_management(
-            request,
-            role,
-            action="edit",
-            redirect_to=request.path,
+    def _add_extra_mailbox(self, request, user, employee, list_url):
+        """Create or adopt another firm mailbox and link it to the employee."""
+        setting = CommunicationSettings.get_solo()
+        if not setting.work_email_provisioning_ready:
+            messages.error(
+                request,
+                "Extra mailboxes could not be added: "
+                f"{setting.work_email_provisioning_block_reason()}",
+            )
+            return redirect(list_url)
+
+        domain = (setting.work_email_domain or "").strip().lstrip("@").lower()
+        raw = (request.POST.get("extra_email") or "").strip().lower()
+        if raw and "@" not in raw and domain:
+            raw = f"{raw}@{domain}"
+        try:
+            address = forms.EmailField().clean(raw)
+        except ValidationError:
+            messages.error(
+                request, "Enter a valid email address for the extra mailbox."
+            )
+            return redirect(list_url)
+
+        _, _, address_domain = address.partition("@")
+        if domain and address_domain != domain:
+            messages.error(
+                request,
+                f"Extra mailboxes must be on @{domain} so the employee can "
+                "reach them in Messages.",
+            )
+            return redirect(list_url)
+
+        taken = (
+            Employee.objects.filter(work_email__iexact=address).exists()
+            or EmployeeMailbox.objects.filter(email__iexact=address).exists()
         )
+        if taken:
+            messages.error(
+                request,
+                "That address is already linked to an employee account.",
+            )
+            return redirect(list_url)
+
+        try:
+            existing = list_mailboxes(setting, address_domain or domain)
+            reused = address in existing
+            if reused:
+                address, password = adopt_existing_mailbox(setting, address)
+            else:
+                password = generate_password()
+                create_mailbox(setting, address, password)
+        except CpanelMailError as exc:
+            messages.error(
+                request, f"Extra mailbox could not be created: {exc}"
+            )
+            return redirect(list_url)
+
+        EmployeeMailbox.objects.create(
+            employee=employee, email=address, created_by=user
+        )
+
+        from .work_email_notify import notify_work_email_created
+
+        notification = notify_work_email_created(
+            request,
+            employee,
+            work_email=address,
+            password=password,
+            setting=setting,
+            reused=reused,
+        )
+        verb = "Linked existing" if reused else "Created and linked"
+        if notification.get("email_sent"):
+            messages.success(
+                request,
+                f"{verb} {address} to {employee.get_full_name()}. Login "
+                f"instructions were sent to {notification['personal_email']}.",
+            )
+        else:
+            detail = notification.get("email_error") or "Unknown email error."
+            messages.warning(
+                request,
+                f"{verb} {address}, but the notification could not be "
+                f"emailed: {detail}",
+            )
+        return redirect(list_url)
+
+    def _remove_extra_mailbox(self, request, user, employee, list_url):
+        mailbox_id = (request.POST.get("mailbox_id") or "").strip()
+        linked = (
+            employee.extra_mailboxes.filter(pk=int(mailbox_id)).first()
+            if mailbox_id.isdigit()
+            else None
+        )
+        if linked is None:
+            messages.error(request, "That extra mailbox is no longer linked.")
+            return redirect(list_url)
+        address = linked.email
+        linked.delete()
+        messages.success(
+            request,
+            f"Removed {address} from {employee.get_full_name()}. The mailbox "
+            "still exists on the mail server.",
+        )
+        return redirect(list_url)
+
+    def _reset_extra_mailbox(self, request, user, employee, list_url):
+        mailbox_id = (request.POST.get("mailbox_id") or "").strip()
+        linked = (
+            employee.extra_mailboxes.filter(pk=int(mailbox_id)).first()
+            if mailbox_id.isdigit()
+            else None
+        )
+        if linked is None:
+            messages.error(request, "That extra mailbox is no longer linked.")
+            return redirect(list_url)
+
+        setting = CommunicationSettings.get_solo()
+        if not setting.email_ready:
+            messages.error(
+                request,
+                "Firm email (SMTP) is not configured, so the reset link "
+                "cannot be sent to the employee's personal address.",
+            )
+            return redirect(list_url)
+        if not setting.work_email_provisioning_ready:
+            messages.error(
+                request,
+                "Work email (cPanel) is not ready, so the employee would "
+                "not be able to finish the reset: "
+                f"{setting.work_email_provisioning_block_reason()}",
+            )
+            return redirect(list_url)
+
+        from .work_email_notify import notify_work_email_reset_link
+
+        notification = notify_work_email_reset_link(
+            request,
+            employee,
+            work_email=linked.email,
+            setting=setting,
+        )
+        if notification.get("email_sent"):
+            messages.success(
+                request,
+                f"A work-email password reset link for {linked.email} was "
+                f"sent to {notification['personal_email']}.",
+            )
+        else:
+            detail = notification.get("email_error") or "Unknown email error."
+            messages.error(
+                request,
+                f"Could not send the password reset link: {detail}",
+            )
+        return redirect(list_url)
+
+    def post(self, request, role, employee_id):
+        user, denied = _employee_workspace_guard(request, role)
         if denied:
             return denied
+        if not _work_email_edit_permitted(user):
+            messages.error(
+                request,
+                "You do not have permission to change employee work emails.",
+            )
+            return redirect(self._list_url(user, request))
 
         list_url = self._list_url(user, request)
         employee = get_object_or_404(Employee, pk=employee_id)
@@ -14695,6 +15160,12 @@ class UpdateEmployeeWorkEmailView(View):
             return redirect(list_url)
 
         action = (request.POST.get("action") or "update").strip()
+        if action == "add_extra":
+            return self._add_extra_mailbox(request, user, employee, list_url)
+        if action == "remove_extra":
+            return self._remove_extra_mailbox(request, user, employee, list_url)
+        if action == "reset_extra_password":
+            return self._reset_extra_mailbox(request, user, employee, list_url)
         if action in {"generate", "adopt_existing", "generate_new", "dismiss_reuse"}:
             if (employee.work_email or "").strip() and action != "dismiss_reuse":
                 messages.info(
@@ -14891,16 +15362,21 @@ class UpdateEmployeeWorkEmailView(View):
             return redirect(list_url)
 
         duplicate = (
-            Employee.objects.filter(work_email__iexact=work_email)
-            .exclude(pk=employee.pk)
-            .exists()
+            (
+                Employee.objects.filter(work_email__iexact=work_email)
+                .exclude(pk=employee.pk)
+                .exists()
+                or EmployeeMailbox.objects.filter(
+                    email__iexact=work_email
+                ).exists()
+            )
             if work_email
             else False
         )
         if duplicate:
             messages.error(
                 request,
-                "That work email is already assigned to another employee.",
+                "That work email is already linked to an employee account.",
             )
             return redirect(list_url)
 
@@ -15020,21 +15496,27 @@ class ToggleEmployeeSuspensionView(View):
     @staticmethod
     def _sync_work_mailbox(employee, *, suspend: bool):
         """
-        Suspend or restore the employee's cPanel mailbox when one is assigned.
+        Suspend or restore the employee's cPanel mailboxes when assigned.
 
         Returns (mailbox_ok, mailbox_error, work_email).
         """
         work_email = (employee.work_email or "").strip().lower()
-        if not work_email:
+        extras = list(employee.extra_mailboxes.all())
+        if not work_email and not extras:
             return None, "", ""
 
         setting = CommunicationSettings.get_solo()
         try:
+            addresses = [work_email] if work_email else []
+            addresses.extend(extra.email for extra in extras)
+            for address in addresses:
+                if suspend:
+                    suspend_mailbox(setting, address)
+                else:
+                    unsuspend_mailbox(setting, address)
             if suspend:
-                suspend_mailbox(setting, work_email)
                 employee.clear_work_mailbox_password(save=True)
-            else:
-                unsuspend_mailbox(setting, work_email)
+                employee.extra_mailboxes.update(mailbox_password_encrypted="")
         except CpanelMailError as exc:
             return False, str(exc), work_email
         return True, "", work_email
@@ -15142,6 +15624,151 @@ class ToggleEmployeeSuspensionView(View):
                 request,
                 "Only active or suspended employees can be suspended or unsuspended.",
             )
+        return redirect(_employee_management_list_url(user))
+
+
+@method_decorator(login_required, name="dispatch")
+class OffboardEmployeeView(View):
+    """
+    Offboard an employee: suspend access, sign out sessions, suspend the work
+    mailbox, and release allocations. The account record and finance history
+    are kept on file.
+    """
+
+    managed_statuses = {Employee.Status.ACTIVE, Employee.Status.SUSPENDED}
+
+    @staticmethod
+    def _page_url(user, employee=None):
+        url = user.workspace_url(*EMPLOYEE_MANAGEMENT_TRAIL, "offboarding")
+        if employee is not None:
+            url = f"{url}?employee={employee.pk}"
+        return url
+
+    def post(self, request, role, employee_id):
+        user, denied = _guard_employee_offboarding(request, role, action="edit")
+        if denied:
+            return denied
+
+        employee = get_object_or_404(Employee, pk=employee_id)
+        if employee.status not in self.managed_statuses:
+            messages.info(
+                request,
+                "Only active or suspended employees can be offboarded.",
+            )
+            return redirect(_employee_management_list_url(user))
+        if employee.pk == user.pk:
+            messages.error(request, "You cannot offboard your own account.")
+            return redirect(self._page_url(user, employee))
+        if (request.POST.get("confirm") or "").strip() != "yes":
+            messages.error(
+                request,
+                "Review the summary and tick the confirmation box to "
+                "offboard this employee.",
+            )
+            return redirect(self._page_url(user, employee))
+
+        was_suspended = employee.status == Employee.Status.SUSPENDED
+        open_statuses = (CaseTask.Status.PENDING, CaseTask.Status.ACCEPTED)
+        with transaction.atomic():
+            employee.status = Employee.Status.SUSPENDED
+            employee.website_published = False
+            employee.save(update_fields=["status", "website_published"])
+            force_logout_employee(
+                employee,
+                kind=EmployeeWorkSession.LogoutKind.SUSPENDED,
+            )
+            cases_released = LitigationCase.objects.filter(
+                assigned_to=employee,
+                status=LitigationCase.Status.ACTIVE,
+            ).update(assigned_to=None)
+            matters_released = NonLitigationMatter.objects.filter(
+                assigned_to=employee,
+                status=NonLitigationMatter.Status.ACTIVE,
+            ).update(assigned_to=None)
+            tasks_cancelled = (
+                CaseTask.objects.filter(
+                    assignee=employee, status__in=open_statuses
+                ).update(status=CaseTask.Status.CANCELLED)
+                + MatterTask.objects.filter(
+                    assignee=employee, status__in=open_statuses
+                ).update(status=MatterTask.Status.CANCELLED)
+            )
+            bringups_cleared = (
+                CourtAttendanceBringUpItem.objects.filter(
+                    allocated_to=employee
+                ).update(allocated_to=None)
+                + MatterAttendanceBringUpItem.objects.filter(
+                    allocated_to=employee
+                ).update(allocated_to=None)
+            )
+
+        mailbox_ok, mailbox_error, work_email = (
+            ToggleEmployeeSuspensionView._sync_work_mailbox(
+                employee, suspend=True
+            )
+        )
+        from .work_email_notify import notify_work_email_suspended
+
+        notification = notify_work_email_suspended(
+            employee,
+            work_email=work_email,
+            mailbox_suspended=mailbox_ok is True,
+        )
+
+        parts = [f"{employee.get_full_name()} has been offboarded"]
+        parts.append(
+            "and remains suspended."
+            if was_suspended
+            else "and signed out."
+        )
+        released = []
+        if cases_released:
+            released.append(
+                f"{cases_released} case{'s' if cases_released != 1 else ''}"
+            )
+        if matters_released:
+            released.append(
+                f"{matters_released} "
+                f"matter{'s' if matters_released != 1 else ''}"
+            )
+        if released:
+            parts.append(f"Released allocations on {', '.join(released)}.")
+        if tasks_cancelled:
+            parts.append(
+                f"Cancelled {tasks_cancelled} open "
+                f"task{'s' if tasks_cancelled != 1 else ''}."
+            )
+        if bringups_cleared:
+            parts.append(
+                f"Cleared {bringups_cleared} bring-up "
+                f"item{'s' if bringups_cleared != 1 else ''}."
+            )
+        if work_email:
+            if mailbox_ok:
+                parts.append(f"Work email {work_email} was suspended.")
+            else:
+                parts.append(
+                    f"Work email {work_email} could not be suspended: "
+                    f"{mailbox_error}"
+                )
+        if notification.get("email_sent"):
+            parts.append(
+                f"A notice was sent to {notification['personal_email']}."
+            )
+        elif notification.get("email_error"):
+            parts.append(
+                f"Personal-email notice could not be sent: "
+                f"{notification['email_error']}"
+            )
+        message = " ".join(parts)
+        if work_email and not mailbox_ok:
+            messages.warning(request, message)
+        elif notification.get("email_error") and not notification.get(
+            "email_sent"
+        ):
+            messages.warning(request, message)
+        else:
+            messages.success(request, message)
         return redirect(_employee_management_list_url(user))
 
 
@@ -21252,11 +21879,13 @@ class EmployeeCommunicationLogView(View):
 
 @method_decorator(login_required, name="dispatch")
 class EmployeeCommunicationDetailView(View):
-    """Read one message an employee sent."""
+    """Read one message an employee sent, and reply to it by email."""
 
     template_name = "accounts/communication_message.html"
 
-    def get(self, request, role, channel, employee_id, message_id):
+    @staticmethod
+    def _load(request, role, channel, employee_id, message_id, *, action):
+        """Shared guards: returns (meta, user, employee, message, denied)."""
         meta = channel_page(channel)
         if meta is None:
             raise Http404("Unknown communication channel")
@@ -21266,16 +21895,44 @@ class EmployeeCommunicationDetailView(View):
             role,
             module=_USER_MODULE,
             activity=meta["slug"],
-            action="view",
+            action=action,
         )
         if denied:
-            return denied
+            return meta, user, None, None, denied
 
         employee = get_object_or_404(Employee, pk=employee_id)
         message = employee_message(meta["key"], employee, message_id)
         if message is None:
             raise Http404("Message not found")
+        return meta, user, employee, message, None
 
+    def _reply_context(self, user, meta, message, *, reply_form=None):
+        reply_to = (message.get("to_address") or "").strip()
+        subject = (message.get("subject") or "").strip()
+        if subject and not subject.lower().startswith("re:"):
+            default_subject = f"Re: {subject}"
+        else:
+            default_subject = subject
+        reply_form = reply_form or {}
+        return {
+            "can_reply": bool(
+                meta["key"] == "email"
+                and reply_to
+                and workspace_activity_action_permitted(
+                    user, _USER_MODULE, meta["slug"], "communicate"
+                )
+            ),
+            "reply_to_address": reply_to,
+            "reply_to_name": message.get("counterpart_name") or reply_to,
+            "reply_subject": reply_form.get("subject", default_subject),
+            "reply_body": reply_form.get("body", ""),
+            "reply_errors": reply_form.get("errors") or {},
+            "reply_mailbox_ready": bool(
+                (user.work_email or "").strip() and user.mailbox_connected
+            ),
+        }
+
+    def _render(self, request, user, meta, employee, message, *, reply_form=None):
         trail = [
             "dashboard",
             "user-management",
@@ -21283,6 +21940,15 @@ class EmployeeCommunicationDetailView(View):
             "employee-communications",
             meta["slug"],
         ]
+        attachment_base = user.workspace_url(
+            *trail,
+            str(employee.pk),
+            str(message["id"]),
+            "attachments",
+        )
+        for item in message.get("attachments") or []:
+            item["view_url"] = f"{attachment_base}{item['id']}/"
+            item["download_url"] = f"{attachment_base}{item['id']}/?download=1"
         context = workspace_context(
             user,
             request=request,
@@ -21298,8 +21964,148 @@ class EmployeeCommunicationDetailView(View):
                 "log_url": user.workspace_url(*trail, str(employee.pk)),
             }
         )
+        context.update(
+            self._reply_context(user, meta, message, reply_form=reply_form)
+        )
         response = render(request, self.template_name, context)
         return attach_greeting_cookie(response, request)
+
+    def get(self, request, role, channel, employee_id, message_id):
+        meta, user, employee, message, denied = self._load(
+            request, role, channel, employee_id, message_id, action="view"
+        )
+        if denied:
+            return denied
+        return self._render(request, user, meta, employee, message)
+
+    def post(self, request, role, channel, employee_id, message_id):
+        """Send a reply to the counterpart from the viewer's work mailbox."""
+        meta, user, employee, message, denied = self._load(
+            request, role, channel, employee_id, message_id, action="communicate"
+        )
+        if denied:
+            return denied
+        if meta["key"] != "email":
+            raise Http404("Replies are only supported for email messages.")
+
+        from .client_notifications import notify_staff_message_to_client
+        from .mail_client import collect_attachments
+        from .notifications import notify_message
+        from .work_mailbox import WorkMailbox, WorkMailboxError
+
+        reply_to = (message["to_address"] or "").strip()
+        if not reply_to:
+            messages.error(request, "This message has no address to reply to.")
+            return redirect(request.path)
+
+        original_subject = (message["subject"] or "").strip()
+        default_subject = (
+            original_subject
+            if original_subject.lower().startswith("re:")
+            else f"Re: {original_subject}"
+        ) if original_subject else ""
+        subject = (request.POST.get("subject") or "").strip() or default_subject
+        body = (request.POST.get("body") or "").strip()
+        reply_form = {"subject": subject, "body": body, "errors": {}}
+
+        def _rerender(error_key, error_text):
+            reply_form["errors"][error_key] = error_text
+            return self._render(
+                request, user, meta, employee, message, reply_form=reply_form
+            )
+
+        if not body:
+            return _rerender("body", "Write a reply before sending.")
+
+        try:
+            attachments = collect_attachments(request, employee=user)
+        except Exception as exc:
+            return _rerender("form", str(exc))
+
+        try:
+            mailbox = WorkMailbox(user)
+            mailbox.send_message(
+                to_addrs=[reply_to],
+                subject=subject,
+                body=body,
+                cc_addrs=[],
+                bcc_addrs=[],
+                attachments=attachments,
+            )
+        except WorkMailboxError as exc:
+            return _rerender("form", str(exc))
+
+        client, recipient, _external, _error = resolve_message_recipient(
+            reply_to, "email", exclude_employee=user
+        )
+        record = EmployeeCommunication.objects.create(
+            sender=user,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=mailbox.address,
+            to_client=client,
+            to_employee=recipient,
+            to_address=reply_to,
+            subject=subject,
+            body=body,
+        )
+        save_communication_attachments(record, attachments)
+        if client is not None:
+            notify_staff_message_to_client(
+                client,
+                title=subject,
+                body=body,
+                channel="email",
+            )
+        elif recipient is not None:
+            notify_message(
+                recipient,
+                title=subject or f"Message from {user.get_full_name()}",
+                body=body,
+                source_key=(
+                    f"staff_email_received:{user.pk}:"
+                    f"{int(timezone.now().timestamp())}"
+                ),
+            )
+        messages.success(request, f"Reply sent to {reply_to}.")
+        return redirect(request.path)
+
+
+@method_decorator(login_required, name="dispatch")
+class EmployeeCommunicationAttachmentView(View):
+    """View or download a file attached to a logged communication."""
+
+    def get(self, request, role, channel, employee_id, message_id, attachment_id):
+        meta = channel_page(channel)
+        if meta is None:
+            raise Http404("Unknown communication channel")
+
+        user, denied = _guard_perm(
+            request,
+            role,
+            module=_USER_MODULE,
+            activity=meta["slug"],
+            action="view",
+        )
+        if denied:
+            return denied
+
+        employee = get_object_or_404(Employee, pk=employee_id)
+        record = employee_communication_record(meta["key"], employee, message_id)
+        if record is None:
+            raise Http404("Message not found")
+        attachment = get_object_or_404(record.attachments, pk=attachment_id)
+
+        download = (request.GET.get("download") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        return FileResponse(
+            attachment.file.open("rb"),
+            as_attachment=download,
+            filename=attachment.filename,
+            content_type=attachment.content_type or None,
+        )
 
 
 @method_decorator(login_required, name="dispatch")

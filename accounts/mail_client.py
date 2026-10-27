@@ -102,7 +102,8 @@ def collect_attachments(request, *, employee) -> list[tuple[str, bytes, str]]:
 
 
 def mail_client_context(
-    employee, request, *, form_errors=None, form_data=None, list_mail=True
+    employee, request, *, form_errors=None, form_data=None, list_mail=True,
+    mailbox=None,
 ) -> dict:
     """IMAP inbox state for the Messages email channel."""
     folder = (request.GET.get("folder") or "inbox").strip().lower()
@@ -119,9 +120,31 @@ def mail_client_context(
     # that serves the redirect.
     refresh = (request.GET.get("refresh") or "").strip() in {"1", "true", "yes"}
 
+    # `mailbox` selects one of the employee's extra linked mailboxes;
+    # None means the primary work email.
+    active_extra = mailbox
+    active_address = (
+        (active_extra.email or "").strip().lower()
+        if active_extra is not None
+        else (employee.work_email or "").strip().lower()
+    )
+    mailbox_key = str(active_extra.pk) if active_extra is not None else ""
+    mailbox_rows = employee.mailbox_rows()
+    for row in mailbox_rows:
+        row["active"] = row["key"] == mailbox_key
+    connected = (
+        active_extra.mailbox_connected
+        if active_extra is not None
+        else employee.mailbox_connected
+    )
+
     posted = form_data or {}
     context = {
-        "mail_connected": employee.mailbox_connected,
+        "mail_connected": connected,
+        "mail_mailboxes": mailbox_rows,
+        "mail_mailbox": mailbox_key,
+        "mail_qs": f"&mailbox={mailbox_key}" if mailbox_key else "",
+        "mail_address": active_address,
         "mail_folder": folder,
         "mail_folder_label": FOLDER_LABELS.get(folder, "Inbox"),
         "mail_folders": [
@@ -153,15 +176,15 @@ def mail_client_context(
     if not list_mail:
         return context
 
-    if not (employee.work_email or "").strip():
+    if not active_address:
         context["mail_error"] = "Your account has no work email yet."
         return context
 
-    if not employee.mailbox_connected:
+    if not connected:
         return context
 
     try:
-        mailbox = WorkMailbox(employee)
+        mailbox = WorkMailbox(employee, mailbox=active_extra)
         overview = mailbox.folder_overview(folder, search=search, refresh=refresh)
         context["mail_messages"] = overview.get("messages") or []
         unread = overview.get("unread") or {}
@@ -193,7 +216,7 @@ def mail_client_context(
                 cc_value = ""
                 if reply_all:
                     # Keep other recipients except self.
-                    own = (employee.work_email or "").lower()
+                    own = active_address
                     others = []
                     for chunk in split_address_list(
                         f"{detail.to_addrs},{detail.cc_addrs}"

@@ -7,7 +7,7 @@
 {% if active_message_person %}
 <section class="page page--messages conversation-page" id="employee-messages-page">
   <header class="conversation-page__head">
-    <a class="icon-action" href="{{ messages_base_url }}?view=chats" aria-label="Back to conversations" title="Back">
+    <a class="icon-action" href="{{ messages_base_url }}?view=chats{{ mail_qs }}" aria-label="Back to conversations" title="Back">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M19 12H5m0 0 6-6m-6 6 6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
     <span class="avatar-chip avatar-chip--lg" data-tone="3" aria-hidden="true">
@@ -71,6 +71,7 @@
         {% csrf_token %}
         <input type="hidden" name="action" value="connect_mailbox">
         <input type="hidden" name="person" value="{{ active_message_person.pk }}">
+        {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
         <h3>Connect your mailbox</h3>
         <p class="mailbox__connect-lead">
           Enter your work mailbox password once to send email to
@@ -111,7 +112,21 @@
 
         <div class="conversation-compose__title">
           <h3>Compose email</h3>
+          {% if mail_mailboxes|length > 1 %}
+          <label class="sr-only" for="id_person_mail_from">From</label>
+          <select name="mailbox" id="id_person_mail_from" class="conversation-compose__from">
+            {% for box in mail_mailboxes %}
+            <option
+              value="{{ box.key }}"
+              {% if box.active %}selected{% endif %}
+              {% if not box.connected %}disabled{% endif %}
+            >{{ box.email }}{% if not box.connected %} (not connected){% endif %}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="hidden" name="mailbox" value="{{ mail_mailbox }}">
           <span>From {{ compose_work_email }}</span>
+          {% endif %}
         </div>
 
         {% if mail_form_errors.form %}
@@ -197,6 +212,7 @@
     <form class="mailbox__search" method="get" role="search" action="{{ messages_base_url }}">
       <input type="hidden" name="channel" value="email">
       <input type="hidden" name="folder" value="{{ mail_folder|default:'inbox' }}">
+      {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
       <span class="mailbox__search-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
           <circle cx="11" cy="11" r="6.25" stroke="currentColor" stroke-width="1.7"/>
@@ -216,7 +232,7 @@
       {% if mail_search %}
       <a
         class="mailbox__search-clear"
-        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}"
+        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{{ mail_qs }}"
         aria-label="Clear search"
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
@@ -227,7 +243,27 @@
     </form>
 
     <div class="mailbox__account">
-      {% if compose_work_email %}
+      {% if mail_mailboxes|length > 1 %}
+      <span class="mailbox__account-dot{% if mail_connected %} is-live{% endif %}" aria-hidden="true"></span>
+      <form method="get" action="{{ messages_base_url }}" class="mailbox__switch">
+        <input type="hidden" name="channel" value="email">
+        <input type="hidden" name="folder" value="{{ mail_folder|default:'inbox' }}">
+        <label class="sr-only" for="id_mailbox_switch">Mailbox</label>
+        <select
+          name="mailbox"
+          id="id_mailbox_switch"
+          class="mailbox__switch-select"
+          onchange="this.form.submit()"
+          title="{% if mail_connected %}Mailbox connected{% else %}Mailbox not connected{% endif %}"
+        >
+          {% for box in mail_mailboxes %}
+          <option value="{{ box.key }}"{% if box.active %} selected{% endif %}>
+            {{ box.email }}{% if not box.connected %} (not connected){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </form>
+      {% elif compose_work_email %}
       <span class="mailbox__account-dot{% if mail_connected %} is-live{% endif %}" aria-hidden="true"></span>
       <span class="mailbox__account-text">
         <strong>{{ compose_work_email }}</strong>
@@ -248,7 +284,7 @@
       {% if compose_work_email and mail_connected %}
       <a
         class="mailbox__compose"
-        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;compose=1"
+        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;compose=1{{ mail_qs }}"
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
           <path d="M4 20h4l10-10a2.4 2.4 0 0 0-3.4-3.4L4.6 16.6V20Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
@@ -270,7 +306,7 @@
         {% for folder in mail_folders %}
         <a
           class="mailbox__folder{% if active_message_channel == 'email' and not active_message_person and not active_message_view and mail_folder == folder.key %} is-active{% endif %}"
-          href="{{ messages_base_url }}?channel=email&amp;folder={{ folder.key }}"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ folder.key }}{{ mail_qs }}"
         >
           <span class="mailbox__folder-icon" aria-hidden="true">
             {% if folder.key == 'inbox' %}
@@ -319,7 +355,7 @@
       <p class="mailbox__rail-title">
         Chats
         {% if message_conversations %}
-        <a href="{{ messages_base_url }}?view=chats">All {{ message_conversation_count }}</a>
+        <a href="{{ messages_base_url }}?view=chats{{ mail_qs }}">All {{ message_conversation_count }}</a>
         {% endif %}
       </p>
       <nav class="mailbox__chats" aria-label="Colleague conversations">
@@ -397,6 +433,7 @@
         <form method="post" class="workspace-form mailbox__connect" novalidate>
           {% csrf_token %}
           <input type="hidden" name="action" value="connect_mailbox">
+          {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
           <span class="mailbox__connect-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
               <path d="M4.5 6.75h15v10.5h-15z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
@@ -433,7 +470,7 @@
       <div class="mailbox__toolbar">
         <a
           class="icon-action"
-          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}{{ mail_qs }}"
           aria-label="Back to {{ mail_folder_label }}"
           title="Back to {{ mail_folder_label }}"
         >
@@ -442,14 +479,14 @@
         <span class="mailbox__toolbar-sep" aria-hidden="true"></span>
         <a
           class="icon-action"
-          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;compose=1"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;compose=1{{ mail_qs }}"
           aria-label="Reply" title="Reply"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M9.5 6.5 4 12l5.5 5.5M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
         <a
           class="icon-action"
-          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;forward={{ mail_active.uid }}&amp;compose=1"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;forward={{ mail_active.uid }}&amp;compose=1{{ mail_qs }}"
           aria-label="Forward" title="Forward"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M14.5 6.5 20 12l-5.5 5.5M19.5 12H10a5.5 5.5 0 0 0-5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -459,6 +496,7 @@
           <input type="hidden" name="action" value="delete_email">
           <input type="hidden" name="folder" value="{{ mail_folder }}">
           <input type="hidden" name="uid" value="{{ mail_active.uid }}">
+          {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
           <button type="submit" class="icon-action" aria-label="Move to Trash" title="Move to Trash">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M5 7h14M10 7V5.5h4V7m-7 0 .8 12.1a1.5 1.5 0 0 0 1.5 1.4h5.4a1.5 1.5 0 0 0 1.5-1.4L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
@@ -496,7 +534,7 @@
             <ul>
               {% for file in mail_active.attachments %}
               <li>
-                <a class="attachment-chip" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;uid={{ mail_active.uid }}&amp;download=1&amp;part={{ file.part_index }}">
+                <a class="attachment-chip" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;uid={{ mail_active.uid }}&amp;download=1&amp;part={{ file.part_index }}{{ mail_qs }}">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M17.5 9.5 11 16a3.5 3.5 0 0 1-5-5l7-7a2.4 2.4 0 0 1 3.4 3.4l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   <span>{{ file.filename }}</span>
                   <small>{{ file.size|filesizeformat }}</small>
@@ -508,15 +546,15 @@
           {% endif %}
 
           <div class="mail-read__actions">
-            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;compose=1">
+            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;compose=1{{ mail_qs }}">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M9.5 6.5 4 12l5.5 5.5M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Reply
             </a>
-            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;reply_all=1&amp;compose=1">
+            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reply={{ mail_active.uid }}&amp;reply_all=1&amp;compose=1{{ mail_qs }}">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M8 6.5 2.5 12 8 17.5M13 6.5 7.5 12l5.5 5.5M8 12h6a5.5 5.5 0 0 1 5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Reply all
             </a>
-            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;forward={{ mail_active.uid }}&amp;compose=1">
+            <a class="pill-btn" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;forward={{ mail_active.uid }}&amp;compose=1{{ mail_qs }}">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M14.5 6.5 20 12l-5.5 5.5M19.5 12H10a5.5 5.5 0 0 0-5.5 5.5V19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Forward
             </a>
@@ -529,7 +567,7 @@
       <div class="mailbox__toolbar">
         <a
           class="icon-action"
-          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}{{ mail_qs }}"
           aria-label="Refresh" title="Refresh"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 5v4h-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -543,6 +581,7 @@
         <form method="post" class="mailbox__toolbar-form mailbox__toolbar-form--end">
           {% csrf_token %}
           <input type="hidden" name="action" value="disconnect_mailbox">
+          {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
           <button type="submit" class="link-btn">Disconnect</button>
         </form>
       </div>
@@ -555,7 +594,7 @@
           <li class="mail-row{% if item.is_unread %} is-unread{% endif %}">
             <a
               class="mail-row__link"
-              href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;uid={{ item.uid }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}"
+              href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;uid={{ item.uid }}{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}{{ mail_qs }}"
             >
               <span class="avatar-chip" data-tone="{{ item.avatar_tone }}" aria-hidden="true">{{ item.initial }}</span>
               <span class="mail-row__from">{{ item.display_name }}</span>
@@ -573,6 +612,7 @@
               <input type="hidden" name="action" value="delete_email">
               <input type="hidden" name="folder" value="{{ mail_folder }}">
               <input type="hidden" name="uid" value="{{ item.uid }}">
+              {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
               <button type="submit" class="icon-action icon-action--sm" aria-label="Move to Trash" title="Move to Trash">
                 <svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M5 7h14M10 7V5.5h4V7m-7 0 .8 12.1a1.5 1.5 0 0 0 1.5 1.4h5.4a1.5 1.5 0 0 0 1.5-1.4L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
@@ -694,12 +734,15 @@
     {% csrf_token %}
     <input type="hidden" name="in_reply_to" value="{{ mail_compose.in_reply_to }}">
     <input type="hidden" name="references" value="{{ mail_compose.references }}">
+    {% if mail_mailboxes|length <= 1 %}
+    <input type="hidden" name="mailbox" value="{{ mail_mailbox }}">
+    {% endif %}
 
     <div class="compose-window__head">
       <span>New message</span>
       <a
         class="compose-window__close"
-        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}"
+        href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{{ mail_qs }}"
         aria-label="Close compose"
       >
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -709,6 +752,21 @@
     <div class="compose-window__body">
       {% if mail_form_errors.form %}
       <div class="form-alert" role="alert">{{ mail_form_errors.form }}</div>
+      {% endif %}
+
+      {% if mail_mailboxes|length > 1 %}
+      <div class="compose-field">
+        <label for="id_mail_from">From</label>
+        <select name="mailbox" id="id_mail_from">
+          {% for box in mail_mailboxes %}
+          <option
+            value="{{ box.key }}"
+            {% if box.active %}selected{% endif %}
+            {% if not box.connected %}disabled{% endif %}
+          >{{ box.email }}{% if not box.connected %} (not connected){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
       {% endif %}
 
       <div class="compose-field">
@@ -760,7 +818,7 @@
         <input type="file" name="attachments" id="id_mail_attachments" multiple class="compose-window__file">
       </label>
       <button type="submit" class="link-btn compose-window__draft" name="action" value="save_draft">Save draft</button>
-      <a class="icon-action compose-window__discard" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}" title="Discard draft">
+      <a class="icon-action compose-window__discard" href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{{ mail_qs }}" title="Discard draft">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M5 7h14M10 7V5.5h4V7m-7 0 .8 12.1a1.5 1.5 0 0 0 1.5 1.4h5.4a1.5 1.5 0 0 0 1.5-1.4L17 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span class="sr-only">Discard draft</span>
       </a>

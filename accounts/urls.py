@@ -528,6 +528,13 @@ urlpatterns = [
     ),
     path(
         "<slug:role>/dashboard/user-management/employee-management/"
+        "employee-communications/<slug:channel>/<int:employee_id>/"
+        "<int:message_id>/attachments/<int:attachment_id>/",
+        views.EmployeeCommunicationAttachmentView.as_view(),
+        name="employee_communication_attachment",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
         "performance-compliance/<int:employee_id>/",
         views.EmployeePerformanceAnalyticsView.as_view(),
         name="employee_performance_analytics",
@@ -543,6 +550,12 @@ urlpatterns = [
         "toggle-suspension/<int:employee_id>/",
         views.ToggleEmployeeSuspensionView.as_view(),
         name="toggle_employee_suspension",
+    ),
+    path(
+        "<slug:role>/dashboard/user-management/employee-management/"
+        "offboarding/offboard/<int:employee_id>/",
+        views.OffboardEmployeeView.as_view(),
+        name="offboard_employee",
     ),
     # Case / matter review actions (before role page catch-all)
     path(

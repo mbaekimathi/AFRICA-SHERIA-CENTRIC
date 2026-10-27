@@ -15,6 +15,7 @@ from .models import (
     Employee,
     EmployeeActivityPermission,
     EmployeeBlogPost,
+    EmployeeMailbox,
     CommunicationSettings,
     CompanyExpenseAccount,
     CompanyAccountTopup,
@@ -56,8 +57,17 @@ from .models import (
 )
 
 
+class EmployeeMailboxInline(admin.TabularInline):
+    model = EmployeeMailbox
+    fk_name = "employee"
+    extra = 0
+    fields = ("email", "created_at")
+    readonly_fields = ("created_at",)
+
+
 @admin.register(Employee)
 class EmployeeAdmin(UserAdmin):
+    inlines = (EmployeeMailboxInline,)
     ordering = ("login_code",)
     list_display = (
         "login_code",

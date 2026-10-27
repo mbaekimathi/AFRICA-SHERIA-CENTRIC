@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from django.db.models import Count, Max, Q
 
-from .models import Client, Employee, EmployeeCommunication, WhatsAppMessage
+from .models import (
+    Client,
+    Employee,
+    EmployeeCommunication,
+    EmployeeCommunicationAttachment,
+    WhatsAppMessage,
+)
 
 CHANNEL_PAGES = {
     "email-communications": {
@@ -358,6 +364,33 @@ def employee_messages(channel_key: str, employee, *, search: str = "") -> list[d
     return [_communication_row(record, viewer=employee) for record in queryset]
 
 
+def save_communication_attachments(record, attachments) -> None:
+    """Persist (filename, bytes, content_type) tuples onto a logged record."""
+    from django.core.files.base import ContentFile
+
+    for filename, payload, content_type in attachments:
+        name = (filename or "").strip() or "attachment"
+        EmployeeCommunicationAttachment.objects.create(
+            communication=record,
+            filename=name,
+            content_type=content_type or "",
+            size=len(payload or b""),
+            file=ContentFile(payload or b"", name=name),
+        )
+
+
+def employee_communication_record(channel_key: str, employee, message_id: int):
+    """The EmployeeCommunication row behind a log message, or None."""
+    if channel_key == "whatsapp":
+        return None
+    queryset = EmployeeCommunication.objects.filter(pk=message_id, channel=channel_key)
+    if channel_key == "email":
+        queryset = queryset.filter(Q(sender=employee) | Q(to_employee=employee))
+    else:
+        queryset = queryset.filter(sender=employee)
+    return queryset.select_related("sender", "to_client", "to_employee").first()
+
+
 def employee_message(channel_key: str, employee, message_id: int) -> dict | None:
     """One message from this employee's log, or None when it is not theirs."""
     if channel_key == "whatsapp":
@@ -369,10 +402,17 @@ def employee_message(channel_key: str, employee, message_id: int) -> dict | None
         )
         return _whatsapp_row(message) if message else None
 
-    queryset = EmployeeCommunication.objects.filter(pk=message_id, channel=channel_key)
-    if channel_key == "email":
-        queryset = queryset.filter(Q(sender=employee) | Q(to_employee=employee))
-    else:
-        queryset = queryset.filter(sender=employee)
-    record = queryset.select_related("sender", "to_client", "to_employee").first()
-    return _communication_row(record, viewer=employee) if record else None
+    record = employee_communication_record(channel_key, employee, message_id)
+    if record is None:
+        return None
+    row = _communication_row(record, viewer=employee)
+    row["attachments"] = [
+        {
+            "id": attachment.pk,
+            "filename": attachment.filename,
+            "size": attachment.size,
+            "content_type": attachment.content_type,
+        }
+        for attachment in record.attachments.all()
+    ]
+    return row
