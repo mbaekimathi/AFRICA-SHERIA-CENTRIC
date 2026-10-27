@@ -477,7 +477,7 @@ def save_communication_attachments(record, attachments) -> None:
     from django.core.files.base import ContentFile
 
     for filename, payload, content_type in attachments:
-        name = (filename or "").strip() or "attachment"
+        name = " ".join((filename or "").split()) or "attachment"
         EmployeeCommunicationAttachment.objects.create(
             communication=record,
             filename=name,

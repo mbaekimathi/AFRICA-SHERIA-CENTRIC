@@ -243,7 +243,12 @@ def _attachments_from_message(message: email.message.Message) -> list[MailAttach
         filename = part.get_filename()
         if not filename and "attachment" not in disposition.lower():
             continue
-        filename = _decode_mime_header(filename) or f"attachment-{index + 1}"
+        # Folded MIME headers decode with the CRLF continuation intact —
+        # strip control whitespace so the name is safe in headers and URLs.
+        filename = (
+            re.sub(r"\s+", " ", _decode_mime_header(filename)).strip()
+            or f"attachment-{index + 1}"
+        )
         payload = part.get_payload(decode=True) or b""
         attachments.append(
             MailAttachment(

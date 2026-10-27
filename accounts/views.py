@@ -29,6 +29,7 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+from urllib.parse import quote
 from django.utils.safestring import mark_safe
 from .appearance import (
     appearance_catalog,
@@ -9048,8 +9049,9 @@ class RoleWorkspaceView(View):
         response = HttpResponse(
             attachment.payload, content_type=attachment.content_type
         )
-        safe_name = attachment.filename.replace('"', "")
-        response["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+        response["Content-Disposition"] = _content_disposition(
+            attachment.filename
+        )
         return response
 
     @staticmethod
@@ -22986,6 +22988,28 @@ class EmployeeCommunicationDetailView(View):
         return redirect(request.path)
 
 
+def _download_filename(value, fallback="attachment"):
+    """Filename safe for Content-Disposition — no quotes or CRLF folding."""
+    name = " ".join(str(value or "").replace('"', "").split())
+    return name or fallback
+
+
+def _content_disposition(value, fallback="attachment"):
+    """attachment header value; RFC 5987 filename* for non-latin-1 names."""
+    name = _download_filename(value, fallback)
+    try:
+        name.encode("latin-1")
+    except UnicodeEncodeError:
+        plain = (
+            name.encode("latin-1", "ignore").decode("latin-1").strip() or fallback
+        )
+        return (
+            f'attachment; filename="{plain}"; '
+            f"filename*=UTF-8''{quote(name)}"
+        )
+    return f'attachment; filename="{name}"'
+
+
 @method_decorator(login_required, name="dispatch")
 class EmployeeCommunicationAttachmentView(View):
     """View or download a file attached to a logged communication."""
@@ -23019,7 +23043,7 @@ class EmployeeCommunicationAttachmentView(View):
         return FileResponse(
             attachment.file.open("rb"),
             as_attachment=download,
-            filename=attachment.filename,
+            filename=_download_filename(attachment.filename),
             content_type=attachment.content_type or None,
         )
 
@@ -23301,7 +23325,7 @@ class DownloadDocumentView(View):
             return FileResponse(
                 document.local_file.open("rb"),
                 as_attachment=True,
-                filename=filename,
+                filename=_download_filename(filename),
             )
 
         if document.drive_file_id:
@@ -23316,8 +23340,9 @@ class DownloadDocumentView(View):
                 messages.error(request, str(exc))
                 return redirect(_document_library_return_url(document, role))
             response = HttpResponse(content, content_type=content_type)
-            safe_name = (filename or document.title or "document").replace('"', "")
-            response["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+            response["Content-Disposition"] = _content_disposition(
+                filename or document.title, fallback="document"
+            )
             return response
 
         messages.error(request, "No downloadable file is available.")
