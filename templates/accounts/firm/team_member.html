@@ -1,0 +1,89 @@
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead fw-pagehead--rich">
+  <div class="fw-pagehead__bg" aria-hidden="true"></div>
+  <span class="fw-pagehead__mark" aria-hidden="true">People</span>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <nav class="fw-crumbs" aria-label="Breadcrumb">
+      <a href="{% url 'accounts:firm_team' %}">Team</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">{{ member.name }}</span>
+    </nav>
+    <p class="fw-pagehead__eyebrow">{{ member.title|default:"Our team" }}</p>
+    <h1>{{ member.name }}</h1>
+    {% if member.practice_focus %}
+    <p class="fw-pagehead__lede">{{ member.practice_focus }}</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="fw-section fw-section--soft">
+  <div class="fw-wrap fw-profile">
+    <div class="fw-profile__media" data-fw-anim="left">
+      {% if member.photo|stored_media_url %}
+      <img
+        src="{{ member.photo|stored_media_url }}"
+        alt="{{ member.name }}"
+        width="520"
+        height="640"
+      >
+      {% else %}
+      <span class="fw-profile__ph" aria-hidden="true">
+        {% firstof member.initial member.name|slice:":1"|upper %}
+      </span>
+      {% endif %}
+      <div class="fw-profile__rim" aria-hidden="true"></div>
+    </div>
+    <div class="fw-profile__body" data-fw-anim="right">
+      {% if member.bio %}
+      <div class="fw-profile__bio">
+        {{ member.bio|linebreaks }}
+      </div>
+      {% else %}
+      <p class="fw-profile__bio">
+        {{ member.name }} is {{ member.title|default:"a member of the team" }}
+        at {{ firm_name }}.
+      </p>
+      {% endif %}
+      <dl class="fw-profile__facts">
+        {% if member.practice_focus %}
+        <div>
+          <dt>Practice focus</dt>
+          <dd>{{ member.practice_focus }}</dd>
+        </div>
+        {% endif %}
+        {% if member.email %}
+        <div>
+          <dt>Email</dt>
+          <dd><a href="mailto:{{ member.email }}">{{ member.email }}</a></dd>
+        </div>
+        {% endif %}
+        {% if member.phone %}
+        <div>
+          <dt>Phone</dt>
+          <dd><a href="tel:{{ member.phone }}">{{ member.phone }}</a></dd>
+        </div>
+        {% endif %}
+      </dl>
+      <div class="fw-profile__cta">
+        <a class="fw-btn fw-btn--primary" href="{% url 'accounts:firm_contact' %}#enquire" data-fw-magnetic>
+          Enquire with {{ member.name|truncatewords:1 }}
+        </a>
+        {% if whatsapp_url %}
+        <a class="fw-btn fw-btn--ghost" href="{{ whatsapp_url }}" rel="noopener" data-fw-magnetic>
+          WhatsApp the chambers
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+{% url 'accounts:firm_contact' as contact_url %}
+{% url 'accounts:firm_team' as team_url %}
+{% include "accounts/firm/_cta_band.html" with cta_band_eyebrow="Next step" cta_band_title="Ready to talk through your matter?" cta_band_copy="Send a confidential enquiry and an advocate will respond — usually within one business day." cta_primary_href=contact_url cta_primary_label="Send an enquiry" cta_secondary_href=team_url cta_secondary_label="Meet the rest of the team" %}
+{% endblock %}

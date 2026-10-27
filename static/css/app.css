@@ -28671,3 +28671,134 @@ button.invoice-share-option:hover {
     max-height: 92dvh;
   }
 }
+
+/* Website enquiries inbox */
+.enquiry-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.enquiry-list {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.enquiry-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.enquiry-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.8rem 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.enquiry-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.enquiry-card > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid var(--ink-muted);
+  border-bottom: 2px solid var(--ink-muted);
+  transform: rotate(45deg);
+  transition: transform 0.18s ease;
+}
+
+.enquiry-card[open] > summary::after {
+  transform: rotate(-135deg);
+}
+
+.enquiry-card > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+
+.enquiry-card.is-unread > summary {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.enquiry-card__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.enquiry-card__name {
+  display: block;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.enquiry-card__meta {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+
+.enquiry-card__body {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.enquiry-card__msg {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.enquiry-card__note {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-tint);
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+}
+
+.enquiry-note {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 34rem;
+}
+
+.enquiry-note .btn {
+  justify-self: start;
+}
+
+.status-pill--new {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.status-pill--read {
+  color: var(--info);
+  background: var(--info-bg);
+}
+
+.status-pill--replied {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.status-pill--archived {
+  color: var(--ink-muted);
+  background: var(--surface-tint);
+}

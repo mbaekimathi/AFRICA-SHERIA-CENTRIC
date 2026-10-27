@@ -12,6 +12,7 @@
   --fw-accent-soft: #e4eef0;
   --fw-brass: #b8975a;
   --fw-brass-soft: #f3ecdf;
+  --fw-danger: #a63c2a;
   --fw-serif: "Cormorant Garamond", "Times New Roman", Georgia, serif;
   --fw-sans: "Outfit", "Segoe UI", sans-serif;
   --fw-max: 74rem;
@@ -11950,4 +11951,187 @@ body.is-lightbox-open {
   transform: translateY(0);
   outline: 2px solid var(--fw-brass);
   outline-offset: 2px;
+}
+
+/* Enquiry form (contact page) */
+.fw-enquiry__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+  align-items: start;
+}
+
+.fw-enquiry__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 1.5rem 0 0;
+  color: var(--fw-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.fw-enquiry__note .fw-ico {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+  color: var(--fw-brass);
+}
+
+.fw-enquiry__panel {
+  padding: clamp(1.4rem, 3vw, 2.2rem);
+  border: 1px solid var(--fw-line);
+  border-radius: var(--fw-radius);
+  background: var(--fw-white);
+  box-shadow: var(--fw-shadow);
+}
+
+.fw-form {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.fw-form__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.fw-field {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.fw-field--full {
+  grid-column: 1 / -1;
+}
+
+.fw-field label {
+  font-family: var(--fw-sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fw-ink-soft);
+}
+
+.fw-field input,
+.fw-field select,
+.fw-field textarea {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--fw-line);
+  border-radius: var(--fw-radius);
+  background: var(--fw-paper);
+  color: var(--fw-ink);
+  font-family: var(--fw-sans);
+  font-size: 0.95rem;
+  transition: border-color 0.2s var(--fw-ease), box-shadow 0.2s var(--fw-ease);
+}
+
+.fw-field textarea {
+  resize: vertical;
+  min-height: 7.5rem;
+}
+
+.fw-field input:focus-visible,
+.fw-field select:focus-visible,
+.fw-field textarea:focus-visible {
+  outline: none;
+  border-color: var(--fw-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fw-accent) 18%, transparent);
+}
+
+.fw-field [aria-invalid="true"] {
+  border-color: var(--fw-danger);
+}
+
+.fw-field__error {
+  color: var(--fw-danger);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.fw-form__alert {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid var(--fw-danger);
+  border-radius: var(--fw-radius);
+  background: color-mix(in srgb, var(--fw-danger) 8%, var(--fw-white));
+  color: var(--fw-ink);
+  font-size: 0.9rem;
+}
+
+/* Honeypot — off-screen, not display:none so simple bots still fill it */
+.fw-form__hp {
+  position: absolute;
+  left: -100vw;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+}
+
+.fw-form__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.9rem 1.2rem;
+}
+
+.fw-form__legal {
+  flex: 1 1 14rem;
+  margin: 0;
+  color: var(--fw-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.fw-form__legal a {
+  color: var(--fw-accent);
+}
+
+.fw-enquiry__success {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.fw-enquiry__success-eyebrow {
+  margin: 0;
+  color: var(--fw-brass);
+  font-family: var(--fw-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fw-enquiry__success h3 {
+  margin: 0;
+  font-family: var(--fw-serif);
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--fw-ink);
+}
+
+.fw-enquiry__success p {
+  margin: 0;
+  color: var(--fw-muted);
+  line-height: 1.65;
+}
+
+.fw-enquiry__success .fw-btn {
+  justify-self: start;
+}
+
+@media (max-width: 920px) {
+  .fw-enquiry__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .fw-form__grid {
+    grid-template-columns: 1fr;
+  }
 }

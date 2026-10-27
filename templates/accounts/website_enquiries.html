@@ -1,0 +1,160 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        Enquiries sent through the public website contact form. Internal notes
+        are private to staff — senders never see them.
+      </p>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>Inbox</h3>
+      <p class="panel__hint">{{ enquiries|length }} shown</p>
+    </div>
+    <div class="panel__body">
+      <div class="enquiry-filters" role="group" aria-label="Filter enquiries by status">
+        <a
+          class="btn {% if not enquiry_status_filter %}btn--primary{% else %}btn--quiet{% endif %}"
+          href="{{ enquiries_url }}"
+          {% if not enquiry_status_filter %}aria-current="true"{% endif %}
+        >All</a>
+        {% for row in enquiry_status_rows %}
+        <a
+          class="btn {% if enquiry_status_filter == row.key %}btn--primary{% else %}btn--quiet{% endif %}"
+          href="{{ enquiries_url }}?status={{ row.key }}"
+          {% if enquiry_status_filter == row.key %}aria-current="true"{% endif %}
+        >{{ row.label }} · {{ row.count }}</a>
+        {% endfor %}
+      </div>
+
+      {% if enquiries %}
+      <ul class="enquiry-list">
+        {% for enquiry in enquiries %}
+        <li>
+          <details class="enquiry-card{% if enquiry.status == 'new' %} is-unread{% endif %}">
+            <summary>
+              <span class="enquiry-card__main">
+                <span class="enquiry-card__name">{{ enquiry.name }}</span>
+                <span class="enquiry-card__meta">
+                  {{ enquiry.practice_area|default:"General enquiry" }}
+                  · {{ enquiry.get_preferred_channel_display }}
+                  · {{ enquiry.created_at|date:"d M Y, H:i" }}
+                </span>
+              </span>
+              <span class="status-pill status-pill--{{ enquiry.status }}">
+                {{ enquiry.get_status_display }}
+              </span>
+            </summary>
+            <div class="enquiry-card__body">
+              <dl class="data-grid enquiry-card__facts">
+                {% if enquiry.email %}
+                <div>
+                  <dt>Email</dt>
+                  <dd><a href="mailto:{{ enquiry.email }}">{{ enquiry.email }}</a></dd>
+                </div>
+                {% endif %}
+                {% if enquiry.phone %}
+                <div>
+                  <dt>Phone</dt>
+                  <dd><a href="tel:{{ enquiry.phone }}">{{ enquiry.phone }}</a></dd>
+                </div>
+                {% endif %}
+                {% if enquiry.source_url %}
+                <div>
+                  <dt>Sent from</dt>
+                  <dd>{{ enquiry.source_url }}</dd>
+                </div>
+                {% endif %}
+                {% if enquiry.handled_by %}
+                <div>
+                  <dt>Handled by</dt>
+                  <dd>{{ enquiry.handled_by }}</dd>
+                </div>
+                {% endif %}
+              </dl>
+              <p class="enquiry-card__msg">{{ enquiry.message }}</p>
+              {% if enquiry.internal_note %}
+              <p class="enquiry-card__note">
+                <strong>Internal note:</strong> {{ enquiry.internal_note }}
+              </p>
+              {% endif %}
+              {% if enquiry_can_edit %}
+              <div class="row-actions">
+                {% if enquiry.status != "read" %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="enquiry_id" value="{{ enquiry.pk }}">
+                  <input type="hidden" name="status_filter" value="{{ enquiry_status_filter }}">
+                  <button class="row-action" type="submit" name="action" value="mark-read">Mark read</button>
+                </form>
+                {% endif %}
+                {% if enquiry.status != "replied" %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="enquiry_id" value="{{ enquiry.pk }}">
+                  <input type="hidden" name="status_filter" value="{{ enquiry_status_filter }}">
+                  <button class="row-action" type="submit" name="action" value="mark-replied">Mark replied</button>
+                </form>
+                {% endif %}
+                {% if enquiry.status == "archived" %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="enquiry_id" value="{{ enquiry.pk }}">
+                  <input type="hidden" name="status_filter" value="{{ enquiry_status_filter }}">
+                  <button class="row-action" type="submit" name="action" value="reopen">Reopen</button>
+                </form>
+                {% else %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="enquiry_id" value="{{ enquiry.pk }}">
+                  <input type="hidden" name="status_filter" value="{{ enquiry_status_filter }}">
+                  <button class="row-action" type="submit" name="action" value="archive">Archive</button>
+                </form>
+                {% endif %}
+              </div>
+              <form class="workspace-form enquiry-note" method="post">
+                {% csrf_token %}
+                <input type="hidden" name="enquiry_id" value="{{ enquiry.pk }}">
+                <input type="hidden" name="status_filter" value="{{ enquiry_status_filter }}">
+                <input type="hidden" name="action" value="save-note">
+                <div class="form-field">
+                  <label for="note-{{ enquiry.pk }}">Internal note</label>
+                  <textarea
+                    class="form-input"
+                    id="note-{{ enquiry.pk }}"
+                    name="internal_note"
+                    rows="2"
+                    placeholder="Private note for staff only"
+                  >{{ enquiry.internal_note }}</textarea>
+                </div>
+                <button class="btn btn--quiet btn--inline" type="submit">Save note</button>
+              </form>
+              {% endif %}
+            </div>
+          </details>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <span class="empty-state__rule" aria-hidden="true"></span>
+        <p class="empty-state__title">No enquiries here yet</p>
+        <p class="empty-state__copy">
+          New messages from the website contact form will appear in this inbox.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

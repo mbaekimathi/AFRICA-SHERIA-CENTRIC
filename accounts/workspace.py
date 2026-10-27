@@ -128,6 +128,7 @@ def _attach_page_nav_badges(page_nav_items: list[dict], employee=None) -> None:
     pending_matters = None
     pending_petty_cash = None
     wa_unread = None
+    new_enquiries = None
     for item in page_nav_items:
         slug = item.get("slug")
         if slug == "user-management":
@@ -155,6 +156,17 @@ def _attach_page_nav_badges(page_nav_items: list[dict], employee=None) -> None:
                 except Exception:
                     wa_unread = 0
             item["badge_count"] = wa_unread
+        elif slug == "website-enquiries":
+            if new_enquiries is None:
+                try:
+                    from .models import WebsiteEnquiry
+
+                    new_enquiries = WebsiteEnquiry.objects.filter(
+                        status=WebsiteEnquiry.Status.NEW
+                    ).count()
+                except Exception:
+                    new_enquiries = 0
+            item["badge_count"] = new_enquiries
         elif slug in {"employee-management", "onboarding-approvals"}:
             if pending_employees is None:
                 pending_employees = pending_employees_count()
@@ -333,6 +345,11 @@ ICON_LEARN = (
     '<use href="#i-learn"/>'
     "</svg>"
 )
+ICON_MAIL = (
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    '<use href="#i-mail"/>'
+    "</svg>"
+)
 
 # Role modules (page-unique entry points — shown on the dashboard only, not in shared sidebar)
 ROLE_MODULES = {
@@ -489,6 +506,7 @@ CLIENT_MANAGEMENT_PAGE_LINKS = [
     ("Register Client", "register-client", ICON_DOC),
     ("Approve pending clients", "approve-pending-clients", ICON_USERS),
     ("WhatsApp Inbox", "whatsapp-inbox", ICON_MESSAGE),
+    ("Website enquiries", "website-enquiries", ICON_MAIL),
 ]
 
 # Employee Management page-only links
@@ -1158,6 +1176,7 @@ ACTIVITY_PERMISSION_OVERRIDES: dict[str, tuple[str, ...]] = {
     "reminders": ("view", "view_all"),
     "notifications": ("view", "view_all"),
     "whatsapp-inbox": ("view", "edit"),
+    "website-enquiries": ("view", "edit"),
 }
 
 _DETAIL_SLUG_PERMISSION_ACTIONS = {
@@ -1807,6 +1826,7 @@ PAGE_TITLES = {
     "register-client": "Register Client",
     "approve-pending-clients": "Approve pending clients",
     "whatsapp-inbox": "WhatsApp Inbox",
+    "website-enquiries": "Website enquiries",
     "client-profile": "Client Portal",
     "employee-management": "Employee Management",
     "register-employee": "Register Employee",

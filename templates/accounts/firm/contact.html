@@ -108,6 +108,94 @@
   </div>
 </section>
 
+<section class="fw-section fw-enquiry" id="enquire">
+  <div class="fw-wrap fw-enquiry__grid">
+    <div class="fw-enquiry__intro" data-fw-anim="left">
+      <p class="fw-section__eyebrow">Enquire</p>
+      <h2>Send a confidential enquiry</h2>
+      <p class="fw-section__lede">
+        Tell us briefly about your matter. An advocate reviews every enquiry
+        and responds — usually within one business day.
+      </p>
+      <p class="fw-enquiry__note">
+        {% include "accounts/firm/_icons.html" with name="shield" class="fw-ico fw-ico--sm" %}
+        <span>Confidential — your message goes only to the chambers team and is treated with care.</span>
+      </p>
+    </div>
+    <div class="fw-enquiry__panel" data-fw-anim="right">
+      {% if enquiry_sent %}
+      <div class="fw-enquiry__success" role="status">
+        <p class="fw-enquiry__success-eyebrow">Received</p>
+        <h3>Thank you — we've got your enquiry.</h3>
+        <p>
+          An advocate will review your message and respond through your
+          preferred channel, usually within one business day. If it's urgent,
+          {% if company.phone %}call us on {{ company.phone }}{% else %}contact the chambers directly{% endif %}.
+        </p>
+        <a class="fw-btn fw-btn--ghost" href="{% url 'accounts:firm_faqs' %}">Browse FAQs meanwhile</a>
+      </div>
+      {% else %}
+      <form method="post" action="{% url 'accounts:firm_contact' %}#enquire" class="fw-form" novalidate>
+        {% csrf_token %}
+        <p class="fw-form__hp" aria-hidden="true">
+          <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+        </p>
+        <input type="hidden" name="source_url" value="{{ request.path }}">
+        {% if enquiry_errors.contact %}
+        <p class="fw-form__alert" role="alert">{{ enquiry_errors.contact }}</p>
+        {% endif %}
+        <div class="fw-form__grid">
+          <p class="fw-field">
+            <label for="enq-name">Your name <span aria-hidden="true">*</span></label>
+            <input id="enq-name" name="name" type="text" autocomplete="name" value="{{ enquiry_values.name }}"{% if enquiry_errors.name %} aria-invalid="true" aria-describedby="enq-name-err"{% endif %}>
+            {% if enquiry_errors.name %}<span class="fw-field__error" id="enq-name-err" role="alert">{{ enquiry_errors.name }}</span>{% endif %}
+          </p>
+          <p class="fw-field">
+            <label for="enq-phone">Phone or WhatsApp</label>
+            <input id="enq-phone" name="phone" type="tel" autocomplete="tel" value="{{ enquiry_values.phone }}">
+          </p>
+          <p class="fw-field">
+            <label for="enq-email">Email</label>
+            <input id="enq-email" name="email" type="email" autocomplete="email" value="{{ enquiry_values.email }}"{% if enquiry_errors.email %} aria-invalid="true" aria-describedby="enq-email-err"{% endif %}>
+            {% if enquiry_errors.email %}<span class="fw-field__error" id="enq-email-err" role="alert">{{ enquiry_errors.email }}</span>{% endif %}
+          </p>
+          <p class="fw-field">
+            <label for="enq-area">Practice area</label>
+            <select id="enq-area" name="practice_area">
+              <option value="">Not sure / general</option>
+              {% for option in practice_area_options %}
+              <option value="{{ option }}"{% if enquiry_values.practice_area == option %} selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </p>
+          <p class="fw-field fw-field--full">
+            <label for="enq-channel">Preferred way to reach you</label>
+            <select id="enq-channel" name="preferred_channel">
+              <option value="any"{% if enquiry_values.preferred_channel == "any" %} selected{% endif %}>Any</option>
+              <option value="email"{% if enquiry_values.preferred_channel == "email" %} selected{% endif %}>Email</option>
+              <option value="phone"{% if enquiry_values.preferred_channel == "phone" %} selected{% endif %}>Phone call</option>
+              <option value="whatsapp"{% if enquiry_values.preferred_channel == "whatsapp" %} selected{% endif %}>WhatsApp</option>
+            </select>
+          </p>
+          <p class="fw-field fw-field--full">
+            <label for="enq-message">Your message <span aria-hidden="true">*</span></label>
+            <textarea id="enq-message" name="message" rows="5"{% if enquiry_errors.message %} aria-invalid="true" aria-describedby="enq-message-err"{% endif %}>{{ enquiry_values.message }}</textarea>
+            {% if enquiry_errors.message %}<span class="fw-field__error" id="enq-message-err" role="alert">{{ enquiry_errors.message }}</span>{% endif %}
+          </p>
+        </div>
+        <div class="fw-form__foot">
+          <button class="fw-btn fw-btn--primary" type="submit" data-fw-magnetic>Send enquiry</button>
+          <p class="fw-form__legal">
+            Submitting shares your details with {{ firm_name }} only. See our
+            <a href="{% url 'accounts:firm_privacy' %}">privacy policy</a>.
+          </p>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
 {% if company.consultation_blurb or company.consultation_cta_label %}
 {% firstof company.consultation_cta_label "Book a consultation" as cta_t %}
 {% include "accounts/firm/_cta_band.html" with cta_band_eyebrow="Consultation" cta_band_title=cta_t cta_band_copy=company.consultation_blurb cta_primary_href=whatsapp_url cta_primary_label="WhatsApp" cta_primary_external=1 cta_primary_magnetic=1 cta_secondary_href=company.phone cta_secondary_prefix="tel:" cta_secondary_label=company.phone cta_secondary_label_prefix="Call " %}

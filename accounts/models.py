@@ -406,6 +406,13 @@ class Employee(AbstractUser):
         default=100,
         help_text="Lower numbers appear first on the public team page.",
     )
+    website_slug = models.SlugField(
+        max_length=180,
+        unique=True,
+        blank=True,
+        default="",
+        help_text="Public profile URL slug, used when website_published is on.",
+    )
 
     USERNAME_FIELD = "login_code"
     EMAIL_FIELD = "personal_email"
@@ -2851,6 +2858,13 @@ class FirmTeamMember(models.Model):
     """Advocate or staff profile shown on the firm website team page."""
 
     name = models.CharField(max_length=160)
+    slug = models.SlugField(
+        max_length=180,
+        unique=True,
+        blank=True,
+        default="",
+        help_text="Public URL slug for /team/<slug>/.",
+    )
     title = models.CharField(
         max_length=160,
         blank=True,
@@ -2896,6 +2910,47 @@ class FirmTeamMember(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        from django.utils.text import slugify
+
+        if not (self.slug or "").strip():
+            base = slugify(self.name)[:160] or "team-member"
+            self.slug = unique_public_profile_slug(
+                base, exclude_member_pk=self.pk
+            )
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("accounts:firm_team_member", kwargs={"slug": self.slug})
+
+
+def unique_public_profile_slug(
+    base: str,
+    *,
+    exclude_employee_pk=None,
+    exclude_member_pk=None,
+) -> str:
+    """Unique slug across Employee.website_slug and FirmTeamMember.slug.
+
+    Both models share the /team/<slug>/ URL namespace, so collisions must be
+    resolved against each other.
+    """
+    candidate = base
+    n = 2
+    while True:
+        emp_qs = Employee.objects.filter(website_slug=candidate)
+        if exclude_employee_pk is not None:
+            emp_qs = emp_qs.exclude(pk=exclude_employee_pk)
+        member_qs = FirmTeamMember.objects.filter(slug=candidate)
+        if exclude_member_pk is not None:
+            member_qs = member_qs.exclude(pk=exclude_member_pk)
+        if not emp_qs.exists() and not member_qs.exists():
+            return candidate
+        candidate = f"{base}-{n}"
+        n += 1
 
 
 class FirmTestimonial(models.Model):
@@ -3003,6 +3058,72 @@ class FirmGalleryImage(models.Model):
         from django.urls import reverse
 
         return reverse("accounts:firm_gallery_detail", kwargs={"slug": self.slug})
+
+
+class WebsiteEnquiry(models.Model):
+    """Message sent through the public website contact / consultation form."""
+
+    class Status(models.TextChoices):
+        NEW = "new", "New"
+        READ = "read", "Read"
+        REPLIED = "replied", "Replied"
+        ARCHIVED = "archived", "Archived"
+
+    class PreferredChannel(models.TextChoices):
+        ANY = "any", "Any"
+        EMAIL = "email", "Email"
+        PHONE = "phone", "Phone"
+        WHATSAPP = "whatsapp", "WhatsApp"
+
+    name = models.CharField(max_length=160)
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    practice_area = models.CharField(
+        max_length=160,
+        blank=True,
+        default="",
+        help_text="Practice area label chosen on the form, if any.",
+    )
+    preferred_channel = models.CharField(
+        max_length=20,
+        choices=PreferredChannel.choices,
+        default=PreferredChannel.ANY,
+    )
+    message = models.TextField()
+    source_url = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        help_text="Public page the enquiry was sent from.",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.NEW,
+        db_index=True,
+    )
+    internal_note = models.TextField(
+        blank=True,
+        default="",
+        help_text="Private staff note — never shown publicly.",
+    )
+    handled_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="handled_enquiries",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Website enquiry"
+        verbose_name_plural = "Website enquiries"
+
+    def __str__(self):
+        return f"{self.name} — {self.created_at:%d %b %Y}"
 
 
 class WebsiteTemplateSetting(models.Model):

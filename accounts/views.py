@@ -285,8 +285,10 @@ from .models import (
     EmployeeAdvance,
     PettyCashExpenseRequest,
     RoleActivityPermission,
+    WebsiteEnquiry,
     WebsiteTemplateSetting,
     WhatsAppConversation,
+    unique_public_profile_slug,
 )
 from .notifications import (
     ensure_due_reminders,
@@ -687,6 +689,7 @@ def _firm_website_employees(*, limit: int | None = None):
         "login_code",
         "about_me",
         "website_rank",
+        "website_slug",
     )
     for emp in qs:
         name = (emp.get_full_name() or emp.login_code or "").strip()
@@ -701,6 +704,7 @@ def _firm_website_employees(*, limit: int | None = None):
                     practice_focus="",
                     bio=(emp.about_me or "").strip(),
                     photo=emp.profile_photo,
+                    profile_slug=emp.website_slug or "",
                     initial=initial_source[:1].upper(),
                 ),
             )
@@ -722,6 +726,7 @@ def _firm_website_employees(*, limit: int | None = None):
                     practice_focus=(guest.practice_focus or "").strip(),
                     bio=(guest.bio or "").strip(),
                     photo=guest.photo,
+                    profile_slug=guest.slug or "",
                     initial=name[:1].upper(),
                 ),
             )
@@ -944,6 +949,110 @@ class FirmTeamView(View):
         )
 
 
+class FirmTeamMemberDetailView(View):
+    """Public profile for a published team member (/team/<slug>/)."""
+
+    template_name = "accounts/firm/team_member.html"
+
+    @staticmethod
+    def _resolve(slug):
+        from types import SimpleNamespace
+
+        emp = (
+            Employee.objects.filter(
+                status=Employee.Status.ACTIVE,
+                website_published=True,
+                website_slug=slug,
+            )
+            .only(
+                "first_name",
+                "last_name",
+                "courtesy_title",
+                "role",
+                "profile_photo",
+                "login_code",
+                "about_me",
+                "website_slug",
+            )
+            .first()
+        )
+        if emp is not None:
+            name = (emp.get_full_name() or emp.login_code or "").strip()
+            return SimpleNamespace(
+                name=name,
+                title=emp.get_role_display(),
+                practice_focus="",
+                bio=(emp.about_me or "").strip(),
+                photo=emp.profile_photo,
+                email="",
+                phone="",
+                initial=(emp.first_name or name or "?").strip()[:1].upper(),
+            )
+        guest = FirmTeamMember.objects.filter(
+            is_published=True, slug=slug
+        ).first()
+        if guest is None:
+            return None
+        name = (guest.name or "").strip()
+        return SimpleNamespace(
+            name=name,
+            title=(guest.title or "").strip(),
+            practice_focus=(guest.practice_focus or "").strip(),
+            bio=(guest.bio or "").strip(),
+            photo=guest.photo,
+            email=(guest.email or "").strip(),
+            phone=(guest.phone or "").strip(),
+            initial=name[:1].upper(),
+        )
+
+    def get(self, request, slug):
+        member = self._resolve(slug)
+        if member is None:
+            raise Http404
+        company = FirmCompanyInformation.get_solo()
+        title = member.title or "Team member"
+        description = (
+            member.bio
+            or f"{member.name}, {title} at {company.display_name}."
+        )[:160]
+        person_json_ld = {
+            "@type": "Person",
+            "name": member.name,
+            "jobTitle": title,
+            "worksFor": {
+                "@type": "LegalService",
+                "name": company.display_name,
+            },
+            "url": request.build_absolute_uri(request.path),
+        }
+        extra = {"member": member}
+        if member.photo:
+            image_url = request.build_absolute_uri(member.photo.url)
+            person_json_ld["image"] = image_url
+            extra["og_image_url"] = image_url
+        if member.email:
+            person_json_ld["email"] = member.email
+        extra["json_ld"] = mark_safe(
+            json.dumps(
+                [
+                    _firm_organization_json_ld(
+                        request, company, company.display_name
+                    ),
+                    person_json_ld,
+                ],
+                ensure_ascii=False,
+            )
+        )
+        return _firm_page_render(
+            request,
+            self.template_name,
+            "team",
+            f"{member.name} — {title}",
+            description,
+            extra,
+        )
+
+
 class FirmPracticeListView(View):
     template_name = "accounts/firm/practice_list.html"
 
@@ -1109,15 +1218,103 @@ class FirmFaqsView(View):
 class FirmContactView(View):
     template_name = "accounts/firm/contact.html"
 
-    def get(self, request):
+    def _context(self, request, extra=None):
         company = FirmCompanyInformation.get_solo()
-        return _firm_page_render(
-            request,
-            self.template_name,
-            "contact",
-            "Contact",
-            f"Contact {company.display_name} in {company.city or 'Kajiado'} — phone, email, WhatsApp, and chambers address.",
+        context = _public_firm_context(nav_active="contact", solid_nav=True)
+        context.update(
+            {
+                "page_title": "Contact",
+                "meta_description": (
+                    f"Contact {company.display_name} in "
+                    f"{company.city or 'Kajiado'} — phone, email, WhatsApp, "
+                    f"and chambers address."
+                ),
+                "canonical_url": request.build_absolute_uri(request.path),
+                "practice_area_options": list(
+                    FirmPracticeArea.objects.order_by("rank", "name").values_list(
+                        "name", flat=True
+                    )
+                ),
+                "enquiry_sent": request.GET.get("sent") == "1",
+            }
         )
+        if extra:
+            context.update(extra)
+        return context
+
+    def get(self, request):
+        return render(request, self.template_name, self._context(request))
+
+    def post(self, request):
+        # Honeypot — bots fill the hidden "website" field; pretend success.
+        if (request.POST.get("website") or "").strip():
+            return redirect(f"{request.path}?sent=1#enquire")
+
+        name = (request.POST.get("name") or "").strip()
+        email = (request.POST.get("email") or "").strip()
+        phone = (request.POST.get("phone") or "").strip()
+        practice_area = (request.POST.get("practice_area") or "").strip()
+        preferred = (request.POST.get("preferred_channel") or "").strip()
+        message_text = (request.POST.get("message") or "").strip()
+
+        errors = {}
+        if not name:
+            errors["name"] = "Please tell us your name."
+        if not message_text:
+            errors["message"] = "Please write a short message about your matter."
+        if not email and not phone:
+            errors["contact"] = (
+                "Leave an email address or phone number so we can respond."
+            )
+        elif email:
+            from django.core.validators import validate_email
+
+            try:
+                validate_email(email)
+            except ValidationError:
+                errors["email"] = "That email address doesn't look right."
+
+        valid_channels = {c.value for c in WebsiteEnquiry.PreferredChannel}
+        if preferred not in valid_channels:
+            preferred = WebsiteEnquiry.PreferredChannel.ANY
+
+        valid_areas = set(
+            FirmPracticeArea.objects.values_list("name", flat=True)
+        )
+        if practice_area and practice_area not in valid_areas:
+            practice_area = ""
+
+        if errors:
+            return render(
+                request,
+                self.template_name,
+                self._context(
+                    request,
+                    {
+                        "enquiry_errors": errors,
+                        "enquiry_values": {
+                            "name": name,
+                            "email": email,
+                            "phone": phone,
+                            "practice_area": practice_area,
+                            "preferred_channel": preferred,
+                            "message": message_text,
+                        },
+                    },
+                ),
+                status=400,
+            )
+
+        WebsiteEnquiry.objects.create(
+            name=name,
+            email=email,
+            phone=phone,
+            practice_area=practice_area,
+            preferred_channel=preferred,
+            message=message_text,
+            source_url=(request.POST.get("source_url") or request.path)[:300],
+        )
+        return redirect(f"{request.path}?sent=1#enquire")
 
 
 class FirmTermsView(View):
@@ -4268,6 +4465,7 @@ class RoleWorkspaceView(View):
     approve_pending_clients_template = "accounts/approve_pending_clients.html"
     client_profile_template = "accounts/client_profile.html"
     whatsapp_inbox_template = "accounts/whatsapp_inbox.html"
+    website_enquiries_template = "accounts/website_enquiries.html"
     register_client_template = "accounts/register_client.html"
     register_employee_template = "accounts/register_employee.html"
     onboarding_approvals_template = "accounts/onboarding_approvals.html"
@@ -4841,6 +5039,13 @@ class RoleWorkspaceView(View):
         elif resolved["leaf"] == "whatsapp-inbox":
             context.update(self._whatsapp_inbox_context(request, user, resolved))
             response = render(request, self.whatsapp_inbox_template, context)
+        elif resolved["leaf"] == "website-enquiries":
+            context.update(
+                self._website_enquiries_context(request, user, resolved)
+            )
+            response = render(
+                request, self.website_enquiries_template, context
+            )
         elif resolved["leaf"] == "matter-management":
             from .matter_analytics import (
                 build_matter_management_analytics,
@@ -5136,6 +5341,7 @@ class RoleWorkspaceView(View):
             "petty-cash-book",
             "client-accounts",
             "whatsapp-inbox",
+            "website-enquiries",
             "messages",
             "latest-news",
         }:
@@ -5185,6 +5391,9 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "whatsapp-inbox":
             return self._post_whatsapp_inbox(request, user, resolved)
+
+        if resolved["leaf"] == "website-enquiries":
+            return self._post_website_enquiries(request, user, resolved)
 
         if resolved["leaf"] == "messages":
             return self._post_messages(request, user, resolved)
@@ -6864,7 +7073,21 @@ class RoleWorkspaceView(View):
                 employee = get_object_or_404(Employee, pk=int(employee_id))
                 if action == "publish":
                     employee.website_published = True
-                    employee.save(update_fields=["website_published"])
+                    update_fields = ["website_published"]
+                    if not (employee.website_slug or "").strip():
+                        from django.utils.text import slugify
+
+                        base = (
+                            slugify(
+                                f"{employee.first_name} {employee.last_name}".strip()
+                            )[:160]
+                            or "advocate"
+                        )
+                        employee.website_slug = unique_public_profile_slug(
+                            base, exclude_employee_pk=employee.pk
+                        )
+                        update_fields.append("website_slug")
+                    employee.save(update_fields=update_fields)
                     messages.success(
                         request,
                         f"{employee.get_full_name()} will appear on the public website.",
@@ -8027,6 +8250,78 @@ class RoleWorkspaceView(View):
             context.update(self._whatsapp_inbox_context(request, user, resolved))
             response = render(request, self.whatsapp_inbox_template, context)
             return attach_greeting_cookie(response, request)
+
+    @staticmethod
+    def _website_enquiries_context(request, user, resolved):
+        from django.db.models import Count
+
+        status_filter = (request.GET.get("status") or "").strip()
+        enquiries = WebsiteEnquiry.objects.select_related("handled_by")
+        if status_filter in dict(WebsiteEnquiry.Status.choices):
+            enquiries = enquiries.filter(status=status_filter)
+        else:
+            status_filter = ""
+        counts = {key: 0 for key, _ in WebsiteEnquiry.Status.choices}
+        for row in WebsiteEnquiry.objects.values("status").annotate(
+            total=Count("id")
+        ):
+            counts[row["status"]] = row["total"]
+        return {
+            "enquiries": enquiries[:300],
+            "enquiry_status_filter": status_filter,
+            "enquiry_status_rows": [
+                {"key": key, "label": label, "count": counts[key]}
+                for key, label in WebsiteEnquiry.Status.choices
+            ],
+            "enquiries_url": user.workspace_url(*resolved["trail"]),
+            "enquiry_can_edit": workspace_activity_action_permitted(
+                user, _USER_MODULE, "website-enquiries", "edit"
+            ),
+        }
+
+    def _post_website_enquiries(self, request, user, resolved):
+        redirect_url = user.workspace_url(*resolved["trail"])
+        status_filter = (request.POST.get("status_filter") or "").strip()
+        if status_filter in dict(WebsiteEnquiry.Status.choices):
+            redirect_url = f"{redirect_url}?status={status_filter}"
+
+        enquiry_id = (request.POST.get("enquiry_id") or "").strip()
+        action = (request.POST.get("action") or "").strip()
+        enquiry = None
+        if enquiry_id.isdigit():
+            enquiry = WebsiteEnquiry.objects.filter(
+                pk=int(enquiry_id)
+            ).first()
+        if enquiry is None:
+            messages.error(request, "Enquiry not found.")
+            return redirect(redirect_url)
+
+        status_map = {
+            "mark-read": WebsiteEnquiry.Status.READ,
+            "mark-replied": WebsiteEnquiry.Status.REPLIED,
+            "archive": WebsiteEnquiry.Status.ARCHIVED,
+            "reopen": WebsiteEnquiry.Status.NEW,
+        }
+        if action == "save-note":
+            enquiry.internal_note = (
+                request.POST.get("internal_note") or ""
+            ).strip()[:2000]
+            enquiry.handled_by = user
+            enquiry.save(
+                update_fields=["internal_note", "handled_by", "updated_at"]
+            )
+            messages.success(request, "Internal note saved.")
+        elif action in status_map:
+            enquiry.status = status_map[action]
+            update_fields = ["status", "updated_at"]
+            if action == "mark-replied":
+                enquiry.handled_by = user
+                update_fields.append("handled_by")
+            enquiry.save(update_fields=update_fields)
+            messages.success(request, "Enquiry updated.")
+        else:
+            messages.error(request, "Unknown enquiry action.")
+        return redirect(redirect_url)
 
     @staticmethod
     def _requested_mailbox(user, request):
