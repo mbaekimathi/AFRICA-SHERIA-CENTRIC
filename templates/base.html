@@ -9,7 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=auth-identity-h-2">
+  {% block mode_init %}
+  <script>
+    (function(){try{var m=localStorage.getItem("sc-theme-mode");if(m!=="light"&&m!=="dark"){m=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.classList.add("mode-"+m);}catch(e){}})();
+  </script>
+  {% endblock %}
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=ql-auth-2">
   <link rel="stylesheet" href="{% static 'css/partnership-crest.css' %}?v=9">
   {% block extra_head %}{% endblock %}
 </head>
@@ -17,8 +22,24 @@
   {% block flash_messages %}
   {% include "partials/messages_toast.html" %}
   {% endblock %}
+  {% include "partials/icons.html" %}
+  {% block mode_toggle %}
+  <button
+    type="button"
+    class="mode-toggle"
+    data-mode-toggle
+    aria-pressed="false"
+    aria-label="Switch to dark mode"
+  >
+    <svg class="icon icon--sun" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-sun"/></svg>
+    <svg class="icon icon--moon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-moon"/></svg>
+  </button>
+  {% endblock %}
   {% block content %}{% endblock %}
   <script src="{% static 'js/toasts.js' %}" defer></script>
+  {% block mode_script %}
+  <script src="{% static 'js/theme-mode.js' %}?v=ql-mode-1" defer></script>
+  {% endblock %}
   <script src="{% static 'js/auth.js' %}" defer></script>
   <script src="{% static 'js/live-poll.js' %}" defer></script>
   <script src="{% static 'js/live-session.js' %}" defer></script>

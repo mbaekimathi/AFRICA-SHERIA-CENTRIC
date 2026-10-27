@@ -12,6 +12,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const notifTrigger = document.getElementById("notif-trigger");
   const notifDropdown = document.getElementById("notif-dropdown");
   const mqDesktop = window.matchMedia("(min-width: 980px)");
+  const mqDrawer = window.matchMedia("(max-width: 719px)");
+  const mobileMenuBtn = document.getElementById("mobilebar-menu");
+  const mobileAlertsBtn = document.getElementById("mobilebar-alerts");
+  const mobileBadge = document.getElementById("mobilebar-badge");
+  const topbarBadge = document.getElementById("notif-badge");
 
   const setSidebarOpen = (open) => {
     if (!sidebar) return;
@@ -21,6 +26,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (toggle) {
       toggle.setAttribute("aria-expanded", String(open));
       toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    }
+    if (mobileMenuBtn) {
+      mobileMenuBtn.setAttribute("aria-expanded", String(open));
+      mobileMenuBtn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+      mobileMenuBtn.classList.toggle("is-active", open);
     }
   };
 
@@ -60,13 +70,38 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  const onDesktopChange = () => {
-    if (mqDesktop.matches) setSidebarOpen(false);
-  };
-  if (typeof mqDesktop.addEventListener === "function") {
-    mqDesktop.addEventListener("change", onDesktopChange);
-  } else if (typeof mqDesktop.addListener === "function") {
-    mqDesktop.addListener(onDesktopChange);
+  const onBreakpointChange = () => setSidebarOpen(false);
+  [mqDesktop, mqDrawer].forEach((mq) => {
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", onBreakpointChange);
+    } else if (typeof mq.addListener === "function") {
+      mq.addListener(onBreakpointChange);
+    }
+  });
+
+  mobileMenuBtn?.addEventListener("click", () => {
+    setSidebarOpen(!sidebar.classList.contains("is-open"));
+    setProfileOpen(false);
+    setSessionOpen(false);
+    setNotifOpen(false);
+  });
+
+  mobileAlertsBtn?.addEventListener("click", () => {
+    document.getElementById("notif-trigger")?.click();
+  });
+
+  if (mobileBadge && topbarBadge && typeof MutationObserver === "function") {
+    const syncMobileBadge = () => {
+      mobileBadge.textContent = topbarBadge.textContent;
+      mobileBadge.hidden = topbarBadge.hidden;
+    };
+    new MutationObserver(syncMobileBadge).observe(topbarBadge, {
+      attributes: true,
+      attributeFilter: ["hidden"],
+      childList: true,
+      characterData: true,
+    });
+    syncMobileBadge();
   }
 
   profileTrigger?.addEventListener("click", (event) => {

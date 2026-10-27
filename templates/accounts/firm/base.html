@@ -3,6 +3,18 @@
 
 {% block body_class %}site-page site-page--firm{% endblock %}
 
+{% comment %}Firm site is light-only: the --fw-* palette isn't mode-mapped yet.
+Force light before paint and hide the global mode toggle.{% endcomment %}
+{% block mode_init %}
+<script>
+  document.documentElement.classList.add("mode-light");
+</script>
+{% endblock %}
+
+{% block mode_toggle %}{% endblock %}
+
+{% block mode_script %}{% endblock %}
+
 {% block extra_head %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

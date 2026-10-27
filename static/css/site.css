@@ -12,7 +12,7 @@
   --lp-ink: #ffffff;
   --lp-muted: #a8a3c7;
   --lp-muted-soft: #8b86ad;
-  --lp-line: rgba(255, 255, 255, 0.1);
+  --lp-line: color-mix(in srgb, var(--lp-ink) 10%, transparent);
   --lp-serif: "Playfair Display", "Libre Baskerville", Georgia, serif;
   --lp-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
   --lp-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -45,7 +45,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.85rem var(--lp-pad);
-  background: rgba(7, 7, 26, 0.78);
+  background: color-mix(in srgb, var(--lp-bg-deep) 78%, transparent);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border-bottom: 1px solid var(--lp-line);
@@ -75,7 +75,7 @@
   border-radius: 0.55rem;
   border: 1px solid var(--lp-gold);
   color: var(--lp-gold);
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--lp-ink) 3%, transparent);
 }
 
 .lp-nav__mark svg {
@@ -114,7 +114,7 @@
 
 .lp-nav__link:hover {
   color: var(--lp-ink);
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--lp-ink) 5%, transparent);
   text-decoration: none;
 }
 
@@ -151,7 +151,7 @@
   background:
     radial-gradient(900px 520px at 88% 8%, rgba(121, 112, 255, 0.12), transparent 55%),
     radial-gradient(640px 400px at 0% 100%, rgba(45, 212, 191, 0.06), transparent 50%),
-    linear-gradient(180deg, var(--lp-bg-deep) 0%, var(--lp-bg) 55%, #0e0e2a 100%);
+    linear-gradient(180deg, var(--lp-bg-deep) 0%, var(--lp-bg) 55%, var(--lp-bg-elevated) 100%);
 }
 
 .lp-hero__ambient {
@@ -190,8 +190,8 @@
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--lp-ink) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--lp-ink) 3%, transparent) 1px, transparent 1px);
   background-size: 64px 64px;
   mask-image: radial-gradient(ellipse at 30% 55%, black 15%, transparent 70%);
   opacity: 0.55;
@@ -231,12 +231,12 @@
   gap: 0;
   height: 100%;
   border-radius: 1.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid color-mix(in srgb, var(--lp-ink) 9%, transparent);
   background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.015) 42%, rgba(10, 10, 28, 0.5) 100%);
+    linear-gradient(165deg, color-mix(in srgb, var(--lp-ink) 4%, transparent) 0%, color-mix(in srgb, var(--lp-ink) 2%, transparent) 42%, color-mix(in srgb, var(--lp-bg-deep) 50%, transparent) 100%);
   box-shadow:
     0 24px 56px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    inset 0 1px 0 color-mix(in srgb, var(--lp-ink) 7%, transparent);
   backdrop-filter: blur(14px) saturate(1.15);
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
   overflow: hidden;
@@ -249,7 +249,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1.1rem 1.25rem 0.85rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid color-mix(in srgb, var(--lp-ink) 6%, transparent);
 }
 
 .lp-identity-card__eyebrow {
@@ -327,7 +327,7 @@
   min-height: 11rem;
   border-radius: 0.95rem;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid color-mix(in srgb, var(--lp-ink) 8%, transparent);
   background: var(--lp-bg-deep);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
 }
@@ -373,9 +373,9 @@
   padding: 2.75rem 1.1rem 1.05rem;
   background: linear-gradient(
     180deg,
-    rgba(7, 7, 26, 0) 0%,
-    rgba(7, 7, 26, 0.55) 38%,
-    rgba(7, 7, 26, 0.92) 100%
+    color-mix(in srgb, var(--lp-bg-deep) 0%, transparent) 0%,
+    color-mix(in srgb, var(--lp-bg-deep) 55%, transparent) 38%,
+    color-mix(in srgb, var(--lp-bg-deep) 92%, transparent) 100%
   );
   pointer-events: none;
 }
@@ -397,7 +397,7 @@
   font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.72);
+  color: color-mix(in srgb, var(--lp-ink) 72%, transparent);
 }
 
 /* —— Right: story column —— */
@@ -477,7 +477,7 @@
 .lp-hero__story-foot {
   margin-top: auto;
   padding-top: 0.35rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid color-mix(in srgb, var(--lp-ink) 7%, transparent);
 }
 
 @media (min-width: 900px) {
@@ -539,7 +539,7 @@ a.lp-brand:hover {
   place-items: center;
   border-radius: 0.8rem;
   border: 1.5px solid var(--lp-gold);
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--lp-ink) 3%, transparent);
   color: var(--lp-gold);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
@@ -662,7 +662,7 @@ a.lp-brand:hover {
   width: min(100%, 12rem);
   height: 2px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--lp-ink) 8%, transparent);
   overflow: hidden;
   animation: lpRise 0.7s var(--lp-ease) 0.1s both;
 }
@@ -821,11 +821,11 @@ a.lp-brand:hover {
 .lp-btn--ghost {
   color: #fff;
   background: transparent;
-  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  border: 1.5px solid color-mix(in srgb, var(--lp-ink) 55%, transparent);
 }
 
 .lp-btn--ghost:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: color-mix(in srgb, var(--lp-ink) 7%, transparent);
   border-color: #fff;
   transform: translateY(-2px);
   color: #fff;
@@ -908,13 +908,13 @@ a.lp-brand:hover {
   gap: 0.45rem;
   padding: 1.35rem 1.25rem;
   border-radius: 0.9rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--lp-ink) 3%, transparent);
   border: 1px solid var(--lp-line);
   transition: border-color 0.2s var(--lp-ease), background 0.2s var(--lp-ease), transform 0.2s var(--lp-ease), box-shadow 0.2s var(--lp-ease);
 }
 
 .lp-cap:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--lp-ink) 5%, transparent);
   border-color: rgba(121, 112, 255, 0.3);
   transform: translateY(-3px);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
@@ -1022,7 +1022,7 @@ a.lp-brand:hover {
   gap: 0.4rem;
   padding: 1.55rem 1.5rem;
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--lp-ink) 3%, transparent);
   border: 1px solid var(--lp-line);
   color: inherit;
   text-decoration: none;
@@ -1035,7 +1035,7 @@ a.lp-brand:hover {
 
 .lp-portal:hover {
   transform: translateY(-3px);
-  background: rgba(255, 255, 255, 0.055);
+  background: color-mix(in srgb, var(--lp-ink) 6%, transparent);
   border-color: rgba(121, 112, 255, 0.35);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
   color: inherit;
@@ -1044,7 +1044,7 @@ a.lp-brand:hover {
 
 .lp-portal--accent {
   border-color: rgba(121, 112, 255, 0.28);
-  background: linear-gradient(165deg, rgba(121, 112, 255, 0.12), rgba(255, 255, 255, 0.02));
+  background: linear-gradient(165deg, rgba(121, 112, 255, 0.12), color-mix(in srgb, var(--lp-ink) 2%, transparent));
 }
 
 .lp-portal__label {
@@ -1320,38 +1320,6 @@ a.lp-brand:hover {
   }
 }
 
-/* —— Client auth extras (shared with client login/signup) —— */
-.btn--secondary {
-  background: #fff;
-  color: var(--purple-800);
-  border: 1px solid var(--border);
-  box-shadow: 0 1px 2px rgba(12, 18, 25, 0.04);
-}
-
-.btn--secondary:hover {
-  background: var(--purple-50);
-  text-decoration: none;
-}
-
-.btn--google {
-  background: #fff;
-  color: #3c4043;
-  border: 1px solid #dadce0;
-  justify-content: center;
-  gap: 0.65rem;
-  box-shadow: 0 1px 2px rgba(12, 18, 25, 0.04);
-}
-
-.btn--google:hover:not(:disabled) {
-  background: #f8f9fa;
-  text-decoration: none;
-}
-
-.btn--google:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
 .btn--ghost {
   background: transparent;
   color: var(--purple-800);
@@ -1369,122 +1337,6 @@ a.lp-brand:hover {
   font-size: 0.9rem;
 }
 
-.auth-switch--muted {
-  margin-top: 0.35rem;
-  color: var(--ink-muted);
-  font-size: 0.9rem;
-}
-
-.auth-methods {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.auth-divider {
-  display: grid;
-  place-items: center;
-  position: relative;
-  margin: 0.15rem 0;
-  color: var(--ink-muted);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.auth-divider::before {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  top: 50%;
-  border-top: 1px solid var(--border);
-}
-
-.auth-divider span {
-  position: relative;
-  padding-inline: 0.75rem;
-  background: var(--surface);
-}
-
-.google-btn-wrap {
-  display: flex;
-  justify-content: center;
-  min-height: 2.75rem;
-}
-
-.manual-login {
-  display: grid;
-  gap: 0.9rem;
-  overflow: hidden;
-  transition: max-height 0.4s var(--ease), opacity 0.3s var(--ease), margin 0.3s var(--ease);
-  max-height: 28rem;
-  opacity: 1;
-}
-
-.manual-login.is-collapsed {
-  max-height: 0;
-  opacity: 0;
-  margin: 0;
-  pointer-events: none;
-}
-
-.email-with-provider {
-  position: relative;
-}
-
-.email-with-provider .form-input {
-  padding-left: 2.85rem;
-}
-
-.email-provider {
-  position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1.35rem;
-  height: 1.35rem;
-  color: var(--ink-muted);
-  transition: transform 0.25s ease, color 0.2s ease;
-  z-index: 2;
-  pointer-events: none;
-}
-
-.email-with-provider:focus-within .email-provider {
-  transform: translateY(-50%) scale(1.08);
-  color: var(--purple-600);
-}
-
-.email-provider .provider-icon {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.email-provider[data-provider="google"] .provider-icon--google,
-.email-provider[data-provider="yahoo"] .provider-icon--yahoo,
-.email-provider[data-provider="microsoft"] .provider-icon--microsoft,
-.email-provider[data-provider="email"] .provider-icon--email,
-.email-provider[data-provider="apple"] .provider-icon--email,
-.email-provider[data-provider="proton"] .provider-icon--email {
-  opacity: 1;
-}
-
-.provider-hints {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: 0.45rem;
-}
-
-.provider-chip {
-  display: inline-grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 7px;
-  background: #fff;
-  border: 1px solid var(--border);
-}
 
 .pending-status {
   padding: 1rem 1.1rem;
@@ -1545,7 +1397,7 @@ a.lp-brand:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 1px 2px rgba(12, 18, 25, 0.03);
 }
 
@@ -1575,15 +1427,34 @@ a.lp-brand:hover {
   word-break: break-word;
 }
 
-.auth-shell--single .avatar--lg {
-  width: 4.75rem;
-  height: 4.75rem;
-  font-size: 1.25rem;
-}
-
 @media (max-width: 520px) {
   .detail-list__row {
     grid-template-columns: 1fr;
     gap: 0.2rem;
   }
+}
+
+/* ============================================================
+   Light mode — the landing's dark editorial palette remapped.
+   --lp-ink flips to ink, canvas tokens flip to ivory/violet-tint,
+   accents darken slightly for AA on light surfaces.
+   White alphas above already resolve through var(--lp-ink) so
+   glass/tint overlays invert automatically.
+   ============================================================ */
+html.mode-light {
+  color-scheme: light;
+
+  --lp-bg: #f5f4fb;
+  --lp-bg-deep: #e8e6f4;
+  --lp-bg-elevated: #ffffff;
+  --lp-ink: #17172e;
+  --lp-muted: #4f4c6c;
+  --lp-muted-soft: #66627f;
+  --lp-line: rgba(23, 23, 46, 0.14);
+
+  --lp-violet: #6558f5;
+  --lp-violet-bright: #4f46d8;
+  --lp-teal: #0e9488;
+  --lp-orange: #c2570c;
+  --lp-gold: #a9852f;
 }

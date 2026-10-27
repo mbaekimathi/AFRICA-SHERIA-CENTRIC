@@ -974,6 +974,167 @@ textarea.form-input {
   font-size: 0.95rem;
 }
 
+/* —— Client auth extras (shared with client login/signup) —— */
+.btn--secondary {
+  background: var(--surface);
+  color: var(--purple-800);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(12, 18, 25, 0.04);
+}
+
+.btn--secondary:hover {
+  background: var(--purple-50);
+  text-decoration: none;
+}
+
+.btn--google {
+  background: #fff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+  justify-content: center;
+  gap: 0.65rem;
+  box-shadow: 0 1px 2px rgba(12, 18, 25, 0.04);
+}
+
+.btn--google:hover:not(:disabled) {
+  background: #f8f9fa;
+  text-decoration: none;
+}
+
+.btn--google:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn--google .provider-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex-shrink: 0;
+}
+
+.auth-switch--muted {
+  margin-top: 0.35rem;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.auth-methods {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.auth-divider {
+  display: grid;
+  place-items: center;
+  position: relative;
+  margin: 0.15rem 0;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.auth-divider::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  border-top: 1px solid var(--border);
+}
+
+.auth-divider span {
+  position: relative;
+  padding-inline: 0.75rem;
+  background: var(--surface);
+}
+
+.google-btn-wrap {
+  display: flex;
+  justify-content: center;
+  min-height: 2.75rem;
+}
+
+.manual-login {
+  display: grid;
+  gap: 0.9rem;
+  overflow: hidden;
+  transition: max-height 0.4s var(--ease), opacity 0.3s var(--ease), margin 0.3s var(--ease);
+  max-height: 28rem;
+  opacity: 1;
+}
+
+.manual-login.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.email-with-provider {
+  position: relative;
+}
+
+.email-with-provider .form-input {
+  padding-left: 2.85rem;
+}
+
+.email-provider {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--ink-muted);
+  transition: transform 0.25s ease, color 0.2s ease;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.email-with-provider:focus-within .email-provider {
+  transform: translateY(-50%) scale(1.08);
+  color: var(--purple-600);
+}
+
+.email-provider .provider-icon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.email-provider[data-provider="google"] .provider-icon--google,
+.email-provider[data-provider="yahoo"] .provider-icon--yahoo,
+.email-provider[data-provider="microsoft"] .provider-icon--microsoft,
+.email-provider[data-provider="email"] .provider-icon--email,
+.email-provider[data-provider="apple"] .provider-icon--email,
+.email-provider[data-provider="proton"] .provider-icon--email {
+  opacity: 1;
+}
+
+.provider-hints {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.provider-chip {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.auth-shell--single .avatar--lg {
+  width: 4.75rem;
+  height: 4.75rem;
+  font-size: 1.25rem;
+}
+
 .toast-stack {
   position: fixed;
   top: max(0.75rem, env(safe-area-inset-top));
@@ -1763,5 +1924,109 @@ textarea.form-input {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ============================================================
+   Dark mode — remap the :root tokens; every component follows.
+   The .auth-brand panel stays dark in both modes (brand anchor).
+   ============================================================ */
+html.mode-dark {
+  color-scheme: dark;
+
+  --ink: #eceaf8;
+  --ink-muted: #a19cc9;
+  --surface: #171731;
+  --surface-soft: rgba(23, 23, 49, 0.92);
+  --danger: #f39b8b;
+  --danger-bg: #311417;
+  --success: #63c98f;
+  --purple-50: #0d0d22;   /* page canvas role */
+  --purple-100: #1b1b3c;
+  --purple-200: #3b3976;
+  --purple-800: #d4d1ff;  /* deep-navy text role -> lilac in dark */
+  --border: rgba(168, 163, 255, 0.18);
+  --shadow:
+    0 1px 2px rgba(0, 0, 0, 0.42),
+    0 12px 32px rgba(0, 0, 0, 0.44);
+  --shadow-lg:
+    0 8px 16px rgba(0, 0, 0, 0.4),
+    0 24px 48px rgba(0, 0, 0, 0.5);
+}
+
+html.mode-dark body {
+  background: var(--purple-50);
+}
+
+html.mode-dark .auth-page {
+  background:
+    radial-gradient(900px 480px at 0% -5%, rgba(121, 112, 255, 0.14), transparent 55%),
+    radial-gradient(700px 420px at 100% 100%, rgba(45, 212, 191, 0.07), transparent 50%),
+    linear-gradient(165deg, #0b0b20 0%, #12122c 48%, #0d0d22 100%);
+}
+
+/* ============================================================
+   .mode-toggle — floating light/dark switch (auth + landing).
+   Sun shows in light mode, moon in dark; swap animation is
+   reduced-motion gated.
+   ============================================================ */
+.mode-toggle {
+  position: fixed;
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  display: inline-grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft, var(--surface));
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition:
+    border-color 0.18s var(--ease),
+    transform 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+
+.mode-toggle:hover {
+  border-color: var(--purple-500, var(--accent));
+  transform: translateY(-1px);
+}
+
+.mode-toggle:focus-visible {
+  outline: 2px solid var(--purple-500, var(--accent));
+  outline-offset: 2px;
+}
+
+.mode-toggle .icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+}
+
+.mode-toggle .icon--moon { display: none; }
+html.mode-dark .mode-toggle .icon--sun { display: none; }
+html.mode-dark .mode-toggle .icon--moon { display: inline-block; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .mode-toggle .icon {
+    animation: mode-icon-in 200ms var(--ease-out, ease-out);
+  }
+
+  @keyframes mode-icon-in {
+    from {
+      opacity: 0;
+      transform: rotate(-50deg) scale(0.6);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
   }
 }

@@ -1,0 +1,273 @@
+/* ============================================================
+   tokens.css — shared design foundation (loads first)
+   Scales that were previously ad-hoc + new semantic color roles
+   + the .icon / .skeleton primitives. Theme *values* still live
+   in app.css (.theme-*) and themes-dark.css (html.mode-dark).
+   ============================================================ */
+
+:root {
+  /* — Spacing scale (4px rhythm) — */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+  --space-10: 4rem;
+
+  /* — Radius — */
+  --radius-xs: 6px;
+  --radius-pill: 999px;
+
+  /* — z-index ladder (matches values already in use) — */
+  --z-base: 0;
+  --z-raised: 2;
+  --z-sticky: 20;
+  --z-backdrop: 30;
+  --z-nav: 40;
+  --z-overlay: 60;
+  --z-modal: 70;
+  --z-toast: 80;
+
+  /* — Motion — */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --dur-slower: 480ms;
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  /* --ease and --ease-out already defined in app.css :root */
+
+  /* — Icon sizes — */
+  --icon-sm: 1rem;
+  --icon-md: 1.25rem;
+  --icon-lg: 1.5rem;
+}
+
+/* — New semantic color roles (light defaults; dark remaps live
+     in themes-dark.css, themed per-theme values in app.css) — */
+body.workspace {
+  --surface-raised: var(--surface);
+  --hairline: var(--line);
+  --accent-ink: #ffffff;
+  /* Button hover bg: for dark accents this is the darker --accent-strong;
+     light-accent themes override it with a slightly-darkened --accent so
+     the (dark) --accent-ink still clears AA. */
+  --accent-hover: var(--accent-strong);
+
+  --info: #175cd3;
+  --info-bg: #eff4ff;
+  --info-line: color-mix(in srgb, var(--info) 20%, transparent);
+  --warning-bg: #fffaeb;
+  --warning-line: color-mix(in srgb, var(--warning) 24%, transparent);
+
+  /* Text drawn on a FILLED semantic color (solid chips/badges) */
+  --success-ink: #ffffff;
+  --danger-ink: #ffffff;
+  --warning-ink: #ffffff;
+  --info-ink: #ffffff;
+
+  /* Glass surfaces: sticky chrome, overlays */
+  --glass-bg: color-mix(in srgb, var(--surface) 86%, transparent);
+  --glass-line: var(--hairline);
+
+  /* Overlay scrim (drawer backdrops, dialog ::backdrop) — always dark */
+  --scrim: rgba(16, 14, 24, 0.5);
+
+  /* Skeleton shimmer */
+  --skeleton-base: color-mix(in srgb, var(--ink) 8%, var(--surface));
+  --skeleton-shine: color-mix(in srgb, var(--ink) 3%, var(--surface));
+
+  /* Categorical hues (party types, icon rotations, legend chips).
+     Text is the token; tints are derived: color-mix(--cat-N 14%, --surface). */
+  --cat-1: #0b5f3a;  /* green   */
+  --cat-2: #8a1f1f;  /* red     */
+  --cat-3: #0f4f8a;  /* blue    */
+  --cat-4: #7a3b00;  /* amber   */
+  --cat-5: #3d2a8a;  /* violet  */
+  --cat-6: #0f5c6b;  /* teal    */
+  --cat-7: #7a1848;  /* pink    */
+  --cat-8: #4d560f;  /* olive   */
+  --cat-9: #5a3d12;  /* brown   */
+  --cat-10: #3d4654; /* slate   */
+}
+
+/* ============================================================
+   .workspace--portal — client portal: same chrome + components,
+   tuned tokens only (Phase 4). Softer geometry, quieter hairlines,
+   a whisper of accent warmth on the canvas, gentler elevation.
+   Density vars only retune the comfortable default so the user's
+   compact/airy preference still wins.
+   ============================================================ */
+body.workspace--portal {
+  --radius-sm: 10px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --radius-xs: 6px;
+
+  /* quieter separation */
+  --hairline: color-mix(in srgb, var(--ink) 9%, transparent);
+
+  /* whisper of warmth — blend the theme's own surface-tint
+     into the canvas so each theme keeps its undertone */
+  --page-bg: color-mix(in srgb, var(--surface-tint) 60%, var(--surface));
+
+  /* gentler elevation */
+  --shadow-md: 0 4px 10px color-mix(in srgb, var(--ink) 4%, transparent),
+    0 14px 32px color-mix(in srgb, var(--ink) 7%, transparent);
+  --shadow-lg: 0 8px 18px color-mix(in srgb, var(--ink) 5%, transparent),
+    0 26px 54px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+body.workspace--portal.density-comfortable {
+  --density-pad: 1.15rem;
+  --density-gap: 1.15rem;
+  --density-content: clamp(1.1rem, 2.6vw, 1.9rem);
+  --density-row-y: 0.8rem;
+  --density-nav-y: 0.58rem;
+}
+
+html.mode-dark body.workspace--portal {
+  --hairline: color-mix(in srgb, var(--ink) 6%, transparent);
+  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.42),
+    0 14px 32px rgba(0, 0, 0, 0.46);
+  --shadow-lg: 0 8px 18px rgba(0, 0, 0, 0.4),
+    0 26px 54px rgba(0, 0, 0, 0.5);
+}
+
+html.mode-dark body.workspace {
+  --success-ink: #10241a;
+  --danger-ink: #2a1512;
+  --warning-ink: #2a1f10;
+  --info-ink: #101f2e;
+
+  --cat-1: #7adba8;
+  --cat-2: #f2a0a0;
+  --cat-3: #93c8f5;
+  --cat-4: #f0b878;
+  --cat-5: #b9acf5;
+  --cat-6: #7fd4e0;
+  --cat-7: #f2a0cd;
+  --cat-8: #c8d47f;
+  --cat-9: #dbb98a;
+  --cat-10: #a8b3c2;
+
+  --scrim: rgba(4, 6, 10, 0.62);
+}
+
+/* — Mode transition: enabled only after first paint (JS adds
+     .mode-anim) so theme changes ease instead of snapping — */
+@media (prefers-reduced-motion: no-preference) {
+  html.mode-anim body.workspace,
+  html.mode-anim body.workspace * {
+    transition-property: background-color, border-color, color, box-shadow;
+    transition-duration: var(--dur-base);
+  }
+}
+
+/* — Baseline focus ring (components may tighten it) — */
+body.workspace :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+body.workspace :focus:not(:focus-visible) {
+  outline: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent, #7970ff) 22%, transparent);
+}
+
+/* ============================================================
+   .icon — the single flat-stroke icon primitive.
+   Sprite symbols are drawn on a 24px grid, currentColor, ~1.7
+   stroke, round caps — same voice as the old ICON_* set.
+   ============================================================ */
+.icon {
+  width: var(--icon-md);
+  height: var(--icon-md);
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: -0.2em;
+  color: inherit;
+}
+.icon--sm { width: var(--icon-sm); height: var(--icon-sm); }
+.icon--lg { width: var(--icon-lg); height: var(--icon-lg); }
+.icon--xl { width: 2rem; height: 2rem; }
+.icon--stroke-bold { stroke-width: 2.1; }
+svg.icon { fill: none; }
+
+/* ============================================================
+   .skeleton — shimmer placeholder for loading regions
+   ============================================================ */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--skeleton-base, #ececec);
+  color: transparent;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    var(--skeleton-shine, #f8f8f8) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.6s var(--ease-in-out) infinite;
+}
+.skeleton--line {
+  height: 0.8em;
+  margin-block: 0.3em;
+}
+.skeleton--line:last-child { width: 62%; }
+.skeleton--avatar {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+}
+.skeleton--btn {
+  width: 6.5rem;
+  height: 2.35rem;
+  border-radius: var(--radius, 10px);
+}
+.skeleton--card {
+  width: 100%;
+  min-height: 7.5rem;
+  border-radius: var(--radius-lg, 14px);
+}
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; }
+}
+
+/* ============================================================
+   .mode-toggle — light/dark switch in the topbar
+   ============================================================ */
+.mode-toggle .icon--moon { display: none; }
+html.mode-dark .mode-toggle .icon--sun { display: none; }
+html.mode-dark .mode-toggle .icon--moon { display: inline-block; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .mode-toggle .icon {
+    animation: mode-icon-in var(--dur-base, 200ms) var(--ease-out, ease-out);
+  }
+
+  @keyframes mode-icon-in {
+    from {
+      opacity: 0;
+      transform: rotate(-50deg) scale(0.6);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
+  }
+}

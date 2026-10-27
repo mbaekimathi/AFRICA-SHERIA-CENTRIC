@@ -1,11 +1,8 @@
-{# Renders a soft 3D clay icon. Expects: icon, optional tone (1-7), size (sm|lg), float #}
+{% comment %}Former clay icon — now renders the shared flat icon tile.
+Expects: icon, optional tone (1-7), size (sm|lg), float, extra_class{% endcomment %}
 <span
-  class="icon-3d icon-3d--{{ icon|default:'folder' }}{% if tone %} icon-3d--{{ tone }}{% endif %}{% if size %} icon-3d--{{ size }}{% endif %}{% if float %} icon-3d--float{% endif %}{% if extra_class %} {{ extra_class }}{% endif %}"
+  class="icon-tile icon-tile--{{ tone|default:1 }}{% if size %} icon-tile--{{ size }}{% endif %}{% if float %} icon-tile--float{% endif %}{% if extra_class %} {{ extra_class }}{% endif %}"
   aria-hidden="true"
 >
-  <span class="icon-3d__shadow"></span>
-  <span class="icon-3d__plate">
-    <span class="icon-3d__gloss"></span>
-    {% include "accounts/partials/icon_3d_glyph.html" with icon=icon %}
-  </span>
+  <svg class="icon-flat__glyph" aria-hidden="true"><use href="#i-{{ icon|default:'folder' }}"/></svg>
 </span>

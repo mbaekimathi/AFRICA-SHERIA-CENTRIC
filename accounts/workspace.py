@@ -260,94 +260,77 @@ def workspace_reverse(role_slug: str, *pages: str) -> str:
 
 ICON_HOME = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-home"/>'
     "</svg>"
 )
 ICON_BACK = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M15 18 9 12l6-6" '
-    'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-back"/>'
     "</svg>"
 )
 ICON_USERS = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'
-    'M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-users"/>'
     "</svg>"
 )
 ICON_BRIEF = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M10 6V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2M4 8h16v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-brief"/>'
     "</svg>"
 )
 ICON_DOC = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-doc"/>'
     "</svg>"
 )
 ICON_SCALE = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M12 3v18M5 8l7-4 7 4M5 8c0 3 3 5 7 5s7-2 7-5M8 21h8" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-scale"/>'
     "</svg>"
 )
 ICON_SETTINGS = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z'
-    'M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9c.2.6.7 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" '
-    'stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-settings"/>'
     "</svg>"
 )
 ICON_LOGOUT = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-logout"/>'
     "</svg>"
 )
 ICON_BELL = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-bell"/>'
     "</svg>"
 )
 ICON_CALENDAR = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M8 2v3M16 2v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-calendar"/>'
     "</svg>"
 )
 ICON_TASK = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-task"/>'
     "</svg>"
 )
 ICON_MESSAGE = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-message"/>'
     "</svg>"
 )
 ICON_TOOLS = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18l3 3 6.1-6.1a4 4 0 0 0 5.6-5.6L15 12l-2.7-2.7 2.4-3z" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-tools"/>'
     "</svg>"
 )
 ICON_FINANCE = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-finance"/>'
     "</svg>"
 )
 ICON_LEARN = (
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-    '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 4v15.5M6.5 4H20v13H6.5A2.5 2.5 0 0 0 4 19.5" '
-    'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    '<use href="#i-learn"/>'
     "</svg>"
 )
 
@@ -1371,8 +1354,9 @@ def infer_activity_permission_actions(
         return ("view", "allocate", "edit")
     if activity_slug == "employee-communications":
         return ("view", "communicate", "edit")
+    if activity_slug == "email-communications":
+        return ("view", "communicate")
     if activity_slug in {
-        "email-communications",
         "whatsapp-communications",
         "sms-communications",
     }:

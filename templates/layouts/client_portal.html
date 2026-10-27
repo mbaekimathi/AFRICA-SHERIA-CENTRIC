@@ -9,19 +9,27 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="{{ google_fonts_href|default:'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap' }}" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=gen-invoice-tax-1">
-  <link rel="stylesheet" href="{% static 'css/motion.css' %}?v=metric-hover-1">
-  <link rel="stylesheet" href="{% static 'css/chrome.css' %}?v=client-portal-chrome-2">
+  <script>
+    (function(){try{var m=localStorage.getItem("sc-theme-mode");if(m!=="light"&&m!=="dark"){m=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.classList.add("mode-"+m);}catch(e){}})();
+  </script>
+  <link rel="stylesheet" href="{% static 'css/tokens.css' %}?v=ql-qa-1">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=ql-qa-1">
+  <link rel="stylesheet" href="{% static 'css/motion.css' %}?v=ql-icons-1">
+  <link rel="stylesheet" href="{% static 'css/themes-dark.css' %}?v=ql-dark-1">
+  <link rel="stylesheet" href="{% static 'css/chrome.css' %}?v=ql-components-1">
   {% block extra_head %}{% endblock %}
 </head>
 <body
-  class="workspace theme-{{ theme|default:'product' }} font-{{ ui_font|default:'plex' }} density-{{ ui_density|default:'comfortable' }}"
+  class="workspace workspace--portal theme-{{ theme|default:'product' }} font-{{ ui_font|default:'plex' }} density-{{ ui_density|default:'comfortable' }}"
   data-live-status-url="{% url 'accounts:client_status' %}"
   data-live-expected-status="{{ client.status }}"
 >
   {% block flash_messages %}
   {% include "partials/messages_toast.html" %}
   {% endblock %}
+  {% include "partials/icons.html" %}
+
+  <a class="skip-link" href="#main-content">Skip to main content</a>
 
   {% if staff_impersonating %}
   <div class="staff-portal-banner" role="status">
@@ -147,13 +155,23 @@
       <header class="topbar">
         <div class="topbar__left">
           <button type="button" class="icon-btn" id="sidebar-toggle" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg>
           </button>
           <div class="topbar__titles">
             <h1 class="topbar__title">{% block page_heading %}{{ page_title }}{% endblock %}</h1>
           </div>
         </div>
         <div class="topbar__right">
+          <button
+            type="button"
+            class="icon-btn mode-toggle"
+            data-mode-toggle
+            aria-pressed="false"
+            aria-label="Switch to dark mode"
+          >
+            <svg class="icon icon--sun" aria-hidden="true"><use href="#i-sun"/></svg>
+            <svg class="icon icon--moon" aria-hidden="true"><use href="#i-moon"/></svg>
+          </button>
           {% if client.status == "active" %}
           <div
             class="notif-menu"
@@ -177,7 +195,7 @@
             >
               <span class="notif-trigger__bell" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-                  <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                  <use href="#i-bell"/>
                 </svg>
               </span>
               <span class="notif-badge" id="notif-badge" {% if not notification_unread_count %}hidden{% endif %}>{{ notification_unread_count|default:0 }}</span>
@@ -201,7 +219,7 @@
             <div class="topbar-pill topbar-pill--date">
               <span class="topbar-pill__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
-                  <path d="M7 3.5v3M17 3.5v3M4.5 9.5h15M6 6.5h12a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 18 20.5H6A1.5 1.5 0 0 1 4.5 19V8A1.5 1.5 0 0 1 6 6.5Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  <use href="#i-calendar"/>
                 </svg>
               </span>
               <span id="live-date">—</span>
@@ -226,8 +244,7 @@
               >
                 <span class="topbar-pill__icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="8.25" stroke="currentColor" stroke-width="1.6"/>
-                    <path d="M12 8v4.25L14.75 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    <use href="#i-clock"/>
                   </svg>
                 </span>
                 <span class="session-trigger__time" id="live-time">—</span>
@@ -263,7 +280,7 @@
             <div class="topbar-pill topbar-pill--firm">
               <span class="topbar-pill__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
-                  <path d="M4.5 20.5h15M6.5 20.5V8.5l5-4 5 4v12M10 20.5v-4h4v4M10 11h.01M14 11h.01M10 14.5h.01M14 14.5h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  <use href="#i-building"/>
                 </svg>
               </span>
               <span>{{ firm_name }}</span>
@@ -295,7 +312,7 @@
                 <span class="profile-trigger__meta">{{ role_label }}</span>
               </span>
               <svg class="profile-caret" viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
-                <path d="M5 7.5 10 12.5 15 7.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                <use href="#i-caret"/>
               </svg>
             </button>
 
@@ -332,7 +349,7 @@
         </div>
       </header>
 
-      <main class="workspace-content">
+      <main class="workspace-content" id="main-content" tabindex="-1">
         {% block content %}{% endblock %}
       </main>
 
@@ -342,11 +359,51 @@
           <p>Confidential. For authorised clients only. © {% now "Y" %}</p>
         </div>
       </footer>
+
+      <nav class="mobile-bar" aria-label="Quick navigation">
+        <a
+          href="{{ dashboard_url }}"
+          class="mobile-bar__item {% if dashboard_active %}is-active{% endif %}"
+        >
+          <span class="mobile-bar__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>
+          </span>
+          <span class="mobile-bar__label">Home</span>
+        </a>
+        {% if client.status == "active" %}
+        <button
+          type="button"
+          class="mobile-bar__item"
+          id="mobilebar-alerts"
+          aria-label="{% if notification_unread_count %}Notifications, {{ notification_unread_count }} unread{% else %}Notifications{% endif %}"
+        >
+          <span class="mobile-bar__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><use href="#i-bell"/></svg>
+            <span class="mobile-bar__badge" id="mobilebar-badge" {% if not notification_unread_count %}hidden{% endif %}>{{ notification_unread_count|default:0 }}</span>
+          </span>
+          <span class="mobile-bar__label">Alerts</span>
+        </button>
+        {% endif %}
+        <button
+          type="button"
+          class="mobile-bar__item"
+          id="mobilebar-menu"
+          aria-controls="sidebar"
+          aria-expanded="false"
+          aria-label="Open menu"
+        >
+          <span class="mobile-bar__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><use href="#i-menu"/></svg>
+          </span>
+          <span class="mobile-bar__label">Menu</span>
+        </button>
+      </nav>
     </div>
   </div>
 
   <script src="{% static 'js/toasts.js' %}" defer></script>
-  <script src="{% static 'js/app.js' %}" defer></script>
+  <script src="{% static 'js/theme-mode.js' %}?v=ql-mode-1" defer></script>
+  <script src="{% static 'js/app.js' %}?v=ql-shell-1" defer></script>
   <script src="{% static 'js/live-poll.js' %}" defer></script>
   <script src="{% static 'js/live-session.js' %}" defer></script>
   <script src="{% static 'js/live-notifications.js' %}?v=poll-throttle-2" defer></script>
