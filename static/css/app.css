@@ -10290,6 +10290,48 @@ dialog.workspace-modal[open] {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+/* Mail folder tabs on the employee email log */
+.mail-folders {
+  padding: 0;
+  border-bottom: 0;
+  margin-bottom: 0.35rem;
+}
+
+a.settings-tab,
+.mail-folders .settings-tab {
+  text-decoration: none;
+}
+
+.mail-folders .settings-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.mail-folders .settings-tab.is-active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: none;
+}
+
+.mail-folders__count {
+  min-width: 1.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface-tint);
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.mail-folders .settings-tab.is-active .mail-folders__count {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent-strong);
+}
+
 .settings-panels {
   padding: 1.1rem 1.15rem 1.25rem;
 }

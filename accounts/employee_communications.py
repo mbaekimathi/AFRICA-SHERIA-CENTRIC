@@ -44,6 +44,16 @@ CHANNEL_PAGES = {
 CHANNEL_PAGE_SLUGS = frozenset(CHANNEL_PAGES)
 _CHANNELS_BY_KEY = {meta["key"]: meta for meta in CHANNEL_PAGES.values()}
 
+# Folder tabs on the email communications log — drafts are read live from
+# the employee's own work mailbox because they are never logged as records.
+EMAIL_LOG_FOLDERS = (
+    {"key": "all", "label": "All mail"},
+    {"key": "inbox", "label": "Inbox"},
+    {"key": "sent", "label": "Sent"},
+    {"key": "drafts", "label": "Drafts"},
+)
+EMAIL_LOG_FOLDER_KEYS = frozenset(item["key"] for item in EMAIL_LOG_FOLDERS)
+
 
 def channel_page(slug: str) -> dict | None:
     """Channel metadata for an Employee Communications page slug."""
@@ -321,7 +331,9 @@ def _communication_row(record, *, viewer=None) -> dict:
     }
 
 
-def employee_messages(channel_key: str, employee, *, search: str = "") -> list[dict]:
+def employee_messages(
+    channel_key: str, employee, *, search: str = "", folder: str = "all"
+) -> list[dict]:
     """Messages this employee dealt with on a channel, newest first."""
     term = (search or "").strip()
     if channel_key == "whatsapp":
@@ -341,7 +353,14 @@ def employee_messages(channel_key: str, employee, *, search: str = "") -> list[d
 
     queryset = EmployeeCommunication.objects.filter(channel=channel_key)
     if channel_key == "email":
-        queryset = queryset.filter(Q(sender=employee) | Q(to_employee=employee))
+        if folder == "inbox":
+            queryset = queryset.filter(to_employee=employee).exclude(
+                sender=employee
+            )
+        elif folder == "sent":
+            queryset = queryset.filter(sender=employee)
+        else:
+            queryset = queryset.filter(Q(sender=employee) | Q(to_employee=employee))
     else:
         queryset = queryset.filter(sender=employee)
     queryset = queryset.select_related("sender", "to_client", "to_employee").order_by(
@@ -362,6 +381,36 @@ def employee_messages(channel_key: str, employee, *, search: str = "") -> list[d
             | Q(sender__last_name__icontains=term)
         )
     return [_communication_row(record, viewer=employee) for record in queryset]
+
+
+def employee_email_folder_counts(employee) -> dict:
+    """Row counts behind each email-log folder tab (drafts are live-only)."""
+    base = EmployeeCommunication.objects.filter(
+        channel=EmployeeCommunication.Channel.EMAIL
+    )
+    inbox = base.filter(to_employee=employee).exclude(sender=employee)
+    sent = base.filter(sender=employee)
+    both = base.filter(Q(sender=employee) | Q(to_employee=employee))
+    return {"all": both.count(), "inbox": inbox.count(), "sent": sent.count()}
+
+
+def employee_mailbox_drafts(employee, *, search: str = "", limit: int = 60):
+    """Live Drafts folder from the employee's own connected work mailbox.
+
+    Returns ``(summaries, error)`` — ``error`` is ``"not-connected"`` when the
+    employee has no mailbox credentials, or a message when IMAP failed.
+    """
+    from .work_mailbox import WorkMailbox, WorkMailboxError
+
+    if not employee.mailbox_connected:
+        return [], "not-connected"
+    try:
+        summaries = WorkMailbox(employee).list_messages(
+            "drafts", limit=limit, search=search
+        )
+    except WorkMailboxError as exc:
+        return [], str(exc)
+    return summaries, ""
 
 
 def save_communication_attachments(record, attachments) -> None:

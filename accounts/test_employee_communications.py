@@ -433,6 +433,70 @@ class EmployeeCommunicationsPagesTests(TestCase):
         self.assertContains(detail, "Attached is the weekly matter report.")
         self.assertContains(detail, self.colleague.work_email)
 
+    def test_email_log_folders_split_sent_and_received(self):
+        EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Outbound note",
+            body="Sent to the client.",
+        )
+        EmployeeCommunication.objects.create(
+            sender=self.user,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.user.work_email,
+            to_employee=self.colleague,
+            to_address=self.colleague.work_email,
+            subject="Inbound brief",
+            body="Sent to the colleague.",
+        )
+        log_url = self.channel_url(
+            "email-communications", str(self.colleague.pk)
+        )
+
+        everything = self.http.get(log_url)
+        self.assertContains(everything, "Outbound note")
+        self.assertContains(everything, "Inbound brief")
+
+        sent = self.http.get(f"{log_url}?folder=sent")
+        self.assertContains(sent, "Outbound note")
+        self.assertNotContains(sent, "Inbound brief")
+
+        inbox = self.http.get(f"{log_url}?folder=inbox")
+        self.assertContains(inbox, "Inbound brief")
+        self.assertNotContains(inbox, "Outbound note")
+
+    def test_email_log_drafts_folder_reads_the_employee_mailbox(self):
+        log_url = self.channel_url(
+            "email-communications", str(self.colleague.pk)
+        )
+        summary = SimpleNamespace(
+            short_date="09:41",
+            to_addrs="client@example.com",
+            subject="Draft: engagement letter",
+            snippet="Nearly ready to send.",
+        )
+        with patch(
+            "accounts.views.employee_mailbox_drafts",
+            return_value=([summary], ""),
+        ) as drafts:
+            response = self.http.get(f"{log_url}?folder=drafts")
+        self.assertEqual(response.status_code, 200)
+        drafts.assert_called_once()
+        self.assertContains(response, "Draft: engagement letter")
+        self.assertContains(response, "client@example.com")
+        self.assertContains(response, "live from")
+
+    def test_email_log_drafts_folder_without_a_mailbox(self):
+        log_url = self.channel_url(
+            "email-communications", str(self.colleague.pk)
+        )
+        response = self.http.get(f"{log_url}?folder=drafts")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "no connected work mailbox")
+
     def test_detail_lists_attachments_with_view_and_download_links(self):
         record = EmployeeCommunication.objects.create(
             sender=self.colleague,

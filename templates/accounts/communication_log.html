@@ -25,18 +25,51 @@
     </div>
   </header>
 
+  {% if channel.key == "email" %}
+  <nav class="settings-tabs mail-folders" aria-label="Mail folders">
+    {% for folder in log_folders %}
+    <a
+      class="settings-tab{% if active_folder == folder.key %} is-active{% endif %}"
+      href="?folder={{ folder.key }}{% if log_search %}&amp;q={{ log_search|urlencode }}{% endif %}"
+      {% if active_folder == folder.key %}aria-current="page"{% endif %}
+    >
+      {{ folder.label }}
+      {% if folder.key == "drafts" %}
+        {% if active_folder == "drafts" and not drafts_error %}
+        <span class="mail-folders__count">{{ draft_rows|length }}</span>
+        {% endif %}
+      {% else %}
+        <span class="mail-folders__count">{{ folder.count }}</span>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
   <section class="panel">
     <div class="panel__head">
       <h3>
-        {% if channel.key == "email" %}Email activity{% else %}Sent {{ channel.noun_plural }}{% endif %}
+        {% if channel.key == "email" %}
+          {% for folder in log_folders %}{% if folder.key == active_folder %}{{ folder.label }}{% endif %}{% endfor %}
+        {% else %}
+          Sent {{ channel.noun_plural }}
+        {% endif %}
       </h3>
       <p class="panel__hint">
-        {{ messages_log|length }} shown
-        {% if log_employee.work_email %}· {{ log_employee.work_email }}{% endif %}
+        {% if active_folder == "drafts" %}
+          {{ draft_rows|length }} shown · live from
+          {{ log_employee.work_email|default:"the mailbox" }}
+        {% else %}
+          {{ messages_log|length }} shown
+          {% if log_employee.work_email %}· {{ log_employee.work_email }}{% endif %}
+        {% endif %}
       </p>
     </div>
     <div class="panel__body">
       <form method="get" class="workspace-form">
+        {% if channel.key == "email" %}
+        <input type="hidden" name="folder" value="{{ active_folder }}">
+        {% endif %}
         <div class="form-field">
           <label for="id_log_search">Search messages</label>
           <input
@@ -51,19 +84,75 @@
         <div class="form-actions form-actions--start">
           <button type="submit" class="btn btn--ghost btn--inline">Search</button>
           {% if log_search %}
-          <a class="btn btn--ghost btn--inline" href="?">Clear</a>
+          <a class="btn btn--ghost btn--inline" href="?{% if channel.key == "email" %}folder={{ active_folder }}{% endif %}">Clear</a>
           {% endif %}
         </div>
       </form>
     </div>
     <div class="panel__body panel__body--table">
-      {% if messages_log %}
+      {% if active_folder == "drafts" %}
+      {% if draft_rows %}
       <div class="data-table-wrap">
         <table class="data-table">
           <thead>
             <tr>
               <th scope="col">When</th>
-              {% if channel.key == "email" %}
+              <th scope="col">To</th>
+              <th scope="col">Draft</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in draft_rows %}
+            <tr>
+              <td><span class="reminder-when">{{ item.short_date }}</span></td>
+              <td>
+                <div class="person-cell__text">
+                  <span class="person-cell__name">{{ item.to_addrs|default:"—" }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="person-cell__text">
+                  <span class="person-cell__name">{{ item.subject }}</span>
+                  {% if item.snippet %}
+                  <span class="person-cell__meta">{{ item.snippet }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <span class="status-pill status-pill--submitted">Draft</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <p class="empty-state__title">
+          {% if drafts_error %}Drafts unavailable{% else %}No drafts{% endif %}
+        </p>
+        <p class="empty-state__copy">
+          {% if drafts_error == "not-connected" %}
+          {{ log_employee.get_full_name }} has no connected work mailbox, so
+          drafts cannot be read.
+          {% elif drafts_error %}
+          {{ drafts_error }}
+          {% elif log_search %}
+          No drafts match “{{ log_search }}”.
+          {% else %}
+          {{ log_employee.get_full_name }} has no drafts in their work mailbox.
+          {% endif %}
+        </p>
+      </div>
+      {% endif %}
+      {% elif messages_log %}
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              {% if channel.key == "email" and active_folder == "all" %}
               <th scope="col">Direction</th>
               {% endif %}
               <th scope="col">{% if channel.key == "email" %}With{% else %}Recipient{% endif %}</th>
@@ -75,7 +164,7 @@
             {% for item in messages_log %}
             <tr class="is-clickable-row" data-href="{{ message_url_base }}{{ item.id }}/">
               <td><span class="reminder-when">{{ item.sent_at|date:"d M Y, H:i" }}</span></td>
-              {% if channel.key == "email" %}
+              {% if channel.key == "email" and active_folder == "all" %}
               <td>
                 {% if item.direction == "received" %}
                 <span class="status-pill status-pill--submitted">{{ item.direction_label }}</span>
@@ -115,11 +204,25 @@
       {% else %}
       <div class="empty-state">
         <p class="empty-state__title">
-          {% if channel.key == "email" %}No email activity yet{% else %}Nothing sent yet{% endif %}
+          {% if channel.key == "email" and active_folder == "inbox" %}
+          Inbox is empty
+          {% elif channel.key == "email" and active_folder == "sent" %}
+          Nothing sent yet
+          {% elif channel.key == "email" %}
+          No email activity yet
+          {% else %}
+          Nothing sent yet
+          {% endif %}
         </p>
         <p class="empty-state__copy">
           {% if log_search %}
-          No {{ channel.noun_plural }} match “{{ log_search }}”.
+          No {{ channel.noun_plural }} match “{{ log_search }}” in this folder.
+          {% elif channel.key == "email" and active_folder == "inbox" %}
+          No colleague emails addressed to {{ log_employee.get_full_name }} have
+          been logged yet.
+          {% elif channel.key == "email" and active_folder == "sent" %}
+          {{ log_employee.get_full_name }} has not sent any emails from the
+          workspace yet.
           {% elif channel.key == "email" %}
           {{ log_employee.get_full_name }} has not sent or received any emails
           through the workspace yet.

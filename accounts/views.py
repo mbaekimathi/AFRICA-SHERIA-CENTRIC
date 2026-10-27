@@ -61,9 +61,13 @@ from .cpanel_mail import (
 )
 from .employee_communications import (
     CHANNEL_PAGE_SLUGS,
+    EMAIL_LOG_FOLDER_KEYS,
+    EMAIL_LOG_FOLDERS,
     channel_page,
     employee_channel_summaries,
     employee_communication_record,
+    employee_email_folder_counts,
+    employee_mailbox_drafts,
     employee_message,
     employee_messages,
     message_recipient_groups,
@@ -22202,7 +22206,30 @@ class EmployeeCommunicationLogView(View):
 
         employee = get_object_or_404(Employee, pk=employee_id)
         search = (request.GET.get("q") or "").strip()
-        rows = employee_messages(meta["key"], employee, search=search)
+        active_folder = "all"
+        folder_counts = {}
+        draft_rows, drafts_error = [], ""
+        if meta["key"] == "email":
+            requested = (request.GET.get("folder") or "all").strip().lower()
+            if requested in EMAIL_LOG_FOLDER_KEYS:
+                active_folder = requested
+            folder_counts = employee_email_folder_counts(employee)
+            log_folders = [
+                {**folder, "count": folder_counts.get(folder["key"])}
+                for folder in EMAIL_LOG_FOLDERS
+            ]
+            if active_folder == "drafts":
+                draft_rows, drafts_error = employee_mailbox_drafts(
+                    employee, search=search
+                )
+                rows = []
+            else:
+                rows = employee_messages(
+                    meta["key"], employee, search=search, folder=active_folder
+                )
+        else:
+            log_folders = ()
+            rows = employee_messages(meta["key"], employee, search=search)
         trail = [
             "dashboard",
             "user-management",
@@ -22223,6 +22250,10 @@ class EmployeeCommunicationLogView(View):
                 "log_employee": employee,
                 "messages_log": rows,
                 "log_search": search,
+                "log_folders": log_folders,
+                "active_folder": active_folder,
+                "draft_rows": draft_rows,
+                "drafts_error": drafts_error,
                 "channel_list_url": user.workspace_url(*trail),
                 "message_url_base": user.workspace_url(*trail, str(employee.pk)),
             }
