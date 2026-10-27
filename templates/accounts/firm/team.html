@@ -16,10 +16,22 @@
 
 <section class="fw-section fw-section--soft">
   <div class="fw-wrap">
+    {% if focus_filters %}
+    <div class="fw-team-filter" role="group" aria-label="Filter by practice focus">
+      <button type="button" class="fw-faq-hub__topic is-active" data-fw-teamfilter="all" aria-pressed="true">
+        <span>All</span>
+      </button>
+      {% for focus in focus_filters %}
+      <button type="button" class="fw-faq-hub__topic" data-fw-teamfilter="{{ focus }}" aria-pressed="false">
+        <span>{{ focus }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if team_members %}
-    <div class="fw-team-profiles">
+    <div class="fw-team-profiles" data-fw-teamfilter-list>
       {% for member in team_members %}
-      <article class="fw-team-profile fw-team-profile--rich" data-fw-anim="rise" style="--i:{{ forloop.counter0 }}">
+      <article class="fw-team-profile fw-team-profile--rich" data-fw-anim="rise" data-fw-focus="{{ member.practice_focus }}" style="--i:{{ forloop.counter0 }}">
         <div class="fw-team-profile__media" data-fw-tilt>
           {% if member.photo|stored_media_url %}
           <img
@@ -37,14 +49,22 @@
         </div>
         <div class="fw-team-profile__body">
           <p class="fw-team-profile__index" aria-hidden="true">{{ forloop.counter|stringformat:"02d" }}</p>
-          <h2>{{ member.name }}</h2>
+          <h2>
+            {% if member.profile_slug %}
+            <a class="fw-team-profile__link" href="{% url 'accounts:firm_team_member' slug=member.profile_slug %}">{{ member.name }}</a>
+            {% else %}
+            {{ member.name }}
+            {% endif %}
+          </h2>
           {% if member.title %}<p class="fw-team-profile__title">{{ member.title }}</p>{% endif %}
           {% if member.practice_focus %}<p class="fw-team-profile__focus">{{ member.practice_focus }}</p>{% endif %}
           {% if member.bio %}<p class="fw-team-profile__bio">{{ member.bio|truncatewords:55 }}</p>{% endif %}
+          {% if member.profile_slug %}<p class="fw-team-profile__more" aria-hidden="true">View profile →</p>{% endif %}
         </div>
       </article>
       {% endfor %}
     </div>
+    <p class="fw-empty" data-fw-teamfilter-empty hidden>No team members match that focus yet.</p>
     {% else %}
     <p class="fw-empty" data-fw-anim="fade">Team profiles will appear here once registered.</p>
     {% endif %}

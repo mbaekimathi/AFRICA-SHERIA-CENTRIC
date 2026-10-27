@@ -409,8 +409,9 @@ class Employee(AbstractUser):
     website_slug = models.SlugField(
         max_length=180,
         unique=True,
+        null=True,
         blank=True,
-        default="",
+        default=None,
         help_text="Public profile URL slug, used when website_published is on.",
     )
 
@@ -2861,8 +2862,9 @@ class FirmTeamMember(models.Model):
     slug = models.SlugField(
         max_length=180,
         unique=True,
+        null=True,
         blank=True,
-        default="",
+        default=None,
         help_text="Public URL slug for /team/<slug>/.",
     )
     title = models.CharField(

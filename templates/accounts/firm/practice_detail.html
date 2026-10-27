@@ -73,4 +73,50 @@
   </div>
 </section>
 {% endif %}
+
+{% if team_members %}
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap">
+    <div class="fw-section__head" data-fw-anim="fade">
+      <p class="fw-section__eyebrow">Your counsel</p>
+      <h2>The team behind this practice</h2>
+    </div>
+    <div class="fw-team-profiles">
+      {% for member in team_members %}
+      <article class="fw-team-profile fw-team-profile--rich" data-fw-anim="rise" style="--i:{{ forloop.counter0 }}">
+        <div class="fw-team-profile__media" data-fw-tilt>
+          {% if member.photo|stored_media_url %}
+          <img
+            src="{{ member.photo|stored_media_url }}"
+            alt="{{ member.name }}"
+            width="520"
+            height="640"
+            loading="lazy"
+          >
+          {% else %}
+          <span class="fw-team-profile__ph" aria-hidden="true"></span>
+          <span class="fw-team-profile__badge" aria-hidden="true">{% firstof member.initial member.name|slice:":1"|upper %}</span>
+          {% endif %}
+          <div class="fw-team-profile__rim" aria-hidden="true"></div>
+        </div>
+        <div class="fw-team-profile__body">
+          <h3>
+            {% if member.profile_slug %}
+            <a class="fw-team-profile__link" href="{% url 'accounts:firm_team_member' slug=member.profile_slug %}">{{ member.name }}</a>
+            {% else %}
+            {{ member.name }}
+            {% endif %}
+          </h3>
+          {% if member.title %}<p class="fw-team-profile__title">{{ member.title }}</p>{% endif %}
+          {% if member.practice_focus %}<p class="fw-team-profile__focus">{{ member.practice_focus }}</p>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% url 'accounts:firm_contact' as enquiry_url %}
+{% include "accounts/firm/_cta_band.html" with cta_band_eyebrow="Next step" cta_band_title=area.name cta_band_copy="Tell us briefly about your matter — an advocate reviews every enquiry and responds, usually within one business day." cta_primary_href=enquiry_url cta_primary_label="Send an enquiry" cta_secondary_href=whatsapp_url cta_secondary_label="WhatsApp us" cta_secondary_external=True %}
 {% endblock %}

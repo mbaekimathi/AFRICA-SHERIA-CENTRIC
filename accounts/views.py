@@ -801,6 +801,13 @@ class HomeView(View):
                     "team_members": team_members,
                     "testimonials": testimonials,
                     "slides": slides,
+                    "credential_items": [
+                        line.strip()
+                        for line in (
+                            company.professional_credentials or ""
+                        ).splitlines()
+                        if line.strip()
+                    ][:6],
                     "has_terms": bool((company.terms_and_conditions or "").strip()),
                     "has_privacy": bool((company.privacy_policy or "").strip()),
                     "meta_description": meta_description,
@@ -939,13 +946,17 @@ class FirmTeamView(View):
 
     def get(self, request):
         company = FirmCompanyInformation.get_solo()
+        members = _firm_website_employees()
+        focus_filters = sorted(
+            {m.practice_focus for m in members if m.practice_focus}
+        )
         return _firm_page_render(
             request,
             self.template_name,
             "team",
             "Our team",
             f"Meet the advocates and team at {company.display_name}.",
-            {"team_members": _firm_website_employees()},
+            {"team_members": members, "focus_filters": focus_filters},
         )
 
 
@@ -1088,7 +1099,11 @@ class FirmPracticeDetailView(View):
             "practice",
             area.name,
             (area.summary or f"{area.name} counsel from {firm_name}.")[:160],
-            {"area": area, "related_areas": related},
+            {
+                "area": area,
+                "related_areas": related,
+                "team_members": _firm_website_employees(limit=4),
+            },
         )
 
 
@@ -1379,7 +1394,7 @@ class RobotsTxtView(View):
     """robots.txt pointing search engines at the firm sitemap."""
 
     def get(self, request):
-        sitemap_url = request.build_absolute_uri(reverse("accounts:blog_sitemap"))
+        sitemap_url = request.build_absolute_uri(reverse("accounts:sitemap_xml"))
         body = "\n".join(
             [
                 "User-agent: *",
@@ -1574,6 +1589,23 @@ class BlogSitemapView(View):
         gallery_items = FirmGalleryImage.objects.order_by("rank", "title").only(
             "slug", "updated_at"
         )
+        team_employees = (
+            Employee.objects.filter(
+                status=Employee.Status.ACTIVE,
+                website_published=True,
+            )
+            .exclude(website_slug="")
+            .exclude(website_slug__isnull=True)
+            .only("website_slug", "date_joined")
+        )
+        team_guests = (
+            FirmTeamMember.objects.filter(
+                is_published=True,
+            )
+            .exclude(slug="")
+            .exclude(slug__isnull=True)
+            .only("slug", "updated_at")
+        )
         urls = [
             {
                 "loc": request.build_absolute_uri(reverse("accounts:home")),
@@ -1666,6 +1698,32 @@ class BlogSitemapView(View):
                         "priority": "0.5",
                     }
                 )
+        for emp in team_employees:
+            urls.append(
+                {
+                    "loc": request.build_absolute_uri(
+                        reverse(
+                            "accounts:firm_team_member",
+                            kwargs={"slug": emp.website_slug},
+                        )
+                    ),
+                    "lastmod": emp.date_joined,
+                    "priority": "0.6",
+                }
+            )
+        for member in team_guests:
+            urls.append(
+                {
+                    "loc": request.build_absolute_uri(
+                        reverse(
+                            "accounts:firm_team_member",
+                            kwargs={"slug": member.slug},
+                        )
+                    ),
+                    "lastmod": member.updated_at,
+                    "priority": "0.6",
+                }
+            )
         for post in posts:
             urls.append(
                 {

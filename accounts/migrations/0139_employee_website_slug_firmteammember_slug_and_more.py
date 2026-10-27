@@ -3,6 +3,7 @@
 import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
+from django.db.models import Q
 from django.utils.text import slugify
 
 
@@ -25,12 +26,18 @@ def backfill_public_slugs(apps, schema_editor):
             n += 1
         return candidate
 
-    for emp in Employee.objects.filter(website_published=True, website_slug=""):
+    employees = Employee.objects.filter(website_published=True).filter(
+        Q(website_slug__isnull=True) | Q(website_slug="")
+    )
+    for emp in employees:
         name = f"{emp.first_name} {emp.last_name}".strip() or emp.login_code
         emp.website_slug = unique(name or "advocate")
         emp.save(update_fields=["website_slug"])
 
-    for member in FirmTeamMember.objects.filter(slug=""):
+    members = FirmTeamMember.objects.filter(
+        Q(slug__isnull=True) | Q(slug="")
+    )
+    for member in members:
         member.slug = unique(member.name)
         member.save(update_fields=["slug"])
 
@@ -45,12 +52,12 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='employee',
             name='website_slug',
-            field=models.SlugField(blank=True, default='', help_text='Public profile URL slug, used when website_published is on.', max_length=180, unique=True),
+            field=models.SlugField(blank=True, default=None, help_text='Public profile URL slug, used when website_published is on.', max_length=180, null=True, unique=True),
         ),
         migrations.AddField(
             model_name='firmteammember',
             name='slug',
-            field=models.SlugField(blank=True, default='', help_text='Public URL slug for /team/<slug>/.', max_length=180, unique=True),
+            field=models.SlugField(blank=True, default=None, help_text='Public URL slug for /team/<slug>/.', max_length=180, null=True, unique=True),
         ),
         migrations.CreateModel(
             name='WebsiteEnquiry',

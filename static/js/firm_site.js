@@ -1030,3 +1030,29 @@
     );
   }
 })();
+
+/* ——— Team focus filter ——— */
+document.addEventListener("DOMContentLoaded", () => {
+  const chips = [...document.querySelectorAll("[data-fw-teamfilter]")];
+  if (!chips.length) return;
+  const list = document.querySelector("[data-fw-teamfilter-list]");
+  const cards = list ? [...list.querySelectorAll("[data-fw-focus]")] : [];
+  const empty = document.querySelector("[data-fw-teamfilter-empty]");
+  chips.forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const focus = chip.getAttribute("data-fw-teamfilter");
+      chips.forEach((c) => {
+        const on = c === chip;
+        c.classList.toggle("is-active", on);
+        c.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      let shown = 0;
+      cards.forEach((card) => {
+        const match = focus === "all" || card.getAttribute("data-fw-focus") === focus;
+        card.hidden = !match;
+        if (match) shown += 1;
+      });
+      if (empty) empty.hidden = shown > 0;
+    });
+  });
+});

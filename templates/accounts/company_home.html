@@ -179,6 +179,67 @@
 </div>
 {% endwith %}
 
+{% if company.lsk_number or company.registration_number or credential_items %}
+<section class="fw-trust" aria-label="Credentials">
+  <div class="fw-wrap fw-trust__row" data-fw-anim="fade">
+    <p class="fw-trust__label">Regulated &amp; accountable</p>
+    <ul class="fw-trust__list">
+      {% if company.lsk_number %}
+      <li>
+        <span class="fw-trust__key">LSK practising cert.</span>
+        <span class="fw-trust__val">{{ company.lsk_number }}</span>
+      </li>
+      {% endif %}
+      {% if company.registration_number %}
+      <li>
+        <span class="fw-trust__key">Registration</span>
+        <span class="fw-trust__val">{{ company.registration_number }}</span>
+      </li>
+      {% endif %}
+      {% for item in credential_items %}
+      <li>
+        <span class="fw-trust__val">{{ item }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}
+
+<section class="fw-section fw-section--soft fw-process" id="fw-process">
+  <div class="fw-wrap">
+    <div class="fw-section__head" data-fw-anim="fade">
+      <p class="fw-section__eyebrow">How we work</p>
+      <h2>From first enquiry to resolution</h2>
+      <p class="fw-section__lede">
+        A clear, confidential process — you always know the next step.
+      </p>
+    </div>
+    <ol class="fw-process__steps">
+      <li class="fw-process__step" data-fw-anim="rise" style="--i:0">
+        <span class="fw-process__num" aria-hidden="true">01</span>
+        <h3>Enquire</h3>
+        <p>Send a confidential enquiry or call the chambers — tell us briefly what the matter involves.</p>
+      </li>
+      <li class="fw-process__step" data-fw-anim="rise" style="--i:1">
+        <span class="fw-process__num" aria-hidden="true">02</span>
+        <h3>Consult</h3>
+        <p>An advocate reviews your matter and meets you — in chambers, by phone, or on WhatsApp.</p>
+      </li>
+      <li class="fw-process__step" data-fw-anim="rise" style="--i:2">
+        <span class="fw-process__num" aria-hidden="true">03</span>
+        <h3>Strategy</h3>
+        <p>We agree the approach, scope, and fees up front — no surprises partway through.</p>
+      </li>
+      <li class="fw-process__step" data-fw-anim="rise" style="--i:3">
+        <span class="fw-process__num" aria-hidden="true">04</span>
+        <h3>Resolution</h3>
+        <p>We act on your matter and keep you updated at every step until it's closed.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
 {% if team_members %}
 <section class="fw-section fw-section--ink fw-section--team" id="fw-people" data-fw-scroll-section="people">
   <div class="fw-team-band" aria-hidden="true"></div>
