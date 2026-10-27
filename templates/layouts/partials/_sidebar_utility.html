@@ -1,0 +1,52 @@
+<nav class="sidebar__utility" aria-label="Account">
+  {% for item in utility_items %}
+  <a
+    href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
+    class="nav-link {% if item.active %}is-active{% endif %}{% if item.disabled %} is-disabled{% endif %}{% if item.badge_count %} has-unread{% endif %}"
+    data-utility-slug="{{ item.slug }}"
+    data-label="{{ item.label }}"
+    {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} {% if item.slug == 'tasks' %}pending{% else %}unread{% endif %}"{% endif %}
+    {% if item.disabled %}aria-disabled="true" tabindex="-1" title="{{ item.title|default:nav_lock_title }}"{% endif %}
+  >
+    <span class="nav-icon-wrap">
+      <span class="nav-icon" aria-hidden="true">{{ item.icon|safe }}</span>
+      <span
+        class="nav-badge"
+        data-utility-badge="{{ item.slug }}"
+        {% if not item.badge_count %}hidden{% endif %}
+      >{{ item.badge_count|default:0 }}</span>
+    </span>
+    <span>
+      {{ item.label }}
+      {% if item.disabled %}<em class="nav-soon">{{ nav_lock_label }}</em>{% endif %}
+    </span>
+  </a>
+  {% endfor %}
+  <a
+    href="{% if settings_disabled %}#{% else %}{{ chrome_settings_url }}{% endif %}"
+    class="nav-link {% if settings_active %}is-active{% endif %}{% if settings_disabled %} is-disabled{% endif %}"
+    {% if settings_disabled %}aria-disabled="true" tabindex="-1" title="{{ nav_lock_title }}"{% endif %}
+  >
+    <span class="nav-icon" aria-hidden="true">{{ icon_settings|safe }}</span>
+    <span>
+      {{ chrome_settings_label|default:"System settings" }}
+      {% if settings_disabled %}<em class="nav-soon">{{ nav_lock_label }}</em>{% endif %}
+    </span>
+  </a>
+  {% if theme_settings_url %}
+  <a
+    href="{{ theme_settings_url }}"
+    class="nav-link {% if theme_settings_active %}is-active{% endif %}"
+  >
+    <span class="nav-icon" aria-hidden="true">{{ icon_settings|safe }}</span>
+    <span>Theme settings</span>
+  </a>
+  {% endif %}
+  <form method="post" action="{% url chrome_logout_route %}" class="sidebar-logout">
+    {% csrf_token %}
+    <button type="submit" class="nav-link nav-link--action">
+      <span class="nav-icon" aria-hidden="true">{{ icon_logout|safe }}</span>
+      <span>{% if staff_impersonating %}Exit portal{% else %}Log out{% endif %}</span>
+    </button>
+  </form>
+</nav>

@@ -1,0 +1,19 @@
+<nav class="sidebar__primary" aria-label="Primary">
+  {% if back_url %}
+  <a href="{{ back_url }}" class="nav-link nav-link--back sidebar-back">
+    <span class="nav-icon" aria-hidden="true">{{ icon_back|safe }}</span>
+    <span>Back</span>
+  </a>
+  {% endif %}
+  <a
+    href="{% if dashboard_disabled %}#{% else %}{{ dashboard_url }}{% endif %}"
+    class="nav-link {% if dashboard_active %}is-active{% endif %}{% if dashboard_disabled %} is-disabled{% endif %}"
+    {% if dashboard_disabled %}aria-disabled="true" tabindex="-1" title="Available after approval"{% endif %}
+  >
+    <span class="nav-icon" aria-hidden="true">{{ icon_home|safe }}</span>
+    <span>
+      Dashboard
+      {% if dashboard_disabled %}<em class="nav-soon">{{ lock_badge|default:"Locked" }}</em>{% endif %}
+    </span>
+  </a>
+</nav>

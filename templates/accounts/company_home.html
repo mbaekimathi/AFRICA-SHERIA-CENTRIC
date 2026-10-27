@@ -4,15 +4,7 @@
 {% block title %}{{ firm_name }}{% if company.tagline %} — {{ company.tagline }}{% endif %}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
 
-{% block firm_head %}
-<link rel="canonical" href="{{ canonical_url }}">
-<meta name="robots" content="index, follow">
-<meta property="og:type" content="website">
-<meta property="og:title" content="{{ firm_name }}{% if company.tagline %} — {{ company.tagline }}{% endif %}">
-<meta property="og:description" content="{{ meta_description }}">
-<meta property="og:url" content="{{ canonical_url }}">
-<script type="application/ld+json">{{ json_ld }}</script>
-{% endblock %}
+{% block og_title %}{{ firm_name }}{% if company.tagline %} — {{ company.tagline }}{% endif %}{% endblock %}
 
 {% block firm_content %}
 {% with hero_img=firm_hero_image_url|default:website_images.hero practice_img=website_images.practice %}
@@ -152,14 +144,13 @@
         </div>
 
         <div class="fw-practice-slides__foot">
-          <div class="fw-practice-slides__dots" role="tablist" aria-label="Choose practice area">
+          <div class="fw-practice-slides__dots" role="group" aria-label="Choose practice area">
             {% for area in slide_areas %}
             <button
               type="button"
               class="fw-practice-slides__dot{% if forloop.first %} is-active{% endif %}"
               data-fw-slide-dot="{{ forloop.counter0 }}"
-              role="tab"
-              aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+              aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}"
               aria-label="{{ area.name }}"
             ></button>
             {% endfor %}
@@ -295,22 +286,9 @@
 </section>
 {% endif %}
 
-<section class="fw-cta fw-cta--rich" id="fw-consult" data-fw-scroll-section="consult">
-  <div class="fw-cta__aurora" aria-hidden="true"></div>
-  <div class="fw-wrap" data-fw-anim="rise">
-    <p class="fw-cta__eyebrow">Consultation</p>
-    <h2>{% if company.consultation_cta_label %}{{ company.consultation_cta_label }}{% else %}Speak with {{ firm_name }}{% endif %}</h2>
-    <p>
-      {% if company.consultation_blurb %}{{ company.consultation_blurb }}
-      {% else %}Book a consultation or message the chambers during ordinary business hours.{% endif %}
-    </p>
-    <div class="fw-btn-row">
-      {% if company.phone %}
-      <a class="fw-btn fw-btn--brass-outline" href="tel:{{ company.phone }}" data-fw-magnetic>Call {{ company.phone }}</a>
-      {% endif %}
-      <a class="fw-btn fw-btn--on-dark fw-btn--glow" href="{% url 'accounts:firm_contact' %}" data-fw-magnetic>Contact chambers</a>
-      <a class="fw-btn fw-btn--ghost" href="{% url 'accounts:firm_faqs' %}">FAQs</a>
-    </div>
-  </div>
-</section>
+{% firstof company.consultation_cta_label "Speak with "|add:firm_name as cta_t %}
+{% firstof company.consultation_blurb "Book a consultation or message the chambers during ordinary business hours." as cta_c %}
+{% url 'accounts:firm_contact' as cta_contact_url %}
+{% url 'accounts:firm_faqs' as cta_faqs_url %}
+{% include "accounts/firm/_cta_band.html" with cta_band_eyebrow="Consultation" cta_band_title=cta_t cta_band_copy=cta_c cta_band_id="fw-consult" cta_band_scroll="consult" cta_primary_href=company.phone cta_primary_prefix="tel:" cta_primary_label=company.phone cta_primary_label_prefix="Call " cta_primary_class="fw-btn--brass-outline" cta_primary_magnetic=1 cta_secondary_href=cta_contact_url cta_secondary_label="Contact chambers" cta_secondary_class="fw-btn--on-dark fw-btn--glow" cta_secondary_magnetic=1 cta_tertiary_href=cta_faqs_url cta_tertiary_label="FAQs" %}
 {% endblock %}

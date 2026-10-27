@@ -1,0 +1,71 @@
+<div class="topbar-pills">
+  <div class="topbar-pill topbar-pill--date">
+    <span class="topbar-pill__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <use href="#i-calendar"/>
+      </svg>
+    </span>
+    <span id="live-date">—</span>
+  </div>
+
+  <div
+    class="session-menu"
+    id="session-menu"
+    data-started-at="{{ session_started_at }}"
+    data-server-now="{{ server_now }}"
+    data-account-status="{{ acct_status }}"
+    data-user-code="{{ acct_code_prefix }}{{ acct_code }}"
+  >
+    <button
+      type="button"
+      class="topbar-pill topbar-pill--time session-trigger"
+      id="session-trigger"
+      aria-haspopup="true"
+      aria-expanded="false"
+      aria-controls="session-dropdown"
+      aria-label="Time and session details"
+    >
+      <span class="topbar-pill__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <use href="#i-clock"/>
+        </svg>
+      </span>
+      <span class="session-trigger__time" id="live-time">—</span>
+      <span class="meta-dot meta-dot--sm" id="session-presence-dot" aria-hidden="true"></span>
+    </button>
+
+    <div class="session-dropdown" id="session-dropdown" hidden>
+      <div class="session-status" id="session-status">
+        <span class="meta-dot" id="session-status-dot" aria-hidden="true"></span>
+        <span id="session-status-label">—</span>
+      </div>
+
+      <div class="session-login">
+        <p class="session-dropdown__label">Logged in today at</p>
+        <p class="session-login__time" id="session-login-time">—</p>
+      </div>
+
+      <p class="session-dropdown__label">Active time today</p>
+      <div class="session-stats">
+        <div class="session-stat">
+          <span class="session-stat__value" id="session-hours">0</span>
+          <span class="session-stat__unit">hours</span>
+        </div>
+        <div class="session-stat">
+          <span class="session-stat__value" id="session-mins">0</span>
+          <span class="session-stat__unit">mins</span>
+        </div>
+      </div>
+      <p class="session-dropdown__hint" id="session-duration-full">Counts only while you interact</p>
+    </div>
+  </div>
+
+  <div class="topbar-pill topbar-pill--firm">
+    <span class="topbar-pill__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <use href="#i-building"/>
+      </svg>
+    </span>
+    <span>{{ firm_name }}</span>
+  </div>
+</div>

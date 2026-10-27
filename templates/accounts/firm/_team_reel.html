@@ -45,14 +45,13 @@
   <div class="fw-wrap fw-team-deck__foot">
     <div class="fw-team-deck__progress" aria-hidden="true"><span></span></div>
     {% if team_members|length > 1 %}
-    <div class="fw-team-deck__dots" role="tablist" aria-label="Choose team member">
+    <div class="fw-team-deck__dots" role="group" aria-label="Choose team member">
       {% for member in team_members %}
       <button
         type="button"
         class="fw-team-deck__dot{% if forloop.first %} is-active{% endif %}"
         data-fw-team-dot="{{ forloop.counter0 }}"
-        role="tab"
-        aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+        aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}"
         aria-label="{{ member.name }}"
       ></button>
       {% endfor %}

@@ -2,10 +2,6 @@
 {% load firm_media %}
 {% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}
-<link rel="canonical" href="{{ canonical_url }}">
-{% if json_ld %}<script type="application/ld+json">{{ json_ld }}</script>{% endif %}
-{% endblock %}
 
 {% block firm_content %}
 {% with hero_src=website_images.faqs %}
@@ -63,12 +59,12 @@
       {% if faq_topics %}
       <div class="fw-faq-hub__panel">
         <p class="fw-faq-hub__label">Browse by topic</p>
-        <div class="fw-faq-hub__topics" role="tablist" aria-label="FAQ topics">
-          <button type="button" class="fw-faq-hub__topic is-active" data-fw-faq-topic="all" role="tab" aria-selected="true">
+        <div class="fw-faq-hub__topics" role="group" aria-label="FAQ topics">
+          <button type="button" class="fw-faq-hub__topic is-active" data-fw-faq-topic="all" aria-pressed="true">
             All <span>{{ faq_count }}</span>
           </button>
           {% for topic in faq_topics %}
-          <button type="button" class="fw-faq-hub__topic" data-fw-faq-topic="{{ topic.slug }}" role="tab" aria-selected="false">
+          <button type="button" class="fw-faq-hub__topic" data-fw-faq-topic="{{ topic.slug }}" aria-pressed="false">
             {{ topic.label }} <span>{{ topic.count }}</span>
           </button>
           {% endfor %}

@@ -1,0 +1,5 @@
+{% if crumb_parts|length > 1 %}
+<nav class="topbar__crumb" aria-label="Breadcrumb">
+  {% for crumb in crumb_parts %}{% if not forloop.last %}{% if not forloop.first %}<span aria-hidden="true">/</span>{% endif %}<a href="{{ crumb.url }}">{{ crumb.label }}</a>{% endif %}{% endfor %}
+</nav>
+{% endif %}

@@ -2,6 +2,7 @@
 {% load static %}
 
 {% block title %}Pay {{ invoice.invoice_number }} — {{ firm_name }}{% endblock %}
+{% block meta_robots %}<meta name="robots" content="noindex, nofollow">{% endblock %}
 {% block body_class %}auth-page shared-pay-page{% endblock %}
 {% block flash_messages %}{% endblock %}
 {% block extra_head %}

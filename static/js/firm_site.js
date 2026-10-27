@@ -458,7 +458,7 @@
       dots.forEach((dot, i) => {
         const on = i === index;
         dot.classList.toggle("is-active", on);
-        dot.setAttribute("aria-selected", on ? "true" : "false");
+        dot.setAttribute("aria-pressed", on ? "true" : "false");
       });
     };
 
@@ -683,7 +683,7 @@
       dots.forEach((dot, i) => {
         const on = i === index;
         dot.classList.toggle("is-active", on);
-        dot.setAttribute("aria-selected", on ? "true" : "false");
+        dot.setAttribute("aria-pressed", on ? "true" : "false");
       });
 
       const active = slides[index];
@@ -805,7 +805,7 @@
       topicBtns.forEach((btn) => {
         const on = btn.dataset.fwGalleryTopic === slug;
         btn.classList.toggle("is-active", on);
-        btn.setAttribute("aria-selected", on ? "true" : "false");
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
       });
     };
 
@@ -866,7 +866,7 @@
       topicBtns.forEach((btn) => {
         const on = btn.dataset.fwFaqTopic === slug;
         btn.classList.toggle("is-active", on);
-        btn.setAttribute("aria-selected", on ? "true" : "false");
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
       });
     };
 

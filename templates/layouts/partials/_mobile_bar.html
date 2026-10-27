@@ -1,0 +1,38 @@
+<nav class="mobile-bar" aria-label="Quick navigation">
+  <a
+    href="{{ dashboard_url }}"
+    class="mobile-bar__item {% if dashboard_active %}is-active{% endif %}"
+  >
+    <span class="mobile-bar__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>
+    </span>
+    <span class="mobile-bar__label">Home</span>
+  </a>
+  {% if alerts_status == "active" %}
+  <button
+    type="button"
+    class="mobile-bar__item"
+    id="mobilebar-alerts"
+    aria-label="{% if notification_unread_count %}Notifications, {{ notification_unread_count }} unread{% else %}Notifications{% endif %}"
+  >
+    <span class="mobile-bar__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><use href="#i-bell"/></svg>
+      <span class="mobile-bar__badge" id="mobilebar-badge" {% if not notification_unread_count %}hidden{% endif %}>{{ notification_unread_count|default:0 }}</span>
+    </span>
+    <span class="mobile-bar__label">Alerts</span>
+  </button>
+  {% endif %}
+  <button
+    type="button"
+    class="mobile-bar__item"
+    id="mobilebar-menu"
+    aria-controls="sidebar"
+    aria-expanded="false"
+    aria-label="Open menu"
+  >
+    <span class="mobile-bar__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><use href="#i-menu"/></svg>
+    </span>
+    <span class="mobile-bar__label">Menu</span>
+  </button>
+</nav>

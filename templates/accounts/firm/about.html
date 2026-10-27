@@ -2,9 +2,6 @@
 {% load firm_media %}
 {% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}
-<link rel="canonical" href="{{ canonical_url }}">
-{% endblock %}
 
 {% block firm_content %}
 <section class="fw-about-hero fw-about-hero--solid" data-fw-hero>
@@ -217,16 +214,7 @@
 </section>
 {% endif %}
 
-<section class="fw-cta fw-cta--rich">
-  <div class="fw-cta__aurora" aria-hidden="true"></div>
-  <div class="fw-wrap" data-fw-anim="rise">
-    <p class="fw-cta__eyebrow">Next step</p>
-    <h2>Ready to work with {{ firm_name }}?</h2>
-    <p>Explore our practice areas or reach chambers for a consultation.</p>
-    <div class="fw-btn-row">
-      <a class="fw-btn fw-btn--on-dark fw-btn--glow" href="{% url 'accounts:firm_practice_list' %}" data-fw-magnetic>Practice areas</a>
-      <a class="fw-btn fw-btn--ghost" href="{% url 'accounts:firm_contact' %}">Contact chambers</a>
-    </div>
-  </div>
-</section>
+{% url 'accounts:firm_practice_list' as cta_practice_url %}
+{% url 'accounts:firm_contact' as cta_contact_url %}
+{% include "accounts/firm/_cta_band.html" with cta_band_eyebrow="Next step" cta_band_copy="Explore our practice areas or reach chambers for a consultation." cta_primary_href=cta_practice_url cta_primary_label="Practice areas" cta_primary_magnetic=1 cta_secondary_href=cta_contact_url cta_secondary_label="Contact chambers" %}
 {% endblock %}

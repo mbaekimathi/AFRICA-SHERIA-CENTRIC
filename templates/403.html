@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block title %}Access denied — Sheria-Centric{% endblock %}
+{% block meta_robots %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+{% include "partials/error_card.html" with error_code="403" error_title="Access denied" error_copy="You don't have permission to view this page. If you believe this is a mistake, please contact the firm." error_secondary_href="/contact/" error_secondary_label="Contact chambers" %}
+{% endblock %}

@@ -5,18 +5,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Sheria-Centric — professional firm workspace">
+  <meta name="robots" content="noindex, nofollow">
   <title>{% block title %}Sheria-Centric{% endblock %}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="{{ google_fonts_href|default:'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap' }}" rel="stylesheet">
-  <script>
-    (function(){try{var m=localStorage.getItem("sc-theme-mode");if(m!=="light"&&m!=="dark"){m=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.classList.add("mode-"+m);}catch(e){}})();
-  </script>
-  <link rel="stylesheet" href="{% static 'css/tokens.css' %}?v=ql-qa-1">
-  <link rel="stylesheet" href="{% static 'css/app.css' %}?v=ql-qa-1">
-  <link rel="stylesheet" href="{% static 'css/motion.css' %}?v=ql-icons-1">
-  <link rel="stylesheet" href="{% static 'css/themes-dark.css' %}?v=ql-dark-1">
-  <link rel="stylesheet" href="{% static 'css/chrome.css' %}?v=ql-components-1">
+  {% include "layouts/partials/_head_assets.html" %}
   {% block extra_head %}{% endblock %}
 </head>
 <body
@@ -34,67 +25,15 @@
   <div class="workspace-shell">
     <aside class="sidebar" id="sidebar" aria-label="Main navigation">
       <div class="sidebar__top">
-        <div class="sidebar__brand">
-          <a href="{{ dashboard_url }}" class="sidebar__brand-link">
-            <div class="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 48 48" fill="none">
-                <path d="M24 8c-6.5 3.2-10.5 4.2-14 4.5v12.8c0 8.2 5.6 14.8 14 18.2 8.4-3.4 14-10 14-18.2V12.5C34.5 12.2 30.5 11.2 24 8Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
-                <path d="M17.5 24.2 22 28.6 31 19.4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </div>
-            <div>
-              <p class="brand-name">Sheria Centric</p>
-              <p class="brand-tag">Legal practice platform</p>
-            </div>
-          </a>
-        </div>
+        {% include "layouts/partials/_sidebar_brand.html" with brand_tag="Legal practice platform" %}
 
-        <nav class="sidebar__primary" aria-label="Primary">
-          {% if back_url %}
-          <a href="{{ back_url }}" class="nav-link nav-link--back sidebar-back">
-            <span class="nav-icon" aria-hidden="true">{{ icon_back|safe }}</span>
-            <span>Back</span>
-          </a>
-          {% endif %}
-          <a
-            href="{% if dashboard_disabled %}#{% else %}{{ dashboard_url }}{% endif %}"
-            class="nav-link {% if dashboard_active %}is-active{% endif %}{% if dashboard_disabled %} is-disabled{% endif %}"
-            {% if dashboard_disabled %}aria-disabled="true" tabindex="-1" title="Available after approval"{% endif %}
-          >
-            <span class="nav-icon" aria-hidden="true">{{ icon_home|safe }}</span>
-            <span>
-              Dashboard
-              {% if dashboard_disabled %}<em class="nav-soon">{{ lock_badge|default:"Locked" }}</em>{% endif %}
-            </span>
-          </a>
-        </nav>
+        {% include "layouts/partials/_sidebar_primary.html" %}
 
         {% if page_nav_items %}
         <p class="nav-section">In this section</p>
         <nav class="sidebar__nav" aria-label="Section pages">
           {% block sidebar_page_nav %}
-          {% for item in page_nav_items %}
-          <a
-            href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
-            class="nav-link {% if item.active %}is-active{% endif %}{% if item.disabled %} is-disabled{% endif %}{% if item.badge_count %} has-unread{% endif %}"
-            {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} pending"{% endif %}
-            {% if item.disabled %}aria-disabled="true" tabindex="-1" title="{{ item.title|default:lock_badge|default:'Locked' }}"{% endif %}
-            {% if item.external and not item.disabled %}target="_blank" rel="noopener noreferrer"{% endif %}
-          >
-            <span class="nav-icon-wrap">
-              <span class="nav-icon" aria-hidden="true">{{ item.icon|safe }}</span>
-              <span
-                class="nav-badge"
-                data-page-badge="{{ item.slug }}"
-                {% if not item.badge_count %}hidden{% endif %}
-              >{{ item.badge_count|default:0 }}</span>
-            </span>
-            <span>
-              {{ item.label }}
-              {% if item.disabled %}<em class="nav-soon">{{ lock_badge|default:"Locked" }}</em>{% endif %}
-            </span>
-          </a>
-          {% endfor %}
+          {% include "layouts/partials/_sidebar_page_nav.html" with nav_lock_label=lock_badge|default:"Locked" nav_lock_title=lock_badge|default:"Locked" %}
           {% endblock %}
         </nav>
         {% endif %}
@@ -121,49 +60,7 @@
 
       <div class="sidebar__bottom">
         <p class="nav-section">Account</p>
-        <nav class="sidebar__utility" aria-label="Account">
-          {% for item in utility_items %}
-          <a
-            href="{% if item.disabled %}#{% else %}{{ item.url }}{% endif %}"
-            class="nav-link {% if item.active %}is-active{% endif %}{% if item.disabled %} is-disabled{% endif %}{% if item.badge_count %} has-unread{% endif %}"
-            data-utility-slug="{{ item.slug }}"
-            data-label="{{ item.label }}"
-            {% if item.badge_count %}aria-label="{{ item.label }}, {{ item.badge_count }} {% if item.slug == 'tasks' %}pending{% else %}unread{% endif %}"{% endif %}
-            {% if item.disabled %}aria-disabled="true" tabindex="-1" title="Available after approval"{% endif %}
-          >
-            <span class="nav-icon-wrap">
-              <span class="nav-icon" aria-hidden="true">{{ item.icon|safe }}</span>
-              <span
-                class="nav-badge"
-                data-utility-badge="{{ item.slug }}"
-                {% if not item.badge_count %}hidden{% endif %}
-              >{{ item.badge_count|default:0 }}</span>
-            </span>
-            <span>
-              {{ item.label }}
-              {% if item.disabled %}<em class="nav-soon">{{ lock_badge|default:"Locked" }}</em>{% endif %}
-            </span>
-          </a>
-          {% endfor %}
-          <a
-            href="{% if settings_disabled %}#{% else %}{{ system_settings_url }}{% endif %}"
-            class="nav-link {% if settings_active %}is-active{% endif %}{% if settings_disabled %} is-disabled{% endif %}"
-            {% if settings_disabled %}aria-disabled="true" tabindex="-1" title="Available after approval"{% endif %}
-          >
-            <span class="nav-icon" aria-hidden="true">{{ icon_settings|safe }}</span>
-            <span>
-              System settings
-              {% if settings_disabled %}<em class="nav-soon">{{ lock_badge|default:"Locked" }}</em>{% endif %}
-            </span>
-          </a>
-          <form method="post" action="{% url 'accounts:logout' %}" class="sidebar-logout">
-            {% csrf_token %}
-            <button type="submit" class="nav-link nav-link--action">
-              <span class="nav-icon" aria-hidden="true">{{ icon_logout|safe }}</span>
-              <span>Log out</span>
-            </button>
-          </form>
-        </nav>
+        {% include "layouts/partials/_sidebar_utility.html" with nav_lock_label=lock_badge|default:"Locked" nav_lock_title="Available after approval" chrome_settings_url=system_settings_url chrome_settings_label="System settings" chrome_logout_route="accounts:logout" %}
 
         <div class="sidebar-user">
           {% if user.profile_photo %}
@@ -198,156 +95,18 @@
           </a>
           {% endif %}
           <div class="topbar__titles">
+            {% include "layouts/partials/_breadcrumbs.html" %}
             <h1 class="topbar__title">{% block page_heading %}{{ page_title }}{% endblock %}</h1>
           </div>
         </div>
         <div class="topbar__right">
-          <button
-            type="button"
-            class="icon-btn mode-toggle"
-            data-mode-toggle
-            aria-pressed="false"
-            aria-label="Switch to dark mode"
-          >
-            <svg class="icon icon--sun" aria-hidden="true"><use href="#i-sun"/></svg>
-            <svg class="icon icon--moon" aria-hidden="true"><use href="#i-moon"/></svg>
-          </button>
-          <div
-            class="notif-menu"
-            id="notif-menu"
-            data-notifications-url="{{ notifications_url }}"
-            data-mark-all-url="{{ notifications_mark_all_url }}"
-            data-sound-enabled="{% if notification_sound_enabled %}true{% else %}false{% endif %}"
-            data-sound-volume="{{ notification_sound_volume|default:70 }}"
-            data-browser-enabled="{% if notification_browser_enabled %}true{% else %}false{% endif %}"
-            data-firm-name="{{ firm_name|default:'Sheria Centric' }}"
-          >
-            <button
-              type="button"
-              class="icon-btn notif-trigger{% if notification_unread_count %} has-unread is-ringing{% endif %}"
-              id="notif-trigger"
-              aria-haspopup="true"
-              aria-expanded="false"
-              aria-controls="notif-dropdown"
-              aria-label="{% if notification_unread_count %}Notifications, {{ notification_unread_count }} unread{% else %}Notifications{% endif %}"
-            >
-              <span class="notif-trigger__bell" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-                  <use href="#i-bell"/>
-                </svg>
-              </span>
-              <span class="notif-badge" id="notif-badge" {% if not notification_unread_count %}hidden{% endif %}>{{ notification_unread_count|default:0 }}</span>
-            </button>
+          {% include "layouts/partials/_mode_toggle.html" %}
+          {% include "layouts/partials/_notif_menu.html" %}
 
-            <div class="notif-dropdown" id="notif-dropdown" hidden>
-              <div class="notif-dropdown__head">
-                <p class="notif-dropdown__title">Notifications</p>
-                <button type="button" class="notif-mark-all" id="notif-mark-all" {% if not notification_unread_count %}hidden{% endif %}>
-                  Mark all read
-                </button>
-              </div>
-              <div class="notif-dropdown__body" id="notif-list" aria-live="polite">
-                <p class="notif-empty">Loading…</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="topbar-pills">
-            <div class="topbar-pill topbar-pill--date">
-              <span class="topbar-pill__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none">
-                  <use href="#i-calendar"/>
-                </svg>
-              </span>
-              <span id="live-date">—</span>
-            </div>
-
-            <div
-              class="session-menu"
-              id="session-menu"
-              data-started-at="{{ session_started_at }}"
-              data-server-now="{{ server_now }}"
-              data-account-status="{{ user.status }}"
-              data-user-code="{{ user.login_code }}"
-            >
-              <button
-                type="button"
-                class="topbar-pill topbar-pill--time session-trigger"
-                id="session-trigger"
-                aria-haspopup="true"
-                aria-expanded="false"
-                aria-controls="session-dropdown"
-                aria-label="Time and session details"
-              >
-                <span class="topbar-pill__icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none">
-                    <use href="#i-clock"/>
-                  </svg>
-                </span>
-                <span class="session-trigger__time" id="live-time">—</span>
-                <span class="meta-dot meta-dot--sm" id="session-presence-dot" aria-hidden="true"></span>
-              </button>
-
-              <div class="session-dropdown" id="session-dropdown" hidden>
-                <div class="session-status" id="session-status">
-                  <span class="meta-dot" id="session-status-dot" aria-hidden="true"></span>
-                  <span id="session-status-label">—</span>
-                </div>
-
-                <div class="session-login">
-                  <p class="session-dropdown__label">Logged in today at</p>
-                  <p class="session-login__time" id="session-login-time">—</p>
-                </div>
-
-                <p class="session-dropdown__label">Active time today</p>
-                <div class="session-stats">
-                  <div class="session-stat">
-                    <span class="session-stat__value" id="session-hours">0</span>
-                    <span class="session-stat__unit">hours</span>
-                  </div>
-                  <div class="session-stat">
-                    <span class="session-stat__value" id="session-mins">0</span>
-                    <span class="session-stat__unit">mins</span>
-                  </div>
-                </div>
-                <p class="session-dropdown__hint" id="session-duration-full">Counts only while you interact</p>
-              </div>
-            </div>
-
-            <div class="topbar-pill topbar-pill--firm">
-              <span class="topbar-pill__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none">
-                  <use href="#i-building"/>
-                </svg>
-              </span>
-              <span>{{ firm_name }}</span>
-            </div>
-          </div>
+          {% include "layouts/partials/_topbar_pills.html" with acct_status=user.status acct_code=user.login_code %}
 
           <div class="profile-menu" id="profile-menu">
-            <button
-              type="button"
-              class="profile-trigger"
-              id="profile-trigger"
-              aria-haspopup="menu"
-              aria-expanded="false"
-              aria-controls="profile-dropdown"
-            >
-              {% if user.profile_photo %}
-              <img class="avatar avatar--xs" src="{{ user.profile_photo.url }}" alt="">
-              {% else %}
-              <div class="avatar avatar--xs avatar--placeholder" aria-hidden="true">
-                {{ user.first_name|slice:":1"|upper }}{{ user.last_name|slice:":1"|upper }}
-              </div>
-              {% endif %}
-              <span class="profile-trigger__text">
-                <span class="profile-trigger__name">{{ user.get_full_name|default:user.login_code }}</span>
-                <span class="profile-trigger__meta">{{ role_label }}</span>
-              </span>
-              <svg class="profile-caret" viewBox="0 0 20 20" width="14" height="14" aria-hidden="true">
-                <use href="#i-caret"/>
-              </svg>
-            </button>
+            {% include "layouts/partials/_profile_trigger.html" with actor=user %}
 
             <div class="profile-dropdown" id="profile-dropdown" role="menu" hidden>
               <div class="profile-dropdown__session">
@@ -388,42 +147,7 @@
         </div>
       </footer>
 
-      <nav class="mobile-bar" aria-label="Quick navigation">
-        <a
-          href="{{ dashboard_url }}"
-          class="mobile-bar__item {% if dashboard_active %}is-active{% endif %}"
-        >
-          <span class="mobile-bar__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none"><use href="#i-home"/></svg>
-          </span>
-          <span class="mobile-bar__label">Home</span>
-        </a>
-        <button
-          type="button"
-          class="mobile-bar__item"
-          id="mobilebar-alerts"
-          aria-label="{% if notification_unread_count %}Notifications, {{ notification_unread_count }} unread{% else %}Notifications{% endif %}"
-        >
-          <span class="mobile-bar__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none"><use href="#i-bell"/></svg>
-            <span class="mobile-bar__badge" id="mobilebar-badge" {% if not notification_unread_count %}hidden{% endif %}>{{ notification_unread_count|default:0 }}</span>
-          </span>
-          <span class="mobile-bar__label">Alerts</span>
-        </button>
-        <button
-          type="button"
-          class="mobile-bar__item"
-          id="mobilebar-menu"
-          aria-controls="sidebar"
-          aria-expanded="false"
-          aria-label="Open menu"
-        >
-          <span class="mobile-bar__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none"><use href="#i-menu"/></svg>
-          </span>
-          <span class="mobile-bar__label">Menu</span>
-        </button>
-      </nav>
+      {% include "layouts/partials/_mobile_bar.html" with alerts_status="active" %}
     </div>
   </div>
 

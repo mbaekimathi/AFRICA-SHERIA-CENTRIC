@@ -1,0 +1,12 @@
+{% load static %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="{{ google_fonts_href|default:'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap' }}" rel="stylesheet">
+<script>
+  (function(){try{var m=localStorage.getItem("sc-theme-mode");if(m!=="light"&&m!=="dark"){m=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.classList.add("mode-"+m);}catch(e){}})();
+</script>
+<link rel="stylesheet" href="{% static 'css/tokens.css' %}?v=ql-qa-1">
+<link rel="stylesheet" href="{% static 'css/app.css' %}?v=ql-mail-2">
+<link rel="stylesheet" href="{% static 'css/motion.css' %}?v=ql-icons-1">
+<link rel="stylesheet" href="{% static 'css/themes-dark.css' %}?v=ql-dark-1">
+<link rel="stylesheet" href="{% static 'css/chrome.css' %}?v=ql-components-1">

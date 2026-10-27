@@ -1,0 +1,37 @@
+{# Reusable firm-site CTA band (fw-cta--rich shell).
+   Include vars:
+     cta_band_eyebrow   - small eyebrow text (optional)
+     cta_band_title     - heading (defaults to "Ready to work with {{ firm_name }}?")
+     cta_band_copy      - supporting paragraph (optional)
+     cta_band_id        - section id (optional)
+     cta_band_scroll    - data-fw-scroll-section value (optional)
+     cta_primary_* / cta_secondary_* / cta_tertiary_* button params:
+       _href           - button url; button renders only when set
+       _prefix         - prepended to href (e.g. "tel:") — useful with dynamic numbers
+       _label          - button text
+       _label_prefix   - prepended to label (e.g. "Call ")
+       _class          - overrides the default fw-btn modifier classes
+       _external       - truthy → target="_blank" rel="noopener noreferrer"
+       _magnetic       - truthy → data-fw-magnetic
+   Defaults: primary = "fw-btn--on-dark fw-btn--glow", secondary/tertiary = "fw-btn--ghost" #}
+<section class="fw-cta fw-cta--rich"{% if cta_band_id %} id="{{ cta_band_id }}"{% endif %}{% if cta_band_scroll %} data-fw-scroll-section="{{ cta_band_scroll }}"{% endif %}>
+  <div class="fw-cta__aurora" aria-hidden="true"></div>
+  <div class="fw-wrap" data-fw-anim="rise">
+    {% if cta_band_eyebrow %}<p class="fw-cta__eyebrow">{{ cta_band_eyebrow }}</p>{% endif %}
+    <h2>{% if cta_band_title %}{{ cta_band_title }}{% else %}Ready to work with {{ firm_name }}?{% endif %}</h2>
+    {% if cta_band_copy %}<p>{{ cta_band_copy }}</p>{% endif %}
+    {% if cta_primary_href or cta_secondary_href or cta_tertiary_href %}
+    <div class="fw-btn-row">
+      {% if cta_primary_href %}
+      <a class="fw-btn {{ cta_primary_class|default:'fw-btn--on-dark fw-btn--glow' }}" href="{{ cta_primary_prefix }}{{ cta_primary_href }}"{% if cta_primary_external %} target="_blank" rel="noopener noreferrer"{% endif %}{% if cta_primary_magnetic %} data-fw-magnetic{% endif %}>{{ cta_primary_label_prefix }}{{ cta_primary_label }}</a>
+      {% endif %}
+      {% if cta_secondary_href %}
+      <a class="fw-btn {{ cta_secondary_class|default:'fw-btn--ghost' }}" href="{{ cta_secondary_prefix }}{{ cta_secondary_href }}"{% if cta_secondary_external %} target="_blank" rel="noopener noreferrer"{% endif %}{% if cta_secondary_magnetic %} data-fw-magnetic{% endif %}>{{ cta_secondary_label_prefix }}{{ cta_secondary_label }}</a>
+      {% endif %}
+      {% if cta_tertiary_href %}
+      <a class="fw-btn {{ cta_tertiary_class|default:'fw-btn--ghost' }}" href="{{ cta_tertiary_prefix }}{{ cta_tertiary_href }}"{% if cta_tertiary_external %} target="_blank" rel="noopener noreferrer"{% endif %}{% if cta_tertiary_magnetic %} data-fw-magnetic{% endif %}>{{ cta_tertiary_label_prefix }}{{ cta_tertiary_label }}</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</section>

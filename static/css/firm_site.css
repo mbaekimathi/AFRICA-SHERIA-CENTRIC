@@ -11927,3 +11927,27 @@ body.is-lightbox-open {
     transform: none !important;
   }
 }
+
+/* Skip to main content */
+.fw-skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 300;
+  padding: 0.6rem 1.05rem;
+  border-radius: 999px;
+  background: var(--fw-ink);
+  color: var(--fw-white);
+  font-family: var(--fw-sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-300%);
+  transition: transform 0.22s var(--fw-ease);
+}
+
+.fw-skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid var(--fw-brass);
+  outline-offset: 2px;
+}

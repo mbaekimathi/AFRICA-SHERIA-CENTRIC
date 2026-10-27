@@ -1,0 +1,21 @@
+{# Shared workspace/portal page header.
+   Include vars:
+     page_kicker          - small uppercase eyebrow text (optional)
+     page_heading_text    - <h2> text (defaults to page_title)
+     page_lead            - muted lede paragraph (optional)
+     page_header_split    - truthy → page-intro--split (title + actions row)
+     page_header_card     - truthy → page-intro--card (elevated hero header)
+     page_header_class    - extra classes on <header> (optional)
+     page_header_actions  - template name rendered inside .page-intro__actions (optional)
+   Example:
+     {% include "partials/page_header.html" with page_kicker="Billing" page_lead="..." page_header_split=1 page_header_actions="accounts/_billing_actions.html" %} #}
+<header class="page-intro{% if page_header_split %} page-intro--split{% endif %}{% if page_header_card %} page-intro--card{% endif %}{% if page_header_class %} {{ page_header_class }}{% endif %}">
+  <div class="page-intro__copy">
+    {% if page_kicker %}<p class="page-kicker">{{ page_kicker }}</p>{% endif %}
+    <h2>{{ page_heading_text|default:page_title }}</h2>
+    {% if page_lead %}<p class="page-lead">{{ page_lead }}</p>{% endif %}
+  </div>
+  {% if page_header_actions %}
+  <div class="page-intro__actions">{% include page_header_actions %}</div>
+  {% endif %}
+</header>

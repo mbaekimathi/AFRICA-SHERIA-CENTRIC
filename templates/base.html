@@ -6,6 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="{% block meta_description %}Sheria-Centric — professional practice management for advocates.{% endblock %}">
   <title>{% block title %}Sheria-Centric{% endblock %}</title>
+  {% block meta_robots %}{% endblock %}
+  {% block canonical %}{% endblock %}
+  {% block og %}{% endblock %}
+  {% block json_ld %}{% endblock %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
@@ -14,7 +18,7 @@
     (function(){try{var m=localStorage.getItem("sc-theme-mode");if(m!=="light"&&m!=="dark"){m=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.classList.add("mode-"+m);}catch(e){}})();
   </script>
   {% endblock %}
-  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=ql-auth-2">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=ql-auth-3">
   <link rel="stylesheet" href="{% static 'css/partnership-crest.css' %}?v=9">
   {% block extra_head %}{% endblock %}
 </head>

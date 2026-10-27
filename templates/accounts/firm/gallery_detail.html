@@ -2,7 +2,6 @@
 {% load firm_media %}
 {% block title %}{{ item.title }} — {{ firm_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
 
 {% block firm_content %}
 {% with gurl=item.image|stored_media_url %}

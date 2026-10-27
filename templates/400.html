@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block title %}Bad request — Sheria-Centric{% endblock %}
+{% block meta_robots %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+{% include "partials/error_card.html" with error_code="400" error_title="Bad request" error_copy="We couldn't understand that request. Check the link and try again." error_secondary_href="/contact/" error_secondary_label="Contact chambers" %}
+{% endblock %}

@@ -2,7 +2,6 @@
 {% load firm_media %}
 {% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
 
 {% block firm_content %}
 {% with hero_src=website_images.gallery %}
@@ -92,12 +91,12 @@
         <p class="fw-gallery-lounge__match" data-fw-gallery-match aria-live="polite">
           {% if gallery_count %}Showing all {{ gallery_count }} moments{% endif %}
         </p>
-        <div class="fw-gallery-lounge__topics" role="tablist" aria-label="Gallery activities">
-          <button type="button" class="fw-gallery-lounge__topic is-active" data-fw-gallery-topic="all" role="tab" aria-selected="true">
+        <div class="fw-gallery-lounge__topics" role="group" aria-label="Gallery activities">
+          <button type="button" class="fw-gallery-lounge__topic is-active" data-fw-gallery-topic="all" aria-pressed="true">
             All <span>{{ gallery_count }}</span>
           </button>
           {% for topic in gallery_topics %}
-          <button type="button" class="fw-gallery-lounge__topic" data-fw-gallery-topic="{{ topic.slug }}" role="tab" aria-selected="false">
+          <button type="button" class="fw-gallery-lounge__topic" data-fw-gallery-topic="{{ topic.slug }}" aria-pressed="false">
             {{ topic.label }} <span>{{ topic.count }}</span>
           </button>
           {% endfor %}

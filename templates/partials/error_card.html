@@ -1,0 +1,21 @@
+{# Shared branded error card (400/403/404/500 + 403_csrf).
+   Include vars: error_code, error_title, error_copy,
+     error_primary_href (default "/"), error_primary_label (default "Back to home"),
+     error_secondary_href, error_secondary_label (optional second action) #}
+<main class="auth-shell auth-shell--single">
+  <section class="auth-panel">
+    <div class="auth-card error-card">
+      <header class="auth-card__header">
+        <span class="error-code" aria-hidden="true">{{ error_code }}</span>
+        <h1>{{ error_title }}</h1>
+        <p>{{ error_copy }}</p>
+      </header>
+      <div class="error-actions">
+        <a class="btn btn--primary" href="{{ error_primary_href|default:'/' }}">{{ error_primary_label|default:'Back to home' }}</a>
+        {% if error_secondary_href %}
+        <a class="btn btn--ghost" href="{{ error_secondary_href }}">{{ error_secondary_label }}</a>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+</main>

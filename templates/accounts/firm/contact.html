@@ -2,7 +2,6 @@
 {% load firm_media %}
 {% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
 {% block meta_description %}{{ meta_description }}{% endblock %}
-{% block firm_head %}<link rel="canonical" href="{{ canonical_url }}">{% endblock %}
 
 {% block firm_content %}
 <section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
@@ -110,22 +109,8 @@
 </section>
 
 {% if company.consultation_blurb or company.consultation_cta_label %}
-<section class="fw-cta fw-cta--rich">
-  <div class="fw-cta__aurora" aria-hidden="true"></div>
-  <div class="fw-wrap" data-fw-anim="rise">
-    <p class="fw-cta__eyebrow">Consultation</p>
-    <h2>{% if company.consultation_cta_label %}{{ company.consultation_cta_label }}{% else %}Book a consultation{% endif %}</h2>
-    {% if company.consultation_blurb %}<p>{{ company.consultation_blurb }}</p>{% endif %}
-    <div class="fw-btn-row">
-      {% if whatsapp_url %}
-      <a class="fw-btn fw-btn--on-dark fw-btn--glow" href="{{ whatsapp_url }}" target="_blank" rel="noopener noreferrer" data-fw-magnetic>WhatsApp</a>
-      {% endif %}
-      {% if company.phone %}
-      <a class="fw-btn fw-btn--ghost" href="tel:{{ company.phone }}">Call {{ company.phone }}</a>
-      {% endif %}
-    </div>
-  </div>
-</section>
+{% firstof company.consultation_cta_label "Book a consultation" as cta_t %}
+{% include "accounts/firm/_cta_band.html" with cta_band_eyebrow="Consultation" cta_band_title=cta_t cta_band_copy=company.consultation_blurb cta_primary_href=whatsapp_url cta_primary_label="WhatsApp" cta_primary_external=1 cta_primary_magnetic=1 cta_secondary_href=company.phone cta_secondary_prefix="tel:" cta_secondary_label=company.phone cta_secondary_label_prefix="Call " %}
 {% endif %}
 
 <section class="fw-section fw-section--ink">

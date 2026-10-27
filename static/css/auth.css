@@ -2030,3 +2030,21 @@ html.mode-dark .mode-toggle .icon--moon { display: inline-block; }
     }
   }
 }
+
+/* Error pages (400/403/404/500) */
+.error-code {
+  display: block;
+  margin: 0 0 0.4rem;
+  font-family: var(--font-serif);
+  font-size: clamp(2.5rem, 2rem + 2.4vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--purple-400);
+}
+
+.error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
