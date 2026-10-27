@@ -22634,25 +22634,59 @@ class EmployeeCommunicationLogView(View):
         employee = get_object_or_404(Employee, pk=employee_id)
         search = (request.GET.get("q") or "").strip()
         active_folder = "all"
-        folder_counts = {}
+        log_mailboxes = ()
+        mailbox_sel = "all"
+        drafts_source = ""
         draft_rows, drafts_error = [], ""
         if meta["key"] == "email":
             requested = (request.GET.get("folder") or "all").strip().lower()
             if requested in EMAIL_LOG_FOLDER_KEYS:
                 active_folder = requested
-            folder_counts = employee_email_folder_counts(employee)
+            log_mailboxes = employee.mailbox_rows()
+            raw_mailbox = request.GET.get("mailbox")
+            # "all" = every mailbox; "" = the primary work email; a pk = a
+            # linked EmployeeMailbox — same convention as the Messages page.
+            mailbox_sel = "all" if raw_mailbox is None else raw_mailbox.strip()
+            valid_keys = {row["key"] for row in log_mailboxes}
+            if mailbox_sel != "all" and mailbox_sel not in valid_keys:
+                mailbox_sel = "all"
+            mailbox_obj = None
+            if mailbox_sel == "all":
+                mailbox_email = ""
+                drafts_source = "all connected mailboxes"
+            elif mailbox_sel == "":
+                mailbox_email = (employee.work_email or "").strip().lower()
+                drafts_source = mailbox_email
+            else:
+                mailbox_obj = employee.linked_mailbox_for(mailbox_sel)
+                mailbox_email = (
+                    (mailbox_obj.email or "").strip().lower()
+                    if mailbox_obj is not None
+                    else ""
+                )
+                drafts_source = mailbox_email
+            folder_counts = employee_email_folder_counts(
+                employee, mailbox_email=mailbox_email
+            )
             log_folders = [
                 {**folder, "count": folder_counts.get(folder["key"])}
                 for folder in EMAIL_LOG_FOLDERS
             ]
             if active_folder == "drafts":
                 draft_rows, drafts_error = employee_mailbox_drafts(
-                    employee, search=search
+                    employee,
+                    mailbox=mailbox_obj,
+                    all_mailboxes=mailbox_sel == "all",
+                    search=search,
                 )
                 rows = []
             else:
                 rows = employee_messages(
-                    meta["key"], employee, search=search, folder=active_folder
+                    meta["key"],
+                    employee,
+                    search=search,
+                    folder=active_folder,
+                    mailbox_email=mailbox_email,
                 )
         else:
             log_folders = ()
@@ -22679,6 +22713,9 @@ class EmployeeCommunicationLogView(View):
                 "log_search": search,
                 "log_folders": log_folders,
                 "active_folder": active_folder,
+                "log_mailboxes": log_mailboxes,
+                "mailbox_sel": mailbox_sel,
+                "drafts_source": drafts_source,
                 "draft_rows": draft_rows,
                 "drafts_error": drafts_error,
                 "channel_list_url": user.workspace_url(*trail),

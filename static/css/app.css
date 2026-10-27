@@ -10291,10 +10291,22 @@ dialog.workspace-modal[open] {
 }
 
 /* Mail folder tabs on the employee email log */
+.mail-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.mail-bar__switch {
+  margin: 0;
+}
+
 .mail-folders {
   padding: 0;
   border-bottom: 0;
-  margin-bottom: 0.35rem;
 }
 
 a.settings-tab,

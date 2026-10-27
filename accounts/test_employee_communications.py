@@ -14,6 +14,7 @@ from accounts.models import (
     EmployeeActivityPermission,
     EmployeeCommunication,
     EmployeeCommunicationAttachment,
+    EmployeeMailbox,
     WhatsAppConversation,
     WhatsAppMessage,
 )
@@ -467,6 +468,45 @@ class EmployeeCommunicationsPagesTests(TestCase):
         inbox = self.http.get(f"{log_url}?folder=inbox")
         self.assertContains(inbox, "Inbound brief")
         self.assertNotContains(inbox, "Outbound note")
+
+    def test_email_log_filters_by_selected_mailbox(self):
+        extra = EmployeeMailbox.objects.create(
+            employee=self.colleague,
+            email="conveyancing@sheriacentric.com",
+        )
+        EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Primary mailbox send",
+            body="Sent from the personal address.",
+        )
+        EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=extra.email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Department mailbox send",
+            body="Sent from the shared mailbox.",
+        )
+        log_url = self.channel_url(
+            "email-communications", str(self.colleague.pk)
+        )
+
+        everything = self.http.get(f"{log_url}?folder=sent")
+        self.assertContains(everything, "Primary mailbox send")
+        self.assertContains(everything, "Department mailbox send")
+
+        primary = self.http.get(f"{log_url}?folder=sent&mailbox=")
+        self.assertContains(primary, "Primary mailbox send")
+        self.assertNotContains(primary, "Department mailbox send")
+
+        shared = self.http.get(f"{log_url}?folder=sent&mailbox={extra.pk}")
+        self.assertContains(shared, "Department mailbox send")
+        self.assertNotContains(shared, "Primary mailbox send")
 
     def test_email_log_drafts_folder_reads_the_employee_mailbox(self):
         log_url = self.channel_url(

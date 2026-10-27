@@ -77,6 +77,7 @@ class MailSummary:
     is_unread: bool
     has_attachments: bool
     sent_at: datetime | None = None
+    mailbox_address: str = ""
 
     @property
     def display_name(self) -> str:

@@ -26,24 +26,53 @@
   </header>
 
   {% if channel.key == "email" %}
-  <nav class="settings-tabs mail-folders" aria-label="Mail folders">
-    {% for folder in log_folders %}
-    <a
-      class="settings-tab{% if active_folder == folder.key %} is-active{% endif %}"
-      href="?folder={{ folder.key }}{% if log_search %}&amp;q={{ log_search|urlencode }}{% endif %}"
-      {% if active_folder == folder.key %}aria-current="page"{% endif %}
-    >
-      {{ folder.label }}
-      {% if folder.key == "drafts" %}
-        {% if active_folder == "drafts" and not drafts_error %}
-        <span class="mail-folders__count">{{ draft_rows|length }}</span>
+  <div class="mail-bar">
+    <nav class="settings-tabs mail-folders" aria-label="Mail folders">
+      {% for folder in log_folders %}
+      <a
+        class="settings-tab{% if active_folder == folder.key %} is-active{% endif %}"
+        href="?folder={{ folder.key }}&amp;mailbox={{ mailbox_sel|urlencode }}{% if log_search %}&amp;q={{ log_search|urlencode }}{% endif %}"
+        {% if active_folder == folder.key %}aria-current="page"{% endif %}
+      >
+        {{ folder.label }}
+        {% if folder.key == "drafts" %}
+          {% if active_folder == "drafts" and not drafts_error %}
+          <span class="mail-folders__count">{{ draft_rows|length }}</span>
+          {% endif %}
+        {% else %}
+          <span class="mail-folders__count">{{ folder.count }}</span>
         {% endif %}
-      {% else %}
-        <span class="mail-folders__count">{{ folder.count }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+    {% if log_mailboxes|length > 1 %}
+    <form method="get" class="mailbox__switch mail-bar__switch">
+      <input type="hidden" name="folder" value="{{ active_folder }}">
+      {% if log_search %}
+      <input type="hidden" name="q" value="{{ log_search }}">
       {% endif %}
-    </a>
-    {% endfor %}
-  </nav>
+      <label class="sr-only" for="id_log_mailbox">Mailbox</label>
+      <select
+        name="mailbox"
+        id="id_log_mailbox"
+        class="mailbox__switch-select"
+        onchange="this.form.submit()"
+      >
+        <option value="all"{% if mailbox_sel == "all" %} selected{% endif %}>
+          All mailboxes
+        </option>
+        {% for box in log_mailboxes %}
+        <option
+          value="{{ box.key }}"
+          {% if box.key == mailbox_sel %}selected{% endif %}
+        >
+          {{ box.email }}{% if not box.connected %} (not connected){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </form>
+    {% endif %}
+  </div>
   {% endif %}
 
   <section class="panel">
@@ -58,7 +87,7 @@
       <p class="panel__hint">
         {% if active_folder == "drafts" %}
           {{ draft_rows|length }} shown · live from
-          {{ log_employee.work_email|default:"the mailbox" }}
+          {{ drafts_source|default:log_employee.work_email|default:"the mailbox" }}
         {% else %}
           {{ messages_log|length }} shown
           {% if log_employee.work_email %}· {{ log_employee.work_email }}{% endif %}
@@ -69,6 +98,7 @@
       <form method="get" class="workspace-form">
         {% if channel.key == "email" %}
         <input type="hidden" name="folder" value="{{ active_folder }}">
+        <input type="hidden" name="mailbox" value="{{ mailbox_sel }}">
         {% endif %}
         <div class="form-field">
           <label for="id_log_search">Search messages</label>

@@ -332,7 +332,12 @@ def _communication_row(record, *, viewer=None) -> dict:
 
 
 def employee_messages(
-    channel_key: str, employee, *, search: str = "", folder: str = "all"
+    channel_key: str,
+    employee,
+    *,
+    search: str = "",
+    folder: str = "all",
+    mailbox_email: str = "",
 ) -> list[dict]:
     """Messages this employee dealt with on a channel, newest first."""
     term = (search or "").strip()
@@ -353,14 +358,26 @@ def employee_messages(
 
     queryset = EmployeeCommunication.objects.filter(channel=channel_key)
     if channel_key == "email":
+        address = (mailbox_email or "").strip().lower()
         if folder == "inbox":
             queryset = queryset.filter(to_employee=employee).exclude(
                 sender=employee
             )
+            if address:
+                queryset = queryset.filter(to_address__iexact=address)
         elif folder == "sent":
             queryset = queryset.filter(sender=employee)
+            if address:
+                queryset = queryset.filter(from_identity__iexact=address)
+        elif address:
+            queryset = queryset.filter(
+                Q(sender=employee, from_identity__iexact=address)
+                | Q(to_employee=employee, to_address__iexact=address)
+            )
         else:
-            queryset = queryset.filter(Q(sender=employee) | Q(to_employee=employee))
+            queryset = queryset.filter(
+                Q(sender=employee) | Q(to_employee=employee)
+            )
     else:
         queryset = queryset.filter(sender=employee)
     queryset = queryset.select_related("sender", "to_client", "to_employee").order_by(
@@ -383,34 +400,76 @@ def employee_messages(
     return [_communication_row(record, viewer=employee) for record in queryset]
 
 
-def employee_email_folder_counts(employee) -> dict:
+def employee_email_folder_counts(employee, *, mailbox_email: str = "") -> dict:
     """Row counts behind each email-log folder tab (drafts are live-only)."""
     base = EmployeeCommunication.objects.filter(
         channel=EmployeeCommunication.Channel.EMAIL
     )
+    address = (mailbox_email or "").strip().lower()
     inbox = base.filter(to_employee=employee).exclude(sender=employee)
     sent = base.filter(sender=employee)
     both = base.filter(Q(sender=employee) | Q(to_employee=employee))
+    if address:
+        inbox = inbox.filter(to_address__iexact=address)
+        sent = sent.filter(from_identity__iexact=address)
+        both = base.filter(
+            Q(sender=employee, from_identity__iexact=address)
+            | Q(to_employee=employee, to_address__iexact=address)
+        )
     return {"all": both.count(), "inbox": inbox.count(), "sent": sent.count()}
 
 
-def employee_mailbox_drafts(employee, *, search: str = "", limit: int = 60):
-    """Live Drafts folder from the employee's own connected work mailbox.
+def employee_mailbox_drafts(
+    employee, *, mailbox=None, all_mailboxes: bool = False,
+    search: str = "", limit: int = 60,
+):
+    """Live Drafts folder from the employee's connected work mailbox(es).
 
-    Returns ``(summaries, error)`` — ``error`` is ``"not-connected"`` when the
-    employee has no mailbox credentials, or a message when IMAP failed.
+    ``mailbox`` is an :class:`EmployeeMailbox` for one linked address, ``None``
+    for the primary work email; ``all_mailboxes`` merges every connected
+    mailbox. Returns ``(summaries, error)`` — ``error`` is ``"not-connected"``
+    when the target has no mailbox credentials, or a message when IMAP failed.
     """
     from .work_mailbox import WorkMailbox, WorkMailboxError
 
-    if not employee.mailbox_connected:
+    boxes = []
+    if all_mailboxes:
+        if employee.mailbox_connected:
+            boxes.append((None, (employee.work_email or "").strip()))
+        boxes += [
+            (extra, (extra.email or "").strip())
+            for extra in employee.extra_mailboxes.all()
+            if extra.mailbox_connected
+        ]
+    else:
+        if mailbox is not None:
+            target, address = mailbox, (mailbox.email or "").strip()
+        else:
+            target, address = employee, (employee.work_email or "").strip()
+        if target.mailbox_connected:
+            boxes.append((mailbox, address))
+    if not boxes:
         return [], "not-connected"
-    try:
-        summaries = WorkMailbox(employee).list_messages(
-            "drafts", limit=limit, search=search
-        )
-    except WorkMailboxError as exc:
-        return [], str(exc)
-    return summaries, ""
+
+    merged, errors = [], []
+    for extra, address in boxes:
+        try:
+            rows = WorkMailbox(employee, mailbox=extra).list_messages(
+                "drafts", limit=limit, search=search
+            )
+        except WorkMailboxError as exc:
+            errors.append(f"{address}: {exc}")
+            continue
+        for row in rows:
+            row.mailbox_address = address
+        merged += rows
+    merged.sort(
+        key=lambda row: row.sent_at.timestamp() if row.sent_at else 0,
+        reverse=True,
+    )
+    if merged:
+        return merged[:limit], ""
+    return [], "; ".join(errors) or "not-connected"
 
 
 def save_communication_attachments(record, attachments) -> None:
