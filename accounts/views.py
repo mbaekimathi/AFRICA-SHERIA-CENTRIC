@@ -21982,6 +21982,22 @@ class EmployeeCommunicationDetailView(View):
                 "avatar_tone": avatar_tone_for(identity or "?"),
             }
         )
+        can_import_attachments = bool(
+            meta["key"] == "email"
+            and not message.get("attachments")
+            and workspace_activity_action_permitted(
+                user, _USER_MODULE, meta["slug"], "communicate"
+            )
+        )
+        if can_import_attachments:
+            from .communication_backfill import candidate_sources
+
+            record = employee_communication_record(
+                meta["key"], employee, message["id"]
+            )
+            can_import_attachments = bool(
+                record is not None and candidate_sources(record)
+            )
         context = workspace_context(
             user,
             request=request,
@@ -21995,6 +22011,7 @@ class EmployeeCommunicationDetailView(View):
                 "log_employee": employee,
                 "message": message,
                 "log_url": user.workspace_url(*trail, str(employee.pk)),
+                "can_import_attachments": can_import_attachments,
             }
         )
         context.update(
@@ -22020,6 +22037,24 @@ class EmployeeCommunicationDetailView(View):
             return denied
         if meta["key"] != "email":
             raise Http404("Replies are only supported for email messages.")
+
+        if (request.POST.get("form_action") or "") == "import_attachments":
+            from .communication_backfill import import_attachments
+
+            record = employee_communication_record(
+                meta["key"], employee, message_id
+            )
+            if record is None:
+                raise Http404("Message not found")
+            imported, error = import_attachments(record)
+            if error:
+                messages.error(request, error)
+            else:
+                messages.success(
+                    request,
+                    f"Imported {imported} attachment(s) from the mailbox copy.",
+                )
+            return redirect(request.path)
 
         from .client_notifications import notify_staff_message_to_client
         from .mail_client import collect_attachments

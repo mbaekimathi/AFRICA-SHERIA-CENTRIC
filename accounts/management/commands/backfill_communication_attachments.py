@@ -16,26 +16,15 @@ from datetime import timedelta
 
 from django.core.management.base import BaseCommand
 from django.db.models import Count, Q
-from django.utils import timezone
 
+from accounts.communication_backfill import (
+    DEFAULT_TOLERANCE_MINUTES,
+    best_match,
+    candidate_sources,
+)
 from accounts.employee_communications import save_communication_attachments
-from accounts.models import Employee, EmployeeCommunication, EmployeeMailbox
+from accounts.models import EmployeeCommunication
 from accounts.work_mailbox import WorkMailbox, WorkMailboxError
-
-_NO_SUBJECT = "(no subject)"
-
-
-def _norm_subject(value: str) -> str:
-    text = " ".join((value or "").split()).lower()
-    return "" if text == _NO_SUBJECT else text
-
-
-def _aware(value):
-    if value is None:
-        return None
-    if timezone.is_naive(value):
-        return timezone.make_aware(value)
-    return value
 
 
 class Command(BaseCommand):
@@ -59,7 +48,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--tolerance",
             type=int,
-            default=15,
+            default=DEFAULT_TOLERANCE_MINUTES,
             help="Minutes apart the log timestamp and email date may be.",
         )
         parser.add_argument(
@@ -92,37 +81,16 @@ class Command(BaseCommand):
             self.stdout.write("No logged emails are missing attachments.")
             return
 
-        # One mailbox listing serves many records: (employee, mailbox, folder).
-        sources = defaultdict(list)
+        # One mailbox listing serves many records.
+        groups = defaultdict(list)
         for record in records:
-            for source in self._sources_for(record):
-                sources[source].append(record)
-
-        employees = {
-            employee.pk: employee
-            for employee in Employee.objects.filter(
-                pk__in={key[0] for key in sources}
-            ).prefetch_related("extra_mailboxes")
-        }
-        mailboxes = {
-            mailbox.pk: mailbox
-            for mailbox in EmployeeMailbox.objects.filter(
-                pk__in={
-                    int(key[1])
-                    for key in sources
-                    if isinstance(key[1], str) and key[1].isdigit()
-                }
-            )
-        }
+            for employee, mailbox, folder in candidate_sources(record):
+                groups[(employee, mailbox, folder)].append(record)
 
         done, matched, saved_files = set(), 0, 0
-        for (employee_pk, mailbox_key, folder), group in sorted(
-            sources.items(), key=lambda item: (str(item[0][0]), item[0][2])
+        for (employee, mailbox, folder), group in sorted(
+            groups.items(), key=lambda item: (item[0][0].pk, item[0][2])
         ):
-            employee = employees.get(employee_pk)
-            if employee is None:
-                continue
-            mailbox = mailboxes.get(int(mailbox_key)) if mailbox_key else None
             where = f"{employee.get_full_name()} · {folder}"
             try:
                 client = WorkMailbox(employee, mailbox=mailbox)
@@ -134,7 +102,7 @@ class Command(BaseCommand):
             for record in group:
                 if record.pk in done:
                     continue
-                summary = self._best_match(record, summaries, folder, tolerance)
+                summary = best_match(record, summaries, folder, tolerance)
                 if summary is None:
                     continue
                 try:
@@ -169,9 +137,7 @@ class Command(BaseCommand):
                             for a in detail.attachments
                         ],
                     )
-                    done.add(record.pk)
-                else:
-                    done.add(record.pk)
+                done.add(record.pk)
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -181,52 +147,3 @@ class Command(BaseCommand):
                 f"{len(records) - len(done)} email(s) had no match."
             )
         )
-
-    def _sources_for(self, record) -> list[tuple]:
-        """(employee_pk, mailbox_key, folder) lookups that may hold the email."""
-        sources = []
-        sender = record.sender
-        from_identity = (record.from_identity or "").strip().lower()
-        if sender is not None:
-            mailbox_key = None
-            if from_identity:
-                for row in sender.mailbox_rows():
-                    if row["email"] == from_identity and row["connected"]:
-                        mailbox_key = row["key"]
-                        break
-            elif sender.mailbox_connected:
-                mailbox_key = ""
-            if mailbox_key is not None:
-                sources.append((sender.pk, mailbox_key, "sent"))
-        recipient = record.to_employee
-        if recipient is not None and recipient.mailbox_connected:
-            sources.append((recipient.pk, "", "inbox"))
-        return sources
-
-    @staticmethod
-    def _best_match(record, summaries, folder, tolerance):
-        subject = _norm_subject(record.subject)
-        needle = (
-            record.to_address if folder == "sent" else (record.from_identity or "")
-        ).strip().lower()
-        created = _aware(record.created_at)
-        best, best_delta = None, None
-        for summary in summaries:
-            if _norm_subject(summary.subject) != subject:
-                continue
-            haystack = (
-                summary.to_addrs if folder == "sent" else summary.from_addr
-            ) or ""
-            if needle and needle not in haystack.lower():
-                continue
-            sent_at = _aware(summary.sent_at)
-            if sent_at is None or created is None:
-                if best is None:
-                    best = summary
-                continue
-            delta = abs(sent_at - created)
-            if delta > tolerance:
-                continue
-            if best_delta is None or delta < best_delta:
-                best, best_delta = summary, delta
-        return best

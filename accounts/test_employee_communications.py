@@ -1,5 +1,6 @@
 import shutil
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.core.files.base import ContentFile
@@ -491,6 +492,98 @@ class EmployeeCommunicationsPagesTests(TestCase):
         download = self.http.get(f"{file_url}?download=1")
         self.assertEqual(download.status_code, 200)
         self.assertTrue(download["Content-Disposition"].startswith("attachment"))
+
+    @patch("accounts.communication_backfill.WorkMailbox")
+    def test_fetch_attachments_imports_files_from_the_mailbox_copy(
+        self, mailbox_cls
+    ):
+        self.colleague.work_email_password_encrypted = "enc"
+        self.colleague.save(update_fields=["work_email_password_encrypted"])
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        detail_url = (
+            f"{self.channel_url('email-communications', str(self.colleague.pk))}"
+            f"{record.pk}/"
+        )
+        detail = self.http.get(detail_url)
+        self.assertContains(detail, "Fetch attachments")
+
+        mailbox = MagicMock()
+        mailbox_cls.return_value = mailbox
+        mailbox.list_messages.return_value = [
+            SimpleNamespace(
+                uid="7",
+                subject="Contract",
+                to_addrs=self.firm_client.email,
+                from_addr="",
+                sent_at=record.created_at,
+            )
+        ]
+        mailbox.get_message.return_value = SimpleNamespace(
+            attachments=[
+                SimpleNamespace(
+                    filename="contract.pdf",
+                    content_type="application/pdf",
+                    payload=b"%PDF",
+                )
+            ]
+        )
+
+        response = self.http.post(
+            detail_url, {"form_action": "import_attachments"}
+        )
+
+        self.assertRedirects(response, detail_url, fetch_redirect_response=False)
+        attachment = EmployeeCommunicationAttachment.objects.get(
+            communication=record
+        )
+        self.assertEqual(attachment.filename, "contract.pdf")
+        mailbox.get_message.assert_called_once_with(
+            "sent", "7", mark_seen=False
+        )
+
+        detail = self.http.get(detail_url)
+        self.assertContains(detail, "contract.pdf")
+        self.assertNotContains(detail, "Fetch attachments")
+
+    @patch("accounts.communication_backfill.WorkMailbox")
+    def test_fetch_attachments_reports_when_no_copy_matches(self, mailbox_cls):
+        self.colleague.work_email_password_encrypted = "enc"
+        self.colleague.save(update_fields=["work_email_password_encrypted"])
+        record = EmployeeCommunication.objects.create(
+            sender=self.colleague,
+            channel=EmployeeCommunication.Channel.EMAIL,
+            from_identity=self.colleague.work_email,
+            to_client=self.firm_client,
+            to_address=self.firm_client.email,
+            subject="Contract",
+            body="Signed contract attached.",
+        )
+        detail_url = (
+            f"{self.channel_url('email-communications', str(self.colleague.pk))}"
+            f"{record.pk}/"
+        )
+        mailbox = MagicMock()
+        mailbox_cls.return_value = mailbox
+        mailbox.list_messages.return_value = []
+
+        response = self.http.post(
+            detail_url, {"form_action": "import_attachments"}
+        )
+
+        self.assertRedirects(response, detail_url, fetch_redirect_response=False)
+        self.assertFalse(
+            EmployeeCommunicationAttachment.objects.filter(
+                communication=record
+            ).exists()
+        )
 
     def test_attachment_of_another_employees_message_is_not_found(self):
         record = EmployeeCommunication.objects.create(

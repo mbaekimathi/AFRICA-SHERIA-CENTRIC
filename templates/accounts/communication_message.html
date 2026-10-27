@@ -77,6 +77,19 @@
     </div>
     {% endif %}
 
+    {% if can_import_attachments %}
+    <div class="mail-read__fetch">
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="pill-btn" name="form_action" value="import_attachments">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Fetch attachments
+        </button>
+      </form>
+      <p class="field-hint">No files were stored with this email — pull them from the mailbox copy.</p>
+    </div>
+    {% endif %}
+
     {% if can_reply %}
     <div class="mail-read__actions">
       <a class="pill-btn" href="#reply">

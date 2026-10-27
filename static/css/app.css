@@ -27995,6 +27995,24 @@ button.invoice-share-option:hover {
 
 /* --- Email-style communication page ----------------------------------- */
 
+.mail-read__fetch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 1.6rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.mail-read__fetch form {
+  margin: 0;
+}
+
+.mail-read__fetch .field-hint {
+  margin: 0;
+}
+
 .mail-page__bar {
   display: flex;
   align-items: center;
