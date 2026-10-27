@@ -1,0 +1,63 @@
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
+  <div class="fw-pagehead__bg" aria-hidden="true"></div>
+  <span class="fw-pagehead__mark" aria-hidden="true">Cookies</span>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-pagehead__eyebrow">Legal</p>
+    <h1>{{ page_title }}</h1>
+    <p class="fw-pagehead__lede">How this website uses cookies and similar technologies.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap fw-legal" data-fw-anim="rise">
+    <div class="fw-prose fw-prose--legal">
+      <h2>What we use</h2>
+      <p>
+        This website uses a small number of cookies and browser storage entries
+        to keep the site working and secure:
+      </p>
+      <ul>
+        <li>
+          <strong>Security cookies</strong> — protect forms (such as the enquiry
+          form and sign-in pages) against cross-site request forgery. These are
+          strictly necessary and cannot be switched off.
+        </li>
+        <li>
+          <strong>Session cookies</strong> — keep you signed in on the client
+          portal and staff workspace. They expire when you sign out or close
+          your browser.
+        </li>
+        <li>
+          <strong>Preference storage</strong> — remembers display choices such
+          as theme, font, and density in your own browser. These stay on your
+          device and are not sent to us as part of browsing.
+        </li>
+      </ul>
+      <h2>What we don't do</h2>
+      <p>
+        We do not use advertising or cross-site tracking cookies, and we do not
+        sell information about your visit to anyone.
+      </p>
+      <h2>Managing cookies</h2>
+      <p>
+        You can clear or block cookies at any time in your browser settings.
+        Blocking security or session cookies will stop sign-in and form
+        submissions from working, but the public pages will still be readable.
+      </p>
+      <h2>Questions</h2>
+      <p>
+        For questions about this notice, contact the chambers through the
+        <a href="{% url 'accounts:firm_contact' %}">contact page</a>. For how we
+        handle personal information, see our
+        <a href="{% url 'accounts:firm_privacy' %}">privacy policy</a>.
+      </p>
+    </div>
+  </div>
+</section>
+{% endblock %}

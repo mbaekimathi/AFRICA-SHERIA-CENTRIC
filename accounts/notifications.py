@@ -578,6 +578,7 @@ def utility_badge_counts(
         for slug, category in UTILITY_BADGE_CATEGORIES.items()
     }
     counts["tasks"] = pending_assigned_tasks_count(employee)
+    counts["notifications"] = sum(by_category.values())
     return counts
 
 

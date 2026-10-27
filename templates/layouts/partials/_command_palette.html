@@ -1,0 +1,32 @@
+<dialog
+  class="cmdk"
+  id="cmdk"
+  aria-labelledby="cmdk-label"
+  data-search-url="{% url 'accounts:workspace_search' %}"
+>
+  <div class="cmdk__head">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <use href="#i-search"/>
+    </svg>
+    <label class="visually-hidden" id="cmdk-label" for="cmdk-input">
+      Search the workspace
+    </label>
+    <input
+      id="cmdk-input"
+      class="cmdk__input"
+      type="search"
+      placeholder="Search matters, clients, tasks…"
+      autocomplete="off"
+      spellcheck="false"
+    >
+    <kbd class="cmdk__kbd" aria-hidden="true">Esc</kbd>
+  </div>
+  <div class="cmdk__results" id="cmdk-results" role="listbox" aria-label="Search results">
+    <p class="cmdk__hint">Type at least 2 characters to search matters, clients, and tasks.</p>
+  </div>
+  <div class="cmdk__foot" aria-hidden="true">
+    <span><kbd class="cmdk__kbd">↑</kbd><kbd class="cmdk__kbd">↓</kbd> navigate</span>
+    <span><kbd class="cmdk__kbd">Enter</kbd> open</span>
+    <span><kbd class="cmdk__kbd">Ctrl K</kbd> toggle</span>
+  </div>
+</dialog>

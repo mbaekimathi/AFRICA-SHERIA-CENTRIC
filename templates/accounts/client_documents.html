@@ -1,4 +1,5 @@
 {% extends "layouts/client_portal.html" %}
+{% load static %}
 
 {% block title %}Documents — Sheria Centric{% endblock %}
 
@@ -23,6 +24,18 @@
     </div>
     <div class="panel__body panel__body--table">
       {% if documents %}
+      <div class="list-toolbar">
+        <label class="visually-hidden" for="doc-search">Search documents</label>
+        <input
+          type="search"
+          id="doc-search"
+          class="form-input list-toolbar__search"
+          placeholder="Search by name, matter, or type…"
+          autocomplete="off"
+          data-doc-search
+        >
+        <p class="list-toolbar__count" data-doc-count aria-live="polite"></p>
+      </div>
       <div class="data-table-wrap">
         <table class="data-table">
           <thead>
@@ -36,7 +49,7 @@
           </thead>
           <tbody>
             {% for doc in documents %}
-            <tr>
+            <tr data-doc-row data-doc-text="{{ doc.title }} {{ doc.matter_label }} {{ doc.type_label }} {{ doc.description }}">
               <td>
                 <div class="person-cell__text">
                   {% if doc.can_view %}
@@ -70,6 +83,10 @@
           </tbody>
         </table>
       </div>
+      <div class="empty-state" data-doc-empty hidden>
+        <p class="empty-state__title">No matches</p>
+        <p class="empty-state__copy">No documents match that search — try a different name or matter.</p>
+      </div>
       {% else %}
       <div class="empty-state">
         <p class="empty-state__title">No documents yet</p>
@@ -81,4 +98,8 @@
     </div>
   </section>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/client-docs.js' %}?v=ql-docs-1" defer></script>
 {% endblock %}

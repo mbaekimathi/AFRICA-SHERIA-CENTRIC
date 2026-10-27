@@ -8,11 +8,13 @@ document.addEventListener("DOMContentLoaded", () => {
     visuals: document.getElementById("panel-visuals"),
   };
 
-  const activateTab = (name) => {
+  const activateTab = (name, { focus = false } = {}) => {
     tabs.forEach((tab) => {
       const active = tab.dataset.tab === name;
       tab.classList.toggle("is-active", active);
       tab.setAttribute("aria-selected", active ? "true" : "false");
+      tab.tabIndex = active ? 0 : -1;
+      if (active && focus) tab.focus();
     });
     Object.entries(panels).forEach(([key, panel]) => {
       if (!panel) return;
@@ -23,6 +25,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   tabs.forEach((tab) =>
     tab.addEventListener("click", () => activateTab(tab.dataset.tab))
+  );
+
+  /* Roving-tabindex arrow navigation for the tablist */
+  tabs.forEach((tab, index) =>
+    tab.addEventListener("keydown", (event) => {
+      const last = tabs.length - 1;
+      let next = null;
+      if (event.key === "ArrowRight") next = index === last ? 0 : index + 1;
+      else if (event.key === "ArrowLeft") next = index === 0 ? last : index - 1;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = last;
+      if (next === null) return;
+      event.preventDefault();
+      activateTab(tabs[next].dataset.tab, { focus: true });
+    })
   );
 
   const dataElement = document.getElementById("employee-performance-charts-data");

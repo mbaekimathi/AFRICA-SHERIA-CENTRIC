@@ -1,0 +1,108 @@
+{% extends "layouts/workspace.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — Sheria-Centric{% endblock %}
+
+{% block content %}
+<section class="page">
+  <header class="page-intro page-intro--split">
+    <div class="page-intro__copy">
+      <p class="page-kicker">{{ session_greeting }}</p>
+      <h2>{{ page_title }}</h2>
+      <p class="page-lead">
+        {% if visibility_view_all %}
+        Firm-wide task, reminder, and message alerts. Opening an alert marks
+        it read for its owner and takes you to the related page.
+        {% else %}
+        Your task, reminder, and message alerts. Opening an alert marks it
+        read and takes you to the related page.
+        {% endif %}
+      </p>
+    </div>
+    <div class="page-intro__actions">
+      <a
+        class="btn btn--quiet"
+        href="{{ notification_unread_filter_url }}"
+      >{% if notification_show_unread %}Show all{% else %}Unread only{% endif %}</a>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="mark_all_read">
+        <button
+          class="btn btn--quiet"
+          type="submit"
+          {% if not notification_unread_total %}disabled{% endif %}
+        >Mark all read{% if notification_unread_total %} ({{ notification_unread_total }}){% endif %}</button>
+      </form>
+    </div>
+  </header>
+
+  <section class="panel">
+    <div class="panel__head">
+      <h3>
+        {% if notification_show_unread %}Unread{% else %}Feed{% endif %}
+      </h3>
+      <p class="panel__hint">{{ notification_rows|length }} shown</p>
+    </div>
+    <div class="panel__body">
+      <div class="enquiry-filters" role="group" aria-label="Filter notifications by type">
+        {% for row in notification_filters %}
+        <a
+          class="btn {% if row.active %}btn--primary{% else %}btn--quiet{% endif %}"
+          href="{{ row.url }}"
+          {% if row.active %}aria-current="true"{% endif %}
+        >
+          {{ row.label }}
+          {% if row.key != "all" %}· {{ row.unread }}{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+
+      {% if notification_rows %}
+      <ul class="notif-feed">
+        {% for row in notification_rows %}
+        <li class="notif-feed__item{% if not row.is_read %} is-unread{% endif %}">
+          <span class="notif-feed__dot" aria-hidden="true"></span>
+          <div class="notif-feed__main">
+            <div class="notif-feed__head">
+              <a class="notif-feed__title" href="{{ row.url }}">{{ row.title }}</a>
+              <span class="status-pill status-pill--{{ row.category }}">
+                {{ row.category_label }}
+              </span>
+            </div>
+            {% if row.body %}
+            <p class="notif-feed__body">{{ row.body|linebreaksbr }}</p>
+            {% endif %}
+            <p class="notif-feed__meta">
+              {{ row.created_display }}
+              {% if row.recipient_name %}· {{ row.recipient_name }}{% endif %}
+            </p>
+          </div>
+          <div class="notif-feed__actions">
+            <a class="btn btn--quiet btn--inline" href="{{ row.url }}">Open</a>
+            {% if not row.is_read and row.is_mine %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="mark_read">
+              <input type="hidden" name="notification_id" value="{{ row.id }}">
+              <button class="btn btn--quiet btn--inline" type="submit">Mark read</button>
+            </form>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state">
+        <span class="empty-state__rule" aria-hidden="true"></span>
+        <p class="empty-state__title">
+          {% if notification_show_unread %}No unread notifications{% else %}No notifications yet{% endif %}
+        </p>
+        <p class="empty-state__copy">
+          Task assignments, reminders, and message alerts will appear here.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

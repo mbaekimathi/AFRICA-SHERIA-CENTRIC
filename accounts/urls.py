@@ -37,6 +37,12 @@ urlpatterns = [
     ),
     path("terms/", views.FirmTermsView.as_view(), name="firm_terms"),
     path("privacy/", views.FirmPrivacyView.as_view(), name="firm_privacy"),
+    path("cookies/", views.FirmCookiesView.as_view(), name="firm_cookies"),
+    path(
+        "accessibility/",
+        views.FirmAccessibilityView.as_view(),
+        name="firm_accessibility",
+    ),
     path("sitemap.xml", views.BlogSitemapView.as_view(), name="sitemap_xml"),
     path("blog-sitemap.xml", views.BlogSitemapView.as_view(), name="blog_sitemap"),
     path("robots.txt", views.RobotsTxtView.as_view(), name="robots_txt"),
@@ -94,6 +100,11 @@ urlpatterns = [
         "api/workspace/notifications/mark-all-read/",
         views.workspace_notifications_mark_all_read,
         name="workspace_notifications_mark_all_read",
+    ),
+    path(
+        "api/workspace/search/",
+        views.workspace_search,
+        name="workspace_search",
     ),
     path(
         "api/workspace/entity-status/",

@@ -391,3 +391,22 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+/* ——— Link field errors to inputs for screen readers ——— */
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".form-field .field-error").forEach((err, i) => {
+    const field = err.closest(".form-field");
+    if (!field) return;
+    const input = field.querySelector("input, select, textarea");
+    if (!input) return;
+    if (!err.id) err.id = `field-error-${i + 1}`;
+    input.setAttribute("aria-invalid", "true");
+    const describedby = (input.getAttribute("aria-describedby") || "").trim();
+    if (!describedby.split(/\s+/).includes(err.id)) {
+      input.setAttribute(
+        "aria-describedby",
+        (describedby ? describedby + " " : "") + err.id
+      );
+    }
+  });
+});

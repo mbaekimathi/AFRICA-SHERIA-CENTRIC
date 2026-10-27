@@ -62,6 +62,8 @@
       class="settings-tab performance-tab{% if active_tab == 'overview' %} is-active{% endif %}"
       role="tab"
       aria-selected="{% if active_tab == 'overview' %}true{% else %}false{% endif %}"
+      aria-controls="panel-overview"
+      tabindex="{% if active_tab == 'overview' %}0{% else %}-1{% endif %}"
       data-tab="overview"
       id="tab-overview"
     >Overview</button>
@@ -70,12 +72,14 @@
       class="settings-tab performance-tab{% if active_tab == 'visuals' %} is-active{% endif %}"
       role="tab"
       aria-selected="{% if active_tab == 'visuals' %}true{% else %}false{% endif %}"
+      aria-controls="panel-visuals"
+      tabindex="{% if active_tab == 'visuals' %}0{% else %}-1{% endif %}"
       data-tab="visuals"
       id="tab-visuals"
     >Visuals</button>
   </div>
 
-  <div id="panel-overview" class="performance-panels"{% if active_tab != 'overview' %} hidden{% endif %}>
+  <div id="panel-overview" class="performance-panels" role="tabpanel" aria-labelledby="tab-overview"{% if active_tab != 'overview' %} hidden{% endif %}>
   <div class="metrics metrics--dash research-metrics">
     <div class="metric metric--glass research-metric">
       <div>
@@ -378,7 +382,7 @@
   </section>
   </div>
 
-  <div id="panel-visuals" class="performance-panels performance-visuals"{% if active_tab != 'visuals' %} hidden{% endif %}>
+  <div id="panel-visuals" class="performance-panels performance-visuals" role="tabpanel" aria-labelledby="tab-visuals"{% if active_tab != 'visuals' %} hidden{% endif %}>
     {% for trend in analytics.charts.trends %}
     <article class="analytics-card analytics-card--wide performance-trend-card" data-trend-chart="{{ trend.id }}">
       <header class="performance-trend-header">
@@ -416,5 +420,5 @@
 
 {% block extra_js %}
 {{ analytics.charts|json_script:"employee-performance-charts-data" }}
-<script src="{% static 'js/employee-performance-charts.js' %}" defer></script>
+<script src="{% static 'js/employee-performance-charts.js' %}?v=ql-tabs-1" defer></script>
 {% endblock %}

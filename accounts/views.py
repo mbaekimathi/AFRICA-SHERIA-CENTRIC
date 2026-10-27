@@ -1394,6 +1394,50 @@ class FirmPrivacyView(View):
         return render(request, self.template_name, context)
 
 
+class FirmCookiesView(View):
+    """Public cookie notice for the company website."""
+
+    template_name = "accounts/firm/cookies.html"
+
+    def get(self, request):
+        context = _public_firm_context(nav_active="cookies", solid_nav=True)
+        context.update(
+            {
+                "page_title": "Cookie notice",
+                "meta_description": (
+                    f"How {context['firm_name']} uses cookies and similar "
+                    f"technologies on this website."
+                ),
+                "canonical_url": request.build_absolute_uri(
+                    reverse("accounts:firm_cookies")
+                ),
+            }
+        )
+        return render(request, self.template_name, context)
+
+
+class FirmAccessibilityView(View):
+    """Public accessibility statement for the company website."""
+
+    template_name = "accounts/firm/accessibility.html"
+
+    def get(self, request):
+        context = _public_firm_context(nav_active="accessibility", solid_nav=True)
+        context.update(
+            {
+                "page_title": "Accessibility statement",
+                "meta_description": (
+                    f"Accessibility commitment and contact options for "
+                    f"{context['firm_name']}."
+                ),
+                "canonical_url": request.build_absolute_uri(
+                    reverse("accounts:firm_accessibility")
+                ),
+            }
+        )
+        return render(request, self.template_name, context)
+
+
 class RobotsTxtView(View):
     """robots.txt pointing search engines at the firm sitemap."""
 
@@ -1672,6 +1716,14 @@ class BlogSitemapView(View):
                     "loc": request.build_absolute_uri(reverse("accounts:firm_terms")),
                     "lastmod": company.updated_at,
                     "priority": "0.3",
+                }
+            )
+        for name in ("firm_cookies", "firm_accessibility"):
+            urls.append(
+                {
+                    "loc": request.build_absolute_uri(reverse(f"accounts:{name}")),
+                    "lastmod": None,
+                    "priority": "0.2",
                 }
             )
         for area in practice_areas:
@@ -2756,19 +2808,25 @@ class ClientDashboardView(View):
             "to your matters, documents, billing, messages, reminders, and "
             "calendar with the firm."
         )
-        from .client_access import client_cases, client_documents, client_matters
+        from .client_access import (
+            client_cases,
+            client_documents,
+            client_matters,
+            client_reminders,
+        )
 
         case_count = client_cases(client).count()
         matter_count = client_matters(client).count()
         doc_count = client_documents(client).count()
-        outstanding = Invoice.objects.filter(
+        outstanding_qs = Invoice.objects.filter(
             client=client,
             status__in=(
                 Invoice.Status.GENERATED,
                 Invoice.Status.ISSUED,
                 Invoice.Status.PARTIALLY_PAID,
             ),
-        ).count()
+        ).order_by("due_date", "pk")
+        outstanding = outstanding_qs.count()
         context["welcome_stats"] = [
             {
                 "label": "Matters",
@@ -2795,6 +2853,99 @@ class ClientDashboardView(View):
                 "icon": context["icon_bell"],
             },
         ]
+
+        preview = []
+        for case in client_cases(client)[:4]:
+            counsel = (
+                case.assigned_to.get_full_name()
+                if case.assigned_to_id
+                else "Firm team"
+            )
+            preview.append(
+                {
+                    "title": str(case),
+                    "kind": "Litigation",
+                    "status": case.status,
+                    "status_label": case.get_status_display(),
+                    "meta": " · ".join(
+                        part
+                        for part in (
+                            f"Filed {case.filing_date:%d %b %Y}"
+                            if case.filing_date
+                            else "",
+                            counsel,
+                        )
+                        if part
+                    ),
+                    "url": reverse(
+                        "accounts:client_matter_case",
+                        kwargs={"case_id": case.pk},
+                    ),
+                    "sort": case.filing_date,
+                }
+            )
+        for matter in client_matters(client)[:4]:
+            counsel = (
+                matter.assigned_to.get_full_name()
+                if matter.assigned_to_id
+                else "Firm team"
+            )
+            preview.append(
+                {
+                    "title": matter.matter_title,
+                    "kind": "Non-litigation",
+                    "status": matter.status,
+                    "status_label": matter.get_status_display(),
+                    "meta": " · ".join(
+                        part
+                        for part in (
+                            f"Opened {matter.date_opened:%d %b %Y}"
+                            if matter.date_opened
+                            else "",
+                            counsel,
+                        )
+                        if part
+                    ),
+                    "url": reverse(
+                        "accounts:client_matter_detail",
+                        kwargs={"matter_id": matter.pk},
+                    ),
+                    "sort": matter.date_opened,
+                }
+            )
+        preview.sort(key=lambda row: row["sort"] or date.min, reverse=True)
+        context["matters_preview"] = preview[:4]
+
+        context["upcoming_items"] = client_reminders(client)[:5]
+
+        context["balance_due_total"] = sum(
+            (invoice.balance_due for invoice in outstanding_qs),
+            Decimal("0"),
+        )
+        context["due_invoices"] = outstanding_qs[:4]
+
+        recent_docs = []
+        for doc in client_documents(client)[:4]:
+            if doc.case_id:
+                matter_label = str(doc.case)
+            elif doc.matter_id:
+                matter_label = doc.matter.matter_title
+            else:
+                matter_label = "Your account"
+            recent_docs.append(
+                {
+                    "title": doc.title,
+                    "type_label": doc.type_label,
+                    "matter_label": matter_label,
+                    "updated_at": doc.updated_at,
+                    "view_url": reverse(
+                        "accounts:client_document_view",
+                        kwargs={"document_id": doc.pk},
+                    ),
+                    "can_view": bool(doc.local_file or doc.drive_file_id),
+                }
+            )
+        context["recent_documents"] = recent_docs
         return render(request, self.template_name, context)
 
 
@@ -3560,9 +3711,143 @@ def workspace_notifications_mark_all_read(request):
                 "calendar": 0,
                 "reminders": 0,
                 "messages": 0,
+                "notifications": 0,
             },
         }
     )
+
+
+@login_required
+@require_GET
+def workspace_search(request):
+    """Global workspace search backing the Ctrl+K command palette."""
+    user = request.user
+    if user.status != Employee.Status.ACTIVE:
+        return JsonResponse({"error": "forbidden"}, status=403)
+
+    query = (request.GET.get("q") or "").strip()
+    if len(query) < 2:
+        return JsonResponse({"q": query, "groups": []})
+
+    role = user.role_slug
+    groups = []
+
+    def _group(key, label, items):
+        if items:
+            groups.append({"key": key, "label": label, "items": items})
+
+    # Litigation cases + non-litigation matters (visibility-scoped).
+    client_name_q = (
+        Q(client__first_name__icontains=query)
+        | Q(client__last_name__icontains=query)
+        | Q(client__company_name__icontains=query)
+    )
+    matter_items = []
+    for case in (
+        cases_visible_to(user)
+        .filter(
+            Q(court_case_number__icontains=query)
+            | Q(description__icontains=query)
+            | Q(station__icontains=query)
+            | client_name_q
+        )
+        .select_related("client")[:5]
+    ):
+        matter_items.append(
+            {
+                "title": str(case),
+                "meta": f"Litigation · {case.get_status_display()}",
+                "url": reverse(
+                    "accounts:view_litigation_case",
+                    kwargs={"role": role, "case_id": case.pk},
+                ),
+            }
+        )
+    for matter in (
+        matters_visible_to(user)
+        .filter(
+            Q(matter_title__icontains=query)
+            | Q(client_instructions__icontains=query)
+            | client_name_q
+        )
+        .select_related("client")[:5]
+    ):
+        matter_items.append(
+            {
+                "title": str(matter),
+                "meta": f"Non-litigation · {matter.get_status_display()}",
+                "url": reverse(
+                    "accounts:view_non_litigation_matter",
+                    kwargs={"role": role, "matter_id": matter.pk},
+                ),
+            }
+        )
+    _group("matters", "Matters & cases", matter_items)
+
+    # Clients — gated by the Client Portal view permission.
+    if workspace_activity_action_permitted(
+        user, _USER_MODULE, "client-profile", "view"
+    ):
+        client_base = user.workspace_url(
+            "dashboard",
+            "user-management",
+            "client-management",
+            "client-profile",
+        )
+        client_items = [
+            {
+                "title": client.get_full_name(),
+                "meta": client.email,
+                "url": f"{client_base}?client={client.pk}",
+            }
+            for client in Client.objects.filter(
+                Q(first_name__icontains=query)
+                | Q(last_name__icontains=query)
+                | Q(company_name__icontains=query)
+                | Q(email__icontains=query)
+                | Q(phone__icontains=query),
+                status__in=[
+                    Client.Status.ACTIVE,
+                    Client.Status.SUSPENDED,
+                ],
+            )[:6]
+        ]
+        _group("clients", "Clients", client_items)
+
+    # Open tasks (visibility-scoped).
+    tasks_url = user.workspace_url("dashboard", "tasks")
+    task_items = []
+    for task in (
+        case_tasks_visible_to(user)
+        .filter(
+            Q(title__icontains=query) | Q(instructions__icontains=query)
+        )
+        .select_related("case", "case__client")[:4]
+    ):
+        task_items.append(
+            {
+                "title": task.title or str(task.case),
+                "meta": f"Task · {task.get_status_display()}",
+                "url": f"{tasks_url}?kind=case&id={task.pk}",
+            }
+        )
+    for task in (
+        matter_tasks_visible_to(user)
+        .filter(
+            Q(title__icontains=query) | Q(instructions__icontains=query)
+        )
+        .select_related("matter", "matter__client")[:4]
+    ):
+        task_items.append(
+            {
+                "title": task.title or str(task.matter),
+                "meta": f"Task · {task.get_status_display()}",
+                "url": f"{tasks_url}?kind=matter&id={task.pk}",
+            }
+        )
+    _group("tasks", "Tasks", task_items)
+
+    return JsonResponse({"q": query, "groups": groups})
 
 
 @login_required
@@ -4542,6 +4827,7 @@ class RoleWorkspaceView(View):
     tasks_template = "accounts/tasks.html"
     calendar_template = "accounts/calendar.html"
     reminders_template = "accounts/reminders.html"
+    notifications_template = "accounts/notifications.html"
     messages_template = "accounts/messages.html"
     notification_settings_template = "accounts/notification_settings.html"
     about_me_template = "accounts/about_me.html"
@@ -5090,13 +5376,19 @@ class RoleWorkspaceView(View):
                 request, self.approve_pending_clients_template, context
             )
         elif resolved["leaf"] == "client-profile":
-            context["clients"] = Client.objects.filter(
+            clients_qs = Client.objects.filter(
                 status__in=[
                     Client.Status.ACTIVE,
                     Client.Status.SUSPENDED,
                 ]
             ).order_by("status", "company_name", "first_name", "last_name", "email")
+            # Deep link from global search: ?client=<pk> narrows the list.
+            client_param = (request.GET.get("client") or "").strip()
+            if client_param.isdigit():
+                clients_qs = clients_qs.filter(pk=int(client_param))
+            context["clients"] = clients_qs
             context["client_count"] = context["clients"].count()
+            context["client_filtered"] = bool(client_param.isdigit())
             response = render(request, self.client_profile_template, context)
         elif resolved["leaf"] == "whatsapp-inbox":
             context.update(self._whatsapp_inbox_context(request, user, resolved))
@@ -5264,6 +5556,12 @@ class RoleWorkspaceView(View):
             context.update(self._reminders_context(user, request))
             apply_notification_badges(context, user)
             response = render(request, self.reminders_template, context)
+        elif resolved["leaf"] == "notifications":
+            context.update(self._notifications_context(user, request))
+            apply_notification_badges(context, user)
+            response = render(
+                request, self.notifications_template, context
+            )
         else:
             response = render(request, self.page_template, context)
 
@@ -5405,6 +5703,7 @@ class RoleWorkspaceView(View):
             "whatsapp-inbox",
             "website-enquiries",
             "messages",
+            "notifications",
             "latest-news",
         }:
             return redirect(user.dashboard_url)
@@ -5459,6 +5758,9 @@ class RoleWorkspaceView(View):
 
         if resolved["leaf"] == "messages":
             return self._post_messages(request, user, resolved)
+
+        if resolved["leaf"] == "notifications":
+            return self._post_notifications(request, user, resolved)
 
         if resolved["leaf"] == "company-profile":
             return self._post_company_profile(request, user, resolved)
@@ -8400,6 +8702,45 @@ class RoleWorkspaceView(View):
     def _mailbox_qs(mailbox) -> str:
         """`&mailbox=<pk>` query suffix for redirects, or empty for primary."""
         return f"&mailbox={mailbox.pk}" if mailbox is not None else ""
+
+    def _post_notifications(self, request, user, resolved):
+        """Mark-read actions from the Notifications page."""
+        from .notifications import mark_all_read, mark_category_read
+
+        action = (request.POST.get("action") or "").strip()
+        valid_categories = {key for key, _ in Notification.Category.choices}
+
+        if action == "mark_all_read":
+            updated = mark_all_read(user)
+            messages.success(
+                request,
+                f"Marked {updated} notification{'s' if updated != 1 else ''} as read."
+                if updated
+                else "Nothing unread — you're all caught up.",
+            )
+        elif action == "mark_category_read":
+            category = (request.POST.get("category") or "").strip()
+            if category in valid_categories:
+                updated = mark_category_read(user, category)
+                label = Notification.Category(category).label
+                messages.success(
+                    request,
+                    f"Marked {updated} {label.lower()} notification"
+                    f"{'s' if updated != 1 else ''} as read."
+                    if updated
+                    else f"No unread {label.lower()} notifications.",
+                )
+        elif action == "mark_read":
+            notification = Notification.objects.filter(
+                pk=request.POST.get("notification_id") or 0,
+                recipient=user,
+                is_read=False,
+            ).first()
+            if notification:
+                notification.mark_read()
+
+        # POST lands on the page URL, so the querystring keeps the filters.
+        return redirect(request.get_full_path())
 
     def _post_messages(self, request, user, resolved):
         """Mailbox connect/send/delete and SMS from the Messages page."""
@@ -12989,6 +13330,92 @@ class RoleWorkspaceView(View):
             "due_reminder_count": len(due_reminders),
             "upcoming_reminder_count": len(upcoming_reminders),
             "reminders_now": now,
+            "visibility_view_all": view_all,
+        }
+
+    @staticmethod
+    def _notifications_context(user, request):
+        """Full notification feed for the workspace Notifications page."""
+        from .notifications import (
+            CATEGORY_LABELS,
+            ensure_due_reminders,
+            ensure_task_notifications,
+            ensure_task_outcome_messages,
+            serialize_notification,
+            unread_counts_by_category,
+        )
+
+        view_all = employee_can_view_all(user, "notifications")
+        # Materialise pending alert sources so the feed is fresh on open.
+        ensure_task_notifications(user)
+        ensure_task_outcome_messages(user)
+        ensure_due_reminders(user)
+
+        category_keys = {key for key, _ in Notification.Category.choices}
+        active_category = (request.GET.get("category") or "all").strip()
+        if active_category not in category_keys | {"all"}:
+            active_category = "all"
+        show_unread = (request.GET.get("show") or "").strip() == "unread"
+
+        qs = Notification.objects.select_related("recipient")
+        if not view_all:
+            qs = qs.filter(recipient=user)
+        if active_category != "all":
+            qs = qs.filter(category=active_category)
+        if show_unread:
+            qs = qs.filter(is_read=False)
+
+        items = list(qs.order_by("-created_at")[:150])
+        notification_rows = []
+        for item in items:
+            payload = serialize_notification(item, include_recipient=view_all)
+            payload["is_mine"] = item.recipient_id == user.pk
+            notification_rows.append(payload)
+
+        unread = unread_counts_by_category(user)
+        unread_total = sum(unread.values())
+
+        def _url(*, category="all", show=""):
+            base = user.workspace_url("dashboard", "notifications")
+            params = []
+            if category != "all":
+                params.append(f"category={category}")
+            if show:
+                params.append(f"show={show}")
+            return base + ("?" + "&".join(params) if params else "")
+
+        notification_filters = [
+            {
+                "key": "all",
+                "label": "All",
+                "url": _url(show="unread" if show_unread else ""),
+                "active": active_category == "all",
+            }
+        ] + [
+            {
+                "key": key,
+                "label": CATEGORY_LABELS[key],
+                "unread": unread.get(key, 0),
+                "url": _url(
+                    category=key, show="unread" if show_unread else ""
+                ),
+                "active": active_category == key,
+            }
+            for key, _label in Notification.Category.choices
+        ]
+
+        return {
+            "notification_rows": notification_rows,
+            "notification_filters": notification_filters,
+            "notification_unread_filter_url": _url(
+                category=active_category,
+                show="" if show_unread else "unread",
+            ),
+            "notification_show_unread": show_unread,
+            "notification_active_category": active_category,
+            "notification_unread_total": unread_total,
+            "notification_unread_by_category": unread,
+            "notification_category_labels": CATEGORY_LABELS,
             "visibility_view_all": view_all,
         }
 

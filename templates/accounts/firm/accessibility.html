@@ -1,0 +1,58 @@
+{% extends "accounts/firm/base.html" %}
+{% load firm_media %}
+{% block title %}{{ page_title }} — {{ firm_name }}{% endblock %}
+{% block meta_description %}{{ meta_description }}{% endblock %}
+
+{% block firm_content %}
+<section class="fw-pagehead fw-pagehead--tall fw-pagehead--rich">
+  <div class="fw-pagehead__bg" aria-hidden="true"></div>
+  <span class="fw-pagehead__mark" aria-hidden="true">Access</span>
+  <div class="fw-wrap" data-fw-anim="rise">
+    <p class="fw-pagehead__eyebrow">Legal</p>
+    <h1>{{ page_title }}</h1>
+    <p class="fw-pagehead__lede">Our commitment to a website everyone can use.</p>
+  </div>
+</section>
+
+<section class="fw-section fw-section--white">
+  <div class="fw-wrap fw-legal" data-fw-anim="rise">
+    <div class="fw-prose fw-prose--legal">
+      <h2>Our commitment</h2>
+      <p>
+        {{ firm_name }} aims to make this website usable by everyone, including
+        people using assistive technologies such as screen readers, magnifiers,
+        voice control, and keyboard-only navigation. We work toward the Web
+        Content Accessibility Guidelines (WCAG) level AA.
+      </p>
+      <h2>What we do</h2>
+      <ul>
+        <li>Semantic landmarks, headings in logical order, and a skip-to-content link.</li>
+        <li>Keyboard-operable menus, forms, and interactive controls.</li>
+        <li>Visible focus indicators and text contrast checked against AA.</li>
+        <li>Alternative text on meaningful images; decorative images are hidden from assistive tech.</li>
+        <li>Animations respect your reduced-motion system preference.</li>
+      </ul>
+      <h2>Known limitations</h2>
+      <p>
+        Some older content and third-party embeds (such as the map on the
+        contact page) may not yet meet the same standard. We are improving
+        these areas as we update the site.
+      </p>
+      <h2>Need another format?</h2>
+      <p>
+        If any part of this site is hard for you to use, or you'd like
+        information in a different format, contact the chambers and we'll help:
+      </p>
+      <ul>
+        {% if company.phone %}<li>Call <a href="tel:{{ company.phone }}">{{ company.phone }}</a></li>{% endif %}
+        {% if company.email %}<li>Email <a href="mailto:{{ company.email }}">{{ company.email }}</a></li>{% endif %}
+        <li>Use the <a href="{% url 'accounts:firm_contact' %}">contact form</a></li>
+      </ul>
+      <p>
+        We take accessibility feedback seriously and will do our best to
+        respond promptly.
+      </p>
+    </div>
+  </div>
+</section>
+{% endblock %}

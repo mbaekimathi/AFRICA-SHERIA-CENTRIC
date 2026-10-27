@@ -99,7 +99,7 @@
           {% include "layouts/partials/_topbar_pills.html" with acct_status=client.status acct_code=client.pk acct_code_prefix="client-" %}
 
           <div class="profile-menu" id="profile-menu">
-            {% include "layouts/partials/_profile_trigger.html" with actor=client %}
+            {% include "layouts/partials/_profile_trigger.html" with actor=client actor_fallback=client.email %}
 
             <div class="profile-dropdown" id="profile-dropdown" role="menu" hidden>
               <div class="profile-dropdown__session">

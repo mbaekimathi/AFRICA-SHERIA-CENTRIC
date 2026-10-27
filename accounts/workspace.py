@@ -350,6 +350,11 @@ ICON_MAIL = (
     '<use href="#i-mail"/>'
     "</svg>"
 )
+ICON_ALERT = (
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    '<use href="#i-alert"/>'
+    "</svg>"
+)
 
 # Role modules (page-unique entry points — shown on the dashboard only, not in shared sidebar)
 ROLE_MODULES = {
@@ -444,6 +449,7 @@ SHARED_UTILITY_LINKS = [
     ("Tasks", "tasks", ICON_TASK),
     ("Reminders", "reminders", ICON_BELL),
     ("Calendar", "calendar", ICON_CALENDAR),
+    ("Notifications", "notifications", ICON_ALERT),
     ("My tools", "my-tools", ICON_TOOLS),
 ]
 
@@ -958,9 +964,9 @@ def collect_module_activities(
             linkable = True
         elif module_slug == "matter-management" and slug in WORKSPACE_VISIBILITY_SLUGS:
             path_slugs = [slug]
-            # Notifications live in the topbar bell; documents are opened from
-            # case/matter pages — no dedicated workspace hub page.
-            linkable = slug not in {"notifications", "matter-documents"}
+            # Matter documents are opened from case/matter pages — no
+            # dedicated workspace hub page.
+            linkable = slug != "matter-documents"
         else:
             path_slugs = [slug]
         add_activity(
