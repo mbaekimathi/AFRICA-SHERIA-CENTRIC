@@ -1219,6 +1219,7 @@ class BlogListView(View):
                 "meta_description": (
                     f"Legal insights and articles from {context['firm_name']}."
                 ),
+                "canonical_url": request.build_absolute_uri(request.path),
             }
         )
         return render(request, self.template_name, context)
@@ -21949,6 +21950,38 @@ class EmployeeCommunicationDetailView(View):
         for item in message.get("attachments") or []:
             item["view_url"] = f"{attachment_base}{item['id']}/"
             item["download_url"] = f"{attachment_base}{item['id']}/?download=1"
+
+        from .work_mailbox import avatar_tone_for, display_name_for, initial_for
+
+        if message.get("direction") == "received":
+            sender_label = (message.get("counterpart_name") or "").strip()
+            sender_address = (message.get("from_identity") or "").strip()
+            if not sender_label:
+                sender_label = display_name_for(sender_address)
+            to_label = employee.get_full_name()
+            to_address = (employee.work_email or "").strip()
+        else:
+            sender_label = employee.get_full_name()
+            sender_address = (message.get("from_identity") or "").strip() or (
+                employee.work_email or ""
+            ).strip()
+            to_label = (message.get("recipient_name") or "").strip()
+            to_address = (message.get("to_address") or "").strip()
+            if not to_label:
+                to_label = display_name_for(to_address)
+        identity = (
+            f"{sender_label} <{sender_address}>" if sender_address else sender_label
+        )
+        message.update(
+            {
+                "sender_label": sender_label or sender_address or "Unknown sender",
+                "sender_address": sender_address,
+                "to_label": to_label or to_address,
+                "to_address_display": to_address,
+                "avatar_initial": initial_for(identity or "?"),
+                "avatar_tone": avatar_tone_for(identity or "?"),
+            }
+        )
         context = workspace_context(
             user,
             request=request,

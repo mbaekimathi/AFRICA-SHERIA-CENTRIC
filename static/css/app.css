@@ -27907,6 +27907,19 @@ button.invoice-share-option:hover {
   white-space: nowrap;
 }
 
+.mail-read__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  justify-self: end;
+}
+
+.mail-read__error {
+  margin: 1rem 0 0;
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+
 .mail-read__body {
   margin-top: 1.5rem;
   color: color-mix(in srgb, var(--ink) 92%, transparent);
@@ -27978,6 +27991,129 @@ button.invoice-share-option:hover {
   flex-wrap: wrap;
   gap: 0.6rem;
   margin-top: 1.9rem;
+}
+
+/* --- Email-style communication page ----------------------------------- */
+
+.mail-page__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.4rem;
+}
+
+.mail-page__crumb {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail-reply {
+  margin-top: 1rem;
+}
+
+.mail-reply .workspace-form {
+  display: block;
+  max-width: none;
+}
+
+.mail-reply__alert,
+.mail-reply__notice {
+  margin: 0.9rem 1.1rem 0;
+}
+
+.mail-reply__head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem 1.1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-muted);
+  font-size: 0.84rem;
+}
+
+.mail-reply__head b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mail-reply__addr {
+  font-weight: 400;
+}
+
+.mail-reply__row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0 0.5rem 0 1.1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.mail-reply__row label {
+  flex: 0 0 auto;
+  min-width: 3.6rem;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.mail-reply__row .form-input {
+  min-height: 2.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mail-reply__row .form-input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.mail-reply__body {
+  display: block;
+  width: 100%;
+  min-height: 9rem;
+  padding: 0.9rem 1.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.mail-reply__body:focus {
+  outline: none;
+}
+
+.mail-reply__field-error {
+  margin: 0.35rem 1.1rem;
+}
+
+.mail-reply__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+.mail-reply__send {
+  min-width: 6rem;
+  border-radius: 999px;
+  padding-inline: 1.4rem;
+}
+
+.mail-reply__hint {
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: 0.74rem;
 }
 
 /* --- Colleague chat -------------------------------------------------- */
@@ -28503,6 +28639,11 @@ button.invoice-share-option:hover {
 
   .mail-read__date {
     grid-column: 2;
+  }
+
+  .mail-read__meta {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .compose-window {

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from email.header import decode_header, make_header
 from email.message import EmailMessage
-from email.utils import formataddr, parsedate_to_datetime
+from email.utils import formataddr, formatdate, parsedate_to_datetime
 from typing import Iterable
 
 from django.core.cache import cache
@@ -192,6 +192,14 @@ def _parse_date(raw: str) -> datetime | None:
         return parsedate_to_datetime(raw)
     except Exception:
         return None
+
+
+def _internal_date(meta_text: str) -> datetime | None:
+    """IMAP INTERNALDATE from fetch metadata — fallback when Date is missing."""
+    match = re.search(r'INTERNALDATE\s+"([^"]+)"', meta_text)
+    if not match:
+        return None
+    return _parse_date(match.group(1))
 
 
 def _body_from_message(message: email.message.Message) -> str:
@@ -434,7 +442,7 @@ class WorkMailbox:
             typ, fetched = client.uid(
                 "fetch",
                 uid,
-                "(FLAGS BODYSTRUCTURE "
+                "(FLAGS INTERNALDATE BODYSTRUCTURE "
                 "BODY.PEEK[HEADER.FIELDS (SUBJECT FROM TO DATE)] "
                 "BODY.PEEK[TEXT]<0.180>)",
             )
@@ -476,12 +484,14 @@ class WorkMailbox:
                     snippet=snippet,
                     is_unread="\\Seen" not in meta_text,
                     has_attachments='"attachment"' in meta_text.lower(),
-                    sent_at=_parse_date(raw_date),
+                    sent_at=_parse_date(raw_date) or _internal_date(meta_text),
                 )
             )
         return summaries
 
-    def get_message(self, folder_key: str, uid: str) -> MailDetail:
+    def get_message(
+        self, folder_key: str, uid: str, *, mark_seen: bool = True
+    ) -> MailDetail:
         with self._imap() as client:
             folder = self._resolve_folder(client, folder_key)
             typ, _ = client.select(f'"{folder}"', readonly=False)
@@ -504,13 +514,13 @@ class WorkMailbox:
                 raise WorkMailboxError("Message body could not be loaded.")
             message = email.message_from_bytes(raw)
             was_unread = "\\Seen" not in flags
-            # Mark seen
-            try:
-                client.uid("store", str(uid), "+FLAGS", "(\\Seen)")
-            except Exception:
-                pass
-            if was_unread:
-                self._invalidate_overviews()
+            if mark_seen:
+                try:
+                    client.uid("store", str(uid), "+FLAGS", "(\\Seen)")
+                except Exception:
+                    pass
+                if was_unread:
+                    self._invalidate_overviews()
             return MailDetail(
                 uid=str(uid),
                 subject=_decode_mime_header(message.get("Subject")) or "(no subject)",
@@ -581,6 +591,7 @@ class WorkMailbox:
         if cc_list:
             message["Cc"] = ", ".join(cc_list)
         message["Subject"] = subject_text
+        message["Date"] = formatdate(localtime=True)
         if in_reply_to:
             message["In-Reply-To"] = in_reply_to
             message["References"] = references or in_reply_to
