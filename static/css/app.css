@@ -27680,6 +27680,65 @@ button.invoice-share-option:hover {
   margin-bottom: 0.9rem;
 }
 
+/* "Forgot the password? Reset it" hint under a connect card */
+.mailbox__reset {
+  margin: 0.7rem auto 0;
+  width: min(100%, 31rem);
+  text-align: center;
+}
+
+.mailbox__reset-hint {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.conversation-compose__connect + .mailbox__reset {
+  width: auto;
+}
+
+/* One-time notice showing a freshly generated mailbox password */
+.mail-newpw {
+  margin: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--success) 40%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+
+.mail-newpw__title {
+  margin: 0 0 0.35rem;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.mail-newpw__line {
+  margin: 0 0 0.35rem;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.mail-newpw__code {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  user-select: all;
+}
+
+.mail-newpw__hint {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
 .mailbox__connect h3 {
   margin: 0 0 0.4rem;
   overflow-wrap: anywhere;

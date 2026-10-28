@@ -5,7 +5,7 @@ from __future__ import annotations
 import mimetypes
 import re
 
-from .models import Document
+from .models import CommunicationSettings, Document
 from .work_mailbox import WorkMailbox, WorkMailboxError
 from .workspace import (
     employee_can_access_case_documents,
@@ -139,9 +139,26 @@ def mail_client_context(
         else employee.mailbox_connected
     )
 
+    # Whether a real cPanel reset can run from here: provisioning configured
+    # and the selected address lives on the firm domain.
+    comm_settings = CommunicationSettings.get_solo()
+    work_email_domain = (
+        (comm_settings.work_email_domain or "").strip().lstrip("@").lower()
+    )
+    mail_reset_available = bool(
+        comm_settings.work_email_provisioning_ready
+        and active_address
+        and (
+            not work_email_domain
+            or active_address.endswith(f"@{work_email_domain}")
+        )
+    )
+
     posted = form_data or {}
     context = {
         "mail_connected": connected,
+        "mail_reset_available": mail_reset_available,
+        "mail_new_password": request.session.pop("mail_new_password", None),
         "mail_mailboxes": mailbox_rows,
         "mail_mailbox": mailbox_key,
         "mail_qs": f"&mailbox={mailbox_key}" if mailbox_key else "",

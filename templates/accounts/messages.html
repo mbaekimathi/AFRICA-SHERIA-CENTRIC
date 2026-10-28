@@ -96,6 +96,17 @@
           <button type="submit" class="btn btn--primary btn--inline">Connect mailbox</button>
         </div>
       </form>
+      {% if mail_reset_available %}
+      <form method="post" class="mailbox__reset" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="reset_mailbox_password">
+        <input type="hidden" name="person" value="{{ active_message_person.pk }}">
+        {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
+        <p class="mailbox__reset-hint">
+          Forgot the password? <button type="submit" class="link-btn">Reset it</button>
+        </p>
+      </form>
+      {% endif %}
       {% elif not active_message_person_email %}
       <div class="mailbox__empty">
         <p class="mailbox__empty-title">No work email for {{ active_message_person.get_full_name }}</p>
@@ -464,6 +475,18 @@
             <button type="submit" class="btn btn--primary btn--inline">Connect mailbox</button>
           </div>
         </form>
+        {% if mail_reset_available %}
+        <form method="post" class="mailbox__reset" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="reset_mailbox_password">
+          {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
+          <p class="mailbox__reset-hint">
+            Forgot the password?
+            <button type="submit" class="link-btn">Reset it</button>
+            — a new password is generated on the mail server and shown once.
+          </p>
+        </form>
+        {% endif %}
       </div>
       {% elif mail_active %}
       {# ---------------- Reading a message ---------------- #}
@@ -626,6 +649,21 @@
       {% endif %}
 
       <div class="mailbox__scroll">
+        {% if mail_new_password %}
+        <div class="mail-newpw" role="status">
+          <p class="mail-newpw__title">
+            Password reset for <strong>{{ mail_new_password.address }}</strong>
+          </p>
+          <p class="mail-newpw__line">
+            New mailbox password:
+            <code class="mail-newpw__code">{{ mail_new_password.password }}</code>
+          </p>
+          <p class="mail-newpw__hint">
+            Save it now — it will not be shown again. Update Webmail and any
+            mail apps that sign in to this mailbox.
+          </p>
+        </div>
+        {% endif %}
         {% if mail_error %}<div class="form-alert" role="alert">{{ mail_error }}</div>{% endif %}
         {% if mail_messages %}
         <ul class="mail-list">

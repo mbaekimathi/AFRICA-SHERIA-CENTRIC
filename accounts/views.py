@@ -8795,6 +8795,51 @@ class RoleWorkspaceView(View):
                 return redirect(f"{messages_base}?person={person_id}{mb_qs}")
             return redirect(f"{messages_base}?channel=email{mb_qs}")
 
+        if action == "reset_mailbox_password":
+            linked = self._requested_mailbox(user, request)
+            mb_qs = self._mailbox_qs(linked)
+            address = (
+                (linked.email or "")
+                if linked is not None
+                else (user.work_email or "")
+            ).strip().lower()
+            setting = CommunicationSettings.get_solo()
+            domain = (setting.work_email_domain or "").strip().lstrip("@").lower()
+            if not address:
+                messages.error(request, "There is no mailbox address to reset.")
+            elif not setting.work_email_provisioning_ready:
+                messages.error(
+                    request,
+                    "Work email provisioning is not configured, so the "
+                    "password cannot be reset here.",
+                )
+            elif domain and not address.endswith(f"@{domain}"):
+                messages.error(
+                    request,
+                    f"{address} is not on @{domain}, so its password cannot "
+                    "be reset here.",
+                )
+            else:
+                new_password = generate_password()
+                try:
+                    change_mailbox_password(setting, address, new_password)
+                except CpanelMailError as exc:
+                    messages.error(request, str(exc))
+                else:
+                    if linked is not None:
+                        linked.set_mailbox_password(new_password)
+                    else:
+                        user.set_work_mailbox_password(new_password)
+                    request.session["mail_new_password"] = {
+                        "address": address,
+                        "password": new_password,
+                    }
+                    messages.success(request, f"Password reset for {address}.")
+            person_id = (request.POST.get("person") or "").strip()
+            if person_id.isdigit():
+                return redirect(f"{messages_base}?person={person_id}{mb_qs}")
+            return redirect(f"{messages_base}?channel=email{mb_qs}")
+
         if action == "disconnect_mailbox":
             linked = self._requested_mailbox(user, request)
             if linked is not None:
