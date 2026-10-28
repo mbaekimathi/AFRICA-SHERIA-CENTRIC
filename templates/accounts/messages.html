@@ -578,6 +578,10 @@
         <span class="mailbox__count">
           {{ mail_messages|length }} message{{ mail_messages|length|pluralize }}
         </span>
+        <a
+          class="link-btn"
+          href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}&amp;reset=1{% if mail_search %}&amp;q={{ mail_search|urlencode }}{% endif %}{{ mail_qs }}"
+        >Reset password</a>
         <form method="post" class="mailbox__toolbar-form mailbox__toolbar-form--end">
           {% csrf_token %}
           <input type="hidden" name="action" value="disconnect_mailbox">
@@ -585,6 +589,41 @@
           <button type="submit" class="link-btn">Disconnect</button>
         </form>
       </div>
+
+      {% if mail_reset_open %}
+      <form method="post" class="workspace-form mailbox__connect mailbox__connect--compact" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="connect_mailbox">
+        <input type="hidden" name="intent" value="reset">
+        {% if mail_mailbox %}<input type="hidden" name="mailbox" value="{{ mail_mailbox }}">{% endif %}
+        <p class="mailbox__connect-lead">
+          Enter the mailbox password for
+          <strong>{{ mail_address }}</strong> — it is verified against the
+          mail server and stored encrypted.
+        </p>
+        <div class="form-field">
+          <label for="id_mailbox_reset_password">Mailbox password</label>
+          <div class="password-field">
+            <input
+              type="password"
+              name="mailbox_password"
+              id="id_mailbox_reset_password"
+              class="form-input"
+              required
+              autocomplete="current-password"
+            >
+            {% include "partials/password_eye_toggle.html" with target="id_mailbox_reset_password" %}
+          </div>
+        </div>
+        <div class="form-actions form-actions--start">
+          <button type="submit" class="btn btn--primary btn--inline">Save password</button>
+          <a
+            class="btn btn--ghost btn--inline"
+            href="{{ messages_base_url }}?channel=email&amp;folder={{ mail_folder }}{{ mail_qs }}"
+          >Cancel</a>
+        </div>
+      </form>
+      {% endif %}
 
       <div class="mailbox__scroll">
         {% if mail_error %}<div class="form-alert" role="alert">{{ mail_error }}</div>{% endif %}

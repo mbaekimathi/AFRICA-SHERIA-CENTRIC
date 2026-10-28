@@ -122,6 +122,7 @@ def mail_client_context(
 
     # `mailbox` selects one of the employee's extra linked mailboxes;
     # None means the primary work email.
+    reset = (request.GET.get("reset") or "").strip() in {"1", "true", "yes"}
     active_extra = mailbox
     active_address = (
         (active_extra.email or "").strip().lower()
@@ -155,6 +156,7 @@ def mail_client_context(
         "mail_active": None,
         "mail_error": "",
         "mail_search": search,
+        "mail_reset_open": reset,
         "mail_compose_open": compose
         or bool(form_errors)
         or bool(reply_uid)

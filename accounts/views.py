@@ -8778,9 +8778,15 @@ class RoleWorkspaceView(View):
         if action == "connect_mailbox":
             password = request.POST.get("mailbox_password") or ""
             linked = self._requested_mailbox(user, request)
+            is_reset = (request.POST.get("intent") or "") == "reset"
             try:
                 connect_mailbox(user, password, mailbox=linked)
-                messages.success(request, "Mailbox connected. You can read and send mail.")
+                if is_reset:
+                    messages.success(request, "Mailbox password updated.")
+                else:
+                    messages.success(
+                        request, "Mailbox connected. You can read and send mail."
+                    )
             except WorkMailboxError as exc:
                 messages.error(request, str(exc))
             person_id = (request.POST.get("person") or "").strip()

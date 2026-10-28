@@ -27667,6 +27667,19 @@ button.invoice-share-option:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* Compact reset-password form under the mailbox toolbar */
+.mailbox__connect--compact {
+  width: auto !important;
+  max-width: 30rem;
+  margin: 0.5rem 0.75rem !important;
+  padding: 1rem 1.15rem;
+  border-radius: var(--radius);
+}
+
+.mailbox__connect--compact .mailbox__connect-lead {
+  margin-bottom: 0.9rem;
+}
+
 .mailbox__connect h3 {
   margin: 0 0 0.4rem;
   overflow-wrap: anywhere;
@@ -27735,6 +27748,8 @@ button.invoice-share-option:hover {
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
+  text-decoration: none;
+  align-self: center;
 }
 
 .link-btn:hover {
